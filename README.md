@@ -1,95 +1,124 @@
-This is a Kotlin Multiplatform project targeting Android, iOS, Web, Desktop (JVM), Server.
+# AnotherThread
 
-* [/composeApp](./composeApp/src) is for code that will be shared across your Compose Multiplatform applications.
-  It contains several subfolders:
-  - [commonMain](./composeApp/src/commonMain/kotlin) is for code that’s common for all targets.
-  - Other folders are for Kotlin code that will be compiled for only the platform indicated in the folder name.
-    For example, if you want to use Apple’s CoreCrypto for the iOS part of your Kotlin app,
-    the [iosMain](./composeApp/src/iosMain/kotlin) folder would be the right place for such calls.
-    Similarly, if you want to edit the Desktop (JVM) specific part, the [jvmMain](./composeApp/src/jvmMain/kotlin)
-    folder is the appropriate location.
+A Kotlin Multiplatform MUD-style game engine with AI-powered content generation. Build and manage interconnected game worlds with locations, creatures, items, and features.
 
-* [/iosApp](./iosApp/iosApp) contains iOS applications. Even if you’re sharing your UI with Compose Multiplatform,
-  you need this entry point for your iOS app. This is also where you should add SwiftUI code for your project.
+## Features
 
-* [/server](./server/src/main/kotlin) is for the Ktor server application.
+### Game World Management
+- **Locations** - Create interconnected areas with bidirectional exits, items, creatures, and features
+- **Creatures** - Define NPCs and monsters with inventories and features
+- **Items** - Create objects that can be placed in locations or held by creatures/users
+- **Features** - Modular attributes organized by categories that can be attached to any entity
+- **Users** - Player accounts with authentication, inventories, and location tracking
 
-* [/shared](./shared/src) is for the code that will be shared between all targets in the project.
-  The most important subfolder is [commonMain](./shared/src/commonMain/kotlin). If preferred, you
-  can add code to the platform-specific folders here too.
+### AI Content Generation
+- **Ollama Integration** - Generate names and descriptions for locations, creatures, and items using local LLMs
+- **Image Generation** - Automatic image generation for entities (configurable)
 
-### Build and Run Android Application
+### Admin UI
+- **Location Graph** - Visual map showing location connections with pan and center-on-tap
+- **Entity Management** - Create, edit, and link locations, creatures, items, and features
+- **Bidirectional Exits** - Adding an exit automatically creates the reverse connection; removal prompts for one-way or two-way
 
-To build and run the development version of the Android app, use the run configuration from the run widget
-in your IDE’s toolbar or build it directly from the terminal:
-- on macOS/Linux
-  ```shell
-  ./gradlew :composeApp:assembleDebug
-  ```
-- on Windows
-  ```shell
-  .\gradlew.bat :composeApp:assembleDebug
-  ```
+### Multi-Platform Support
+- Android, iOS, Web (Wasm/JS), Desktop (JVM)
+- Shared Compose Multiplatform UI
+- Ktor server backend with SQLite database
 
-### Build and Run Desktop (JVM) Application
+## Project Structure
 
-To build and run the development version of the desktop app, use the run configuration from the run widget
-in your IDE’s toolbar or run it directly from the terminal:
-- on macOS/Linux
-  ```shell
-  ./gradlew :composeApp:run
-  ```
-- on Windows
-  ```shell
-  .\gradlew.bat :composeApp:run
-  ```
+```
+/composeApp    - Compose Multiplatform client (Android, iOS, Desktop, Web)
+/server        - Ktor server with REST API
+/shared        - Shared Kotlin code
+/iosApp        - iOS app entry point
+```
 
-### Build and Run Server
+## API Endpoints
 
-To build and run the development version of the server, use the run configuration from the run widget
-in your IDE’s toolbar or run it directly from the terminal:
-- on macOS/Linux
-  ```shell
-  ./gradlew :server:run
-  ```
-- on Windows
-  ```shell
-  .\gradlew.bat :server:run
-  ```
+### Locations
+- `GET /locations` - List all locations
+- `POST /locations` - Create location
+- `PUT /locations/{id}` - Update location
 
-### Build and Run Web Application
+### Creatures
+- `GET /creatures` - List all creatures
+- `POST /creatures` - Create creature
+- `PUT /creatures/{id}` - Update creature
 
-To build and run the development version of the web app, use the run configuration from the run widget
-in your IDE's toolbar or run it directly from the terminal:
-- for the Wasm target (faster, modern browsers):
-  - on macOS/Linux
-    ```shell
-    ./gradlew :composeApp:wasmJsBrowserDevelopmentRun
-    ```
-  - on Windows
-    ```shell
-    .\gradlew.bat :composeApp:wasmJsBrowserDevelopmentRun
-    ```
-- for the JS target (slower, supports older browsers):
-  - on macOS/Linux
-    ```shell
-    ./gradlew :composeApp:jsBrowserDevelopmentRun
-    ```
-  - on Windows
-    ```shell
-    .\gradlew.bat :composeApp:jsBrowserDevelopmentRun
-    ```
+### Items
+- `GET /items` - List all items
+- `POST /items` - Create item
+- `PUT /items/{id}` - Update item
 
-### Build and Run iOS Application
+### Features & Categories
+- `GET /features` - List all features
+- `GET /features/{id}` - Get feature by ID
+- `GET /features/by-category/{categoryId}` - Get features by category
+- `POST /features` - Create feature
+- `PUT /features/{id}` - Update feature
+- `GET /feature-categories` - List all categories
+- `POST /feature-categories` - Create category
+- `PUT /feature-categories/{id}` - Update category
 
-To build and run the development version of the iOS app, use the run configuration from the run widget
-in your IDE’s toolbar or open the [/iosApp](./iosApp) directory in Xcode and run it from there.
+### Authentication
+- `POST /auth/register` - Register new user
+- `POST /auth/login` - Login
 
----
+### Users
+- `GET /users/{id}` - Get user
+- `PUT /users/{id}` - Update user
+- `PUT /users/{id}/location` - Update user's current location
+- `GET /users/at-location/{locationId}` - Get active users at location
 
-Learn more about [Kotlin Multiplatform](https://www.jetbrains.com/help/kotlin-multiplatform-dev/get-started.html),
-[Compose Multiplatform](https://github.com/JetBrains/compose-multiplatform/#compose-multiplatform),
-[Kotlin/Wasm](https://kotl.in/wasm/)…
+### Content Generation
+- `GET /generate/status` - Check if Ollama is available
+- `POST /generate/location` - Generate location name/description
+- `POST /generate/creature` - Generate creature name/description
+- `POST /generate/item` - Generate item name/description
 
-We would appreciate your feedback on Compose/Web and Kotlin/Wasm in the public Slack channel [#compose-web](https://slack-chats.kotlinlang.org/c/compose-web).
-If you face any issues, please report them on [YouTrack](https://youtrack.jetbrains.com/newIssue?project=CMP).# AnotherThread
+## Running the Project
+
+### Server
+```shell
+./gradlew :server:run
+```
+
+### Desktop App
+```shell
+./gradlew :composeApp:run
+```
+
+### Android App
+```shell
+./gradlew :composeApp:assembleDebug
+```
+
+### Web App (Wasm)
+```shell
+./gradlew :composeApp:wasmJsBrowserDevelopmentRun
+```
+
+### iOS App
+Open `/iosApp` in Xcode and run.
+
+## Configuration
+
+### Ollama (Content Generation)
+The server connects to Ollama at `http://localhost:11434` by default. Install Ollama and pull a model:
+```shell
+ollama pull llama3.2
+```
+
+### Database
+SQLite database is stored at `server/data/anotherthread.db` by default.
+
+## Tech Stack
+
+- **Kotlin Multiplatform** - Shared code across platforms
+- **Compose Multiplatform** - UI framework
+- **Ktor** - Server and HTTP client
+- **Exposed** - SQL framework
+- **SQLite** - Database
+- **Ollama** - Local LLM integration
+- **BCrypt** - Password hashing
