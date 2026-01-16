@@ -1,8 +1,13 @@
 package com.ez2bg.anotherthread.ui
 
+import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.VectorConverter
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.foundation.gestures.detectTransformGestures
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -22,12 +27,16 @@ import kotlinx.coroutines.delay
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import coil3.compose.AsyncImage
 import coil3.compose.AsyncImagePainter
@@ -975,62 +984,112 @@ fun LocationGraph(
         calculateLocationPositions(locations)
     }
 
-    BoxWithConstraints(modifier = modifier) {
+    // Pan offset state with animation support
+    val offset = remember { Animatable(Offset.Zero, Offset.VectorConverter) }
+    val scope = rememberCoroutineScope()
+
+    BoxWithConstraints(
+        modifier = modifier
+            .clipToBounds()
+            .pointerInput(Unit) {
+                detectTransformGestures { _, pan, _, _ ->
+                    scope.launch {
+                        offset.snapTo(offset.value + pan)
+                    }
+                }
+            }
+    ) {
         val width = constraints.maxWidth.toFloat()
         val height = constraints.maxHeight.toFloat()
         val boxSize = 100.dp
         val boxSizePx = boxSize.value * 2.5f
 
-        // Draw connection lines
-        Canvas(modifier = Modifier.fillMaxSize()) {
-            locations.forEach { location ->
-                val fromPos = locationPositions[location.id] ?: return@forEach
-                location.exitIds.forEach { exitId ->
-                    val toPos = locationPositions[exitId]
-                    if (toPos != null) {
-                        drawLine(
-                            color = Color.Gray,
-                            start = Offset(
-                                fromPos.x * (width - boxSizePx) + boxSizePx / 2,
-                                fromPos.y * (height - boxSizePx) + boxSizePx / 2
-                            ),
-                            end = Offset(
-                                toPos.x * (width - boxSizePx) + boxSizePx / 2,
-                                toPos.y * (height - boxSizePx) + boxSizePx / 2
-                            ),
-                            strokeWidth = 3f
-                        )
-                    }
-                }
+        // Function to calculate screen position of a location
+        fun getLocationScreenPos(pos: LocationPosition): Offset {
+            return Offset(
+                pos.x * (width - boxSizePx) + boxSizePx / 2,
+                pos.y * (height - boxSizePx) + boxSizePx / 2
+            )
+        }
+
+        // Function to center on a location
+        fun centerOnLocation(location: LocationDto) {
+            val pos = locationPositions[location.id] ?: return
+            val screenPos = getLocationScreenPos(pos)
+            val centerX = width / 2
+            val centerY = height / 2
+            val targetOffset = Offset(centerX - screenPos.x, centerY - screenPos.y)
+
+            scope.launch {
+                offset.animateTo(
+                    targetValue = targetOffset,
+                    animationSpec = tween(durationMillis = 300)
+                )
             }
         }
 
-        // Draw location boxes
-        locations.forEach { location ->
-            val pos = locationPositions[location.id] ?: return@forEach
-            Box(
-                modifier = Modifier
-                    .offset(
-                        x = (pos.x * (width - boxSizePx) / 2.5f).dp,
-                        y = (pos.y * (height - boxSizePx) / 2.5f).dp
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .graphicsLayer {
+                    translationX = offset.value.x
+                    translationY = offset.value.y
+                }
+        ) {
+            // Draw connection lines
+            Canvas(modifier = Modifier.fillMaxSize()) {
+                locations.forEach { location ->
+                    val fromPos = locationPositions[location.id] ?: return@forEach
+                    location.exitIds.forEach { exitId ->
+                        val toPos = locationPositions[exitId]
+                        if (toPos != null) {
+                            drawLine(
+                                color = Color.Gray,
+                                start = Offset(
+                                    fromPos.x * (width - boxSizePx) + boxSizePx / 2,
+                                    fromPos.y * (height - boxSizePx) + boxSizePx / 2
+                                ),
+                                end = Offset(
+                                    toPos.x * (width - boxSizePx) + boxSizePx / 2,
+                                    toPos.y * (height - boxSizePx) + boxSizePx / 2
+                                ),
+                                strokeWidth = 3f
+                            )
+                        }
+                    }
+                }
+            }
+
+            // Draw location boxes
+            locations.forEach { location ->
+                val pos = locationPositions[location.id] ?: return@forEach
+                Box(
+                    modifier = Modifier
+                        .offset(
+                            x = (pos.x * (width - boxSizePx) / 2.5f).dp,
+                            y = (pos.y * (height - boxSizePx) / 2.5f).dp
+                        )
+                        .size(boxSize)
+                        .background(
+                            MaterialTheme.colorScheme.primaryContainer,
+                            RoundedCornerShape(8.dp)
+                        )
+                        .clickable {
+                            centerOnLocation(location)
+                            onLocationClick(location)
+                        }
+                        .padding(8.dp),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Text(
+                        text = location.name.ifBlank { location.id.take(8) },
+                        style = MaterialTheme.typography.bodySmall,
+                        textAlign = TextAlign.Center,
+                        maxLines = 2,
+                        overflow = TextOverflow.Ellipsis,
+                        color = MaterialTheme.colorScheme.onPrimaryContainer
                     )
-                    .size(boxSize)
-                    .background(
-                        MaterialTheme.colorScheme.primaryContainer,
-                        RoundedCornerShape(8.dp)
-                    )
-                    .clickable { onLocationClick(location) }
-                    .padding(8.dp),
-                contentAlignment = Alignment.Center
-            ) {
-                Text(
-                    text = location.name.ifBlank { location.id.take(8) },
-                    style = MaterialTheme.typography.bodySmall,
-                    textAlign = TextAlign.Center,
-                    maxLines = 2,
-                    overflow = TextOverflow.Ellipsis,
-                    color = MaterialTheme.colorScheme.onPrimaryContainer
-                )
+                }
             }
         }
     }
