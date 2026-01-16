@@ -1137,6 +1137,10 @@ fun LocationForm(
     var message by remember(editLocation?.id) { mutableStateOf<String?>(null) }
     val scope = rememberCoroutineScope()
 
+    // State for exit removal confirmation dialog
+    var exitToRemove by remember { mutableStateOf<String?>(null) }
+    var showRemoveExitDialog by remember { mutableStateOf(false) }
+
     // Available options for dropdowns
     var availableItems by remember { mutableStateOf<List<IdOption>>(emptyList()) }
     var availableCreatures by remember { mutableStateOf<List<IdOption>>(emptyList()) }
@@ -1317,9 +1321,103 @@ fun LocationForm(
                     }
                 }
             },
-            onAddId = { id -> exitIds = exitIds + id },
-            onRemoveId = { id -> exitIds = exitIds - id }
+            onAddId = { id ->
+                // Add exit locally
+                exitIds = exitIds + id
+                // Add bidirectional exit on the other location (if we have an id)
+                if (editLocation != null) {
+                    scope.launch {
+                        ApiClient.getLocation(id).onSuccess { otherLoc ->
+                            if (otherLoc != null && editLocation.id !in otherLoc.exitIds) {
+                                val updatedExits = otherLoc.exitIds + editLocation.id
+                                val updateRequest = CreateLocationRequest(
+                                    name = otherLoc.name,
+                                    desc = otherLoc.desc,
+                                    itemIds = otherLoc.itemIds,
+                                    creatureIds = otherLoc.creatureIds,
+                                    exitIds = updatedExits,
+                                    features = otherLoc.features
+                                )
+                                ApiClient.updateLocation(otherLoc.id, updateRequest)
+                            }
+                        }
+                    }
+                }
+            },
+            onRemoveId = { id ->
+                // Show confirmation dialog for exit removal
+                exitToRemove = id
+                showRemoveExitDialog = true
+            }
         )
+
+        // Exit removal confirmation dialog
+        if (showRemoveExitDialog && exitToRemove != null) {
+            val exitIdToRemove = exitToRemove!!
+            val exitName = availableLocations.find { it.id == exitIdToRemove }?.name ?: exitIdToRemove
+            AlertDialog(
+                onDismissRequest = {
+                    showRemoveExitDialog = false
+                    exitToRemove = null
+                },
+                title = { Text("Remove Exit") },
+                text = {
+                    Text("Remove exit to \"$exitName\".\n\nShould this be a two-way removal (also remove this location from \"$exitName\"'s exits)?")
+                },
+                confirmButton = {
+                    TextButton(
+                        onClick = {
+                            // Two-way removal
+                            exitIds = exitIds - exitIdToRemove
+                            if (editLocation != null) {
+                                scope.launch {
+                                    ApiClient.getLocation(exitIdToRemove).onSuccess { otherLoc ->
+                                        if (otherLoc != null && editLocation.id in otherLoc.exitIds) {
+                                            val updatedExits = otherLoc.exitIds - editLocation.id
+                                            val updateRequest = CreateLocationRequest(
+                                                name = otherLoc.name,
+                                                desc = otherLoc.desc,
+                                                itemIds = otherLoc.itemIds,
+                                                creatureIds = otherLoc.creatureIds,
+                                                exitIds = updatedExits,
+                                                features = otherLoc.features
+                                            )
+                                            ApiClient.updateLocation(otherLoc.id, updateRequest)
+                                        }
+                                    }
+                                }
+                            }
+                            showRemoveExitDialog = false
+                            exitToRemove = null
+                        }
+                    ) {
+                        Text("Remove Both Ways")
+                    }
+                },
+                dismissButton = {
+                    Row {
+                        TextButton(
+                            onClick = {
+                                showRemoveExitDialog = false
+                                exitToRemove = null
+                            }
+                        ) {
+                            Text("Cancel")
+                        }
+                        TextButton(
+                            onClick = {
+                                // One-way removal (only from this location)
+                                exitIds = exitIds - exitIdToRemove
+                                showRemoveExitDialog = false
+                                exitToRemove = null
+                            }
+                        ) {
+                            Text("Remove One Way")
+                        }
+                    }
+                }
+            )
+        }
 
         OutlinedTextField(
             value = features,
