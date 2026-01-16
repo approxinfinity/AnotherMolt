@@ -32,6 +32,7 @@ import coil3.compose.AsyncImage
 import coil3.compose.AsyncImagePainter
 import com.ez2bg.anotherthread.AppConfig
 import com.ez2bg.anotherthread.api.*
+import com.ez2bg.anotherthread.storage.AuthStorage
 import kotlinx.coroutines.launch
 import kotlin.math.PI
 import kotlin.math.cos
@@ -233,9 +234,15 @@ sealed class ViewState {
 
 @Composable
 fun AdminScreen() {
-    var selectedTab by remember { mutableStateOf(AdminTab.USER) }
-    var viewState by remember { mutableStateOf<ViewState>(ViewState.UserAuth) }
-    var currentUser by remember { mutableStateOf<UserDto?>(null) }
+    // Restore persisted auth state on startup
+    val savedUser = remember { AuthStorage.getUser() }
+    var selectedTab by remember { mutableStateOf(if (savedUser != null) AdminTab.LOCATION else AdminTab.USER) }
+    var viewState by remember {
+        mutableStateOf<ViewState>(
+            if (savedUser != null) ViewState.LocationGraph else ViewState.UserAuth
+        )
+    }
+    var currentUser by remember { mutableStateOf(savedUser) }
 
     Column(
         modifier = Modifier
@@ -271,6 +278,7 @@ fun AdminScreen() {
         when (val state = viewState) {
             is ViewState.UserAuth -> UserAuthView(
                 onAuthenticated = { user ->
+                    AuthStorage.saveUser(user)
                     currentUser = user
                     viewState = ViewState.UserProfile(user)
                 }
@@ -278,10 +286,12 @@ fun AdminScreen() {
             is ViewState.UserProfile -> UserProfileView(
                 user = state.user,
                 onUserUpdated = { user ->
+                    AuthStorage.saveUser(user)
                     currentUser = user
                     viewState = ViewState.UserProfile(user)
                 },
                 onLogout = {
+                    AuthStorage.clearUser()
                     currentUser = null
                     viewState = ViewState.UserAuth
                 },

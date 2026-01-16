@@ -60,6 +60,9 @@ kotlin {
             // Coil for async image loading
             implementation(libs.coil.compose)
             implementation(libs.coil.network.ktor3)
+            // Multiplatform settings for persistent storage
+            implementation(libs.multiplatformSettings)
+            implementation(libs.multiplatformSettingsNoArg)
         }
         androidMain.dependencies {
             implementation(compose.preview)
