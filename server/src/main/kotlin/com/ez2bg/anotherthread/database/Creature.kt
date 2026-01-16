@@ -14,7 +14,7 @@ data class Creature(
     val name: String,
     val desc: String,
     val itemIds: List<String>,
-    val features: List<String>,
+    val featureIds: List<String>,
     val imageUrl: String? = null
 )
 
@@ -38,7 +38,7 @@ object CreatureRepository {
         name = this[CreatureTable.name],
         desc = this[CreatureTable.desc],
         itemIds = jsonToList(this[CreatureTable.itemIds]),
-        features = jsonToList(this[CreatureTable.features]),
+        featureIds = jsonToList(this[CreatureTable.featureIds]),
         imageUrl = this[CreatureTable.imageUrl]
     )
 
@@ -48,7 +48,7 @@ object CreatureRepository {
             it[name] = creature.name
             it[desc] = creature.desc
             it[itemIds] = listToJson(creature.itemIds)
-            it[features] = listToJson(creature.features)
+            it[featureIds] = listToJson(creature.featureIds)
             it[imageUrl] = creature.imageUrl
         }
         creature
@@ -70,7 +70,7 @@ object CreatureRepository {
             it[name] = creature.name
             it[desc] = creature.desc
             it[itemIds] = listToJson(creature.itemIds)
-            it[features] = listToJson(creature.features)
+            it[featureIds] = listToJson(creature.featureIds)
             it[imageUrl] = creature.imageUrl
         } > 0
     }

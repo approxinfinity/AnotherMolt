@@ -36,7 +36,7 @@ class RepositoryTest {
             itemIds = listOf("item-1", "item-2"),
             creatureIds = listOf("creature-1"),
             exitIds = listOf("location-north", "location-south"),
-            features = listOf("torch", "cobwebs")
+            featureIds = listOf("torch", "cobwebs")
         )
 
         val created = LocationRepository.create(location)
@@ -50,7 +50,7 @@ class RepositoryTest {
         assertEquals(listOf("item-1", "item-2"), found.itemIds)
         assertEquals(listOf("creature-1"), found.creatureIds)
         assertEquals(listOf("location-north", "location-south"), found.exitIds)
-        assertEquals(listOf("torch", "cobwebs"), found.features)
+        assertEquals(listOf("torch", "cobwebs"), found.featureIds)
     }
 
     @Test
@@ -61,7 +61,7 @@ class RepositoryTest {
             itemIds = emptyList(),
             creatureIds = emptyList(),
             exitIds = emptyList(),
-            features = emptyList()
+            featureIds = emptyList()
         )
 
         LocationRepository.create(location)
@@ -71,7 +71,7 @@ class RepositoryTest {
         assertTrue(found.itemIds.isEmpty())
         assertTrue(found.creatureIds.isEmpty())
         assertTrue(found.exitIds.isEmpty())
-        assertTrue(found.features.isEmpty())
+        assertTrue(found.featureIds.isEmpty())
     }
 
     @Test
@@ -82,7 +82,7 @@ class RepositoryTest {
             itemIds = listOf("item-with-dash", "item_with_underscore"),
             creatureIds = emptyList(),
             exitIds = emptyList(),
-            features = listOf("feature with spaces", "another-feature")
+            featureIds = listOf("feature with spaces", "another-feature")
         )
 
         LocationRepository.create(location)
@@ -91,7 +91,7 @@ class RepositoryTest {
         assertNotNull(found)
         assertEquals("Location with \"quotes\"", found.name)
         assertEquals(listOf("item-with-dash", "item_with_underscore"), found.itemIds)
-        assertEquals(listOf("feature with spaces", "another-feature"), found.features)
+        assertEquals(listOf("feature with spaces", "another-feature"), found.featureIds)
     }
 
     @Test
@@ -102,7 +102,7 @@ class RepositoryTest {
             itemIds = listOf("item-1"),
             creatureIds = emptyList(),
             exitIds = emptyList(),
-            features = emptyList()
+            featureIds = emptyList()
         )
         LocationRepository.create(location)
 
@@ -129,7 +129,7 @@ class RepositoryTest {
             itemIds = emptyList(),
             creatureIds = emptyList(),
             exitIds = emptyList(),
-            features = emptyList()
+            featureIds = emptyList()
         )
         LocationRepository.create(location)
 
@@ -149,7 +149,7 @@ class RepositoryTest {
             itemIds = emptyList(),
             creatureIds = emptyList(),
             exitIds = emptyList(),
-            features = emptyList()
+            featureIds = emptyList()
         )
         val location2 = Location(
             name = "Location 2",
@@ -157,7 +157,7 @@ class RepositoryTest {
             itemIds = emptyList(),
             creatureIds = emptyList(),
             exitIds = emptyList(),
-            features = emptyList()
+            featureIds = emptyList()
         )
         LocationRepository.create(location1)
         LocationRepository.create(location2)
@@ -176,7 +176,7 @@ class RepositoryTest {
             name = "Goblin",
             desc = "A sneaky green creature",
             itemIds = listOf("dagger", "gold-coin"),
-            features = listOf("sneaky", "cowardly")
+            featureIds = listOf("sneaky", "cowardly")
         )
 
         CreatureRepository.create(creature)
@@ -186,7 +186,7 @@ class RepositoryTest {
         assertEquals("Goblin", found.name)
         assertEquals("A sneaky green creature", found.desc)
         assertEquals(listOf("dagger", "gold-coin"), found.itemIds)
-        assertEquals(listOf("sneaky", "cowardly"), found.features)
+        assertEquals(listOf("sneaky", "cowardly"), found.featureIds)
     }
 
     @Test
@@ -195,7 +195,7 @@ class RepositoryTest {
             name = "Orc",
             desc = "Big and mean",
             itemIds = listOf("club"),
-            features = listOf("strong")
+            featureIds = listOf("strong")
         )
         CreatureRepository.create(creature)
 
@@ -218,7 +218,7 @@ class RepositoryTest {
             name = "Dragon",
             desc = "Fire breathing",
             itemIds = emptyList(),
-            features = listOf("flying", "fire-breath")
+            featureIds = listOf("flying", "fire-breath")
         )
         CreatureRepository.create(creature)
 
@@ -311,7 +311,7 @@ class RepositoryTest {
             itemIds = emptyList(),
             creatureIds = emptyList(),
             exitIds = emptyList(),
-            features = emptyList()
+            featureIds = emptyList()
         )
         val success = LocationRepository.update(location)
         assertFalse(success)
@@ -326,7 +326,7 @@ class RepositoryTest {
             passwordHash = UserRepository.hashPassword("testpass"),
             desc = "A brave adventurer",
             itemIds = listOf("sword", "shield"),
-            features = listOf("strong", "brave")
+            featureIds = listOf("strong", "brave")
         )
 
         val created = UserRepository.create(user)
@@ -337,7 +337,7 @@ class RepositoryTest {
         assertEquals(user.name, found.name)
         assertEquals("A brave adventurer", found.desc)
         assertEquals(listOf("sword", "shield"), found.itemIds)
-        assertEquals(listOf("strong", "brave"), found.features)
+        assertEquals(listOf("strong", "brave"), found.featureIds)
     }
 
     @Test
@@ -373,7 +373,7 @@ class RepositoryTest {
         val updated = user.copy(
             desc = "Updated description",
             itemIds = listOf("new-item-1", "new-item-2"),
-            features = listOf("upgraded")
+            featureIds = listOf("upgraded")
         )
         val success = UserRepository.update(updated)
         assertTrue(success)
@@ -382,7 +382,7 @@ class RepositoryTest {
         assertNotNull(found)
         assertEquals("Updated description", found.desc)
         assertEquals(listOf("new-item-1", "new-item-2"), found.itemIds)
-        assertEquals(listOf("upgraded"), found.features)
+        assertEquals(listOf("upgraded"), found.featureIds)
     }
 
     @Test
@@ -470,7 +470,7 @@ class RepositoryTest {
             passwordHash = "secret_hash_should_not_appear",
             desc = "Test description",
             itemIds = listOf("item1"),
-            features = listOf("feature1")
+            featureIds = listOf("feature1")
         )
 
         val response = user.toResponse()
@@ -479,7 +479,7 @@ class RepositoryTest {
         assertEquals(user.name, response.name)
         assertEquals(user.desc, response.desc)
         assertEquals(user.itemIds, response.itemIds)
-        assertEquals(user.features, response.features)
+        assertEquals(user.featureIds, response.featureIds)
         // Response should NOT contain password hash (it's a UserResponse, not User)
     }
 
@@ -523,14 +523,14 @@ class RepositoryTest {
             name = "emptylistuser_${System.currentTimeMillis()}",
             passwordHash = UserRepository.hashPassword("pass"),
             itemIds = emptyList(),
-            features = emptyList()
+            featureIds = emptyList()
         )
         UserRepository.create(user)
 
         val found = UserRepository.findById(user.id)
         assertNotNull(found)
         assertTrue(found.itemIds.isEmpty())
-        assertTrue(found.features.isEmpty())
+        assertTrue(found.featureIds.isEmpty())
     }
 
     @Test

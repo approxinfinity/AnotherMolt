@@ -8,7 +8,7 @@ object UserTable : Table("user") {
     val passwordHash = text("password_hash")
     val desc = text("desc").default("")
     val itemIds = text("item_ids").default("[]")
-    val features = text("features").default("[]")
+    val featureIds = text("feature_ids").default("[]")
     val imageUrl = text("image_url").nullable()
     val currentLocationId = varchar("current_location_id", 36).nullable()
     val createdAt = long("created_at")

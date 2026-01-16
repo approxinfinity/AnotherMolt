@@ -19,7 +19,7 @@ data class LocationDto(
     val itemIds: List<String> = emptyList(),
     val creatureIds: List<String> = emptyList(),
     val exitIds: List<String> = emptyList(),
-    val features: List<String> = emptyList(),
+    val featureIds: List<String> = emptyList(),
     val imageUrl: String? = null
 )
 
@@ -29,7 +29,7 @@ data class CreatureDto(
     val name: String,
     val desc: String,
     val itemIds: List<String> = emptyList(),
-    val features: List<String> = emptyList(),
+    val featureIds: List<String> = emptyList(),
     val imageUrl: String? = null
 )
 
@@ -49,7 +49,7 @@ data class CreateLocationRequest(
     val itemIds: List<String> = emptyList(),
     val creatureIds: List<String> = emptyList(),
     val exitIds: List<String> = emptyList(),
-    val features: List<String> = emptyList()
+    val featureIds: List<String> = emptyList()
 )
 
 @Serializable
@@ -57,7 +57,7 @@ data class CreateCreatureRequest(
     val name: String,
     val desc: String,
     val itemIds: List<String> = emptyList(),
-    val features: List<String> = emptyList()
+    val featureIds: List<String> = emptyList()
 )
 
 @Serializable
@@ -73,7 +73,7 @@ data class UserDto(
     val name: String,
     val desc: String = "",
     val itemIds: List<String> = emptyList(),
-    val features: List<String> = emptyList(),
+    val featureIds: List<String> = emptyList(),
     val imageUrl: String? = null,
     val currentLocationId: String? = null,
     val createdAt: Long = 0,
@@ -96,7 +96,7 @@ data class LoginRequest(
 data class UpdateUserRequest(
     val desc: String = "",
     val itemIds: List<String> = emptyList(),
-    val features: List<String> = emptyList()
+    val featureIds: List<String> = emptyList()
 )
 
 @Serializable
@@ -245,6 +245,9 @@ object ApiClient {
         client.get("$baseUrl/users/at-location/$locationId").body()
     }
 
+    @Serializable
+    private data class ErrorResponse(val error: String)
+
     // Content generation methods
     suspend fun isContentGenerationAvailable(): Result<Boolean> = runCatching {
         val response: Map<String, Boolean> = client.get("$baseUrl/generate/status").body()
@@ -256,29 +259,47 @@ object ApiClient {
         existingName: String? = null,
         existingDesc: String? = null
     ): Result<GeneratedContentResponse> = runCatching {
-        client.post("$baseUrl/generate/location") {
+        val response = client.post("$baseUrl/generate/location") {
             contentType(ContentType.Application.Json)
             setBody(GenerateLocationContentRequest(exitIds, existingName, existingDesc))
-        }.body()
+        }
+        if (response.status.isSuccess()) {
+            response.body()
+        } else {
+            val errorBody: ErrorResponse = response.body()
+            throw Exception(errorBody.error)
+        }
     }
 
     suspend fun generateCreatureContent(
         existingName: String? = null,
         existingDesc: String? = null
     ): Result<GeneratedContentResponse> = runCatching {
-        client.post("$baseUrl/generate/creature") {
+        val response = client.post("$baseUrl/generate/creature") {
             contentType(ContentType.Application.Json)
             setBody(GenerateCreatureContentRequest(existingName, existingDesc))
-        }.body()
+        }
+        if (response.status.isSuccess()) {
+            response.body()
+        } else {
+            val errorBody: ErrorResponse = response.body()
+            throw Exception(errorBody.error)
+        }
     }
 
     suspend fun generateItemContent(
         existingName: String? = null,
         existingDesc: String? = null
     ): Result<GeneratedContentResponse> = runCatching {
-        client.post("$baseUrl/generate/item") {
+        val response = client.post("$baseUrl/generate/item") {
             contentType(ContentType.Application.Json)
             setBody(GenerateItemContentRequest(existingName, existingDesc))
-        }.body()
+        }
+        if (response.status.isSuccess()) {
+            response.body()
+        } else {
+            val errorBody: ErrorResponse = response.body()
+            throw Exception(errorBody.error)
+        }
     }
 }

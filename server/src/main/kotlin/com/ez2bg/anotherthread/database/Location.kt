@@ -16,7 +16,7 @@ data class Location(
     val itemIds: List<String>,
     val creatureIds: List<String>,
     val exitIds: List<String>,
-    val features: List<String>,
+    val featureIds: List<String>,
     val imageUrl: String? = null
 )
 
@@ -42,7 +42,7 @@ object LocationRepository {
         itemIds = jsonToList(this[LocationTable.itemIds]),
         creatureIds = jsonToList(this[LocationTable.creatureIds]),
         exitIds = jsonToList(this[LocationTable.exitIds]),
-        features = jsonToList(this[LocationTable.features]),
+        featureIds = jsonToList(this[LocationTable.featureIds]),
         imageUrl = this[LocationTable.imageUrl]
     )
 
@@ -54,7 +54,7 @@ object LocationRepository {
             it[itemIds] = listToJson(location.itemIds)
             it[creatureIds] = listToJson(location.creatureIds)
             it[exitIds] = listToJson(location.exitIds)
-            it[features] = listToJson(location.features)
+            it[featureIds] = listToJson(location.featureIds)
             it[imageUrl] = location.imageUrl
         }
         location
@@ -78,7 +78,7 @@ object LocationRepository {
             it[itemIds] = listToJson(location.itemIds)
             it[creatureIds] = listToJson(location.creatureIds)
             it[exitIds] = listToJson(location.exitIds)
-            it[features] = listToJson(location.features)
+            it[featureIds] = listToJson(location.featureIds)
             it[imageUrl] = location.imageUrl
         } > 0
     }

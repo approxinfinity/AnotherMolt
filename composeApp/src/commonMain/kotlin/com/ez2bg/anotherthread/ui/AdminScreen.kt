@@ -497,7 +497,7 @@ fun UserProfileView(
 ) {
     var isEditing by remember { mutableStateOf(false) }
     var desc by remember { mutableStateOf(user.desc) }
-    var features by remember { mutableStateOf(user.features.joinToString(", ")) }
+    var features by remember { mutableStateOf(user.featureIds.joinToString(", ")) }
     var itemIds by remember { mutableStateOf(user.itemIds) }
     var isLoading by remember { mutableStateOf(false) }
     var message by remember { mutableStateOf<String?>(null) }
@@ -574,7 +574,7 @@ fun UserProfileView(
                     onClick = {
                         isEditing = false
                         desc = user.desc
-                        features = user.features.joinToString(", ")
+                        features = user.featureIds.joinToString(", ")
                         itemIds = user.itemIds
                     },
                     modifier = Modifier.weight(1f)
@@ -590,7 +590,7 @@ fun UserProfileView(
                             val request = UpdateUserRequest(
                                 desc = desc,
                                 itemIds = itemIds,
-                                features = features.split(",").map { it.trim() }.filter { it.isNotEmpty() }
+                                featureIds = features.split(",").map { it.trim() }.filter { it.isNotEmpty() }
                             )
                             ApiClient.updateUser(user.id, request).onSuccess { updatedUser ->
                                 onUserUpdated(updatedUser)
@@ -635,9 +635,9 @@ fun UserProfileView(
                 )
             }
 
-            if (user.features.isNotEmpty()) {
+            if (user.featureIds.isNotEmpty()) {
                 Text(
-                    text = "Features: ${user.features.joinToString(", ")}",
+                    text = "Features: ${user.featureIds.joinToString(", ")}",
                     style = MaterialTheme.typography.bodySmall
                 )
             }
@@ -1132,7 +1132,7 @@ fun LocationForm(
     var itemIds by remember(editLocation?.id) { mutableStateOf(editLocation?.itemIds ?: emptyList()) }
     var creatureIds by remember(editLocation?.id) { mutableStateOf(editLocation?.creatureIds ?: emptyList()) }
     var exitIds by remember(editLocation?.id) { mutableStateOf(editLocation?.exitIds ?: emptyList()) }
-    var features by remember(editLocation?.id) { mutableStateOf(editLocation?.features?.joinToString(", ") ?: "") }
+    var features by remember(editLocation?.id) { mutableStateOf(editLocation?.featureIds?.joinToString(", ") ?: "") }
     var isLoading by remember(editLocation?.id) { mutableStateOf(false) }
     var message by remember(editLocation?.id) { mutableStateOf<String?>(null) }
     val scope = rememberCoroutineScope()
@@ -1336,7 +1336,7 @@ fun LocationForm(
                                     itemIds = otherLoc.itemIds,
                                     creatureIds = otherLoc.creatureIds,
                                     exitIds = updatedExits,
-                                    features = otherLoc.features
+                                    featureIds = otherLoc.featureIds
                                 )
                                 ApiClient.updateLocation(otherLoc.id, updateRequest)
                             }
@@ -1380,7 +1380,7 @@ fun LocationForm(
                                                 itemIds = otherLoc.itemIds,
                                                 creatureIds = otherLoc.creatureIds,
                                                 exitIds = updatedExits,
-                                                features = otherLoc.features
+                                                featureIds = otherLoc.featureIds
                                             )
                                             ApiClient.updateLocation(otherLoc.id, updateRequest)
                                         }
@@ -1438,7 +1438,7 @@ fun LocationForm(
                         itemIds = itemIds,
                         creatureIds = creatureIds,
                         exitIds = exitIds,
-                        features = features.splitToList()
+                        featureIds = features.splitToList()
                     )
                     val result = if (isEditMode) {
                         ApiClient.updateLocation(editLocation!!.id, request)
@@ -1487,7 +1487,7 @@ fun CreatureForm(
     var name by remember { mutableStateOf(editCreature?.name ?: "") }
     var desc by remember { mutableStateOf(editCreature?.desc ?: "") }
     var itemIds by remember { mutableStateOf(editCreature?.itemIds ?: emptyList()) }
-    var features by remember { mutableStateOf(editCreature?.features?.joinToString(", ") ?: "") }
+    var features by remember { mutableStateOf(editCreature?.featureIds?.joinToString(", ") ?: "") }
     var isLoading by remember { mutableStateOf(false) }
     var message by remember { mutableStateOf<String?>(null) }
     val scope = rememberCoroutineScope()
@@ -1587,7 +1587,7 @@ fun CreatureForm(
                             name = name,
                             desc = desc,
                             itemIds = itemIds,
-                            features = features.splitToList()
+                            featureIds = features.splitToList()
                         )
                     )
                     isLoading = false
@@ -1732,10 +1732,10 @@ fun CreatureDetailView(
                             )
                         }
 
-                        if (creature!!.features.isNotEmpty()) {
+                        if (creature!!.featureIds.isNotEmpty()) {
                             Spacer(modifier = Modifier.height(8.dp))
                             Text(
-                                text = "Features: ${creature!!.features.joinToString(", ")}",
+                                text = "Features: ${creature!!.featureIds.joinToString(", ")}",
                                 style = MaterialTheme.typography.bodySmall
                             )
                         }

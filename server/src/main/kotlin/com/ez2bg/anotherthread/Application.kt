@@ -22,7 +22,7 @@ data class CreateLocationRequest(
     val itemIds: List<String> = emptyList(),
     val creatureIds: List<String> = emptyList(),
     val exitIds: List<String> = emptyList(),
-    val features: List<String> = emptyList()
+    val featureIds: List<String> = emptyList()
 )
 
 @Serializable
@@ -30,7 +30,7 @@ data class CreateCreatureRequest(
     val name: String,
     val desc: String,
     val itemIds: List<String> = emptyList(),
-    val features: List<String> = emptyList()
+    val featureIds: List<String> = emptyList()
 )
 
 @Serializable
@@ -56,7 +56,7 @@ data class LoginRequest(
 data class UpdateUserRequest(
     val desc: String = "",
     val itemIds: List<String> = emptyList(),
-    val features: List<String> = emptyList()
+    val featureIds: List<String> = emptyList()
 )
 
 @Serializable
@@ -222,7 +222,7 @@ fun Application.module() {
                     itemIds = request.itemIds,
                     creatureIds = request.creatureIds,
                     exitIds = request.exitIds,
-                    features = request.features
+                    featureIds = request.featureIds
                 )
                 val createdLocation = LocationRepository.create(location)
 
@@ -260,7 +260,7 @@ fun Application.module() {
                     itemIds = request.itemIds,
                     creatureIds = request.creatureIds,
                     exitIds = request.exitIds,
-                    features = request.features,
+                    featureIds = request.featureIds,
                     imageUrl = existingLocation?.imageUrl // Preserve existing image
                 )
 
@@ -299,7 +299,7 @@ fun Application.module() {
                     name = request.name,
                     desc = request.desc,
                     itemIds = request.itemIds,
-                    features = request.features
+                    featureIds = request.featureIds
                 )
                 val createdCreature = CreatureRepository.create(creature)
 
@@ -334,7 +334,7 @@ fun Application.module() {
                     name = request.name,
                     desc = request.desc,
                     itemIds = request.itemIds,
-                    features = request.features,
+                    featureIds = request.featureIds,
                     imageUrl = existingCreature?.imageUrl
                 )
 
@@ -456,7 +456,7 @@ fun Application.module() {
                 val updatedUser = existingUser.copy(
                     desc = request.desc,
                     itemIds = request.itemIds,
-                    features = request.features,
+                    featureIds = request.featureIds,
                     lastActiveAt = System.currentTimeMillis()
                 )
 

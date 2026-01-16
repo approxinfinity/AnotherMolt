@@ -97,7 +97,7 @@ class ApplicationTest {
 
         val response = client.post("/locations") {
             contentType(ContentType.Application.Json)
-            setBody("""{"name":"Test Location","desc":"A test location description","itemIds":[],"creatureIds":[],"exitIds":[],"features":[]}""")
+            setBody("""{"name":"Test Location","desc":"A test location description","itemIds":[],"creatureIds":[],"exitIds":[],"featureIds":[]}""")
         }
         assertEquals(HttpStatusCode.Created, response.status)
 
@@ -119,7 +119,7 @@ class ApplicationTest {
 
         val response = client.post("/creatures") {
             contentType(ContentType.Application.Json)
-            setBody("""{"name":"Test Creature","desc":"A fearsome beast","itemIds":[],"features":["claws","fangs"]}""")
+            setBody("""{"name":"Test Creature","desc":"A fearsome beast","itemIds":[],"featureIds":["claws","fangs"]}""")
         }
         assertEquals(HttpStatusCode.Created, response.status)
 
@@ -163,7 +163,7 @@ class ApplicationTest {
 
         val response = client.put("/locations/nonexistent-id-12345") {
             contentType(ContentType.Application.Json)
-            setBody("""{"name":"Updated Location","desc":"Updated description","itemIds":[],"creatureIds":[],"exitIds":[],"features":[]}""")
+            setBody("""{"name":"Updated Location","desc":"Updated description","itemIds":[],"creatureIds":[],"exitIds":[],"featureIds":[]}""")
         }
         assertEquals(HttpStatusCode.NotFound, response.status)
     }
@@ -443,7 +443,7 @@ class ApplicationTest {
         // Update user
         val response = client.put("/users/$userId") {
             contentType(ContentType.Application.Json)
-            setBody("""{"desc":"A brave adventurer","itemIds":["sword","shield"],"features":["strong","brave"]}""")
+            setBody("""{"desc":"A brave adventurer","itemIds":["sword","shield"],"featureIds":["strong","brave"]}""")
         }
 
         assertEquals(HttpStatusCode.OK, response.status)
@@ -466,7 +466,7 @@ class ApplicationTest {
 
         val response = client.put("/users/nonexistent-user-id-12345") {
             contentType(ContentType.Application.Json)
-            setBody("""{"desc":"test","itemIds":[],"features":[]}""")
+            setBody("""{"desc":"test","itemIds":[],"featureIds":[]}""")
         }
 
         assertEquals(HttpStatusCode.NotFound, response.status)
@@ -536,7 +536,7 @@ class ApplicationTest {
 
         val response = client.put("/creatures/nonexistent-id-12345") {
             contentType(ContentType.Application.Json)
-            setBody("""{"name":"Ghost Creature","desc":"Doesn't exist","itemIds":[],"features":[]}""")
+            setBody("""{"name":"Ghost Creature","desc":"Doesn't exist","itemIds":[],"featureIds":[]}""")
         }
         assertEquals(HttpStatusCode.NotFound, response.status)
     }

@@ -7,7 +7,7 @@ object CreatureTable : Table("creature") {
     val name = text("name")
     val desc = text("desc")
     val itemIds = text("item_ids")
-    val features = text("features")
+    val featureIds = text("feature_ids")
     val imageUrl = text("image_url").nullable()
 
     override val primaryKey = PrimaryKey(id)

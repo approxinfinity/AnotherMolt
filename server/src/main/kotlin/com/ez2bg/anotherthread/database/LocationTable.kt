@@ -9,7 +9,7 @@ object LocationTable : Table("location") {
     val itemIds = text("item_ids")
     val creatureIds = text("creature_ids")
     val exitIds = text("exit_ids")
-    val features = text("features")
+    val featureIds = text("feature_ids")
     val imageUrl = text("image_url").nullable()
 
     override val primaryKey = PrimaryKey(id)

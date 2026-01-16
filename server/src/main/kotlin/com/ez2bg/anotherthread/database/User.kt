@@ -16,7 +16,7 @@ data class User(
     val passwordHash: String = "",
     val desc: String = "",
     val itemIds: List<String> = emptyList(),
-    val features: List<String> = emptyList(),
+    val featureIds: List<String> = emptyList(),
     val imageUrl: String? = null,
     val currentLocationId: String? = null,
     val createdAt: Long = System.currentTimeMillis(),
@@ -32,7 +32,7 @@ data class UserResponse(
     val name: String,
     val desc: String,
     val itemIds: List<String>,
-    val features: List<String>,
+    val featureIds: List<String>,
     val imageUrl: String?,
     val currentLocationId: String?,
     val createdAt: Long,
@@ -44,7 +44,7 @@ fun User.toResponse(): UserResponse = UserResponse(
     name = name,
     desc = desc,
     itemIds = itemIds,
-    features = features,
+    featureIds = featureIds,
     imageUrl = imageUrl,
     currentLocationId = currentLocationId,
     createdAt = createdAt,
@@ -72,7 +72,7 @@ object UserRepository {
         passwordHash = this[UserTable.passwordHash],
         desc = this[UserTable.desc],
         itemIds = jsonToList(this[UserTable.itemIds]),
-        features = jsonToList(this[UserTable.features]),
+        featureIds = jsonToList(this[UserTable.featureIds]),
         imageUrl = this[UserTable.imageUrl],
         currentLocationId = this[UserTable.currentLocationId],
         createdAt = this[UserTable.createdAt],
@@ -86,7 +86,7 @@ object UserRepository {
             it[passwordHash] = user.passwordHash
             it[desc] = user.desc
             it[itemIds] = listToJson(user.itemIds)
-            it[features] = listToJson(user.features)
+            it[featureIds] = listToJson(user.featureIds)
             it[imageUrl] = user.imageUrl
             it[currentLocationId] = user.currentLocationId
             it[createdAt] = user.createdAt
@@ -118,7 +118,7 @@ object UserRepository {
             it[name] = user.name
             it[desc] = user.desc
             it[itemIds] = listToJson(user.itemIds)
-            it[features] = listToJson(user.features)
+            it[featureIds] = listToJson(user.featureIds)
             it[imageUrl] = user.imageUrl
             it[currentLocationId] = user.currentLocationId
             it[lastActiveAt] = user.lastActiveAt
