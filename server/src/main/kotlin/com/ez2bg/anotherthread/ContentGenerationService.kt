@@ -4,6 +4,7 @@ import com.ez2bg.anotherthread.database.Location
 import com.ez2bg.anotherthread.database.LocationRepository
 import io.ktor.client.*
 import io.ktor.client.call.*
+import io.ktor.client.statement.*
 import io.ktor.client.engine.cio.*
 import io.ktor.client.plugins.contentnegotiation.*
 import io.ktor.client.request.*
@@ -181,10 +182,28 @@ Respond with valid JSON only in this exact format:
             format = "json"
         )
 
-        val response: OllamaResponse = client.post("$llmApiUrl/api/generate") {
+        // Ollama returns application/x-ndjson (newline-delimited JSON) - each line has a piece of the response
+        // We need to concatenate all the "response" fields together
+        val responseBody: String = client.post("$llmApiUrl/api/generate") {
             contentType(ContentType.Application.Json)
             setBody(request)
-        }.body()
+        }.bodyAsText()
+
+        // Parse NDJSON - concatenate all response fields from each line
+        val lines = responseBody.trim().split("\n")
+        val fullResponse = StringBuilder()
+        for (line in lines) {
+            if (line.isNotBlank()) {
+                try {
+                    val partialResponse: OllamaResponse = json.decodeFromString(line)
+                    fullResponse.append(partialResponse.response)
+                } catch (e: Exception) {
+                    // Skip malformed lines
+                }
+            }
+        }
+
+        val response = OllamaResponse(response = fullResponse.toString(), done = true)
 
         // Parse the JSON response from the LLM
         val responseText = response.response.trim()
