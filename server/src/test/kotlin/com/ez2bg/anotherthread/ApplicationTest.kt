@@ -1,5 +1,6 @@
 package com.ez2bg.anotherthread
 
+import com.ez2bg.anotherthread.database.DatabaseConfig
 import io.ktor.client.request.*
 import io.ktor.client.statement.*
 import io.ktor.http.*
@@ -7,9 +8,30 @@ import io.ktor.server.testing.*
 import io.ktor.client.plugins.contentnegotiation.*
 import io.ktor.serialization.kotlinx.json.*
 import kotlinx.serialization.json.Json
+import java.io.File
 import kotlin.test.*
 
 class ApplicationTest {
+
+    companion object {
+        private var initialized = false
+        private val testDbFile = File.createTempFile("app_test_db", ".db").also { it.deleteOnExit() }
+
+        init {
+            // Set test database path via system property before any tests run
+            System.setProperty("TEST_DB_PATH", testDbFile.absolutePath)
+        }
+    }
+
+    @BeforeTest
+    fun setup() {
+        // Initialize database once, clear before each test
+        if (!initialized) {
+            DatabaseConfig.init(testDbFile.absolutePath)
+            initialized = true
+        }
+        DatabaseConfig.clearAllTables()
+    }
 
     @Test
     fun testRoot() = testApplication {

@@ -118,8 +118,10 @@ fun Application.module() {
         allowMethod(HttpMethod.Put)
     }
 
-    // Initialize database
-    val dbPath = appConfig.propertyOrNull("database.path")?.getString() ?: "data/anotherthread.db"
+    // Initialize database (TEST_DB_PATH takes precedence for testing)
+    val dbPath = System.getProperty("TEST_DB_PATH")
+        ?: appConfig.propertyOrNull("database.path")?.getString()
+        ?: "data/anotherthread.db"
     DatabaseConfig.init(dbPath)
     log.info("Database initialized at $dbPath")
 

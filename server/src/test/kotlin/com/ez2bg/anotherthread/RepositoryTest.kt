@@ -17,11 +17,13 @@ class RepositoryTest {
 
     @BeforeTest
     fun setup() {
-        // Only initialize once - reuse the same database for all tests
+        // Initialize database once, then clear tables before each test
         if (!initialized) {
             DatabaseConfig.init(testDbFile.absolutePath)
             initialized = true
         }
+        // Clear all tables before each test for isolation
+        DatabaseConfig.clearAllTables()
     }
 
     // ========== Location Repository Tests ==========
