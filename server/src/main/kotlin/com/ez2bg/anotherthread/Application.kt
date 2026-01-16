@@ -41,6 +41,20 @@ data class CreateItemRequest(
 )
 
 @Serializable
+data class CreateFeatureCategoryRequest(
+    val name: String,
+    val description: String
+)
+
+@Serializable
+data class CreateFeatureRequest(
+    val name: String,
+    val featureCategoryId: String? = null,
+    val description: String,
+    val data: String = "{}"
+)
+
+@Serializable
 data class RegisterRequest(
     val name: String,
     val password: String
@@ -567,6 +581,92 @@ fun Application.module() {
                         }
                     }
                     call.respond(HttpStatusCode.OK, item)
+                } else {
+                    call.respond(HttpStatusCode.NotFound)
+                }
+            }
+        }
+
+        // Feature Category routes
+        route("/feature-categories") {
+            get {
+                call.respond(FeatureCategoryRepository.findAll())
+            }
+            get("/{id}") {
+                val id = call.parameters["id"] ?: return@get call.respond(HttpStatusCode.BadRequest)
+                val category = FeatureCategoryRepository.findById(id)
+                if (category != null) {
+                    call.respond(category)
+                } else {
+                    call.respond(HttpStatusCode.NotFound)
+                }
+            }
+            post {
+                val request = call.receive<CreateFeatureCategoryRequest>()
+                val category = FeatureCategory(
+                    name = request.name,
+                    description = request.description
+                )
+                val created = FeatureCategoryRepository.create(category)
+                call.respond(HttpStatusCode.Created, created)
+            }
+            put("/{id}") {
+                val id = call.parameters["id"] ?: return@put call.respond(HttpStatusCode.BadRequest)
+                val request = call.receive<CreateFeatureCategoryRequest>()
+                val category = FeatureCategory(
+                    id = id,
+                    name = request.name,
+                    description = request.description
+                )
+                if (FeatureCategoryRepository.update(category)) {
+                    call.respond(HttpStatusCode.OK, category)
+                } else {
+                    call.respond(HttpStatusCode.NotFound)
+                }
+            }
+        }
+
+        // Feature routes
+        route("/features") {
+            get {
+                call.respond(FeatureRepository.findAll())
+            }
+            get("/{id}") {
+                val id = call.parameters["id"] ?: return@get call.respond(HttpStatusCode.BadRequest)
+                val feature = FeatureRepository.findById(id)
+                if (feature != null) {
+                    call.respond(feature)
+                } else {
+                    call.respond(HttpStatusCode.NotFound)
+                }
+            }
+            get("/by-category/{categoryId}") {
+                val categoryId = call.parameters["categoryId"] ?: return@get call.respond(HttpStatusCode.BadRequest)
+                call.respond(FeatureRepository.findByCategoryId(categoryId))
+            }
+            post {
+                val request = call.receive<CreateFeatureRequest>()
+                val feature = Feature(
+                    name = request.name,
+                    featureCategoryId = request.featureCategoryId,
+                    description = request.description,
+                    data = request.data
+                )
+                val created = FeatureRepository.create(feature)
+                call.respond(HttpStatusCode.Created, created)
+            }
+            put("/{id}") {
+                val id = call.parameters["id"] ?: return@put call.respond(HttpStatusCode.BadRequest)
+                val request = call.receive<CreateFeatureRequest>()
+                val feature = Feature(
+                    id = id,
+                    name = request.name,
+                    featureCategoryId = request.featureCategoryId,
+                    description = request.description,
+                    data = request.data
+                )
+                if (FeatureRepository.update(feature)) {
+                    call.respond(HttpStatusCode.OK, feature)
                 } else {
                     call.respond(HttpStatusCode.NotFound)
                 }

@@ -17,7 +17,14 @@ object DatabaseConfig {
         )
 
         transaction {
-            SchemaUtils.createMissingTablesAndColumns(LocationTable, CreatureTable, ItemTable, UserTable)
+            SchemaUtils.createMissingTablesAndColumns(
+                LocationTable,
+                CreatureTable,
+                ItemTable,
+                UserTable,
+                FeatureCategoryTable,
+                FeatureTable
+            )
         }
     }
 
@@ -30,6 +37,8 @@ object DatabaseConfig {
             CreatureTable.deleteAll()
             ItemTable.deleteAll()
             LocationTable.deleteAll()
+            FeatureTable.deleteAll()
+            FeatureCategoryTable.deleteAll()
         }
     }
 }
