@@ -4,6 +4,8 @@ import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -12,34 +14,215 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.Image
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import kotlinx.coroutines.delay
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import coil3.compose.AsyncImage
+import coil3.compose.AsyncImagePainter
+import com.ez2bg.anotherthread.AppConfig
 import com.ez2bg.anotherthread.api.*
 import kotlinx.coroutines.launch
+import kotlin.math.PI
 import kotlin.math.cos
 import kotlin.math.sin
 
 enum class AdminTab(val title: String) {
-    ROOM("Room"),
-    MONSTER("Monster"),
+    USER("User"),
+    LOCATION("Location"),
+    CREATURE("Creature"),
     ITEM("Item")
 }
 
 enum class EntityType {
-    ROOM, CREATURE, ITEM
+    LOCATION, CREATURE, ITEM
+}
+
+data class IdOption(
+    val id: String,
+    val name: String
+)
+
+/**
+ * Displays an entity's generated image with loading/error states
+ */
+@Composable
+fun EntityImage(
+    imageUrl: String?,
+    contentDescription: String,
+    modifier: Modifier = Modifier
+) {
+    if (imageUrl != null) {
+        val fullUrl = "${AppConfig.api.baseUrl}$imageUrl"
+        var imageState by remember { mutableStateOf<AsyncImagePainter.State>(AsyncImagePainter.State.Empty) }
+
+        Box(
+            modifier = modifier
+                .fillMaxWidth()
+                .height(200.dp)
+                .clip(RoundedCornerShape(12.dp))
+                .background(MaterialTheme.colorScheme.surfaceVariant),
+            contentAlignment = Alignment.Center
+        ) {
+            AsyncImage(
+                model = fullUrl,
+                contentDescription = contentDescription,
+                modifier = Modifier.fillMaxSize(),
+                contentScale = ContentScale.Crop,
+                onState = { imageState = it }
+            )
+
+            when (imageState) {
+                is AsyncImagePainter.State.Loading -> {
+                    CircularProgressIndicator(
+                        modifier = Modifier.size(32.dp),
+                        strokeWidth = 2.dp
+                    )
+                }
+                is AsyncImagePainter.State.Error -> {
+                    Column(
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        verticalArrangement = Arrangement.Center
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Image,
+                            contentDescription = null,
+                            modifier = Modifier.size(48.dp),
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                        Text(
+                            text = "Image unavailable",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                }
+                else -> {}
+            }
+        }
+    } else {
+        // Placeholder when no image exists yet
+        Box(
+            modifier = modifier
+                .fillMaxWidth()
+                .height(120.dp)
+                .clip(RoundedCornerShape(12.dp))
+                .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)),
+            contentAlignment = Alignment.Center
+        ) {
+            Column(
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.Center
+            ) {
+                Icon(
+                    imageVector = Icons.Default.Image,
+                    contentDescription = null,
+                    modifier = Modifier.size(32.dp),
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f)
+                )
+                Text(
+                    text = "Image generating...",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f)
+                )
+            }
+        }
+    }
+}
+
+enum class GenEntityType {
+    LOCATION, CREATURE, ITEM
+}
+
+/**
+ * Button to generate name and description using LLM
+ */
+@Composable
+fun GenButton(
+    entityType: GenEntityType,
+    currentName: String,
+    currentDesc: String,
+    exitIds: List<String> = emptyList(),
+    onGenerated: (name: String, description: String) -> Unit,
+    modifier: Modifier = Modifier
+) {
+    var isGenerating by remember { mutableStateOf(false) }
+    var errorMessage by remember { mutableStateOf<String?>(null) }
+    val scope = rememberCoroutineScope()
+
+    Column(modifier = modifier) {
+        Button(
+            onClick = {
+                scope.launch {
+                    isGenerating = true
+                    errorMessage = null
+
+                    val result = when (entityType) {
+                        GenEntityType.LOCATION -> ApiClient.generateLocationContent(
+                            exitIds = exitIds,
+                            existingName = currentName.ifBlank { null },
+                            existingDesc = currentDesc.ifBlank { null }
+                        )
+                        GenEntityType.CREATURE -> ApiClient.generateCreatureContent(
+                            existingName = currentName.ifBlank { null },
+                            existingDesc = currentDesc.ifBlank { null }
+                        )
+                        GenEntityType.ITEM -> ApiClient.generateItemContent(
+                            existingName = currentName.ifBlank { null },
+                            existingDesc = currentDesc.ifBlank { null }
+                        )
+                    }
+
+                    isGenerating = false
+
+                    result.onSuccess { content ->
+                        onGenerated(content.name, content.description)
+                    }.onFailure { error ->
+                        errorMessage = error.message ?: "Failed to generate content"
+                    }
+                }
+            },
+            enabled = !isGenerating
+        ) {
+            if (isGenerating) {
+                CircularProgressIndicator(
+                    modifier = Modifier.size(16.dp),
+                    strokeWidth = 2.dp
+                )
+                Spacer(modifier = Modifier.width(8.dp))
+                Text("Generating...")
+            } else {
+                Text(if (currentDesc.isBlank()) "Gen" else "Regen")
+            }
+        }
+
+        errorMessage?.let {
+            Text(
+                text = it,
+                color = MaterialTheme.colorScheme.error,
+                style = MaterialTheme.typography.bodySmall,
+                modifier = Modifier.padding(top = 4.dp)
+            )
+        }
+    }
 }
 
 sealed class ViewState {
-    data object RoomGraph : ViewState()
-    data object RoomCreate : ViewState()
-    data class RoomEdit(val room: RoomDto) : ViewState()
+    data object UserAuth : ViewState()
+    data class UserProfile(val user: UserDto) : ViewState()
+    data object LocationGraph : ViewState()
+    data object LocationCreate : ViewState()
+    data class LocationEdit(val location: LocationDto) : ViewState()
     data object CreatureCreate : ViewState()
     data class CreatureEdit(val creature: CreatureDto) : ViewState()
     data class CreatureDetail(val id: String) : ViewState()
@@ -50,8 +233,9 @@ sealed class ViewState {
 
 @Composable
 fun AdminScreen() {
-    var selectedTab by remember { mutableStateOf(AdminTab.ROOM) }
-    var viewState by remember { mutableStateOf<ViewState>(ViewState.RoomGraph) }
+    var selectedTab by remember { mutableStateOf(AdminTab.USER) }
+    var viewState by remember { mutableStateOf<ViewState>(ViewState.UserAuth) }
+    var currentUser by remember { mutableStateOf<UserDto?>(null) }
 
     Column(
         modifier = Modifier
@@ -71,8 +255,9 @@ fun AdminScreen() {
                     onClick = {
                         selectedTab = tab
                         viewState = when (tab) {
-                            AdminTab.ROOM -> ViewState.RoomGraph
-                            AdminTab.MONSTER -> ViewState.CreatureCreate
+                            AdminTab.USER -> if (currentUser != null) ViewState.UserProfile(currentUser!!) else ViewState.UserAuth
+                            AdminTab.LOCATION -> ViewState.LocationGraph
+                            AdminTab.CREATURE -> ViewState.CreatureCreate
                             AdminTab.ITEM -> ViewState.ItemCreate
                         }
                     },
@@ -84,25 +269,45 @@ fun AdminScreen() {
         Spacer(modifier = Modifier.height(16.dp))
 
         when (val state = viewState) {
-            is ViewState.RoomGraph -> RoomGraphView(
-                onAddClick = { viewState = ViewState.RoomCreate },
-                onRoomClick = { room -> viewState = ViewState.RoomEdit(room) }
+            is ViewState.UserAuth -> UserAuthView(
+                onAuthenticated = { user ->
+                    currentUser = user
+                    viewState = ViewState.UserProfile(user)
+                }
             )
-            is ViewState.RoomCreate -> RoomForm(
-                editRoom = null,
-                onBack = { viewState = ViewState.RoomGraph },
-                onSaved = { viewState = ViewState.RoomGraph },
+            is ViewState.UserProfile -> UserProfileView(
+                user = state.user,
+                onUserUpdated = { user ->
+                    currentUser = user
+                    viewState = ViewState.UserProfile(user)
+                },
+                onLogout = {
+                    currentUser = null
+                    viewState = ViewState.UserAuth
+                },
+                onNavigateToItem = { id -> viewState = ViewState.ItemDetail(id) }
+            )
+            is ViewState.LocationGraph -> LocationGraphView(
+                onAddClick = { viewState = ViewState.LocationCreate },
+                onLocationClick = { location -> viewState = ViewState.LocationEdit(location) }
+            )
+            is ViewState.LocationCreate -> LocationForm(
+                editLocation = null,
+                onBack = { viewState = ViewState.LocationGraph },
+                onSaved = { viewState = ViewState.LocationGraph },
                 onNavigateToItem = { id -> viewState = ViewState.ItemDetail(id) },
                 onNavigateToCreature = { id -> viewState = ViewState.CreatureDetail(id) },
-                onNavigateToRoom = { room -> viewState = ViewState.RoomEdit(room) }
+                onNavigateToLocation = { location -> viewState = ViewState.LocationEdit(location) },
+                currentUser = currentUser
             )
-            is ViewState.RoomEdit -> RoomForm(
-                editRoom = state.room,
-                onBack = { viewState = ViewState.RoomGraph },
-                onSaved = { viewState = ViewState.RoomGraph },
+            is ViewState.LocationEdit -> LocationForm(
+                editLocation = state.location,
+                onBack = { viewState = ViewState.LocationGraph },
+                onSaved = { viewState = ViewState.LocationGraph },
                 onNavigateToItem = { id -> viewState = ViewState.ItemDetail(id) },
                 onNavigateToCreature = { id -> viewState = ViewState.CreatureDetail(id) },
-                onNavigateToRoom = { room -> viewState = ViewState.RoomEdit(room) }
+                onNavigateToLocation = { location -> viewState = ViewState.LocationEdit(location) },
+                currentUser = currentUser
             )
             is ViewState.CreatureCreate -> CreatureForm(
                 editCreature = null,
@@ -118,7 +323,7 @@ fun AdminScreen() {
             )
             is ViewState.CreatureDetail -> CreatureDetailView(
                 creatureId = state.id,
-                onBack = { viewState = ViewState.RoomGraph },
+                onBack = { viewState = ViewState.LocationGraph },
                 onEdit = { creature -> viewState = ViewState.CreatureEdit(creature) },
                 onCreateNew = { viewState = ViewState.CreatureCreate },
                 onNavigateToItem = { id -> viewState = ViewState.ItemDetail(id) }
@@ -135,9 +340,311 @@ fun AdminScreen() {
             )
             is ViewState.ItemDetail -> ItemDetailView(
                 itemId = state.id,
-                onBack = { viewState = ViewState.RoomGraph },
+                onBack = { viewState = ViewState.LocationGraph },
                 onEdit = { item -> viewState = ViewState.ItemEdit(item) },
                 onCreateNew = { viewState = ViewState.ItemCreate }
+            )
+        }
+    }
+}
+
+@Composable
+fun UserAuthView(
+    onAuthenticated: (UserDto) -> Unit
+) {
+    var isLoginMode by remember { mutableStateOf(true) }
+    var name by remember { mutableStateOf("") }
+    var password by remember { mutableStateOf("") }
+    var confirmPassword by remember { mutableStateOf("") }
+    var isLoading by remember { mutableStateOf(false) }
+    var errorMessage by remember { mutableStateOf<String?>(null) }
+    val scope = rememberCoroutineScope()
+
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .verticalScroll(rememberScrollState()),
+        verticalArrangement = Arrangement.spacedBy(16.dp),
+        horizontalAlignment = Alignment.CenterHorizontally
+    ) {
+        Text(
+            text = if (isLoginMode) "Login" else "Register",
+            style = MaterialTheme.typography.headlineMedium
+        )
+
+        OutlinedTextField(
+            value = name,
+            onValueChange = { name = it; errorMessage = null },
+            label = { Text("Username") },
+            modifier = Modifier.fillMaxWidth(),
+            singleLine = true
+        )
+
+        OutlinedTextField(
+            value = password,
+            onValueChange = { password = it; errorMessage = null },
+            label = { Text("Password") },
+            modifier = Modifier.fillMaxWidth(),
+            singleLine = true,
+            visualTransformation = PasswordVisualTransformation()
+        )
+
+        if (!isLoginMode) {
+            OutlinedTextField(
+                value = confirmPassword,
+                onValueChange = { confirmPassword = it; errorMessage = null },
+                label = { Text("Confirm Password") },
+                modifier = Modifier.fillMaxWidth(),
+                singleLine = true,
+                visualTransformation = PasswordVisualTransformation()
+            )
+        }
+
+        errorMessage?.let {
+            Text(
+                text = it,
+                color = MaterialTheme.colorScheme.error,
+                style = MaterialTheme.typography.bodySmall
+            )
+        }
+
+        Button(
+            onClick = {
+                scope.launch {
+                    if (!isLoginMode && password != confirmPassword) {
+                        errorMessage = "Passwords do not match"
+                        return@launch
+                    }
+
+                    isLoading = true
+                    errorMessage = null
+
+                    val result = if (isLoginMode) {
+                        ApiClient.login(name, password)
+                    } else {
+                        ApiClient.register(name, password)
+                    }
+
+                    isLoading = false
+
+                    result.onSuccess { response ->
+                        if (response.success && response.user != null) {
+                            onAuthenticated(response.user)
+                        } else {
+                            errorMessage = response.message
+                        }
+                    }.onFailure { error ->
+                        errorMessage = error.message ?: "An error occurred"
+                    }
+                }
+            },
+            enabled = !isLoading && name.isNotBlank() && password.isNotBlank() &&
+                    (isLoginMode || confirmPassword.isNotBlank()),
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            if (isLoading) {
+                CircularProgressIndicator(
+                    modifier = Modifier.size(16.dp),
+                    strokeWidth = 2.dp
+                )
+            } else {
+                Text(if (isLoginMode) "Login" else "Register")
+            }
+        }
+
+        TextButton(
+            onClick = {
+                isLoginMode = !isLoginMode
+                errorMessage = null
+            }
+        ) {
+            Text(
+                if (isLoginMode) "Don't have an account? Register"
+                else "Already have an account? Login"
+            )
+        }
+    }
+}
+
+@Composable
+fun UserProfileView(
+    user: UserDto,
+    onUserUpdated: (UserDto) -> Unit,
+    onLogout: () -> Unit,
+    onNavigateToItem: (String) -> Unit
+) {
+    var isEditing by remember { mutableStateOf(false) }
+    var desc by remember { mutableStateOf(user.desc) }
+    var features by remember { mutableStateOf(user.features.joinToString(", ")) }
+    var itemIds by remember { mutableStateOf(user.itemIds) }
+    var isLoading by remember { mutableStateOf(false) }
+    var message by remember { mutableStateOf<String?>(null) }
+    val scope = rememberCoroutineScope()
+
+    // Available options for dropdown
+    var availableItems by remember { mutableStateOf<List<IdOption>>(emptyList()) }
+
+    // Fetch available items on mount
+    LaunchedEffect(Unit) {
+        ApiClient.getItems().onSuccess { items ->
+            availableItems = items.map { IdOption(it.id, it.name) }
+        }
+    }
+
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .verticalScroll(rememberScrollState()),
+        verticalArrangement = Arrangement.spacedBy(16.dp)
+    ) {
+        // Display image at top
+        EntityImage(
+            imageUrl = user.imageUrl,
+            contentDescription = "Image of ${user.name}"
+        )
+
+        Card(modifier = Modifier.fillMaxWidth()) {
+            Column(modifier = Modifier.padding(16.dp)) {
+                Text(
+                    text = user.name,
+                    style = MaterialTheme.typography.headlineSmall
+                )
+                Text(
+                    text = "ID: ${user.id}",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+        }
+
+        if (isEditing) {
+            OutlinedTextField(
+                value = desc,
+                onValueChange = { desc = it },
+                label = { Text("Description") },
+                modifier = Modifier.fillMaxWidth(),
+                minLines = 3
+            )
+
+            IdPillSection(
+                label = "Items",
+                ids = itemIds,
+                entityType = EntityType.ITEM,
+                availableOptions = availableItems,
+                onPillClick = onNavigateToItem,
+                onAddId = { id -> itemIds = itemIds + id },
+                onRemoveId = { id -> itemIds = itemIds - id }
+            )
+
+            OutlinedTextField(
+                value = features,
+                onValueChange = { features = it },
+                label = { Text("Features (comma-separated)") },
+                modifier = Modifier.fillMaxWidth(),
+                singleLine = true
+            )
+
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                OutlinedButton(
+                    onClick = {
+                        isEditing = false
+                        desc = user.desc
+                        features = user.features.joinToString(", ")
+                        itemIds = user.itemIds
+                    },
+                    modifier = Modifier.weight(1f)
+                ) {
+                    Text("Cancel")
+                }
+
+                Button(
+                    onClick = {
+                        scope.launch {
+                            isLoading = true
+                            message = null
+                            val request = UpdateUserRequest(
+                                desc = desc,
+                                itemIds = itemIds,
+                                features = features.split(",").map { it.trim() }.filter { it.isNotEmpty() }
+                            )
+                            ApiClient.updateUser(user.id, request).onSuccess { updatedUser ->
+                                onUserUpdated(updatedUser)
+                                isEditing = false
+                                message = "Profile updated successfully!"
+                            }.onFailure { error ->
+                                message = "Error: ${error.message}"
+                            }
+                            isLoading = false
+                        }
+                    },
+                    enabled = !isLoading,
+                    modifier = Modifier.weight(1f)
+                ) {
+                    if (isLoading) {
+                        CircularProgressIndicator(
+                            modifier = Modifier.size(16.dp),
+                            strokeWidth = 2.dp
+                        )
+                    } else {
+                        Text("Save")
+                    }
+                }
+            }
+        } else {
+            if (user.desc.isNotBlank()) {
+                Text(
+                    text = user.desc,
+                    style = MaterialTheme.typography.bodyMedium
+                )
+            }
+
+            if (user.itemIds.isNotEmpty()) {
+                IdPillSection(
+                    label = "Items",
+                    ids = user.itemIds,
+                    entityType = EntityType.ITEM,
+                    availableOptions = availableItems,
+                    onPillClick = onNavigateToItem,
+                    onAddId = {},
+                    onRemoveId = {}
+                )
+            }
+
+            if (user.features.isNotEmpty()) {
+                Text(
+                    text = "Features: ${user.features.joinToString(", ")}",
+                    style = MaterialTheme.typography.bodySmall
+                )
+            }
+
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                Button(
+                    onClick = { isEditing = true },
+                    modifier = Modifier.weight(1f)
+                ) {
+                    Text("Edit Profile")
+                }
+
+                OutlinedButton(
+                    onClick = onLogout,
+                    modifier = Modifier.weight(1f)
+                ) {
+                    Text("Logout")
+                }
+            }
+        }
+
+        message?.let {
+            Text(
+                text = it,
+                color = if (it.startsWith("Error")) MaterialTheme.colorScheme.error
+                else MaterialTheme.colorScheme.primary
             )
         }
     }
@@ -153,9 +660,7 @@ fun IdPill(
     onRemove: (() -> Unit)? = null
 ) {
     Surface(
-        modifier = Modifier
-            .clickable(onClick = onClick)
-            .padding(2.dp),
+        modifier = Modifier.padding(2.dp),
         shape = RoundedCornerShape(16.dp),
         color = color
     ) {
@@ -169,7 +674,8 @@ fun IdPill(
                 style = MaterialTheme.typography.labelMedium,
                 color = textColor,
                 maxLines = 1,
-                overflow = TextOverflow.Ellipsis
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.clickable(onClick = onClick)
             )
             if (onRemove != null) {
                 Icon(
@@ -191,6 +697,7 @@ fun IdPillSection(
     label: String,
     ids: List<String>,
     entityType: EntityType,
+    availableOptions: List<IdOption> = emptyList(),
     onPillClick: (String) -> Unit,
     onAddId: (String) -> Unit,
     onRemoveId: (String) -> Unit,
@@ -200,15 +707,18 @@ fun IdPillSection(
     var newId by remember { mutableStateOf("") }
 
     val pillColor = when (entityType) {
-        EntityType.ROOM -> MaterialTheme.colorScheme.primaryContainer
+        EntityType.LOCATION -> MaterialTheme.colorScheme.primaryContainer
         EntityType.CREATURE -> MaterialTheme.colorScheme.tertiaryContainer
         EntityType.ITEM -> MaterialTheme.colorScheme.secondaryContainer
     }
     val pillTextColor = when (entityType) {
-        EntityType.ROOM -> MaterialTheme.colorScheme.onPrimaryContainer
+        EntityType.LOCATION -> MaterialTheme.colorScheme.onPrimaryContainer
         EntityType.CREATURE -> MaterialTheme.colorScheme.onTertiaryContainer
         EntityType.ITEM -> MaterialTheme.colorScheme.onSecondaryContainer
     }
+
+    // Create a map of id -> name for quick lookup
+    val idToNameMap = remember(availableOptions) { availableOptions.associate { it.id to it.name } }
 
     Column(modifier = modifier.fillMaxWidth()) {
         Text(
@@ -225,6 +735,7 @@ fun IdPillSection(
             ids.forEach { id ->
                 IdPill(
                     id = id,
+                    label = idToNameMap[id],
                     color = pillColor,
                     textColor = pillTextColor,
                     onClick = { onPillClick(id) },
@@ -261,17 +772,80 @@ fun IdPillSection(
     }
 
     if (showAddDialog) {
+        // Filter out already selected IDs from available options
+        val unselectedOptions = availableOptions.filter { it.id !in ids }
+
         AlertDialog(
             onDismissRequest = { showAddDialog = false; newId = "" },
-            title = { Text("Add ${entityType.name.lowercase().replaceFirstChar { it.uppercase() }} ID") },
+            title = { Text("Add ${entityType.name.lowercase().replaceFirstChar { it.uppercase() }}") },
             text = {
-                OutlinedTextField(
-                    value = newId,
-                    onValueChange = { newId = it },
-                    label = { Text("ID") },
-                    singleLine = true,
-                    modifier = Modifier.fillMaxWidth()
-                )
+                Column(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalArrangement = Arrangement.spacedBy(12.dp)
+                ) {
+                    // Show list of available options if there are any
+                    if (unselectedOptions.isNotEmpty()) {
+                        Text(
+                            text = "Select from existing:",
+                            style = MaterialTheme.typography.labelMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                        LazyColumn(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .heightIn(max = 200.dp),
+                            verticalArrangement = Arrangement.spacedBy(4.dp)
+                        ) {
+                            items(unselectedOptions) { option ->
+                                Surface(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .clickable {
+                                            onAddId(option.id)
+                                            showAddDialog = false
+                                            newId = ""
+                                        },
+                                    shape = RoundedCornerShape(8.dp),
+                                    color = MaterialTheme.colorScheme.surfaceVariant
+                                ) {
+                                    Column(
+                                        modifier = Modifier.padding(12.dp)
+                                    ) {
+                                        Text(
+                                            text = option.name.ifBlank { "(No name)" },
+                                            style = MaterialTheme.typography.bodyLarge,
+                                            maxLines = 1,
+                                            overflow = TextOverflow.Ellipsis
+                                        )
+                                        Text(
+                                            text = option.id,
+                                            style = MaterialTheme.typography.bodySmall,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                            maxLines = 1,
+                                            overflow = TextOverflow.Ellipsis
+                                        )
+                                    }
+                                }
+                            }
+                        }
+
+                        HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp))
+                    }
+
+                    // Free-form text field for manual entry
+                    Text(
+                        text = "Or enter ID manually:",
+                        style = MaterialTheme.typography.labelMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    OutlinedTextField(
+                        value = newId,
+                        onValueChange = { newId = it },
+                        label = { Text("ID") },
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                }
             },
             confirmButton = {
                 TextButton(
@@ -281,9 +855,10 @@ fun IdPillSection(
                             newId = ""
                             showAddDialog = false
                         }
-                    }
+                    },
+                    enabled = newId.isNotBlank()
                 ) {
-                    Text("Add")
+                    Text("Add Manual ID")
                 }
             },
             dismissButton = {
@@ -296,11 +871,11 @@ fun IdPillSection(
 }
 
 @Composable
-fun RoomGraphView(
+fun LocationGraphView(
     onAddClick: () -> Unit,
-    onRoomClick: (RoomDto) -> Unit
+    onLocationClick: (LocationDto) -> Unit
 ) {
-    var rooms by remember { mutableStateOf<List<RoomDto>>(emptyList()) }
+    var locations by remember { mutableStateOf<List<LocationDto>>(emptyList()) }
     var isLoading by remember { mutableStateOf(true) }
     var error by remember { mutableStateOf<String?>(null) }
     val scope = rememberCoroutineScope()
@@ -308,9 +883,9 @@ fun RoomGraphView(
     LaunchedEffect(Unit) {
         scope.launch {
             isLoading = true
-            val result = ApiClient.getRooms()
+            val result = ApiClient.getLocations()
             isLoading = false
-            result.onSuccess { rooms = it }
+            result.onSuccess { locations = it }
                 .onFailure { error = it.message }
         }
     }
@@ -336,9 +911,9 @@ fun RoomGraphView(
                         scope.launch {
                             isLoading = true
                             error = null
-                            val result = ApiClient.getRooms()
+                            val result = ApiClient.getLocations()
                             isLoading = false
-                            result.onSuccess { rooms = it }
+                            result.onSuccess { locations = it }
                                 .onFailure { error = it.message }
                         }
                     }) {
@@ -346,18 +921,18 @@ fun RoomGraphView(
                     }
                 }
             }
-            rooms.isEmpty() -> {
+            locations.isEmpty() -> {
                 Text(
-                    text = "No rooms yet. Tap + to create one.",
+                    text = "No locations yet. Tap + to create one.",
                     modifier = Modifier.align(Alignment.Center),
                     style = MaterialTheme.typography.bodyLarge,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
             }
             else -> {
-                RoomGraph(
-                    rooms = rooms,
-                    onRoomClick = onRoomClick,
+                LocationGraph(
+                    locations = locations,
+                    onLocationClick = onLocationClick,
                     modifier = Modifier.fillMaxSize()
                 )
             }
@@ -370,21 +945,21 @@ fun RoomGraphView(
                 .padding(16.dp),
             shape = CircleShape
         ) {
-            Icon(Icons.Filled.Add, contentDescription = "Add Room")
+            Icon(Icons.Filled.Add, contentDescription = "Add Location")
         }
     }
 }
 
-data class RoomPosition(val room: RoomDto, val x: Float, val y: Float)
+data class LocationPosition(val location: LocationDto, val x: Float, val y: Float)
 
 @Composable
-fun RoomGraph(
-    rooms: List<RoomDto>,
-    onRoomClick: (RoomDto) -> Unit,
+fun LocationGraph(
+    locations: List<LocationDto>,
+    onLocationClick: (LocationDto) -> Unit,
     modifier: Modifier = Modifier
 ) {
-    val roomPositions = remember(rooms) {
-        calculateRoomPositions(rooms)
+    val locationPositions = remember(locations) {
+        calculateLocationPositions(locations)
     }
 
     BoxWithConstraints(modifier = modifier) {
@@ -395,10 +970,10 @@ fun RoomGraph(
 
         // Draw connection lines
         Canvas(modifier = Modifier.fillMaxSize()) {
-            rooms.forEach { room ->
-                val fromPos = roomPositions[room.id] ?: return@forEach
-                room.exitIds.forEach { exitId ->
-                    val toPos = roomPositions[exitId]
+            locations.forEach { location ->
+                val fromPos = locationPositions[location.id] ?: return@forEach
+                location.exitIds.forEach { exitId ->
+                    val toPos = locationPositions[exitId]
                     if (toPos != null) {
                         drawLine(
                             color = Color.Gray,
@@ -417,9 +992,9 @@ fun RoomGraph(
             }
         }
 
-        // Draw room boxes
-        rooms.forEach { room ->
-            val pos = roomPositions[room.id] ?: return@forEach
+        // Draw location boxes
+        locations.forEach { location ->
+            val pos = locationPositions[location.id] ?: return@forEach
             Box(
                 modifier = Modifier
                     .offset(
@@ -431,12 +1006,12 @@ fun RoomGraph(
                         MaterialTheme.colorScheme.primaryContainer,
                         RoundedCornerShape(8.dp)
                     )
-                    .clickable { onRoomClick(room) }
+                    .clickable { onLocationClick(location) }
                     .padding(8.dp),
                 contentAlignment = Alignment.Center
             ) {
                 Text(
-                    text = room.name.ifBlank { room.id.take(8) },
+                    text = location.name.ifBlank { location.id.take(8) },
                     style = MaterialTheme.typography.bodySmall,
                     textAlign = TextAlign.Center,
                     maxLines = 2,
@@ -448,21 +1023,21 @@ fun RoomGraph(
     }
 }
 
-private fun calculateRoomPositions(rooms: List<RoomDto>): Map<String, RoomPosition> {
-    if (rooms.isEmpty()) return emptyMap()
+private fun calculateLocationPositions(locations: List<LocationDto>): Map<String, LocationPosition> {
+    if (locations.isEmpty()) return emptyMap()
 
-    val positions = mutableMapOf<String, RoomPosition>()
-    val count = rooms.size
+    val positions = mutableMapOf<String, LocationPosition>()
+    val count = locations.size
 
     if (count == 1) {
-        positions[rooms[0].id] = RoomPosition(rooms[0], 0.5f, 0.5f)
+        positions[locations[0].id] = LocationPosition(locations[0], 0.5f, 0.5f)
     } else {
-        rooms.forEachIndexed { index, room ->
-            val angle = (2 * Math.PI * index / count) - Math.PI / 2
+        locations.forEachIndexed { index, location ->
+            val angle = (2 * PI * index / count) - PI / 2
             val radius = 0.35f
             val x = 0.5f + (radius * cos(angle)).toFloat()
             val y = 0.5f + (radius * sin(angle)).toFloat()
-            positions[room.id] = RoomPosition(room, x, y)
+            positions[location.id] = LocationPosition(location, x, y)
         }
     }
 
@@ -470,24 +1045,70 @@ private fun calculateRoomPositions(rooms: List<RoomDto>): Map<String, RoomPositi
 }
 
 @Composable
-fun RoomForm(
-    editRoom: RoomDto?,
+fun LocationForm(
+    editLocation: LocationDto?,
     onBack: () -> Unit,
     onSaved: () -> Unit,
     onNavigateToItem: (String) -> Unit,
     onNavigateToCreature: (String) -> Unit,
-    onNavigateToRoom: (RoomDto) -> Unit
+    onNavigateToLocation: (LocationDto) -> Unit,
+    currentUser: UserDto? = null
 ) {
-    val isEditMode = editRoom != null
-    var name by remember { mutableStateOf(editRoom?.name ?: "") }
-    var desc by remember { mutableStateOf(editRoom?.desc ?: "") }
-    var itemIds by remember { mutableStateOf(editRoom?.itemIds ?: emptyList()) }
-    var creatureIds by remember { mutableStateOf(editRoom?.creatureIds ?: emptyList()) }
-    var exitIds by remember { mutableStateOf(editRoom?.exitIds ?: emptyList()) }
-    var features by remember { mutableStateOf(editRoom?.features?.joinToString(", ") ?: "") }
-    var isLoading by remember { mutableStateOf(false) }
-    var message by remember { mutableStateOf<String?>(null) }
+    val isEditMode = editLocation != null
+    var name by remember(editLocation?.id) { mutableStateOf(editLocation?.name ?: "") }
+    var desc by remember(editLocation?.id) { mutableStateOf(editLocation?.desc ?: "") }
+    var itemIds by remember(editLocation?.id) { mutableStateOf(editLocation?.itemIds ?: emptyList()) }
+    var creatureIds by remember(editLocation?.id) { mutableStateOf(editLocation?.creatureIds ?: emptyList()) }
+    var exitIds by remember(editLocation?.id) { mutableStateOf(editLocation?.exitIds ?: emptyList()) }
+    var features by remember(editLocation?.id) { mutableStateOf(editLocation?.features?.joinToString(", ") ?: "") }
+    var isLoading by remember(editLocation?.id) { mutableStateOf(false) }
+    var message by remember(editLocation?.id) { mutableStateOf<String?>(null) }
     val scope = rememberCoroutineScope()
+
+    // Available options for dropdowns
+    var availableItems by remember { mutableStateOf<List<IdOption>>(emptyList()) }
+    var availableCreatures by remember { mutableStateOf<List<IdOption>>(emptyList()) }
+    var availableLocations by remember { mutableStateOf<List<IdOption>>(emptyList()) }
+    var activeUsersAtLocation by remember(editLocation?.id) { mutableStateOf<List<UserDto>>(emptyList()) }
+
+    // Fetch available options on mount and when location changes
+    LaunchedEffect(editLocation?.id) {
+        ApiClient.getItems().onSuccess { items ->
+            availableItems = items.map { IdOption(it.id, it.name) }
+        }
+        ApiClient.getCreatures().onSuccess { creatures ->
+            availableCreatures = creatures.map { IdOption(it.id, it.name) }
+        }
+        ApiClient.getLocations().onSuccess { locs ->
+            availableLocations = locs
+                .filter { it.id != editLocation?.id } // Don't show current location as exit option
+                .map { IdOption(it.id, it.name) }
+        }
+    }
+
+    // Update user's current location and fetch active users when authenticated and viewing a location
+    LaunchedEffect(editLocation?.id, currentUser?.id) {
+        if (currentUser != null && editLocation != null) {
+            // Update user's current location
+            ApiClient.updateUserLocation(currentUser.id, editLocation.id)
+            // Fetch active users at this location
+            ApiClient.getActiveUsersAtLocation(editLocation.id).onSuccess { users ->
+                // Filter out the current user from the list
+                activeUsersAtLocation = users.filter { it.id != currentUser.id }
+            }
+        }
+    }
+
+    // Clear user's location when leaving this view
+    DisposableEffect(editLocation?.id, currentUser?.id) {
+        onDispose {
+            if (currentUser != null) {
+                scope.launch {
+                    ApiClient.updateUserLocation(currentUser.id, null)
+                }
+            }
+        }
+    }
 
     Column(
         modifier = Modifier
@@ -503,26 +1124,48 @@ fun RoomForm(
                 Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
             }
             Text(
-                text = if (isEditMode) "Edit Room" else "Create Room",
+                text = if (isEditMode) "Edit Location" else "Create Location",
                 style = MaterialTheme.typography.titleLarge
             )
         }
 
         if (isEditMode) {
+            // Display image at top when editing
+            EntityImage(
+                imageUrl = editLocation?.imageUrl,
+                contentDescription = "Image of ${editLocation?.name ?: "location"}"
+            )
+
             Text(
-                text = "ID: ${editRoom?.id}",
+                text = "ID: ${editLocation?.id}",
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
         }
 
-        OutlinedTextField(
-            value = name,
-            onValueChange = { name = it },
-            label = { Text("Name") },
+        Row(
             modifier = Modifier.fillMaxWidth(),
-            singleLine = true
-        )
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            OutlinedTextField(
+                value = name,
+                onValueChange = { name = it },
+                label = { Text("Name") },
+                modifier = Modifier.weight(1f),
+                singleLine = true
+            )
+            GenButton(
+                entityType = GenEntityType.LOCATION,
+                currentName = name,
+                currentDesc = desc,
+                exitIds = exitIds,
+                onGenerated = { genName, genDesc ->
+                    name = genName
+                    desc = genDesc
+                }
+            )
+        }
 
         OutlinedTextField(
             value = desc,
@@ -536,6 +1179,7 @@ fun RoomForm(
             label = "Items",
             ids = itemIds,
             entityType = EntityType.ITEM,
+            availableOptions = availableItems,
             onPillClick = onNavigateToItem,
             onAddId = { id -> itemIds = itemIds + id },
             onRemoveId = { id -> itemIds = itemIds - id }
@@ -545,19 +1189,59 @@ fun RoomForm(
             label = "Creatures",
             ids = creatureIds,
             entityType = EntityType.CREATURE,
+            availableOptions = availableCreatures,
             onPillClick = onNavigateToCreature,
             onAddId = { id -> creatureIds = creatureIds + id },
             onRemoveId = { id -> creatureIds = creatureIds - id }
         )
 
+        // Show active users at this location (if authenticated and editing)
+        if (currentUser != null && isEditMode && activeUsersAtLocation.isNotEmpty()) {
+            Card(
+                modifier = Modifier.fillMaxWidth(),
+                colors = CardDefaults.cardColors(
+                    containerColor = MaterialTheme.colorScheme.tertiaryContainer.copy(alpha = 0.5f)
+                )
+            ) {
+                Column(modifier = Modifier.padding(12.dp)) {
+                    Text(
+                        text = "Other Players Here",
+                        style = MaterialTheme.typography.labelLarge,
+                        color = MaterialTheme.colorScheme.onTertiaryContainer
+                    )
+                    Spacer(modifier = Modifier.height(8.dp))
+                    activeUsersAtLocation.forEach { user ->
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(vertical = 4.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            Surface(
+                                shape = CircleShape,
+                                color = MaterialTheme.colorScheme.primary,
+                                modifier = Modifier.size(8.dp)
+                            ) {}
+                            Text(
+                                text = user.name,
+                                style = MaterialTheme.typography.bodyMedium
+                            )
+                        }
+                    }
+                }
+            }
+        }
+
         IdPillSection(
-            label = "Exits (Room IDs)",
+            label = "Exits (Location IDs)",
             ids = exitIds,
-            entityType = EntityType.ROOM,
+            entityType = EntityType.LOCATION,
+            availableOptions = availableLocations,
             onPillClick = { id ->
                 scope.launch {
-                    ApiClient.getRoom(id).onSuccess { room ->
-                        if (room != null) onNavigateToRoom(room)
+                    ApiClient.getLocation(id).onSuccess { loc ->
+                        if (loc != null) onNavigateToLocation(loc)
                     }
                 }
             },
@@ -578,7 +1262,7 @@ fun RoomForm(
                 scope.launch {
                     isLoading = true
                     message = null
-                    val request = CreateRoomRequest(
+                    val request = CreateLocationRequest(
                         name = name,
                         desc = desc,
                         itemIds = itemIds,
@@ -587,9 +1271,9 @@ fun RoomForm(
                         features = features.splitToList()
                     )
                     val result = if (isEditMode) {
-                        ApiClient.updateRoom(editRoom!!.id, request)
+                        ApiClient.updateLocation(editLocation!!.id, request)
                     } else {
-                        ApiClient.createRoom(request)
+                        ApiClient.createLocation(request)
                     }
                     isLoading = false
                     if (result.isSuccess) {
@@ -608,7 +1292,7 @@ fun RoomForm(
                     strokeWidth = 2.dp
                 )
             } else {
-                Text(if (isEditMode) "Update Room" else "Create Room")
+                Text(if (isEditMode) "Update Location" else "Create Location")
             }
         }
 
@@ -638,6 +1322,16 @@ fun CreatureForm(
     var message by remember { mutableStateOf<String?>(null) }
     val scope = rememberCoroutineScope()
 
+    // Available options for dropdown
+    var availableItems by remember { mutableStateOf<List<IdOption>>(emptyList()) }
+
+    // Fetch available options on mount
+    LaunchedEffect(Unit) {
+        ApiClient.getItems().onSuccess { items ->
+            availableItems = items.map { IdOption(it.id, it.name) }
+        }
+    }
+
     Column(
         modifier = Modifier
             .fillMaxWidth()
@@ -664,13 +1358,28 @@ fun CreatureForm(
             )
         }
 
-        OutlinedTextField(
-            value = name,
-            onValueChange = { name = it },
-            label = { Text("Name") },
+        Row(
             modifier = Modifier.fillMaxWidth(),
-            singleLine = true
-        )
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            OutlinedTextField(
+                value = name,
+                onValueChange = { name = it },
+                label = { Text("Name") },
+                modifier = Modifier.weight(1f),
+                singleLine = true
+            )
+            GenButton(
+                entityType = GenEntityType.CREATURE,
+                currentName = name,
+                currentDesc = desc,
+                onGenerated = { genName, genDesc ->
+                    name = genName
+                    desc = genDesc
+                }
+            )
+        }
 
         OutlinedTextField(
             value = desc,
@@ -684,6 +1393,7 @@ fun CreatureForm(
             label = "Items",
             ids = itemIds,
             entityType = EntityType.ITEM,
+            availableOptions = availableItems,
             onPillClick = onNavigateToItem,
             onAddId = { id -> itemIds = itemIds + id },
             onRemoveId = { id -> itemIds = itemIds - id }
@@ -817,6 +1527,12 @@ fun CreatureDetailView(
                 }
             }
             creature != null -> {
+                // Display image at top
+                EntityImage(
+                    imageUrl = creature!!.imageUrl,
+                    contentDescription = "Image of ${creature!!.name}"
+                )
+
                 Card(modifier = Modifier.fillMaxWidth()) {
                     Column(modifier = Modifier.padding(16.dp)) {
                         Text(
@@ -907,13 +1623,28 @@ fun ItemForm(
             )
         }
 
-        OutlinedTextField(
-            value = name,
-            onValueChange = { name = it },
-            label = { Text("Name") },
+        Row(
             modifier = Modifier.fillMaxWidth(),
-            singleLine = true
-        )
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            OutlinedTextField(
+                value = name,
+                onValueChange = { name = it },
+                label = { Text("Name") },
+                modifier = Modifier.weight(1f),
+                singleLine = true
+            )
+            GenButton(
+                entityType = GenEntityType.ITEM,
+                currentName = name,
+                currentDesc = desc,
+                onGenerated = { genName, genDesc ->
+                    name = genName
+                    desc = genDesc
+                }
+            )
+        }
 
         OutlinedTextField(
             value = desc,
@@ -1049,6 +1780,12 @@ fun ItemDetailView(
                 }
             }
             item != null -> {
+                // Display image at top
+                EntityImage(
+                    imageUrl = item!!.imageUrl,
+                    contentDescription = "Image of ${item!!.name}"
+                )
+
                 Card(modifier = Modifier.fillMaxWidth()) {
                     Column(modifier = Modifier.padding(16.dp)) {
                         Text(

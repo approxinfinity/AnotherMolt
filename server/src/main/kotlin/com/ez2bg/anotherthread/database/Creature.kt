@@ -65,6 +65,16 @@ object CreatureRepository {
             .singleOrNull()
     }
 
+    fun update(creature: Creature): Boolean = transaction {
+        CreatureTable.update({ CreatureTable.id eq creature.id }) {
+            it[name] = creature.name
+            it[desc] = creature.desc
+            it[itemIds] = listToJson(creature.itemIds)
+            it[features] = listToJson(creature.features)
+            it[imageUrl] = creature.imageUrl
+        } > 0
+    }
+
     fun updateImageUrl(id: String, imageUrl: String): Boolean = transaction {
         CreatureTable.update({ CreatureTable.id eq id }) {
             it[CreatureTable.imageUrl] = imageUrl

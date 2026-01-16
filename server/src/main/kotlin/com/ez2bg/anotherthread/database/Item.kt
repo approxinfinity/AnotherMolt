@@ -62,6 +62,15 @@ object ItemRepository {
             .singleOrNull()
     }
 
+    fun update(item: Item): Boolean = transaction {
+        ItemTable.update({ ItemTable.id eq item.id }) {
+            it[name] = item.name
+            it[desc] = item.desc
+            it[featureIds] = listToJson(item.featureIds)
+            it[imageUrl] = item.imageUrl
+        } > 0
+    }
+
     fun updateImageUrl(id: String, imageUrl: String): Boolean = transaction {
         ItemTable.update({ ItemTable.id eq id }) {
             it[ItemTable.imageUrl] = imageUrl

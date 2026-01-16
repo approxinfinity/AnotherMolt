@@ -6,4 +6,4 @@ class JsPlatform: Platform {
 
 actual fun getPlatform(): Platform = JsPlatform()
 
-actual fun developmentBaseUrl(): String = "http://localhost:8080"
+actual fun developmentBaseUrl(): String = "http://192.168.1.239:8080"

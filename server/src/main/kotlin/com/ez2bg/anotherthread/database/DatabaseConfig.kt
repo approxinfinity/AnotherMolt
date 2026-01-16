@@ -16,7 +16,7 @@ object DatabaseConfig {
         )
 
         transaction {
-            SchemaUtils.createMissingTablesAndColumns(RoomTable, CreatureTable, ItemTable)
+            SchemaUtils.createMissingTablesAndColumns(LocationTable, CreatureTable, ItemTable, UserTable)
         }
     }
 }

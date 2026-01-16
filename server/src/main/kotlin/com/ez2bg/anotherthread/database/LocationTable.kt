@@ -2,7 +2,7 @@ package com.ez2bg.anotherthread.database
 
 import org.jetbrains.exposed.sql.Table
 
-object RoomTable : Table("room") {
+object LocationTable : Table("location") {
     val id = varchar("id", 36)
     val name = text("name")
     val desc = text("desc")

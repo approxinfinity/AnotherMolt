@@ -34,6 +34,9 @@ dependencies {
     implementation(libs.exposed.jdbc)
     implementation(libs.sqlite.jdbc)
 
+    // Password hashing
+    implementation(libs.bcrypt)
+
     testImplementation(libs.ktor.serverTestHost)
     testImplementation(libs.kotlin.testJunit)
 }

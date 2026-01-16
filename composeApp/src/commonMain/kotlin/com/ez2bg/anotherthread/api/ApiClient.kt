@@ -12,14 +12,15 @@ import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
 
 @Serializable
-data class RoomDto(
+data class LocationDto(
     val id: String,
     val name: String,
     val desc: String,
     val itemIds: List<String> = emptyList(),
     val creatureIds: List<String> = emptyList(),
     val exitIds: List<String> = emptyList(),
-    val features: List<String> = emptyList()
+    val features: List<String> = emptyList(),
+    val imageUrl: String? = null
 )
 
 @Serializable
@@ -28,7 +29,8 @@ data class CreatureDto(
     val name: String,
     val desc: String,
     val itemIds: List<String> = emptyList(),
-    val features: List<String> = emptyList()
+    val features: List<String> = emptyList(),
+    val imageUrl: String? = null
 )
 
 @Serializable
@@ -36,11 +38,12 @@ data class ItemDto(
     val id: String,
     val name: String,
     val desc: String,
-    val featureIds: List<String> = emptyList()
+    val featureIds: List<String> = emptyList(),
+    val imageUrl: String? = null
 )
 
 @Serializable
-data class CreateRoomRequest(
+data class CreateLocationRequest(
     val name: String,
     val desc: String,
     val itemIds: List<String> = emptyList(),
@@ -64,6 +67,75 @@ data class CreateItemRequest(
     val featureIds: List<String> = emptyList()
 )
 
+@Serializable
+data class UserDto(
+    val id: String,
+    val name: String,
+    val desc: String = "",
+    val itemIds: List<String> = emptyList(),
+    val features: List<String> = emptyList(),
+    val imageUrl: String? = null,
+    val currentLocationId: String? = null,
+    val createdAt: Long = 0,
+    val lastActiveAt: Long = 0
+)
+
+@Serializable
+data class RegisterRequest(
+    val name: String,
+    val password: String
+)
+
+@Serializable
+data class LoginRequest(
+    val name: String,
+    val password: String
+)
+
+@Serializable
+data class UpdateUserRequest(
+    val desc: String = "",
+    val itemIds: List<String> = emptyList(),
+    val features: List<String> = emptyList()
+)
+
+@Serializable
+data class UpdateUserLocationRequest(
+    val locationId: String?
+)
+
+@Serializable
+data class AuthResponse(
+    val success: Boolean,
+    val message: String,
+    val user: UserDto? = null
+)
+
+@Serializable
+data class GenerateLocationContentRequest(
+    val exitIds: List<String> = emptyList(),
+    val existingName: String? = null,
+    val existingDesc: String? = null
+)
+
+@Serializable
+data class GenerateCreatureContentRequest(
+    val existingName: String? = null,
+    val existingDesc: String? = null
+)
+
+@Serializable
+data class GenerateItemContentRequest(
+    val existingName: String? = null,
+    val existingDesc: String? = null
+)
+
+@Serializable
+data class GeneratedContentResponse(
+    val name: String,
+    val description: String
+)
+
 object ApiClient {
     private val client = HttpClient {
         install(ContentNegotiation) {
@@ -76,24 +148,29 @@ object ApiClient {
 
     private val baseUrl = AppConfig.api.baseUrl
 
-    suspend fun getRooms(): Result<List<RoomDto>> = runCatching {
-        client.get("$baseUrl/rooms").body()
+    suspend fun getLocations(): Result<List<LocationDto>> = runCatching {
+        client.get("$baseUrl/locations").body()
     }
 
-    suspend fun createRoom(request: CreateRoomRequest): Result<Unit> = runCatching {
-        client.post("$baseUrl/rooms") {
+    suspend fun createLocation(request: CreateLocationRequest): Result<Unit> = runCatching {
+        client.post("$baseUrl/locations") {
             contentType(ContentType.Application.Json)
             setBody(request)
         }
         Unit
     }
 
-    suspend fun updateRoom(id: String, request: CreateRoomRequest): Result<Unit> = runCatching {
-        client.put("$baseUrl/rooms/$id") {
+    suspend fun updateLocation(id: String, request: CreateLocationRequest): Result<Unit> = runCatching {
+        client.put("$baseUrl/locations/$id") {
             contentType(ContentType.Application.Json)
             setBody(request)
         }
         Unit
+    }
+
+    suspend fun getLocation(id: String): Result<LocationDto?> = runCatching {
+        val locations: List<LocationDto> = client.get("$baseUrl/locations").body()
+        locations.find { it.id == id }
     }
 
     suspend fun createCreature(request: CreateCreatureRequest): Result<Unit> = runCatching {
@@ -130,8 +207,78 @@ object ApiClient {
         items.find { it.id == id }
     }
 
-    suspend fun getRoom(id: String): Result<RoomDto?> = runCatching {
-        val rooms: List<RoomDto> = client.get("$baseUrl/rooms").body()
-        rooms.find { it.id == id }
+    // User auth methods
+    suspend fun register(name: String, password: String): Result<AuthResponse> = runCatching {
+        client.post("$baseUrl/auth/register") {
+            contentType(ContentType.Application.Json)
+            setBody(RegisterRequest(name, password))
+        }.body()
+    }
+
+    suspend fun login(name: String, password: String): Result<AuthResponse> = runCatching {
+        client.post("$baseUrl/auth/login") {
+            contentType(ContentType.Application.Json)
+            setBody(LoginRequest(name, password))
+        }.body()
+    }
+
+    suspend fun getUser(id: String): Result<UserDto?> = runCatching {
+        client.get("$baseUrl/users/$id").body()
+    }
+
+    suspend fun updateUser(id: String, request: UpdateUserRequest): Result<UserDto> = runCatching {
+        client.put("$baseUrl/users/$id") {
+            contentType(ContentType.Application.Json)
+            setBody(request)
+        }.body()
+    }
+
+    suspend fun updateUserLocation(id: String, locationId: String?): Result<Unit> = runCatching {
+        client.put("$baseUrl/users/$id/location") {
+            contentType(ContentType.Application.Json)
+            setBody(UpdateUserLocationRequest(locationId))
+        }
+        Unit
+    }
+
+    suspend fun getActiveUsersAtLocation(locationId: String): Result<List<UserDto>> = runCatching {
+        client.get("$baseUrl/users/at-location/$locationId").body()
+    }
+
+    // Content generation methods
+    suspend fun isContentGenerationAvailable(): Result<Boolean> = runCatching {
+        val response: Map<String, Boolean> = client.get("$baseUrl/generate/status").body()
+        response["available"] ?: false
+    }
+
+    suspend fun generateLocationContent(
+        exitIds: List<String> = emptyList(),
+        existingName: String? = null,
+        existingDesc: String? = null
+    ): Result<GeneratedContentResponse> = runCatching {
+        client.post("$baseUrl/generate/location") {
+            contentType(ContentType.Application.Json)
+            setBody(GenerateLocationContentRequest(exitIds, existingName, existingDesc))
+        }.body()
+    }
+
+    suspend fun generateCreatureContent(
+        existingName: String? = null,
+        existingDesc: String? = null
+    ): Result<GeneratedContentResponse> = runCatching {
+        client.post("$baseUrl/generate/creature") {
+            contentType(ContentType.Application.Json)
+            setBody(GenerateCreatureContentRequest(existingName, existingDesc))
+        }.body()
+    }
+
+    suspend fun generateItemContent(
+        existingName: String? = null,
+        existingDesc: String? = null
+    ): Result<GeneratedContentResponse> = runCatching {
+        client.post("$baseUrl/generate/item") {
+            contentType(ContentType.Application.Json)
+            setBody(GenerateItemContentRequest(existingName, existingDesc))
+        }.body()
     }
 }
