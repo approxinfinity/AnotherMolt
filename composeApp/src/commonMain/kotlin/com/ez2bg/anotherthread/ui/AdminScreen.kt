@@ -152,7 +152,7 @@ fun EntityImage(
 }
 
 enum class GenEntityType {
-    LOCATION, CREATURE, ITEM
+    LOCATION, CREATURE, ITEM, USER
 }
 
 /**
@@ -192,6 +192,7 @@ fun GenButton(
                             existingName = currentName.ifBlank { null },
                             existingDesc = currentDesc.ifBlank { null }
                         )
+                        GenEntityType.USER -> Result.failure(Exception("Content generation not supported for users"))
                     }
 
                     isGenerating = false
@@ -214,6 +215,87 @@ fun GenButton(
                 Text("Generating...")
             } else {
                 Text(if (currentDesc.isBlank()) "Gen" else "Regen")
+            }
+        }
+
+        errorMessage?.let {
+            SelectionContainer {
+                Text(
+                    text = it,
+                    color = MaterialTheme.colorScheme.error,
+                    style = MaterialTheme.typography.bodySmall,
+                    modifier = Modifier.padding(top = 4.dp)
+                )
+            }
+        }
+    }
+}
+
+/**
+ * Button to generate an image for an entity using Stable Diffusion
+ */
+@Composable
+fun GenerateImageButton(
+    entityType: GenEntityType,
+    entityId: String,
+    name: String,
+    description: String,
+    featureIds: List<String> = emptyList(),
+    onImageGenerated: (String) -> Unit,
+    modifier: Modifier = Modifier
+) {
+    var isGenerating by remember { mutableStateOf(false) }
+    var errorMessage by remember { mutableStateOf<String?>(null) }
+    val scope = rememberCoroutineScope()
+
+    val isEnabled = name.isNotBlank() && description.isNotBlank() && !isGenerating
+
+    Column(modifier = modifier) {
+        Button(
+            onClick = {
+                scope.launch {
+                    isGenerating = true
+                    errorMessage = null
+
+                    val entityTypeStr = when (entityType) {
+                        GenEntityType.LOCATION -> "location"
+                        GenEntityType.CREATURE -> "creature"
+                        GenEntityType.ITEM -> "item"
+                        GenEntityType.USER -> "user"
+                    }
+
+                    ApiClient.generateImage(
+                        entityType = entityTypeStr,
+                        entityId = entityId,
+                        name = name,
+                        description = description,
+                        featureIds = featureIds
+                    ).onSuccess { response ->
+                        onImageGenerated(response.imageUrl)
+                    }.onFailure { error ->
+                        errorMessage = error.message ?: "Failed to generate image"
+                    }
+
+                    isGenerating = false
+                }
+            },
+            enabled = isEnabled
+        ) {
+            if (isGenerating) {
+                CircularProgressIndicator(
+                    modifier = Modifier.size(16.dp),
+                    strokeWidth = 2.dp
+                )
+                Spacer(modifier = Modifier.width(8.dp))
+                Text("Generating...")
+            } else {
+                Icon(
+                    imageVector = Icons.Default.Image,
+                    contentDescription = null,
+                    modifier = Modifier.size(16.dp)
+                )
+                Spacer(modifier = Modifier.width(4.dp))
+                Text("Gen Image")
             }
         }
 
@@ -499,6 +581,7 @@ fun UserProfileView(
     var desc by remember { mutableStateOf(user.desc) }
     var features by remember { mutableStateOf(user.featureIds.joinToString(", ")) }
     var itemIds by remember { mutableStateOf(user.itemIds) }
+    var imageUrl by remember { mutableStateOf(user.imageUrl) }
     var isLoading by remember { mutableStateOf(false) }
     var message by remember { mutableStateOf<String?>(null) }
     val scope = rememberCoroutineScope()
@@ -521,7 +604,7 @@ fun UserProfileView(
     ) {
         // Display image at top
         EntityImage(
-            imageUrl = user.imageUrl,
+            imageUrl = imageUrl,
             contentDescription = "Image of ${user.name}"
         )
 
@@ -565,6 +648,23 @@ fun UserProfileView(
                 modifier = Modifier.fillMaxWidth(),
                 singleLine = true
             )
+
+            // Generate Image button row
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.End
+            ) {
+                GenerateImageButton(
+                    entityType = GenEntityType.USER,
+                    entityId = user.id,
+                    name = user.name,
+                    description = desc,
+                    featureIds = features.split(",").map { it.trim() }.filter { it.isNotEmpty() },
+                    onImageGenerated = { newImageUrl ->
+                        imageUrl = newImageUrl
+                    }
+                )
+            }
 
             Row(
                 modifier = Modifier.fillMaxWidth(),
@@ -1133,6 +1233,7 @@ fun LocationForm(
     var creatureIds by remember(editLocation?.id) { mutableStateOf(editLocation?.creatureIds ?: emptyList()) }
     var exitIds by remember(editLocation?.id) { mutableStateOf(editLocation?.exitIds ?: emptyList()) }
     var features by remember(editLocation?.id) { mutableStateOf(editLocation?.featureIds?.joinToString(", ") ?: "") }
+    var imageUrl by remember(editLocation?.id) { mutableStateOf(editLocation?.imageUrl) }
     var isLoading by remember(editLocation?.id) { mutableStateOf(false) }
     var message by remember(editLocation?.id) { mutableStateOf<String?>(null) }
     val scope = rememberCoroutineScope()
@@ -1208,7 +1309,7 @@ fun LocationForm(
         if (isEditMode) {
             // Display image at top when editing
             EntityImage(
-                imageUrl = editLocation?.imageUrl,
+                imageUrl = imageUrl,
                 contentDescription = "Image of ${editLocation?.name ?: "location"}"
             )
 
@@ -1427,42 +1528,60 @@ fun LocationForm(
             singleLine = true
         )
 
-        Button(
-            onClick = {
-                scope.launch {
-                    isLoading = true
-                    message = null
-                    val request = CreateLocationRequest(
-                        name = name,
-                        desc = desc,
-                        itemIds = itemIds,
-                        creatureIds = creatureIds,
-                        exitIds = exitIds,
-                        featureIds = features.splitToList()
-                    )
-                    val result = if (isEditMode) {
-                        ApiClient.updateLocation(editLocation!!.id, request)
-                    } else {
-                        ApiClient.createLocation(request)
-                    }
-                    isLoading = false
-                    if (result.isSuccess) {
-                        onSaved()
-                    } else {
-                        message = "Error: ${result.exceptionOrNull()?.message}"
-                    }
-                }
-            },
-            enabled = !isLoading && name.isNotBlank(),
-            modifier = Modifier.align(Alignment.End)
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.End),
+            verticalAlignment = Alignment.CenterVertically
         ) {
-            if (isLoading) {
-                CircularProgressIndicator(
-                    modifier = Modifier.size(16.dp),
-                    strokeWidth = 2.dp
+            if (isEditMode) {
+                GenerateImageButton(
+                    entityType = GenEntityType.LOCATION,
+                    entityId = editLocation!!.id,
+                    name = name,
+                    description = desc,
+                    featureIds = features.splitToList(),
+                    onImageGenerated = { newImageUrl ->
+                        imageUrl = newImageUrl
+                    }
                 )
-            } else {
-                Text(if (isEditMode) "Update Location" else "Create Location")
+            }
+
+            Button(
+                onClick = {
+                    scope.launch {
+                        isLoading = true
+                        message = null
+                        val request = CreateLocationRequest(
+                            name = name,
+                            desc = desc,
+                            itemIds = itemIds,
+                            creatureIds = creatureIds,
+                            exitIds = exitIds,
+                            featureIds = features.splitToList()
+                        )
+                        val result = if (isEditMode) {
+                            ApiClient.updateLocation(editLocation!!.id, request)
+                        } else {
+                            ApiClient.createLocation(request)
+                        }
+                        isLoading = false
+                        if (result.isSuccess) {
+                            onSaved()
+                        } else {
+                            message = "Error: ${result.exceptionOrNull()?.message}"
+                        }
+                    }
+                },
+                enabled = !isLoading && name.isNotBlank()
+            ) {
+                if (isLoading) {
+                    CircularProgressIndicator(
+                        modifier = Modifier.size(16.dp),
+                        strokeWidth = 2.dp
+                    )
+                } else {
+                    Text(if (isEditMode) "Update Location" else "Create Location")
+                }
             }
         }
 
@@ -1488,6 +1607,7 @@ fun CreatureForm(
     var desc by remember { mutableStateOf(editCreature?.desc ?: "") }
     var itemIds by remember { mutableStateOf(editCreature?.itemIds ?: emptyList()) }
     var features by remember { mutableStateOf(editCreature?.featureIds?.joinToString(", ") ?: "") }
+    var imageUrl by remember { mutableStateOf(editCreature?.imageUrl) }
     var isLoading by remember { mutableStateOf(false) }
     var message by remember { mutableStateOf<String?>(null) }
     val scope = rememberCoroutineScope()
@@ -1521,6 +1641,13 @@ fun CreatureForm(
                     style = MaterialTheme.typography.titleLarge
                 )
             }
+
+            // Display image at top when editing
+            EntityImage(
+                imageUrl = imageUrl,
+                contentDescription = "Image of ${editCreature?.name ?: "creature"}"
+            )
+
             Text(
                 text = "ID: ${editCreature?.id}",
                 style = MaterialTheme.typography.bodySmall,
@@ -1577,38 +1704,56 @@ fun CreatureForm(
             singleLine = true
         )
 
-        Button(
-            onClick = {
-                scope.launch {
-                    isLoading = true
-                    message = null
-                    val result = ApiClient.createCreature(
-                        CreateCreatureRequest(
-                            name = name,
-                            desc = desc,
-                            itemIds = itemIds,
-                            featureIds = features.splitToList()
-                        )
-                    )
-                    isLoading = false
-                    message = if (result.isSuccess) {
-                        name = ""; desc = ""; itemIds = emptyList(); features = ""
-                        "Creature created successfully!"
-                    } else {
-                        "Error: ${result.exceptionOrNull()?.message}"
-                    }
-                }
-            },
-            enabled = !isLoading && name.isNotBlank(),
-            modifier = Modifier.align(Alignment.End)
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.End),
+            verticalAlignment = Alignment.CenterVertically
         ) {
-            if (isLoading) {
-                CircularProgressIndicator(
-                    modifier = Modifier.size(16.dp),
-                    strokeWidth = 2.dp
+            if (isEditMode) {
+                GenerateImageButton(
+                    entityType = GenEntityType.CREATURE,
+                    entityId = editCreature!!.id,
+                    name = name,
+                    description = desc,
+                    featureIds = features.splitToList(),
+                    onImageGenerated = { newImageUrl ->
+                        imageUrl = newImageUrl
+                    }
                 )
-            } else {
-                Text(if (isEditMode) "Update Creature" else "Create Creature")
+            }
+
+            Button(
+                onClick = {
+                    scope.launch {
+                        isLoading = true
+                        message = null
+                        val result = ApiClient.createCreature(
+                            CreateCreatureRequest(
+                                name = name,
+                                desc = desc,
+                                itemIds = itemIds,
+                                featureIds = features.splitToList()
+                            )
+                        )
+                        isLoading = false
+                        message = if (result.isSuccess) {
+                            name = ""; desc = ""; itemIds = emptyList(); features = ""
+                            "Creature created successfully!"
+                        } else {
+                            "Error: ${result.exceptionOrNull()?.message}"
+                        }
+                    }
+                },
+                enabled = !isLoading && name.isNotBlank()
+            ) {
+                if (isLoading) {
+                    CircularProgressIndicator(
+                        modifier = Modifier.size(16.dp),
+                        strokeWidth = 2.dp
+                    )
+                } else {
+                    Text(if (isEditMode) "Update Creature" else "Create Creature")
+                }
             }
         }
 
@@ -1763,6 +1908,7 @@ fun ItemForm(
     var name by remember { mutableStateOf(editItem?.name ?: "") }
     var desc by remember { mutableStateOf(editItem?.desc ?: "") }
     var featureIds by remember { mutableStateOf(editItem?.featureIds?.joinToString(", ") ?: "") }
+    var imageUrl by remember { mutableStateOf(editItem?.imageUrl) }
     var isLoading by remember { mutableStateOf(false) }
     var message by remember { mutableStateOf<String?>(null) }
     val scope = rememberCoroutineScope()
@@ -1786,6 +1932,13 @@ fun ItemForm(
                     style = MaterialTheme.typography.titleLarge
                 )
             }
+
+            // Display image at top when editing
+            EntityImage(
+                imageUrl = imageUrl,
+                contentDescription = "Image of ${editItem?.name ?: "item"}"
+            )
+
             Text(
                 text = "ID: ${editItem?.id}",
                 style = MaterialTheme.typography.bodySmall,
@@ -1832,37 +1985,55 @@ fun ItemForm(
             singleLine = true
         )
 
-        Button(
-            onClick = {
-                scope.launch {
-                    isLoading = true
-                    message = null
-                    val result = ApiClient.createItem(
-                        CreateItemRequest(
-                            name = name,
-                            desc = desc,
-                            featureIds = featureIds.splitToList()
-                        )
-                    )
-                    isLoading = false
-                    message = if (result.isSuccess) {
-                        name = ""; desc = ""; featureIds = ""
-                        "Item created successfully!"
-                    } else {
-                        "Error: ${result.exceptionOrNull()?.message}"
-                    }
-                }
-            },
-            enabled = !isLoading && name.isNotBlank(),
-            modifier = Modifier.align(Alignment.End)
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.End),
+            verticalAlignment = Alignment.CenterVertically
         ) {
-            if (isLoading) {
-                CircularProgressIndicator(
-                    modifier = Modifier.size(16.dp),
-                    strokeWidth = 2.dp
+            if (isEditMode) {
+                GenerateImageButton(
+                    entityType = GenEntityType.ITEM,
+                    entityId = editItem!!.id,
+                    name = name,
+                    description = desc,
+                    featureIds = featureIds.splitToList(),
+                    onImageGenerated = { newImageUrl ->
+                        imageUrl = newImageUrl
+                    }
                 )
-            } else {
-                Text(if (isEditMode) "Update Item" else "Create Item")
+            }
+
+            Button(
+                onClick = {
+                    scope.launch {
+                        isLoading = true
+                        message = null
+                        val result = ApiClient.createItem(
+                            CreateItemRequest(
+                                name = name,
+                                desc = desc,
+                                featureIds = featureIds.splitToList()
+                            )
+                        )
+                        isLoading = false
+                        message = if (result.isSuccess) {
+                            name = ""; desc = ""; featureIds = ""
+                            "Item created successfully!"
+                        } else {
+                            "Error: ${result.exceptionOrNull()?.message}"
+                        }
+                    }
+                },
+                enabled = !isLoading && name.isNotBlank()
+            ) {
+                if (isLoading) {
+                    CircularProgressIndicator(
+                        modifier = Modifier.size(16.dp),
+                        strokeWidth = 2.dp
+                    )
+                } else {
+                    Text(if (isEditMode) "Update Item" else "Create Item")
+                }
             }
         }
 

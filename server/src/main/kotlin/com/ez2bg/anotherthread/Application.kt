@@ -110,6 +110,20 @@ data class GeneratedContentResponse(
     val description: String
 )
 
+@Serializable
+data class GenerateImageRequest(
+    val entityType: String,
+    val entityId: String,
+    val name: String,
+    val description: String,
+    val featureIds: List<String> = emptyList()
+)
+
+@Serializable
+data class GenerateImageResponse(
+    val imageUrl: String
+)
+
 fun main(args: Array<String>) {
     EngineMain.main(args)
 }
@@ -158,6 +172,45 @@ fun Application.module() {
         get("/image-generation/status") {
             val available = ImageGenerationService.isAvailable()
             call.respond(mapOf("available" to available))
+        }
+
+        // On-demand image generation endpoint
+        post("/image-generation/generate") {
+            val request = call.receive<GenerateImageRequest>()
+
+            // Build enhanced description with feature context
+            val featureContext = if (request.featureIds.isNotEmpty()) {
+                val features = request.featureIds.mapNotNull { FeatureRepository.findById(it) }
+                if (features.isNotEmpty()) {
+                    val featureDescriptions = features.joinToString("; ") { "${it.name}: ${it.description}" }
+                    "${request.description}. Features: $featureDescriptions"
+                } else {
+                    request.description
+                }
+            } else {
+                request.description
+            }
+
+            ImageGenerationService.generateImage(
+                entityType = request.entityType,
+                entityId = request.entityId,
+                description = featureContext,
+                entityName = request.name
+            ).onSuccess { imageUrl ->
+                // Update the entity's imageUrl based on type
+                when (request.entityType.lowercase()) {
+                    "location" -> LocationRepository.updateImageUrl(request.entityId, imageUrl)
+                    "creature" -> CreatureRepository.updateImageUrl(request.entityId, imageUrl)
+                    "item" -> ItemRepository.updateImageUrl(request.entityId, imageUrl)
+                    "user" -> UserRepository.updateImageUrl(request.entityId, imageUrl)
+                }
+                call.respond(GenerateImageResponse(imageUrl = imageUrl))
+            }.onFailure { error ->
+                log.error("Failed to generate image: ${error.message}")
+                call.respond(HttpStatusCode.InternalServerError, mapOf(
+                    "error" to (error.message ?: "Failed to generate image")
+                ))
+            }
         }
 
         // Content generation routes (LLM-based)

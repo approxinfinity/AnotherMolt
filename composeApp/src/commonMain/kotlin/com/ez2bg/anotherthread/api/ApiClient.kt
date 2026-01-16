@@ -136,6 +136,29 @@ data class GeneratedContentResponse(
     val description: String
 )
 
+@Serializable
+data class FeatureDto(
+    val id: String,
+    val name: String,
+    val featureCategoryId: String? = null,
+    val description: String,
+    val data: String = "{}"
+)
+
+@Serializable
+data class GenerateImageRequest(
+    val entityType: String,
+    val entityId: String,
+    val name: String,
+    val description: String,
+    val featureIds: List<String> = emptyList()
+)
+
+@Serializable
+data class GenerateImageResponse(
+    val imageUrl: String
+)
+
 object ApiClient {
     private val client = HttpClient {
         install(ContentNegotiation) {
@@ -300,6 +323,45 @@ object ApiClient {
         } else {
             val errorBody: ErrorResponse = response.body()
             throw Exception(errorBody.error)
+        }
+    }
+
+    // Image generation methods
+    suspend fun isImageGenerationAvailable(): Result<Boolean> = runCatching {
+        val response: Map<String, Boolean> = client.get("$baseUrl/image-generation/status").body()
+        response["available"] ?: false
+    }
+
+    suspend fun generateImage(
+        entityType: String,
+        entityId: String,
+        name: String,
+        description: String,
+        featureIds: List<String> = emptyList()
+    ): Result<GenerateImageResponse> = runCatching {
+        val response = client.post("$baseUrl/image-generation/generate") {
+            contentType(ContentType.Application.Json)
+            setBody(GenerateImageRequest(entityType, entityId, name, description, featureIds))
+        }
+        if (response.status.isSuccess()) {
+            response.body()
+        } else {
+            val errorBody: ErrorResponse = response.body()
+            throw Exception(errorBody.error)
+        }
+    }
+
+    // Feature methods
+    suspend fun getFeatures(): Result<List<FeatureDto>> = runCatching {
+        client.get("$baseUrl/features").body()
+    }
+
+    suspend fun getFeature(id: String): Result<FeatureDto?> = runCatching {
+        val response = client.get("$baseUrl/features/$id")
+        if (response.status.isSuccess()) {
+            response.body()
+        } else {
+            null
         }
     }
 }
