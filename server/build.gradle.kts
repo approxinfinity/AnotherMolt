@@ -23,6 +23,11 @@ dependencies {
     implementation(libs.ktor.serverCors)
     implementation(libs.ktor.serializationJson)
 
+    // HTTP Client for Stable Diffusion API
+    implementation(libs.ktor.clientCore)
+    implementation(libs.ktor.clientCio)
+    implementation(libs.ktor.clientContentNegotiation)
+
     // Database
     implementation(libs.exposed.core)
     implementation(libs.exposed.dao)

@@ -5,12 +5,16 @@ import org.jetbrains.exposed.sql.ResultRow
 import org.jetbrains.exposed.sql.insert
 import org.jetbrains.exposed.sql.selectAll
 import org.jetbrains.exposed.sql.transactions.transaction
+import org.jetbrains.exposed.sql.update
+import java.util.UUID
 
 @Serializable
 data class Item(
-    val id: String,
+    val id: String = UUID.randomUUID().toString(),
+    val name: String,
     val desc: String,
-    val featureIds: List<String>
+    val featureIds: List<String>,
+    val imageUrl: String? = null
 )
 
 object ItemRepository {
@@ -30,15 +34,19 @@ object ItemRepository {
 
     private fun ResultRow.toItem(): Item = Item(
         id = this[ItemTable.id],
+        name = this[ItemTable.name],
         desc = this[ItemTable.desc],
-        featureIds = jsonToList(this[ItemTable.featureIds])
+        featureIds = jsonToList(this[ItemTable.featureIds]),
+        imageUrl = this[ItemTable.imageUrl]
     )
 
     fun create(item: Item): Item = transaction {
         ItemTable.insert {
             it[id] = item.id
+            it[name] = item.name
             it[desc] = item.desc
             it[featureIds] = listToJson(item.featureIds)
+            it[imageUrl] = item.imageUrl
         }
         item
     }
@@ -52,5 +60,11 @@ object ItemRepository {
             .where { ItemTable.id eq id }
             .map { it.toItem() }
             .singleOrNull()
+    }
+
+    fun updateImageUrl(id: String, imageUrl: String): Boolean = transaction {
+        ItemTable.update({ ItemTable.id eq id }) {
+            it[ItemTable.imageUrl] = imageUrl
+        } > 0
     }
 }

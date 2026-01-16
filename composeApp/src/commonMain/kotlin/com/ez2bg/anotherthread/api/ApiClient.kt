@@ -14,6 +14,7 @@ import kotlinx.serialization.json.Json
 @Serializable
 data class RoomDto(
     val id: String,
+    val name: String,
     val desc: String,
     val itemIds: List<String> = emptyList(),
     val creatureIds: List<String> = emptyList(),
@@ -22,8 +23,25 @@ data class RoomDto(
 )
 
 @Serializable
-data class CreateRoomRequest(
+data class CreatureDto(
     val id: String,
+    val name: String,
+    val desc: String,
+    val itemIds: List<String> = emptyList(),
+    val features: List<String> = emptyList()
+)
+
+@Serializable
+data class ItemDto(
+    val id: String,
+    val name: String,
+    val desc: String,
+    val featureIds: List<String> = emptyList()
+)
+
+@Serializable
+data class CreateRoomRequest(
+    val name: String,
     val desc: String,
     val itemIds: List<String> = emptyList(),
     val creatureIds: List<String> = emptyList(),
@@ -33,7 +51,7 @@ data class CreateRoomRequest(
 
 @Serializable
 data class CreateCreatureRequest(
-    val id: String,
+    val name: String,
     val desc: String,
     val itemIds: List<String> = emptyList(),
     val features: List<String> = emptyList()
@@ -41,7 +59,7 @@ data class CreateCreatureRequest(
 
 @Serializable
 data class CreateItemRequest(
-    val id: String,
+    val name: String,
     val desc: String,
     val featureIds: List<String> = emptyList()
 )
@@ -92,5 +110,28 @@ object ApiClient {
             setBody(request)
         }
         Unit
+    }
+
+    suspend fun getCreatures(): Result<List<CreatureDto>> = runCatching {
+        client.get("$baseUrl/creatures").body()
+    }
+
+    suspend fun getCreature(id: String): Result<CreatureDto?> = runCatching {
+        val creatures: List<CreatureDto> = client.get("$baseUrl/creatures").body()
+        creatures.find { it.id == id }
+    }
+
+    suspend fun getItems(): Result<List<ItemDto>> = runCatching {
+        client.get("$baseUrl/items").body()
+    }
+
+    suspend fun getItem(id: String): Result<ItemDto?> = runCatching {
+        val items: List<ItemDto> = client.get("$baseUrl/items").body()
+        items.find { it.id == id }
+    }
+
+    suspend fun getRoom(id: String): Result<RoomDto?> = runCatching {
+        val rooms: List<RoomDto> = client.get("$baseUrl/rooms").body()
+        rooms.find { it.id == id }
     }
 }

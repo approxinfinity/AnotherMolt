@@ -14,7 +14,7 @@ import kotlinx.serialization.Serializable
 
 @Serializable
 data class CreateRoomRequest(
-    val id: String,
+    val name: String,
     val desc: String,
     val itemIds: List<String> = emptyList(),
     val creatureIds: List<String> = emptyList(),
@@ -24,7 +24,7 @@ data class CreateRoomRequest(
 
 @Serializable
 data class CreateCreatureRequest(
-    val id: String,
+    val name: String,
     val desc: String,
     val itemIds: List<String> = emptyList(),
     val features: List<String> = emptyList()
@@ -32,7 +32,7 @@ data class CreateCreatureRequest(
 
 @Serializable
 data class CreateItemRequest(
-    val id: String,
+    val name: String,
     val desc: String,
     val featureIds: List<String> = emptyList()
 )
@@ -80,7 +80,7 @@ fun Application.module() {
             post {
                 val request = call.receive<CreateRoomRequest>()
                 val room = Room(
-                    id = request.id,
+                    name = request.name,
                     desc = request.desc,
                     itemIds = request.itemIds,
                     creatureIds = request.creatureIds,
@@ -95,6 +95,7 @@ fun Application.module() {
                 val request = call.receive<CreateRoomRequest>()
                 val room = Room(
                     id = id,
+                    name = request.name,
                     desc = request.desc,
                     itemIds = request.itemIds,
                     creatureIds = request.creatureIds,
@@ -117,7 +118,7 @@ fun Application.module() {
             post {
                 val request = call.receive<CreateCreatureRequest>()
                 val creature = Creature(
-                    id = request.id,
+                    name = request.name,
                     desc = request.desc,
                     itemIds = request.itemIds,
                     features = request.features
@@ -135,7 +136,7 @@ fun Application.module() {
             post {
                 val request = call.receive<CreateItemRequest>()
                 val item = Item(
-                    id = request.id,
+                    name = request.name,
                     desc = request.desc,
                     featureIds = request.featureIds
                 )

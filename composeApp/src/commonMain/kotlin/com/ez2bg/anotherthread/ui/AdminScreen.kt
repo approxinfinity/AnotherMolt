@@ -3,7 +3,6 @@ package com.ez2bg.anotherthread.ui
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
@@ -12,24 +11,19 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.Close
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import com.ez2bg.anotherthread.api.ApiClient
-import com.ez2bg.anotherthread.api.CreateCreatureRequest
-import com.ez2bg.anotherthread.api.CreateItemRequest
-import com.ez2bg.anotherthread.api.CreateRoomRequest
-import com.ez2bg.anotherthread.api.RoomDto
+import com.ez2bg.anotherthread.api.*
 import kotlinx.coroutines.launch
 import kotlin.math.cos
-import kotlin.math.min
 import kotlin.math.sin
 
 enum class AdminTab(val title: String) {
@@ -38,16 +32,26 @@ enum class AdminTab(val title: String) {
     ITEM("Item")
 }
 
-sealed class RoomViewState {
-    data object Graph : RoomViewState()
-    data object CreateForm : RoomViewState()
-    data class EditForm(val room: RoomDto) : RoomViewState()
+enum class EntityType {
+    ROOM, CREATURE, ITEM
+}
+
+sealed class ViewState {
+    data object RoomGraph : ViewState()
+    data object RoomCreate : ViewState()
+    data class RoomEdit(val room: RoomDto) : ViewState()
+    data object CreatureCreate : ViewState()
+    data class CreatureEdit(val creature: CreatureDto) : ViewState()
+    data class CreatureDetail(val id: String) : ViewState()
+    data object ItemCreate : ViewState()
+    data class ItemEdit(val item: ItemDto) : ViewState()
+    data class ItemDetail(val id: String) : ViewState()
 }
 
 @Composable
 fun AdminScreen() {
     var selectedTab by remember { mutableStateOf(AdminTab.ROOM) }
-    var roomViewState by remember { mutableStateOf<RoomViewState>(RoomViewState.Graph) }
+    var viewState by remember { mutableStateOf<ViewState>(ViewState.RoomGraph) }
 
     Column(
         modifier = Modifier
@@ -66,7 +70,11 @@ fun AdminScreen() {
                     selected = selectedTab == tab,
                     onClick = {
                         selectedTab = tab
-                        roomViewState = RoomViewState.Graph
+                        viewState = when (tab) {
+                            AdminTab.ROOM -> ViewState.RoomGraph
+                            AdminTab.MONSTER -> ViewState.CreatureCreate
+                            AdminTab.ITEM -> ViewState.ItemCreate
+                        }
                     },
                     text = { Text(tab.title) }
                 )
@@ -75,36 +83,214 @@ fun AdminScreen() {
 
         Spacer(modifier = Modifier.height(16.dp))
 
-        when (selectedTab) {
-            AdminTab.ROOM -> RoomSection(
-                viewState = roomViewState,
-                onViewStateChange = { roomViewState = it }
+        when (val state = viewState) {
+            is ViewState.RoomGraph -> RoomGraphView(
+                onAddClick = { viewState = ViewState.RoomCreate },
+                onRoomClick = { room -> viewState = ViewState.RoomEdit(room) }
             )
-            AdminTab.MONSTER -> MonsterForm()
-            AdminTab.ITEM -> ItemForm()
+            is ViewState.RoomCreate -> RoomForm(
+                editRoom = null,
+                onBack = { viewState = ViewState.RoomGraph },
+                onSaved = { viewState = ViewState.RoomGraph },
+                onNavigateToItem = { id -> viewState = ViewState.ItemDetail(id) },
+                onNavigateToCreature = { id -> viewState = ViewState.CreatureDetail(id) },
+                onNavigateToRoom = { room -> viewState = ViewState.RoomEdit(room) }
+            )
+            is ViewState.RoomEdit -> RoomForm(
+                editRoom = state.room,
+                onBack = { viewState = ViewState.RoomGraph },
+                onSaved = { viewState = ViewState.RoomGraph },
+                onNavigateToItem = { id -> viewState = ViewState.ItemDetail(id) },
+                onNavigateToCreature = { id -> viewState = ViewState.CreatureDetail(id) },
+                onNavigateToRoom = { room -> viewState = ViewState.RoomEdit(room) }
+            )
+            is ViewState.CreatureCreate -> CreatureForm(
+                editCreature = null,
+                onBack = { viewState = ViewState.CreatureCreate },
+                onSaved = { viewState = ViewState.CreatureCreate },
+                onNavigateToItem = { id -> viewState = ViewState.ItemDetail(id) }
+            )
+            is ViewState.CreatureEdit -> CreatureForm(
+                editCreature = state.creature,
+                onBack = { viewState = ViewState.CreatureCreate },
+                onSaved = { viewState = ViewState.CreatureCreate },
+                onNavigateToItem = { id -> viewState = ViewState.ItemDetail(id) }
+            )
+            is ViewState.CreatureDetail -> CreatureDetailView(
+                creatureId = state.id,
+                onBack = { viewState = ViewState.RoomGraph },
+                onEdit = { creature -> viewState = ViewState.CreatureEdit(creature) },
+                onCreateNew = { viewState = ViewState.CreatureCreate },
+                onNavigateToItem = { id -> viewState = ViewState.ItemDetail(id) }
+            )
+            is ViewState.ItemCreate -> ItemForm(
+                editItem = null,
+                onBack = { viewState = ViewState.ItemCreate },
+                onSaved = { viewState = ViewState.ItemCreate }
+            )
+            is ViewState.ItemEdit -> ItemForm(
+                editItem = state.item,
+                onBack = { viewState = ViewState.ItemCreate },
+                onSaved = { viewState = ViewState.ItemCreate }
+            )
+            is ViewState.ItemDetail -> ItemDetailView(
+                itemId = state.id,
+                onBack = { viewState = ViewState.RoomGraph },
+                onEdit = { item -> viewState = ViewState.ItemEdit(item) },
+                onCreateNew = { viewState = ViewState.ItemCreate }
+            )
         }
     }
 }
 
 @Composable
-fun RoomSection(
-    viewState: RoomViewState,
-    onViewStateChange: (RoomViewState) -> Unit
+fun IdPill(
+    id: String,
+    label: String? = null,
+    color: Color = MaterialTheme.colorScheme.secondaryContainer,
+    textColor: Color = MaterialTheme.colorScheme.onSecondaryContainer,
+    onClick: () -> Unit,
+    onRemove: (() -> Unit)? = null
 ) {
-    when (viewState) {
-        is RoomViewState.Graph -> RoomGraphView(
-            onAddClick = { onViewStateChange(RoomViewState.CreateForm) },
-            onRoomClick = { room -> onViewStateChange(RoomViewState.EditForm(room)) }
+    Surface(
+        modifier = Modifier
+            .clickable(onClick = onClick)
+            .padding(2.dp),
+        shape = RoundedCornerShape(16.dp),
+        color = color
+    ) {
+        Row(
+            modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(4.dp)
+        ) {
+            Text(
+                text = label ?: id.take(8) + if (id.length > 8) "..." else "",
+                style = MaterialTheme.typography.labelMedium,
+                color = textColor,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
+            )
+            if (onRemove != null) {
+                Icon(
+                    imageVector = Icons.Filled.Close,
+                    contentDescription = "Remove",
+                    modifier = Modifier
+                        .size(16.dp)
+                        .clickable(onClick = onRemove),
+                    tint = textColor
+                )
+            }
+        }
+    }
+}
+
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+fun IdPillSection(
+    label: String,
+    ids: List<String>,
+    entityType: EntityType,
+    onPillClick: (String) -> Unit,
+    onAddId: (String) -> Unit,
+    onRemoveId: (String) -> Unit,
+    modifier: Modifier = Modifier
+) {
+    var showAddDialog by remember { mutableStateOf(false) }
+    var newId by remember { mutableStateOf("") }
+
+    val pillColor = when (entityType) {
+        EntityType.ROOM -> MaterialTheme.colorScheme.primaryContainer
+        EntityType.CREATURE -> MaterialTheme.colorScheme.tertiaryContainer
+        EntityType.ITEM -> MaterialTheme.colorScheme.secondaryContainer
+    }
+    val pillTextColor = when (entityType) {
+        EntityType.ROOM -> MaterialTheme.colorScheme.onPrimaryContainer
+        EntityType.CREATURE -> MaterialTheme.colorScheme.onTertiaryContainer
+        EntityType.ITEM -> MaterialTheme.colorScheme.onSecondaryContainer
+    }
+
+    Column(modifier = modifier.fillMaxWidth()) {
+        Text(
+            text = label,
+            style = MaterialTheme.typography.labelLarge,
+            modifier = Modifier.padding(bottom = 8.dp)
         )
-        is RoomViewState.CreateForm -> RoomForm(
-            editRoom = null,
-            onBack = { onViewStateChange(RoomViewState.Graph) },
-            onSaved = { onViewStateChange(RoomViewState.Graph) }
-        )
-        is RoomViewState.EditForm -> RoomForm(
-            editRoom = viewState.room,
-            onBack = { onViewStateChange(RoomViewState.Graph) },
-            onSaved = { onViewStateChange(RoomViewState.Graph) }
+
+        FlowRow(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            ids.forEach { id ->
+                IdPill(
+                    id = id,
+                    color = pillColor,
+                    textColor = pillTextColor,
+                    onClick = { onPillClick(id) },
+                    onRemove = { onRemoveId(id) }
+                )
+            }
+
+            // Add button pill
+            Surface(
+                modifier = Modifier
+                    .clickable { showAddDialog = true }
+                    .padding(2.dp),
+                shape = RoundedCornerShape(16.dp),
+                color = MaterialTheme.colorScheme.outline.copy(alpha = 0.3f)
+            ) {
+                Row(
+                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Icon(
+                        imageVector = Icons.Filled.Add,
+                        contentDescription = "Add",
+                        modifier = Modifier.size(16.dp),
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    Text(
+                        text = "Add",
+                        style = MaterialTheme.typography.labelMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+            }
+        }
+    }
+
+    if (showAddDialog) {
+        AlertDialog(
+            onDismissRequest = { showAddDialog = false; newId = "" },
+            title = { Text("Add ${entityType.name.lowercase().replaceFirstChar { it.uppercase() }} ID") },
+            text = {
+                OutlinedTextField(
+                    value = newId,
+                    onValueChange = { newId = it },
+                    label = { Text("ID") },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth()
+                )
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        if (newId.isNotBlank()) {
+                            onAddId(newId.trim())
+                            newId = ""
+                            showAddDialog = false
+                        }
+                    }
+                ) {
+                    Text("Add")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showAddDialog = false; newId = "" }) {
+                    Text("Cancel")
+                }
+            }
         )
     }
 }
@@ -250,7 +436,7 @@ fun RoomGraph(
                 contentAlignment = Alignment.Center
             ) {
                 Text(
-                    text = room.id,
+                    text = room.name.ifBlank { room.id.take(8) },
                     style = MaterialTheme.typography.bodySmall,
                     textAlign = TextAlign.Center,
                     maxLines = 2,
@@ -268,7 +454,6 @@ private fun calculateRoomPositions(rooms: List<RoomDto>): Map<String, RoomPositi
     val positions = mutableMapOf<String, RoomPosition>()
     val count = rooms.size
 
-    // Arrange rooms in a circle or grid pattern
     if (count == 1) {
         positions[rooms[0].id] = RoomPosition(rooms[0], 0.5f, 0.5f)
     } else {
@@ -288,14 +473,17 @@ private fun calculateRoomPositions(rooms: List<RoomDto>): Map<String, RoomPositi
 fun RoomForm(
     editRoom: RoomDto?,
     onBack: () -> Unit,
-    onSaved: () -> Unit
+    onSaved: () -> Unit,
+    onNavigateToItem: (String) -> Unit,
+    onNavigateToCreature: (String) -> Unit,
+    onNavigateToRoom: (RoomDto) -> Unit
 ) {
     val isEditMode = editRoom != null
-    var id by remember { mutableStateOf(editRoom?.id ?: "") }
+    var name by remember { mutableStateOf(editRoom?.name ?: "") }
     var desc by remember { mutableStateOf(editRoom?.desc ?: "") }
-    var itemIds by remember { mutableStateOf(editRoom?.itemIds?.joinToString(", ") ?: "") }
-    var creatureIds by remember { mutableStateOf(editRoom?.creatureIds?.joinToString(", ") ?: "") }
-    var exitIds by remember { mutableStateOf(editRoom?.exitIds?.joinToString(", ") ?: "") }
+    var itemIds by remember { mutableStateOf(editRoom?.itemIds ?: emptyList()) }
+    var creatureIds by remember { mutableStateOf(editRoom?.creatureIds ?: emptyList()) }
+    var exitIds by remember { mutableStateOf(editRoom?.exitIds ?: emptyList()) }
     var features by remember { mutableStateOf(editRoom?.features?.joinToString(", ") ?: "") }
     var isLoading by remember { mutableStateOf(false) }
     var message by remember { mutableStateOf<String?>(null) }
@@ -320,13 +508,20 @@ fun RoomForm(
             )
         }
 
+        if (isEditMode) {
+            Text(
+                text = "ID: ${editRoom?.id}",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
+
         OutlinedTextField(
-            value = id,
-            onValueChange = { id = it },
-            label = { Text("ID") },
+            value = name,
+            onValueChange = { name = it },
+            label = { Text("Name") },
             modifier = Modifier.fillMaxWidth(),
-            singleLine = true,
-            enabled = !isEditMode
+            singleLine = true
         )
 
         OutlinedTextField(
@@ -337,28 +532,37 @@ fun RoomForm(
             minLines = 3
         )
 
-        OutlinedTextField(
-            value = itemIds,
-            onValueChange = { itemIds = it },
-            label = { Text("Item IDs (comma-separated)") },
-            modifier = Modifier.fillMaxWidth(),
-            singleLine = true
+        IdPillSection(
+            label = "Items",
+            ids = itemIds,
+            entityType = EntityType.ITEM,
+            onPillClick = onNavigateToItem,
+            onAddId = { id -> itemIds = itemIds + id },
+            onRemoveId = { id -> itemIds = itemIds - id }
         )
 
-        OutlinedTextField(
-            value = creatureIds,
-            onValueChange = { creatureIds = it },
-            label = { Text("Creature IDs (comma-separated)") },
-            modifier = Modifier.fillMaxWidth(),
-            singleLine = true
+        IdPillSection(
+            label = "Creatures",
+            ids = creatureIds,
+            entityType = EntityType.CREATURE,
+            onPillClick = onNavigateToCreature,
+            onAddId = { id -> creatureIds = creatureIds + id },
+            onRemoveId = { id -> creatureIds = creatureIds - id }
         )
 
-        OutlinedTextField(
-            value = exitIds,
-            onValueChange = { exitIds = it },
-            label = { Text("Exit IDs (comma-separated)") },
-            modifier = Modifier.fillMaxWidth(),
-            singleLine = true
+        IdPillSection(
+            label = "Exits (Room IDs)",
+            ids = exitIds,
+            entityType = EntityType.ROOM,
+            onPillClick = { id ->
+                scope.launch {
+                    ApiClient.getRoom(id).onSuccess { room ->
+                        if (room != null) onNavigateToRoom(room)
+                    }
+                }
+            },
+            onAddId = { id -> exitIds = exitIds + id },
+            onRemoveId = { id -> exitIds = exitIds - id }
         )
 
         OutlinedTextField(
@@ -375,15 +579,15 @@ fun RoomForm(
                     isLoading = true
                     message = null
                     val request = CreateRoomRequest(
-                        id = id,
+                        name = name,
                         desc = desc,
-                        itemIds = itemIds.splitToList(),
-                        creatureIds = creatureIds.splitToList(),
-                        exitIds = exitIds.splitToList(),
+                        itemIds = itemIds,
+                        creatureIds = creatureIds,
+                        exitIds = exitIds,
                         features = features.splitToList()
                     )
                     val result = if (isEditMode) {
-                        ApiClient.updateRoom(id, request)
+                        ApiClient.updateRoom(editRoom!!.id, request)
                     } else {
                         ApiClient.createRoom(request)
                     }
@@ -395,7 +599,7 @@ fun RoomForm(
                     }
                 }
             },
-            enabled = !isLoading && id.isNotBlank(),
+            enabled = !isLoading && name.isNotBlank(),
             modifier = Modifier.align(Alignment.End)
         ) {
             if (isLoading) {
@@ -419,11 +623,17 @@ fun RoomForm(
 }
 
 @Composable
-fun MonsterForm() {
-    var id by remember { mutableStateOf("") }
-    var desc by remember { mutableStateOf("") }
-    var itemIds by remember { mutableStateOf("") }
-    var features by remember { mutableStateOf("") }
+fun CreatureForm(
+    editCreature: CreatureDto?,
+    onBack: () -> Unit,
+    onSaved: () -> Unit,
+    onNavigateToItem: (String) -> Unit
+) {
+    val isEditMode = editCreature != null
+    var name by remember { mutableStateOf(editCreature?.name ?: "") }
+    var desc by remember { mutableStateOf(editCreature?.desc ?: "") }
+    var itemIds by remember { mutableStateOf(editCreature?.itemIds ?: emptyList()) }
+    var features by remember { mutableStateOf(editCreature?.features?.joinToString(", ") ?: "") }
     var isLoading by remember { mutableStateOf(false) }
     var message by remember { mutableStateOf<String?>(null) }
     val scope = rememberCoroutineScope()
@@ -434,10 +644,30 @@ fun MonsterForm() {
             .verticalScroll(rememberScrollState()),
         verticalArrangement = Arrangement.spacedBy(12.dp)
     ) {
+        if (isEditMode) {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                IconButton(onClick = onBack) {
+                    Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
+                }
+                Text(
+                    text = "Edit Creature",
+                    style = MaterialTheme.typography.titleLarge
+                )
+            }
+            Text(
+                text = "ID: ${editCreature?.id}",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
+
         OutlinedTextField(
-            value = id,
-            onValueChange = { id = it },
-            label = { Text("ID") },
+            value = name,
+            onValueChange = { name = it },
+            label = { Text("Name") },
             modifier = Modifier.fillMaxWidth(),
             singleLine = true
         )
@@ -450,12 +680,13 @@ fun MonsterForm() {
             minLines = 3
         )
 
-        OutlinedTextField(
-            value = itemIds,
-            onValueChange = { itemIds = it },
-            label = { Text("Item IDs (comma-separated)") },
-            modifier = Modifier.fillMaxWidth(),
-            singleLine = true
+        IdPillSection(
+            label = "Items",
+            ids = itemIds,
+            entityType = EntityType.ITEM,
+            onPillClick = onNavigateToItem,
+            onAddId = { id -> itemIds = itemIds + id },
+            onRemoveId = { id -> itemIds = itemIds - id }
         )
 
         OutlinedTextField(
@@ -473,22 +704,22 @@ fun MonsterForm() {
                     message = null
                     val result = ApiClient.createCreature(
                         CreateCreatureRequest(
-                            id = id,
+                            name = name,
                             desc = desc,
-                            itemIds = itemIds.splitToList(),
+                            itemIds = itemIds,
                             features = features.splitToList()
                         )
                     )
                     isLoading = false
                     message = if (result.isSuccess) {
-                        id = ""; desc = ""; itemIds = ""; features = ""
-                        "Monster created successfully!"
+                        name = ""; desc = ""; itemIds = emptyList(); features = ""
+                        "Creature created successfully!"
                     } else {
                         "Error: ${result.exceptionOrNull()?.message}"
                     }
                 }
             },
-            enabled = !isLoading && id.isNotBlank(),
+            enabled = !isLoading && name.isNotBlank(),
             modifier = Modifier.align(Alignment.End)
         ) {
             if (isLoading) {
@@ -497,7 +728,7 @@ fun MonsterForm() {
                     strokeWidth = 2.dp
                 )
             } else {
-                Text("Create Monster")
+                Text(if (isEditMode) "Update Creature" else "Create Creature")
             }
         }
 
@@ -512,10 +743,140 @@ fun MonsterForm() {
 }
 
 @Composable
-fun ItemForm() {
-    var id by remember { mutableStateOf("") }
-    var desc by remember { mutableStateOf("") }
-    var featureIds by remember { mutableStateOf("") }
+fun CreatureDetailView(
+    creatureId: String,
+    onBack: () -> Unit,
+    onEdit: (CreatureDto) -> Unit,
+    onCreateNew: () -> Unit,
+    onNavigateToItem: (String) -> Unit
+) {
+    var creature by remember { mutableStateOf<CreatureDto?>(null) }
+    var isLoading by remember { mutableStateOf(true) }
+    var notFound by remember { mutableStateOf(false) }
+
+    LaunchedEffect(creatureId) {
+        isLoading = true
+        ApiClient.getCreature(creatureId).onSuccess {
+            creature = it
+            notFound = it == null
+        }.onFailure {
+            notFound = true
+        }
+        isLoading = false
+    }
+
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .verticalScroll(rememberScrollState()),
+        verticalArrangement = Arrangement.spacedBy(12.dp)
+    ) {
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            IconButton(onClick = onBack) {
+                Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
+            }
+            Text(
+                text = "Creature Details",
+                style = MaterialTheme.typography.titleLarge
+            )
+        }
+
+        when {
+            isLoading -> {
+                CircularProgressIndicator(modifier = Modifier.align(Alignment.CenterHorizontally))
+            }
+            notFound -> {
+                Card(
+                    modifier = Modifier.fillMaxWidth(),
+                    colors = CardDefaults.cardColors(
+                        containerColor = MaterialTheme.colorScheme.errorContainer
+                    )
+                ) {
+                    Column(
+                        modifier = Modifier.padding(16.dp),
+                        horizontalAlignment = Alignment.CenterHorizontally
+                    ) {
+                        Text(
+                            text = "Creature not found",
+                            style = MaterialTheme.typography.titleMedium,
+                            color = MaterialTheme.colorScheme.onErrorContainer
+                        )
+                        Text(
+                            text = "ID: $creatureId",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onErrorContainer
+                        )
+                        Spacer(modifier = Modifier.height(16.dp))
+                        Button(onClick = onCreateNew) {
+                            Text("Create New Creature")
+                        }
+                    }
+                }
+            }
+            creature != null -> {
+                Card(modifier = Modifier.fillMaxWidth()) {
+                    Column(modifier = Modifier.padding(16.dp)) {
+                        Text(
+                            text = creature!!.name,
+                            style = MaterialTheme.typography.headlineSmall
+                        )
+                        Text(
+                            text = "ID: ${creature!!.id}",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                        Spacer(modifier = Modifier.height(8.dp))
+                        Text(
+                            text = creature!!.desc,
+                            style = MaterialTheme.typography.bodyMedium
+                        )
+
+                        if (creature!!.itemIds.isNotEmpty()) {
+                            Spacer(modifier = Modifier.height(16.dp))
+                            IdPillSection(
+                                label = "Items",
+                                ids = creature!!.itemIds,
+                                entityType = EntityType.ITEM,
+                                onPillClick = onNavigateToItem,
+                                onAddId = {},
+                                onRemoveId = {}
+                            )
+                        }
+
+                        if (creature!!.features.isNotEmpty()) {
+                            Spacer(modifier = Modifier.height(8.dp))
+                            Text(
+                                text = "Features: ${creature!!.features.joinToString(", ")}",
+                                style = MaterialTheme.typography.bodySmall
+                            )
+                        }
+                    }
+                }
+
+                Button(
+                    onClick = { onEdit(creature!!) },
+                    modifier = Modifier.align(Alignment.End)
+                ) {
+                    Text("Edit Creature")
+                }
+            }
+        }
+    }
+}
+
+@Composable
+fun ItemForm(
+    editItem: ItemDto?,
+    onBack: () -> Unit,
+    onSaved: () -> Unit
+) {
+    val isEditMode = editItem != null
+    var name by remember { mutableStateOf(editItem?.name ?: "") }
+    var desc by remember { mutableStateOf(editItem?.desc ?: "") }
+    var featureIds by remember { mutableStateOf(editItem?.featureIds?.joinToString(", ") ?: "") }
     var isLoading by remember { mutableStateOf(false) }
     var message by remember { mutableStateOf<String?>(null) }
     val scope = rememberCoroutineScope()
@@ -526,10 +887,30 @@ fun ItemForm() {
             .verticalScroll(rememberScrollState()),
         verticalArrangement = Arrangement.spacedBy(12.dp)
     ) {
+        if (isEditMode) {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                IconButton(onClick = onBack) {
+                    Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
+                }
+                Text(
+                    text = "Edit Item",
+                    style = MaterialTheme.typography.titleLarge
+                )
+            }
+            Text(
+                text = "ID: ${editItem?.id}",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
+
         OutlinedTextField(
-            value = id,
-            onValueChange = { id = it },
-            label = { Text("ID") },
+            value = name,
+            onValueChange = { name = it },
+            label = { Text("Name") },
             modifier = Modifier.fillMaxWidth(),
             singleLine = true
         )
@@ -557,21 +938,21 @@ fun ItemForm() {
                     message = null
                     val result = ApiClient.createItem(
                         CreateItemRequest(
-                            id = id,
+                            name = name,
                             desc = desc,
                             featureIds = featureIds.splitToList()
                         )
                     )
                     isLoading = false
                     message = if (result.isSuccess) {
-                        id = ""; desc = ""; featureIds = ""
+                        name = ""; desc = ""; featureIds = ""
                         "Item created successfully!"
                     } else {
                         "Error: ${result.exceptionOrNull()?.message}"
                     }
                 }
             },
-            enabled = !isLoading && id.isNotBlank(),
+            enabled = !isLoading && name.isNotBlank(),
             modifier = Modifier.align(Alignment.End)
         ) {
             if (isLoading) {
@@ -580,7 +961,7 @@ fun ItemForm() {
                     strokeWidth = 2.dp
                 )
             } else {
-                Text("Create Item")
+                Text(if (isEditMode) "Update Item" else "Create Item")
             }
         }
 
@@ -590,6 +971,118 @@ fun ItemForm() {
                 color = if (it.startsWith("Error")) MaterialTheme.colorScheme.error
                 else MaterialTheme.colorScheme.primary
             )
+        }
+    }
+}
+
+@Composable
+fun ItemDetailView(
+    itemId: String,
+    onBack: () -> Unit,
+    onEdit: (ItemDto) -> Unit,
+    onCreateNew: () -> Unit
+) {
+    var item by remember { mutableStateOf<ItemDto?>(null) }
+    var isLoading by remember { mutableStateOf(true) }
+    var notFound by remember { mutableStateOf(false) }
+
+    LaunchedEffect(itemId) {
+        isLoading = true
+        ApiClient.getItem(itemId).onSuccess {
+            item = it
+            notFound = it == null
+        }.onFailure {
+            notFound = true
+        }
+        isLoading = false
+    }
+
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .verticalScroll(rememberScrollState()),
+        verticalArrangement = Arrangement.spacedBy(12.dp)
+    ) {
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            IconButton(onClick = onBack) {
+                Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
+            }
+            Text(
+                text = "Item Details",
+                style = MaterialTheme.typography.titleLarge
+            )
+        }
+
+        when {
+            isLoading -> {
+                CircularProgressIndicator(modifier = Modifier.align(Alignment.CenterHorizontally))
+            }
+            notFound -> {
+                Card(
+                    modifier = Modifier.fillMaxWidth(),
+                    colors = CardDefaults.cardColors(
+                        containerColor = MaterialTheme.colorScheme.errorContainer
+                    )
+                ) {
+                    Column(
+                        modifier = Modifier.padding(16.dp),
+                        horizontalAlignment = Alignment.CenterHorizontally
+                    ) {
+                        Text(
+                            text = "Item not found",
+                            style = MaterialTheme.typography.titleMedium,
+                            color = MaterialTheme.colorScheme.onErrorContainer
+                        )
+                        Text(
+                            text = "ID: $itemId",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onErrorContainer
+                        )
+                        Spacer(modifier = Modifier.height(16.dp))
+                        Button(onClick = onCreateNew) {
+                            Text("Create New Item")
+                        }
+                    }
+                }
+            }
+            item != null -> {
+                Card(modifier = Modifier.fillMaxWidth()) {
+                    Column(modifier = Modifier.padding(16.dp)) {
+                        Text(
+                            text = item!!.name,
+                            style = MaterialTheme.typography.headlineSmall
+                        )
+                        Text(
+                            text = "ID: ${item!!.id}",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                        Spacer(modifier = Modifier.height(8.dp))
+                        Text(
+                            text = item!!.desc,
+                            style = MaterialTheme.typography.bodyMedium
+                        )
+
+                        if (item!!.featureIds.isNotEmpty()) {
+                            Spacer(modifier = Modifier.height(8.dp))
+                            Text(
+                                text = "Features: ${item!!.featureIds.joinToString(", ")}",
+                                style = MaterialTheme.typography.bodySmall
+                            )
+                        }
+                    }
+                }
+
+                Button(
+                    onClick = { onEdit(item!!) },
+                    modifier = Modifier.align(Alignment.End)
+                ) {
+                    Text("Edit Item")
+                }
+            }
         }
     }
 }

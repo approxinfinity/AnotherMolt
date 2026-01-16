@@ -5,13 +5,17 @@ import org.jetbrains.exposed.sql.ResultRow
 import org.jetbrains.exposed.sql.insert
 import org.jetbrains.exposed.sql.selectAll
 import org.jetbrains.exposed.sql.transactions.transaction
+import org.jetbrains.exposed.sql.update
+import java.util.UUID
 
 @Serializable
 data class Creature(
-    val id: String,
+    val id: String = UUID.randomUUID().toString(),
+    val name: String,
     val desc: String,
     val itemIds: List<String>,
-    val features: List<String>
+    val features: List<String>,
+    val imageUrl: String? = null
 )
 
 object CreatureRepository {
@@ -31,17 +35,21 @@ object CreatureRepository {
 
     private fun ResultRow.toCreature(): Creature = Creature(
         id = this[CreatureTable.id],
+        name = this[CreatureTable.name],
         desc = this[CreatureTable.desc],
         itemIds = jsonToList(this[CreatureTable.itemIds]),
-        features = jsonToList(this[CreatureTable.features])
+        features = jsonToList(this[CreatureTable.features]),
+        imageUrl = this[CreatureTable.imageUrl]
     )
 
     fun create(creature: Creature): Creature = transaction {
         CreatureTable.insert {
             it[id] = creature.id
+            it[name] = creature.name
             it[desc] = creature.desc
             it[itemIds] = listToJson(creature.itemIds)
             it[features] = listToJson(creature.features)
+            it[imageUrl] = creature.imageUrl
         }
         creature
     }
@@ -55,5 +63,11 @@ object CreatureRepository {
             .where { CreatureTable.id eq id }
             .map { it.toCreature() }
             .singleOrNull()
+    }
+
+    fun updateImageUrl(id: String, imageUrl: String): Boolean = transaction {
+        CreatureTable.update({ CreatureTable.id eq id }) {
+            it[CreatureTable.imageUrl] = imageUrl
+        } > 0
     }
 }

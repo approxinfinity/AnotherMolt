@@ -6,15 +6,18 @@ import org.jetbrains.exposed.sql.insert
 import org.jetbrains.exposed.sql.selectAll
 import org.jetbrains.exposed.sql.transactions.transaction
 import org.jetbrains.exposed.sql.update
+import java.util.UUID
 
 @Serializable
 data class Room(
-    val id: String,
+    val id: String = UUID.randomUUID().toString(),
+    val name: String,
     val desc: String,
     val itemIds: List<String>,
     val creatureIds: List<String>,
     val exitIds: List<String>,
-    val features: List<String>
+    val features: List<String>,
+    val imageUrl: String? = null
 )
 
 object RoomRepository {
@@ -34,21 +37,25 @@ object RoomRepository {
 
     private fun ResultRow.toRoom(): Room = Room(
         id = this[RoomTable.id],
+        name = this[RoomTable.name],
         desc = this[RoomTable.desc],
         itemIds = jsonToList(this[RoomTable.itemIds]),
         creatureIds = jsonToList(this[RoomTable.creatureIds]),
         exitIds = jsonToList(this[RoomTable.exitIds]),
-        features = jsonToList(this[RoomTable.features])
+        features = jsonToList(this[RoomTable.features]),
+        imageUrl = this[RoomTable.imageUrl]
     )
 
     fun create(room: Room): Room = transaction {
         RoomTable.insert {
             it[id] = room.id
+            it[name] = room.name
             it[desc] = room.desc
             it[itemIds] = listToJson(room.itemIds)
             it[creatureIds] = listToJson(room.creatureIds)
             it[exitIds] = listToJson(room.exitIds)
             it[features] = listToJson(room.features)
+            it[imageUrl] = room.imageUrl
         }
         room
     }
@@ -66,11 +73,19 @@ object RoomRepository {
 
     fun update(room: Room): Boolean = transaction {
         RoomTable.update({ RoomTable.id eq room.id }) {
+            it[name] = room.name
             it[desc] = room.desc
             it[itemIds] = listToJson(room.itemIds)
             it[creatureIds] = listToJson(room.creatureIds)
             it[exitIds] = listToJson(room.exitIds)
             it[features] = listToJson(room.features)
+            it[imageUrl] = room.imageUrl
+        } > 0
+    }
+
+    fun updateImageUrl(id: String, imageUrl: String): Boolean = transaction {
+        RoomTable.update({ RoomTable.id eq id }) {
+            it[RoomTable.imageUrl] = imageUrl
         } > 0
     }
 }

@@ -4,11 +4,13 @@ import org.jetbrains.exposed.sql.Table
 
 object RoomTable : Table("room") {
     val id = varchar("id", 36)
+    val name = text("name")
     val desc = text("desc")
     val itemIds = text("item_ids")
     val creatureIds = text("creature_ids")
     val exitIds = text("exit_ids")
     val features = text("features")
+    val imageUrl = text("image_url").nullable()
 
     override val primaryKey = PrimaryKey(id)
 }
