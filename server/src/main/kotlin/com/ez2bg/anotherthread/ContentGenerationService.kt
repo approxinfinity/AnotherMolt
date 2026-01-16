@@ -187,7 +187,37 @@ Respond with valid JSON only in this exact format:
         }.body()
 
         // Parse the JSON response from the LLM
-        return json.decodeFromString<GeneratedContent>(response.response)
+        val responseText = response.response.trim()
+
+        // Try to parse as GeneratedContent directly
+        return try {
+            json.decodeFromString<GeneratedContent>(responseText)
+        } catch (e: Exception) {
+            // Try to extract JSON from the response if it contains extra text
+            val jsonMatch = Regex("""\{[^{}]*"name"\s*:\s*"[^"]*"[^{}]*"description"\s*:\s*"[^"]*"[^{}]*\}""")
+                .find(responseText)
+                ?: Regex("""\{[^{}]*"description"\s*:\s*"[^"]*"[^{}]*"name"\s*:\s*"[^"]*"[^{}]*\}""")
+                    .find(responseText)
+
+            if (jsonMatch != null) {
+                json.decodeFromString<GeneratedContent>(jsonMatch.value)
+            } else {
+                // Last resort: try to extract name and description fields manually
+                val nameMatch = Regex(""""name"\s*:\s*"([^"]*)"""").find(responseText)
+                val descMatch = Regex(""""description"\s*:\s*"([^"]*)"""").find(responseText)
+
+                if (nameMatch != null && descMatch != null) {
+                    GeneratedContent(
+                        name = nameMatch.groupValues[1],
+                        description = descMatch.groupValues[1]
+                    )
+                } else {
+                    throw IllegalArgumentException(
+                        "Could not parse LLM response. Raw response: ${responseText.take(500)}"
+                    )
+                }
+            }
+        }
     }
 
     /**
