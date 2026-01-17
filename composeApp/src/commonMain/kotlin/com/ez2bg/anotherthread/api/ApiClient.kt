@@ -3,6 +3,7 @@ package com.ez2bg.anotherthread.api
 import com.ez2bg.anotherthread.AppConfig
 import io.ktor.client.*
 import io.ktor.client.call.*
+import io.ktor.client.plugins.*
 import io.ktor.client.plugins.contentnegotiation.*
 import io.ktor.client.request.*
 import io.ktor.client.request.forms.*
@@ -115,6 +116,7 @@ data class AuthResponse(
 @Serializable
 data class GenerateLocationContentRequest(
     val exitIds: List<String> = emptyList(),
+    val featureIds: List<String> = emptyList(),
     val existingName: String? = null,
     val existingDesc: String? = null
 )
@@ -185,6 +187,11 @@ object ApiClient {
                 ignoreUnknownKeys = true
                 isLenient = true
             })
+        }
+        install(HttpTimeout) {
+            requestTimeoutMillis = 180_000 // 3 minutes for image generation
+            connectTimeoutMillis = 30_000
+            socketTimeoutMillis = 180_000
         }
     }
 
@@ -298,12 +305,13 @@ object ApiClient {
 
     suspend fun generateLocationContent(
         exitIds: List<String> = emptyList(),
+        featureIds: List<String> = emptyList(),
         existingName: String? = null,
         existingDesc: String? = null
     ): Result<GeneratedContentResponse> = runCatching {
         val response = client.post("$baseUrl/generate/location") {
             contentType(ContentType.Application.Json)
-            setBody(GenerateLocationContentRequest(exitIds, existingName, existingDesc))
+            setBody(GenerateLocationContentRequest(exitIds, featureIds, existingName, existingDesc))
         }
         if (response.status.isSuccess()) {
             response.body()

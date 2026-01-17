@@ -1,5 +1,7 @@
 package com.ez2bg.anotherthread
 
+import com.ez2bg.anotherthread.database.Feature
+import com.ez2bg.anotherthread.database.FeatureRepository
 import com.ez2bg.anotherthread.database.Location
 import com.ez2bg.anotherthread.database.LocationRepository
 import io.ktor.client.*
@@ -65,10 +67,11 @@ object ContentGenerationService {
         get() = System.getenv("LLM_MODEL") ?: "llama3.2:3b"
 
     /**
-     * Generate content for a location, considering adjacent locations for context
+     * Generate content for a location, considering adjacent locations and features for context
      */
     suspend fun generateLocationContent(
         exitIds: List<String>,
+        featureIds: List<String> = emptyList(),
         existingName: String?,
         existingDesc: String?
     ): Result<GeneratedContent> = withContext(Dispatchers.IO) {
@@ -78,37 +81,45 @@ object ContentGenerationService {
                 LocationRepository.findById(id)
             }
 
-            val contextInfo = if (adjacentLocations.isNotEmpty()) {
-                val adjacentNames = adjacentLocations.mapNotNull { loc ->
-                    if (loc.name.isNotBlank()) loc.name else null
+            // Fetch features in this location for context
+            val features: List<Feature> = featureIds.mapNotNull { id ->
+                FeatureRepository.findById(id)
+            }
+
+            val adjacentContext = if (adjacentLocations.isNotEmpty()) {
+                val adjacentInfo = adjacentLocations.mapNotNull { loc ->
+                    if (loc.name.isNotBlank()) {
+                        if (loc.desc.isNotBlank()) "${loc.name}: ${loc.desc}" else loc.name
+                    } else null
                 }
-                val adjacentDescs = adjacentLocations.mapNotNull { loc ->
-                    if (loc.desc.isNotBlank()) "${loc.name}: ${loc.desc}" else null
+                "Adjacent locations: ${adjacentInfo.joinToString("; ")}. "
+            } else ""
+
+            val featureContext = if (features.isNotEmpty()) {
+                val featureInfo = features.mapNotNull { feat ->
+                    if (feat.description.isNotBlank()) "${feat.name}: ${feat.description}" else feat.name
                 }
-                buildString {
-                    if (adjacentNames.isNotEmpty()) {
-                        append("This location is connected to: ${adjacentNames.joinToString(", ")}. ")
-                    }
-                    if (adjacentDescs.isNotEmpty()) {
-                        append("Adjacent areas: ${adjacentDescs.joinToString("; ")}. ")
-                    }
-                }
+                "Features in this location: ${featureInfo.joinToString("; ")}. "
             } else ""
 
             val existingContext = buildString {
-                if (!existingName.isNullOrBlank()) append("Current name: $existingName. ")
-                if (!existingDesc.isNullOrBlank()) append("Current description: $existingDesc. ")
+                if (!existingName.isNullOrBlank()) append("Location name: $existingName. ")
+                if (!existingDesc.isNullOrBlank()) append("Current description to improve upon: $existingDesc. ")
             }
 
             val prompt = """
-You are a creative fantasy game world designer. Generate a name and description for a location in a fantasy game world.
+You are a creative fantasy game world designer. Generate a description for a location in a fantasy game world.
 
-$contextInfo$existingContext
+$existingContext$adjacentContext$featureContext
 
-Generate a unique, evocative name and a short atmospheric description (2-3 sentences) for this location. The description should hint at what players might find or experience there.
+Based on the location name, adjacent locations, and any features present, generate a short atmospheric description (2-3 sentences) for this location. The description should:
+- Be consistent with the location's name
+- Reference or hint at the connected areas if provided
+- Incorporate any features present in the room
+- Hint at what players might find or experience there
 
 Respond with valid JSON only in this exact format:
-{"name": "Location Name Here", "description": "Description here."}
+{"name": "$existingName", "description": "Description here."}
             """.trimIndent()
 
             callLlm(prompt)

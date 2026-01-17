@@ -48,6 +48,7 @@ import coil3.compose.AsyncImage
 import coil3.compose.AsyncImagePainter
 import com.ez2bg.anotherthread.AppConfig
 import com.ez2bg.anotherthread.api.*
+import com.ez2bg.anotherthread.platform.readFileBytes
 import com.ez2bg.anotherthread.storage.AuthStorage
 import kotlinx.coroutines.launch
 import kotlin.math.PI
@@ -171,6 +172,7 @@ fun GenButton(
     currentName: String,
     currentDesc: String,
     exitIds: List<String> = emptyList(),
+    featureIds: List<String> = emptyList(),
     onGenerated: (name: String, description: String) -> Unit,
     modifier: Modifier = Modifier
 ) {
@@ -179,6 +181,12 @@ fun GenButton(
     val scope = rememberCoroutineScope()
 
     Column(modifier = modifier) {
+        // For locations, require at least 3 characters in the name
+        val isNameValid = when (entityType) {
+            GenEntityType.LOCATION -> currentName.length >= 3
+            else -> true
+        }
+
         Button(
             onClick = {
                 scope.launch {
@@ -188,6 +196,7 @@ fun GenButton(
                     val result = when (entityType) {
                         GenEntityType.LOCATION -> ApiClient.generateLocationContent(
                             exitIds = exitIds,
+                            featureIds = featureIds,
                             existingName = currentName.ifBlank { null },
                             existingDesc = currentDesc.ifBlank { null }
                         )
@@ -211,7 +220,7 @@ fun GenButton(
                     }
                 }
             },
-            enabled = !isGenerating
+            enabled = !isGenerating && isNameValid
         ) {
             if (isGenerating) {
                 CircularProgressIndicator(
@@ -249,72 +258,60 @@ fun GenerateImageButton(
     description: String,
     featureIds: List<String> = emptyList(),
     onImageGenerated: (String) -> Unit,
+    onError: (String?) -> Unit,
     modifier: Modifier = Modifier
 ) {
     var isGenerating by remember { mutableStateOf(false) }
-    var errorMessage by remember { mutableStateOf<String?>(null) }
     val scope = rememberCoroutineScope()
 
     val isEnabled = name.isNotBlank() && description.isNotBlank() && !isGenerating
 
-    Column(modifier = modifier) {
-        Button(
-            onClick = {
-                scope.launch {
-                    isGenerating = true
-                    errorMessage = null
+    Button(
+        onClick = {
+            scope.launch {
+                isGenerating = true
+                onError(null)
 
-                    val entityTypeStr = when (entityType) {
-                        GenEntityType.LOCATION -> "location"
-                        GenEntityType.CREATURE -> "creature"
-                        GenEntityType.ITEM -> "item"
-                        GenEntityType.USER -> "user"
-                    }
-
-                    ApiClient.generateImage(
-                        entityType = entityTypeStr,
-                        entityId = entityId,
-                        name = name,
-                        description = description,
-                        featureIds = featureIds
-                    ).onSuccess { response ->
-                        onImageGenerated(response.imageUrl)
-                    }.onFailure { error ->
-                        errorMessage = error.message ?: "Failed to generate image"
-                    }
-
-                    isGenerating = false
+                val entityTypeStr = when (entityType) {
+                    GenEntityType.LOCATION -> "location"
+                    GenEntityType.CREATURE -> "creature"
+                    GenEntityType.ITEM -> "item"
+                    GenEntityType.USER -> "user"
                 }
-            },
-            enabled = isEnabled
-        ) {
-            if (isGenerating) {
-                CircularProgressIndicator(
-                    modifier = Modifier.size(16.dp),
-                    strokeWidth = 2.dp
-                )
-                Spacer(modifier = Modifier.width(8.dp))
-                Text("Generating...")
-            } else {
-                Icon(
-                    imageVector = Icons.Default.Image,
-                    contentDescription = null,
-                    modifier = Modifier.size(16.dp)
-                )
-                Spacer(modifier = Modifier.width(4.dp))
-                Text("Gen Image")
-            }
-        }
 
-        errorMessage?.let {
-            SelectionContainer {
-                Text(
-                    text = it,
-                    color = MaterialTheme.colorScheme.error,
-                    style = MaterialTheme.typography.bodySmall,
-                    modifier = Modifier.padding(top = 4.dp)
-                )
+                ApiClient.generateImage(
+                    entityType = entityTypeStr,
+                    entityId = entityId,
+                    name = name,
+                    description = description,
+                    featureIds = featureIds
+                ).onSuccess { response ->
+                    onImageGenerated(response.imageUrl)
+                }.onFailure { error ->
+                    onError(error.message ?: "Failed to generate image")
+                }
+
+                isGenerating = false
             }
+        },
+        enabled = isEnabled,
+        modifier = modifier
+    ) {
+        if (isGenerating) {
+            CircularProgressIndicator(
+                modifier = Modifier.size(16.dp),
+                strokeWidth = 2.dp
+            )
+            Spacer(modifier = Modifier.width(8.dp))
+            Text("Generating...")
+        } else {
+            Icon(
+                imageVector = Icons.Default.Image,
+                contentDescription = null,
+                modifier = Modifier.size(16.dp)
+            )
+            Spacer(modifier = Modifier.width(4.dp))
+            Text("Gen Image")
         }
     }
 }
@@ -773,6 +770,7 @@ fun UserProfileView(
     var imageUrl by remember { mutableStateOf(user.imageUrl) }
     var isLoading by remember { mutableStateOf(false) }
     var message by remember { mutableStateOf<String?>(null) }
+    var imageGenError by remember { mutableStateOf<String?>(null) }
     val scope = rememberCoroutineScope()
 
     // Available options for dropdown
@@ -851,8 +849,20 @@ fun UserProfileView(
                     featureIds = features.split(",").map { it.trim() }.filter { it.isNotEmpty() },
                     onImageGenerated = { newImageUrl ->
                         imageUrl = newImageUrl
-                    }
+                    },
+                    onError = { imageGenError = it }
                 )
+            }
+
+            imageGenError?.let {
+                SelectionContainer {
+                    Text(
+                        text = it,
+                        color = MaterialTheme.colorScheme.error,
+                        style = MaterialTheme.typography.bodySmall,
+                        modifier = Modifier.fillMaxWidth().padding(top = 4.dp)
+                    )
+                }
             }
 
             Row(
@@ -1425,6 +1435,7 @@ fun LocationForm(
     var imageUrl by remember(editLocation?.id) { mutableStateOf(editLocation?.imageUrl) }
     var isLoading by remember(editLocation?.id) { mutableStateOf(false) }
     var message by remember(editLocation?.id) { mutableStateOf<String?>(null) }
+    var imageGenError by remember(editLocation?.id) { mutableStateOf<String?>(null) }
     val scope = rememberCoroutineScope()
 
     // State for exit removal confirmation dialog
@@ -1526,8 +1537,9 @@ fun LocationForm(
                 currentName = name,
                 currentDesc = desc,
                 exitIds = exitIds,
-                onGenerated = { genName, genDesc ->
-                    name = genName
+                featureIds = features.splitToList(),
+                onGenerated = { _, genDesc ->
+                    // Only update description, keep the existing name
                     desc = genDesc
                 }
             )
@@ -1731,7 +1743,8 @@ fun LocationForm(
                     featureIds = features.splitToList(),
                     onImageGenerated = { newImageUrl ->
                         imageUrl = newImageUrl
-                    }
+                    },
+                    onError = { imageGenError = it }
                 )
             }
 
@@ -1774,6 +1787,17 @@ fun LocationForm(
             }
         }
 
+        imageGenError?.let {
+            SelectionContainer {
+                Text(
+                    text = it,
+                    color = MaterialTheme.colorScheme.error,
+                    style = MaterialTheme.typography.bodySmall,
+                    modifier = Modifier.fillMaxWidth().padding(top = 4.dp)
+                )
+            }
+        }
+
         message?.let {
             Text(
                 text = it,
@@ -1799,6 +1823,7 @@ fun CreatureForm(
     var imageUrl by remember { mutableStateOf(editCreature?.imageUrl) }
     var isLoading by remember { mutableStateOf(false) }
     var message by remember { mutableStateOf<String?>(null) }
+    var imageGenError by remember { mutableStateOf<String?>(null) }
     val scope = rememberCoroutineScope()
 
     // Available options for dropdown
@@ -1907,7 +1932,8 @@ fun CreatureForm(
                     featureIds = features.splitToList(),
                     onImageGenerated = { newImageUrl ->
                         imageUrl = newImageUrl
-                    }
+                    },
+                    onError = { imageGenError = it }
                 )
             }
 
@@ -1943,6 +1969,17 @@ fun CreatureForm(
                 } else {
                     Text(if (isEditMode) "Update Creature" else "Create Creature")
                 }
+            }
+        }
+
+        imageGenError?.let {
+            SelectionContainer {
+                Text(
+                    text = it,
+                    color = MaterialTheme.colorScheme.error,
+                    style = MaterialTheme.typography.bodySmall,
+                    modifier = Modifier.fillMaxWidth().padding(top = 4.dp)
+                )
             }
         }
 
@@ -2100,6 +2137,7 @@ fun ItemForm(
     var imageUrl by remember { mutableStateOf(editItem?.imageUrl) }
     var isLoading by remember { mutableStateOf(false) }
     var message by remember { mutableStateOf<String?>(null) }
+    var imageGenError by remember { mutableStateOf<String?>(null) }
     val scope = rememberCoroutineScope()
 
     Column(
@@ -2188,7 +2226,8 @@ fun ItemForm(
                     featureIds = featureIds.splitToList(),
                     onImageGenerated = { newImageUrl ->
                         imageUrl = newImageUrl
-                    }
+                    },
+                    onError = { imageGenError = it }
                 )
             }
 
@@ -2223,6 +2262,17 @@ fun ItemForm(
                 } else {
                     Text(if (isEditMode) "Update Item" else "Create Item")
                 }
+            }
+        }
+
+        imageGenError?.let {
+            SelectionContainer {
+                Text(
+                    text = it,
+                    color = MaterialTheme.colorScheme.error,
+                    style = MaterialTheme.typography.bodySmall,
+                    modifier = Modifier.fillMaxWidth().padding(top = 4.dp)
+                )
             }
         }
 
@@ -2437,22 +2487,20 @@ fun AdminPanelView() {
                                 uploadMessage = null
 
                                 try {
-                                    val file = java.io.File(selectedFilePath)
-                                    if (!file.exists()) {
-                                        uploadMessage = "File not found: $selectedFilePath"
+                                    val fileResult = readFileBytes(selectedFilePath)
+                                    if (fileResult == null) {
+                                        uploadMessage = "File not found or cannot be read: $selectedFilePath"
                                         isUploading = false
                                         return@launch
                                     }
 
-                                    val extension = file.extension.lowercase()
-                                    if (extension !in allowedTypes) {
-                                        uploadMessage = "File type .$extension not allowed"
+                                    if (fileResult.extension !in allowedTypes) {
+                                        uploadMessage = "File type .${fileResult.extension} not allowed"
                                         isUploading = false
                                         return@launch
                                     }
 
-                                    val fileBytes = file.readBytes()
-                                    ApiClient.uploadFile(file.name, fileBytes).onSuccess { response ->
+                                    ApiClient.uploadFile(fileResult.filename, fileResult.bytes).onSuccess { response ->
                                         if (response.success) {
                                             uploadMessage = "File uploaded successfully: ${response.url}"
                                             selectedFilePath = ""

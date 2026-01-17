@@ -90,6 +90,7 @@ data class AuthResponse(
 @Serializable
 data class GenerateLocationContentRequest(
     val exitIds: List<String> = emptyList(),
+    val featureIds: List<String> = emptyList(),
     val existingName: String? = null,
     val existingDesc: String? = null
 )
@@ -312,6 +313,7 @@ fun Application.module() {
                 val request = call.receive<GenerateLocationContentRequest>()
                 ContentGenerationService.generateLocationContent(
                     exitIds = request.exitIds,
+                    featureIds = request.featureIds,
                     existingName = request.existingName,
                     existingDesc = request.existingDesc
                 ).onSuccess { content ->
