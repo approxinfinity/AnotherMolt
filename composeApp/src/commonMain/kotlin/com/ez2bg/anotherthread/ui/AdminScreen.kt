@@ -50,10 +50,94 @@ import com.ez2bg.anotherthread.AppConfig
 import com.ez2bg.anotherthread.api.*
 import com.ez2bg.anotherthread.platform.readFileBytes
 import com.ez2bg.anotherthread.storage.AuthStorage
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.flow.MutableSharedFlow
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.asSharedFlow
+import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 import kotlin.math.PI
 import kotlin.math.cos
 import kotlin.math.sin
+
+/**
+ * Data class representing a completed image generation
+ */
+data class ImageGenerationResult(
+    val entityType: String,
+    val entityId: String,
+    val imageUrl: String
+)
+
+/**
+ * Singleton manager for background image generation.
+ * Jobs continue even if the user navigates away from the entity.
+ */
+object BackgroundImageGenerationManager {
+    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
+
+    // Track which entities are currently generating images
+    private val _generatingEntities = MutableStateFlow<Set<String>>(emptySet())
+    val generatingEntities = _generatingEntities.asStateFlow()
+
+    // Emit completed image generations
+    private val _imageCompletions = MutableSharedFlow<ImageGenerationResult>(extraBufferCapacity = 10)
+    val imageCompletions = _imageCompletions.asSharedFlow()
+
+    // Track errors by entity ID
+    private val _errors = MutableStateFlow<Map<String, String>>(emptyMap())
+    val errors = _errors.asStateFlow()
+
+    fun isGenerating(entityId: String): Boolean = entityId in _generatingEntities.value
+
+    fun getError(entityId: String): String? = _errors.value[entityId]
+
+    fun clearError(entityId: String) {
+        _errors.value = _errors.value - entityId
+    }
+
+    fun startGeneration(
+        entityType: String,
+        entityId: String,
+        name: String,
+        description: String,
+        featureIds: List<String> = emptyList()
+    ) {
+        // Don't start if already generating
+        if (isGenerating(entityId)) return
+
+        // Mark as generating
+        _generatingEntities.value = _generatingEntities.value + entityId
+        _errors.value = _errors.value - entityId
+
+        scope.launch {
+            ApiClient.generateImage(
+                entityType = entityType,
+                entityId = entityId,
+                name = name,
+                description = description,
+                featureIds = featureIds
+            ).onSuccess { response ->
+                // Emit the completion
+                _imageCompletions.emit(
+                    ImageGenerationResult(
+                        entityType = entityType,
+                        entityId = entityId,
+                        imageUrl = response.imageUrl
+                    )
+                )
+            }.onFailure { error ->
+                // Store the error
+                _errors.value = _errors.value + (entityId to (error.message ?: "Failed to generate image"))
+            }
+
+            // Mark as no longer generating
+            _generatingEntities.value = _generatingEntities.value - entityId
+        }
+    }
+}
 
 enum class AdminTab(val title: String) {
     USER("User"),
@@ -248,7 +332,9 @@ fun GenButton(
 }
 
 /**
- * Button to generate an image for an entity using Stable Diffusion
+ * Button to generate an image for an entity using Stable Diffusion.
+ * Generation runs in the background - user can navigate away and the image
+ * will update when complete.
  */
 @Composable
 fun GenerateImageButton(
@@ -261,38 +347,50 @@ fun GenerateImageButton(
     onError: (String?) -> Unit,
     modifier: Modifier = Modifier
 ) {
-    var isGenerating by remember { mutableStateOf(false) }
-    val scope = rememberCoroutineScope()
+    // Observe generation state from the background manager
+    val generatingEntities by BackgroundImageGenerationManager.generatingEntities.collectAsState()
+    val errors by BackgroundImageGenerationManager.errors.collectAsState()
+
+    val isGenerating = entityId in generatingEntities
+    val error = errors[entityId]
+
+    // Listen for image completions for this entity
+    LaunchedEffect(entityId) {
+        BackgroundImageGenerationManager.imageCompletions.collect { result ->
+            if (result.entityId == entityId) {
+                onImageGenerated(result.imageUrl)
+            }
+        }
+    }
+
+    // Report errors when they occur
+    LaunchedEffect(error) {
+        if (error != null) {
+            onError(error)
+            BackgroundImageGenerationManager.clearError(entityId)
+        }
+    }
+
+    val entityTypeStr = when (entityType) {
+        GenEntityType.LOCATION -> "location"
+        GenEntityType.CREATURE -> "creature"
+        GenEntityType.ITEM -> "item"
+        GenEntityType.USER -> "user"
+    }
 
     val isEnabled = name.isNotBlank() && description.isNotBlank() && !isGenerating
 
     Button(
         onClick = {
-            scope.launch {
-                isGenerating = true
-                onError(null)
-
-                val entityTypeStr = when (entityType) {
-                    GenEntityType.LOCATION -> "location"
-                    GenEntityType.CREATURE -> "creature"
-                    GenEntityType.ITEM -> "item"
-                    GenEntityType.USER -> "user"
-                }
-
-                ApiClient.generateImage(
-                    entityType = entityTypeStr,
-                    entityId = entityId,
-                    name = name,
-                    description = description,
-                    featureIds = featureIds
-                ).onSuccess { response ->
-                    onImageGenerated(response.imageUrl)
-                }.onFailure { error ->
-                    onError(error.message ?: "Failed to generate image")
-                }
-
-                isGenerating = false
-            }
+            onError(null)
+            // Start background generation - returns immediately
+            BackgroundImageGenerationManager.startGeneration(
+                entityType = entityTypeStr,
+                entityId = entityId,
+                name = name,
+                description = description,
+                featureIds = featureIds
+            )
         },
         enabled = isEnabled,
         modifier = modifier
