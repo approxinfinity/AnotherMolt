@@ -123,6 +123,11 @@ data class GenerateImageRequest(
 )
 
 @Serializable
+data class LockRequest(
+    val userId: String
+)
+
+@Serializable
 data class GenerateImageResponse(
     val imageUrl: String
 )
@@ -418,7 +423,8 @@ fun Application.module() {
                     creatureIds = request.creatureIds,
                     exitIds = request.exitIds,
                     featureIds = request.featureIds,
-                    imageUrl = existingLocation?.imageUrl // Preserve existing image
+                    imageUrl = existingLocation?.imageUrl, // Preserve existing image
+                    lockedBy = existingLocation?.lockedBy // Preserve lock status
                 )
 
                 if (LocationRepository.update(location)) {
@@ -441,6 +447,27 @@ fun Application.module() {
                     call.respond(HttpStatusCode.OK, location)
                 } else {
                     call.respond(HttpStatusCode.NotFound)
+                }
+            }
+            put("/{id}/lock") {
+                val id = call.parameters["id"] ?: return@put call.respond(HttpStatusCode.BadRequest)
+                val request = call.receive<LockRequest>()
+
+                val existingLocation = LocationRepository.findById(id)
+                    ?: return@put call.respond(HttpStatusCode.NotFound)
+
+                // Toggle lock: if currently locked by this user, unlock; otherwise lock
+                val newLockedBy = if (existingLocation.lockedBy == request.userId) {
+                    null // Unlock
+                } else {
+                    request.userId // Lock
+                }
+
+                if (LocationRepository.updateLockedBy(id, newLockedBy)) {
+                    val updatedLocation = LocationRepository.findById(id)
+                    call.respond(HttpStatusCode.OK, updatedLocation!!)
+                } else {
+                    call.respond(HttpStatusCode.InternalServerError)
                 }
             }
         }

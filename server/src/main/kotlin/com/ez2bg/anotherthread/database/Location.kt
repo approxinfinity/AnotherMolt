@@ -17,7 +17,8 @@ data class Location(
     val creatureIds: List<String>,
     val exitIds: List<String>,
     val featureIds: List<String>,
-    val imageUrl: String? = null
+    val imageUrl: String? = null,
+    val lockedBy: String? = null
 )
 
 object LocationRepository {
@@ -43,7 +44,8 @@ object LocationRepository {
         creatureIds = jsonToList(this[LocationTable.creatureIds]),
         exitIds = jsonToList(this[LocationTable.exitIds]),
         featureIds = jsonToList(this[LocationTable.featureIds]),
-        imageUrl = this[LocationTable.imageUrl]
+        imageUrl = this[LocationTable.imageUrl],
+        lockedBy = this[LocationTable.lockedBy]
     )
 
     fun create(location: Location): Location = transaction {
@@ -56,6 +58,7 @@ object LocationRepository {
             it[exitIds] = listToJson(location.exitIds)
             it[featureIds] = listToJson(location.featureIds)
             it[imageUrl] = location.imageUrl
+            it[lockedBy] = location.lockedBy
         }
         location
     }
@@ -80,6 +83,13 @@ object LocationRepository {
             it[exitIds] = listToJson(location.exitIds)
             it[featureIds] = listToJson(location.featureIds)
             it[imageUrl] = location.imageUrl
+            it[lockedBy] = location.lockedBy
+        } > 0
+    }
+
+    fun updateLockedBy(id: String, lockedBy: String?): Boolean = transaction {
+        LocationTable.update({ LocationTable.id eq id }) {
+            it[LocationTable.lockedBy] = lockedBy
         } > 0
     }
 

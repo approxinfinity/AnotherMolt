@@ -11,6 +11,7 @@ object LocationTable : Table("location") {
     val exitIds = text("exit_ids")
     val featureIds = text("feature_ids")
     val imageUrl = text("image_url").nullable()
+    val lockedBy = varchar("locked_by", 36).nullable()
 
     override val primaryKey = PrimaryKey(id)
 }

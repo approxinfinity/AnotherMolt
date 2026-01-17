@@ -22,7 +22,8 @@ data class LocationDto(
     val creatureIds: List<String> = emptyList(),
     val exitIds: List<String> = emptyList(),
     val featureIds: List<String> = emptyList(),
-    val imageUrl: String? = null
+    val imageUrl: String? = null,
+    val lockedBy: String? = null
 )
 
 @Serializable
@@ -67,6 +68,11 @@ data class CreateItemRequest(
     val name: String,
     val desc: String,
     val featureIds: List<String> = emptyList()
+)
+
+@Serializable
+data class LockRequest(
+    val userId: String
 )
 
 @Serializable
@@ -220,6 +226,13 @@ object ApiClient {
     suspend fun getLocation(id: String): Result<LocationDto?> = runCatching {
         val locations: List<LocationDto> = client.get("$baseUrl/locations").body()
         locations.find { it.id == id }
+    }
+
+    suspend fun toggleLocationLock(locationId: String, userId: String): Result<LocationDto> = runCatching {
+        client.put("$baseUrl/locations/$locationId/lock") {
+            contentType(ContentType.Application.Json)
+            setBody(LockRequest(userId))
+        }.body()
     }
 
     suspend fun createCreature(request: CreateCreatureRequest): Result<Unit> = runCatching {

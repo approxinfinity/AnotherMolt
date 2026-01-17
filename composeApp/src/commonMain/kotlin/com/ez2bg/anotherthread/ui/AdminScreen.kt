@@ -22,6 +22,8 @@ import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Image
+import androidx.compose.material.icons.filled.Lock
+import androidx.compose.material.icons.filled.LockOpen
 import androidx.compose.material.icons.filled.Upload
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -720,7 +722,8 @@ fun AdminScreen() {
                     selectedTab = AdminTab.USER
                     viewState = ViewState.UserDetail(userId)
                 },
-                currentUser = currentUser
+                currentUser = currentUser,
+                isAdmin = isAdmin
             )
             is ViewState.LocationEdit -> LocationForm(
                 editLocation = state.location,
@@ -739,7 +742,11 @@ fun AdminScreen() {
                     selectedTab = AdminTab.USER
                     viewState = ViewState.UserDetail(userId)
                 },
-                currentUser = currentUser
+                currentUser = currentUser,
+                isAdmin = isAdmin,
+                onLocationUpdated = { updatedLocation ->
+                    viewState = ViewState.LocationEdit(updatedLocation)
+                }
             )
             is ViewState.CreatureCreate -> CreatureForm(
                 editCreature = null,
@@ -2219,7 +2226,9 @@ fun LocationForm(
     onNavigateToCreature: (String) -> Unit,
     onNavigateToLocation: (LocationDto) -> Unit,
     onNavigateToUser: (String) -> Unit,
-    currentUser: UserDto? = null
+    currentUser: UserDto? = null,
+    isAdmin: Boolean = false,
+    onLocationUpdated: (LocationDto) -> Unit = {}
 ) {
     val isEditMode = editLocation != null
     var name by remember(editLocation?.id) { mutableStateOf(editLocation?.name ?: "") }
@@ -2233,6 +2242,11 @@ fun LocationForm(
     var message by remember(editLocation?.id) { mutableStateOf<String?>(null) }
     var imageGenError by remember(editLocation?.id) { mutableStateOf<String?>(null) }
     val scope = rememberCoroutineScope()
+
+    // Lock state
+    var lockedBy by remember(editLocation?.id) { mutableStateOf(editLocation?.lockedBy) }
+    var lockerName by remember(editLocation?.id) { mutableStateOf<String?>(null) }
+    val isLocked = lockedBy != null
 
     // State for exit removal confirmation dialog
     var exitToRemove by remember { mutableStateOf<String?>(null) }
@@ -2256,6 +2270,18 @@ fun LocationForm(
             availableLocations = locs
                 .filter { it.id != editLocation?.id } // Don't show current location as exit option
                 .map { IdOption(it.id, it.name) }
+        }
+    }
+
+    // Fetch locker's name when location is locked
+    LaunchedEffect(lockedBy) {
+        val lockerId = lockedBy
+        if (lockerId != null) {
+            ApiClient.getUser(lockerId).onSuccess { user ->
+                lockerName = user?.name
+            }
+        } else {
+            lockerName = null
         }
     }
 
@@ -2298,8 +2324,46 @@ fun LocationForm(
             }
             Text(
                 text = if (isEditMode) "Edit Location" else "Create Location",
-                style = MaterialTheme.typography.titleLarge
+                style = MaterialTheme.typography.titleLarge,
+                modifier = Modifier.weight(1f)
             )
+            // Lock/unlock button for admins in edit mode
+            if (isAdmin && isEditMode && editLocation != null) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(4.dp)
+                ) {
+                    if (isLocked && lockerName != null) {
+                        Text(
+                            text = "Locked by $lockerName",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                    IconButton(
+                        onClick = {
+                            currentUser?.let { user ->
+                                scope.launch {
+                                    ApiClient.toggleLocationLock(editLocation.id, user.id)
+                                        .onSuccess { updatedLocation ->
+                                            lockedBy = updatedLocation.lockedBy
+                                            onLocationUpdated(updatedLocation)
+                                        }
+                                        .onFailure { error ->
+                                            message = "Failed to toggle lock: ${error.message}"
+                                        }
+                                }
+                            }
+                        }
+                    ) {
+                        Icon(
+                            imageVector = if (isLocked) Icons.Filled.Lock else Icons.Filled.LockOpen,
+                            contentDescription = if (isLocked) "Unlock location" else "Lock location",
+                            tint = if (isLocked) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                }
+            }
         }
 
         if (isEditMode) {
