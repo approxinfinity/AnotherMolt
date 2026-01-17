@@ -265,7 +265,8 @@ fun GenButton(
     exitIds: List<String> = emptyList(),
     featureIds: List<String> = emptyList(),
     onGenerated: (name: String, description: String) -> Unit,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    enabled: Boolean = true
 ) {
     var isGenerating by remember { mutableStateOf(false) }
     var errorMessage by remember { mutableStateOf<String?>(null) }
@@ -311,7 +312,7 @@ fun GenButton(
                     }
                 }
             },
-            enabled = !isGenerating && isNameValid
+            enabled = enabled && !isGenerating && isNameValid
         ) {
             if (isGenerating) {
                 CircularProgressIndicator(
@@ -352,7 +353,8 @@ fun GenerateImageButton(
     featureIds: List<String> = emptyList(),
     onImageGenerated: (String) -> Unit,
     onError: (String?) -> Unit,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    enabled: Boolean = true
 ) {
     // Observe generation state from the background manager
     val generatingEntities by BackgroundImageGenerationManager.generatingEntities.collectAsState()
@@ -385,7 +387,7 @@ fun GenerateImageButton(
         GenEntityType.USER -> "user"
     }
 
-    val isEnabled = name.isNotBlank() && description.isNotBlank() && !isGenerating
+    val isEnabled = enabled && name.isNotBlank() && description.isNotBlank() && !isGenerating
 
     Button(
         onClick = {
@@ -1314,7 +1316,8 @@ fun IdPillSection(
     onPillClick: (String) -> Unit,
     onAddId: (String) -> Unit,
     onRemoveId: (String) -> Unit,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    enabled: Boolean = true
 ) {
     var showAddDialog by remember { mutableStateOf(false) }
     var newId by remember { mutableStateOf("") }
@@ -1352,33 +1355,35 @@ fun IdPillSection(
                     color = pillColor,
                     textColor = pillTextColor,
                     onClick = { onPillClick(id) },
-                    onRemove = { onRemoveId(id) }
+                    onRemove = if (enabled) {{ onRemoveId(id) }} else null
                 )
             }
 
-            // Add button pill
-            Surface(
-                modifier = Modifier
-                    .clickable { showAddDialog = true }
-                    .padding(2.dp),
-                shape = RoundedCornerShape(16.dp),
-                color = MaterialTheme.colorScheme.outline.copy(alpha = 0.3f)
-            ) {
-                Row(
-                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
-                    verticalAlignment = Alignment.CenterVertically
+            // Add button pill (only show when enabled)
+            if (enabled) {
+                Surface(
+                    modifier = Modifier
+                        .clickable { showAddDialog = true }
+                        .padding(2.dp),
+                    shape = RoundedCornerShape(16.dp),
+                    color = MaterialTheme.colorScheme.outline.copy(alpha = 0.3f)
                 ) {
-                    Icon(
-                        imageVector = Icons.Filled.Add,
-                        contentDescription = "Add",
-                        modifier = Modifier.size(16.dp),
-                        tint = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                    Text(
-                        text = "Add",
-                        style = MaterialTheme.typography.labelMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
+                    Row(
+                        modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Icon(
+                            imageVector = Icons.Filled.Add,
+                            contentDescription = "Add",
+                            modifier = Modifier.size(16.dp),
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                        Text(
+                            text = "Add",
+                            style = MaterialTheme.typography.labelMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
                 }
             }
         }
@@ -1793,11 +1798,16 @@ private object TerrainColors {
     val building = Color(0xFF8B7355)       // Brown buildings
     val cave = Color(0xFF5A5A5A)           // Dark gray
     val sand = Color(0xFFD4C19E)           // Sandy color
+    val coast = Color(0xFF8BA4B0)          // Coastal blue-gray
+    val swamp = Color(0xFF5A6B52)          // Murky green
+    val ruins = Color(0xFF8A7B6A)          // Aged stone
+    val ink = Color(0xFF3A3022)            // Dark ink for details
 }
 
 // Terrain types for contextual drawing
 private enum class TerrainType {
-    ROAD, FOREST, WATER, MOUNTAIN, GRASS, BUILDING, CAVE, DESERT
+    ROAD, FOREST, WATER, MOUNTAIN, GRASS, BUILDING, CAVE, DESERT,
+    COAST, HILLS, SWAMP, CHURCH, CASTLE, PORT, RUINS
 }
 
 // Helper extension for keyword matching
@@ -1813,26 +1823,47 @@ private fun parseTerrainFromDescription(desc: String, name: String): Set<Terrain
     if (text.containsAny("road", "path", "trail", "highway", "street", "lane", "way")) {
         terrains.add(TerrainType.ROAD)
     }
-    if (text.containsAny("forest", "tree", "wood", "grove", "copse", "timber", "oak", "pine")) {
+    if (text.containsAny("forest", "tree", "wood", "grove", "copse", "timber", "oak", "pine", "jungle")) {
         terrains.add(TerrainType.FOREST)
     }
-    if (text.containsAny("river", "stream", "creek", "water", "lake", "pond", "brook", "falls")) {
+    if (text.containsAny("river", "stream", "creek", "water", "lake", "pond", "brook", "falls", "fountain")) {
         terrains.add(TerrainType.WATER)
     }
-    if (text.containsAny("mountain", "hill", "cliff", "peak", "ridge", "highland", "slope")) {
+    if (text.containsAny("mountain", "peak", "summit", "alpine")) {
         terrains.add(TerrainType.MOUNTAIN)
     }
-    if (text.containsAny("grass", "meadow", "field", "plain", "pasture", "clearing")) {
+    if (text.containsAny("hill", "cliff", "ridge", "highland", "slope", "knoll", "mound")) {
+        terrains.add(TerrainType.HILLS)
+    }
+    if (text.containsAny("grass", "meadow", "field", "plain", "pasture", "clearing", "prairie")) {
         terrains.add(TerrainType.GRASS)
     }
-    if (text.containsAny("town", "village", "castle", "inn", "tavern", "house", "building", "shop", "market")) {
+    if (text.containsAny("town", "village", "inn", "tavern", "house", "building", "shop", "market", "hamlet")) {
         terrains.add(TerrainType.BUILDING)
     }
-    if (text.containsAny("cave", "cavern", "underground", "tunnel", "grotto", "mine")) {
+    if (text.containsAny("castle", "fortress", "citadel", "stronghold", "keep", "palace")) {
+        terrains.add(TerrainType.CASTLE)
+    }
+    if (text.containsAny("church", "temple", "cathedral", "shrine", "chapel", "monastery", "abbey")) {
+        terrains.add(TerrainType.CHURCH)
+    }
+    if (text.containsAny("cave", "cavern", "underground", "tunnel", "grotto", "mine", "dungeon")) {
         terrains.add(TerrainType.CAVE)
     }
-    if (text.containsAny("desert", "sand", "dune", "arid", "wasteland")) {
+    if (text.containsAny("desert", "sand", "dune", "arid", "wasteland", "barren")) {
         terrains.add(TerrainType.DESERT)
+    }
+    if (text.containsAny("coast", "shore", "beach", "sea", "ocean", "bay", "harbor", "cove")) {
+        terrains.add(TerrainType.COAST)
+    }
+    if (text.containsAny("swamp", "marsh", "bog", "wetland", "fen", "mire", "bayou")) {
+        terrains.add(TerrainType.SWAMP)
+    }
+    if (text.containsAny("port", "dock", "pier", "wharf", "marina", "shipyard", "quay")) {
+        terrains.add(TerrainType.PORT)
+    }
+    if (text.containsAny("ruin", "ancient", "crumbl", "decay", "abandon", "forgotten", "lost")) {
+        terrains.add(TerrainType.RUINS)
     }
 
     return terrains
@@ -1897,6 +1928,139 @@ private fun DrawScope.drawParchmentBackground(seed: Int) {
             center = Offset(x, y)
         )
     }
+
+    // Draw decorative border
+    drawMapBorder()
+
+    // Draw compass rose in corner
+    val compassSize = minOf(size.width, size.height) * 0.12f
+    drawCompassRose(
+        center = Offset(size.width - compassSize - 20f, size.height - compassSize - 20f),
+        size = compassSize
+    )
+}
+
+// Draw decorative double-line border like vintage maps
+private fun DrawScope.drawMapBorder() {
+    val borderInset = 12f
+    val borderWidth = 2f
+    val innerInset = borderInset + 6f
+    val inkColor = TerrainColors.ink.copy(alpha = 0.4f)
+
+    // Outer border
+    drawRect(
+        color = inkColor,
+        topLeft = Offset(borderInset, borderInset),
+        size = androidx.compose.ui.geometry.Size(size.width - borderInset * 2, size.height - borderInset * 2),
+        style = Stroke(width = borderWidth)
+    )
+
+    // Inner border
+    drawRect(
+        color = inkColor.copy(alpha = 0.3f),
+        topLeft = Offset(innerInset, innerInset),
+        size = androidx.compose.ui.geometry.Size(size.width - innerInset * 2, size.height - innerInset * 2),
+        style = Stroke(width = 1f)
+    )
+
+    // Corner decorations (small flourishes)
+    val cornerSize = 20f
+    val corners = listOf(
+        Offset(borderInset, borderInset),
+        Offset(size.width - borderInset, borderInset),
+        Offset(size.width - borderInset, size.height - borderInset),
+        Offset(borderInset, size.height - borderInset)
+    )
+
+    corners.forEachIndexed { index, corner ->
+        val xDir = if (index == 0 || index == 3) 1f else -1f
+        val yDir = if (index < 2) 1f else -1f
+
+        // Small decorative curl at each corner
+        val curlPath = Path().apply {
+            moveTo(corner.x, corner.y + cornerSize * yDir)
+            quadraticTo(
+                corner.x + cornerSize * 0.3f * xDir,
+                corner.y + cornerSize * 0.3f * yDir,
+                corner.x + cornerSize * xDir,
+                corner.y
+            )
+        }
+        drawPath(curlPath, color = inkColor, style = Stroke(width = 1.5f))
+    }
+}
+
+// Draw a vintage-style compass rose
+private fun DrawScope.drawCompassRose(center: Offset, size: Float) {
+    val inkColor = TerrainColors.ink.copy(alpha = 0.5f)
+
+    // Outer circle
+    drawCircle(
+        color = inkColor.copy(alpha = 0.3f),
+        radius = size,
+        center = center,
+        style = Stroke(width = 1.5f)
+    )
+
+    // Inner circle
+    drawCircle(
+        color = inkColor.copy(alpha = 0.2f),
+        radius = size * 0.7f,
+        center = center,
+        style = Stroke(width = 1f)
+    )
+
+    // Main compass points (N, S, E, W)
+    val mainPointLength = size * 0.95f
+    val mainPoints = listOf(0f, 90f, 180f, 270f)
+
+    mainPoints.forEach { angle ->
+        val radians = ((angle - 90) * PI / 180).toFloat()
+        val endX = center.x + cos(radians) * mainPointLength
+        val endY = center.y + sin(radians) * mainPointLength
+
+        // Main point arrow (filled triangle)
+        val pointPath = Path().apply {
+            moveTo(endX, endY)
+            val perpAngle = radians + PI.toFloat() / 2
+            val baseX = center.x + cos(radians) * size * 0.3f
+            val baseY = center.y + sin(radians) * size * 0.3f
+            lineTo(baseX + cos(perpAngle) * size * 0.12f, baseY + sin(perpAngle) * size * 0.12f)
+            lineTo(baseX - cos(perpAngle) * size * 0.12f, baseY - sin(perpAngle) * size * 0.12f)
+            close()
+        }
+
+        // North is darker/filled, others are outlined
+        if (angle == 0f) {
+            drawPath(pointPath, color = inkColor)
+        } else {
+            drawPath(pointPath, color = inkColor.copy(alpha = 0.4f), style = Stroke(width = 1f))
+        }
+    }
+
+    // Secondary compass points (NE, SE, SW, NW)
+    val secondaryPointLength = size * 0.6f
+    val secondaryPoints = listOf(45f, 135f, 225f, 315f)
+
+    secondaryPoints.forEach { angle ->
+        val radians = ((angle - 90) * PI / 180).toFloat()
+        val endX = center.x + cos(radians) * secondaryPointLength
+        val endY = center.y + sin(radians) * secondaryPointLength
+
+        drawLine(
+            color = inkColor.copy(alpha = 0.35f),
+            start = center,
+            end = Offset(endX, endY),
+            strokeWidth = 1f
+        )
+    }
+
+    // Center dot
+    drawCircle(
+        color = inkColor,
+        radius = size * 0.06f,
+        center = center
+    )
 }
 
 // Draw road/path terrain
@@ -1924,33 +2088,87 @@ private fun DrawScope.drawRoadTerrain(center: Offset, terrainSize: Float, seed: 
     )
 }
 
-// Draw forest terrain - triangular trees
+// Draw forest terrain - mixed tree styles (conifer and deciduous)
 private fun DrawScope.drawForestTerrain(center: Offset, terrainSize: Float, seed: Int) {
     val random = kotlin.random.Random(seed)
-    val treeCount = 4 + random.nextInt(4)
+    val treeCount = 5 + random.nextInt(4)
 
     repeat(treeCount) { i ->
-        val angle = (i.toFloat() / treeCount) * 2 * PI.toFloat() + random.nextFloat() * 0.5f
-        val distance = terrainSize * (0.35f + random.nextFloat() * 0.25f)
+        val angle = (i.toFloat() / treeCount) * 2 * PI.toFloat() + random.nextFloat() * 0.6f
+        val distance = terrainSize * (0.3f + random.nextFloat() * 0.3f)
         val treeX = center.x + cos(angle) * distance
         val treeY = center.y + sin(angle) * distance
-        val treeSize = terrainSize * (0.1f + random.nextFloat() * 0.06f)
+        val treeSize = terrainSize * (0.08f + random.nextFloat() * 0.06f)
 
-        val treePath = Path().apply {
-            moveTo(treeX, treeY - treeSize)
-            lineTo(treeX - treeSize * 0.6f, treeY)
-            lineTo(treeX + treeSize * 0.6f, treeY)
-            close()
+        // Randomly choose tree type
+        val isConifer = random.nextFloat() > 0.4f
+
+        if (isConifer) {
+            // Conifer tree (triangular with multiple tiers like vintage maps)
+            val treePath = Path().apply {
+                // Bottom tier
+                moveTo(treeX, treeY - treeSize * 0.3f)
+                lineTo(treeX - treeSize * 0.5f, treeY)
+                lineTo(treeX + treeSize * 0.5f, treeY)
+                close()
+            }
+            drawPath(treePath, color = TerrainColors.tree)
+
+            // Middle tier
+            val midPath = Path().apply {
+                moveTo(treeX, treeY - treeSize * 0.7f)
+                lineTo(treeX - treeSize * 0.4f, treeY - treeSize * 0.2f)
+                lineTo(treeX + treeSize * 0.4f, treeY - treeSize * 0.2f)
+                close()
+            }
+            drawPath(midPath, color = TerrainColors.tree)
+
+            // Top tier
+            val topPath = Path().apply {
+                moveTo(treeX, treeY - treeSize)
+                lineTo(treeX - treeSize * 0.25f, treeY - treeSize * 0.5f)
+                lineTo(treeX + treeSize * 0.25f, treeY - treeSize * 0.5f)
+                close()
+            }
+            drawPath(topPath, color = TerrainColors.tree)
+        } else {
+            // Deciduous tree (round canopy like vintage maps)
+            // Trunk
+            drawLine(
+                color = TerrainColors.treeDark,
+                start = Offset(treeX, treeY),
+                end = Offset(treeX, treeY - treeSize * 0.4f),
+                strokeWidth = 2f
+            )
+
+            // Canopy (cloud-like shape)
+            val canopyY = treeY - treeSize * 0.6f
+            drawCircle(
+                color = TerrainColors.tree,
+                radius = treeSize * 0.35f,
+                center = Offset(treeX, canopyY)
+            )
+            drawCircle(
+                color = TerrainColors.tree,
+                radius = treeSize * 0.28f,
+                center = Offset(treeX - treeSize * 0.2f, canopyY + treeSize * 0.1f)
+            )
+            drawCircle(
+                color = TerrainColors.tree,
+                radius = treeSize * 0.28f,
+                center = Offset(treeX + treeSize * 0.2f, canopyY + treeSize * 0.1f)
+            )
         }
 
-        drawPath(treePath, color = TerrainColors.tree)
-
-        drawLine(
-            color = TerrainColors.treeDark,
-            start = Offset(treeX, treeY),
-            end = Offset(treeX, treeY + treeSize * 0.3f),
-            strokeWidth = 2f
-        )
+        // Trunk for conifer
+        if (isConifer) {
+            drawLine(
+                color = TerrainColors.treeDark,
+                start = Offset(treeX, treeY),
+                end = Offset(treeX, treeY + treeSize * 0.2f),
+                strokeWidth = 2f
+            )
+        }
     }
 }
 
@@ -1983,32 +2201,54 @@ private fun DrawScope.drawWaterTerrain(center: Offset, terrainSize: Float, seed:
     }
 }
 
-// Draw mountain terrain - triangular peaks
+// Draw mountain terrain - triangular peaks with vintage-style shading
 private fun DrawScope.drawMountainTerrain(center: Offset, terrainSize: Float, seed: Int) {
     val random = kotlin.random.Random(seed)
     val peakCount = 2 + random.nextInt(2)
 
     repeat(peakCount) { i ->
-        val offsetX = (i - peakCount / 2f) * terrainSize * 0.2f
-        val peakHeight = terrainSize * (0.25f + random.nextFloat() * 0.12f)
-        val peakWidth = terrainSize * (0.15f + random.nextFloat() * 0.08f)
+        val offsetX = (i - peakCount / 2f) * terrainSize * 0.22f
+        val peakHeight = terrainSize * (0.28f + random.nextFloat() * 0.15f)
+        val peakWidth = terrainSize * (0.16f + random.nextFloat() * 0.08f)
         val baseY = center.y + terrainSize * 0.15f
+        val peakX = center.x + offsetX
 
+        // Main mountain shape (filled)
         val mountainPath = Path().apply {
-            moveTo(center.x + offsetX - peakWidth, baseY)
-            lineTo(center.x + offsetX, baseY - peakHeight)
-            lineTo(center.x + offsetX + peakWidth, baseY)
+            moveTo(peakX - peakWidth, baseY)
+            lineTo(peakX, baseY - peakHeight)
+            lineTo(peakX + peakWidth, baseY)
             close()
         }
+        drawPath(mountainPath, color = TerrainColors.mountain.copy(alpha = 0.6f))
 
-        drawPath(mountainPath, color = TerrainColors.mountain)
+        // Outline
+        drawPath(mountainPath, color = TerrainColors.ink.copy(alpha = 0.5f), style = Stroke(width = 1.5f))
 
-        if (peakHeight > terrainSize * 0.3f) {
+        // Vintage-style shading lines on the right side (shadow side)
+        val shadingLines = 4 + random.nextInt(3)
+        repeat(shadingLines) { j ->
+            val lineProgress = (j + 1).toFloat() / (shadingLines + 1)
+            val lineStartY = baseY - peakHeight * (1f - lineProgress * 0.7f)
+            val lineEndY = baseY
+            val lineX = peakX + peakWidth * (0.1f + lineProgress * 0.7f)
+            val lineTopX = peakX + peakWidth * lineProgress * 0.3f
+
+            drawLine(
+                color = TerrainColors.ink.copy(alpha = 0.25f - j * 0.03f),
+                start = Offset(lineTopX, lineStartY),
+                end = Offset(lineX, lineEndY),
+                strokeWidth = 1f
+            )
+        }
+
+        // Snow cap for taller peaks
+        if (peakHeight > terrainSize * 0.32f) {
             val snowPath = Path().apply {
-                val snowLine = baseY - peakHeight * 0.7f
-                moveTo(center.x + offsetX - peakWidth * 0.3f, snowLine)
-                lineTo(center.x + offsetX, baseY - peakHeight)
-                lineTo(center.x + offsetX + peakWidth * 0.3f, snowLine)
+                val snowLine = baseY - peakHeight * 0.75f
+                moveTo(peakX - peakWidth * 0.25f, snowLine)
+                lineTo(peakX, baseY - peakHeight)
+                lineTo(peakX + peakWidth * 0.25f, snowLine)
                 close()
             }
             drawPath(snowPath, color = TerrainColors.mountainSnow)
@@ -2113,6 +2353,311 @@ private fun DrawScope.drawDesertTerrain(center: Offset, terrainSize: Float, seed
     }
 }
 
+// Draw hills terrain - rounded bumps with shading (like vintage map style)
+private fun DrawScope.drawHillsTerrain(center: Offset, terrainSize: Float, seed: Int) {
+    val random = kotlin.random.Random(seed)
+    val hillCount = 2 + random.nextInt(3)
+
+    repeat(hillCount) { i ->
+        val angle = (i.toFloat() / hillCount) * 2 * PI.toFloat() + random.nextFloat() * 0.8f
+        val distance = terrainSize * (0.2f + random.nextFloat() * 0.25f)
+        val hillX = center.x + cos(angle) * distance
+        val hillY = center.y + sin(angle) * distance
+        val hillWidth = terrainSize * (0.12f + random.nextFloat() * 0.06f)
+        val hillHeight = hillWidth * 0.5f
+
+        // Draw hill as arc with shading lines
+        val hillPath = Path().apply {
+            moveTo(hillX - hillWidth, hillY)
+            quadraticTo(hillX, hillY - hillHeight, hillX + hillWidth, hillY)
+        }
+        drawPath(hillPath, color = TerrainColors.mountain.copy(alpha = 0.7f), style = Stroke(width = 2f))
+
+        // Add hatching/shading lines on right side
+        repeat(3) { j ->
+            val lineX = hillX + hillWidth * (0.2f + j * 0.25f)
+            val lineTop = hillY - hillHeight * (0.8f - j * 0.2f)
+            drawLine(
+                color = TerrainColors.ink.copy(alpha = 0.3f),
+                start = Offset(lineX, lineTop),
+                end = Offset(lineX + hillWidth * 0.1f, hillY),
+                strokeWidth = 1f
+            )
+        }
+    }
+}
+
+// Draw coast terrain - wavy shoreline with ships and sea creatures
+private fun DrawScope.drawCoastTerrain(center: Offset, terrainSize: Float, seed: Int) {
+    val random = kotlin.random.Random(seed)
+
+    // Draw wave patterns in a semicircle
+    repeat(4) { i ->
+        val waveOffset = (i - 1.5f) * terrainSize * 0.1f
+        val waveY = center.y + terrainSize * 0.2f + waveOffset
+        val wavePath = Path().apply {
+            moveTo(center.x - terrainSize * 0.4f, waveY)
+            var x = center.x - terrainSize * 0.4f
+            while (x < center.x + terrainSize * 0.4f) {
+                val waveHeight = terrainSize * 0.03f
+                quadraticTo(x + terrainSize * 0.05f, waveY - waveHeight, x + terrainSize * 0.1f, waveY)
+                x += terrainSize * 0.1f
+            }
+        }
+        drawPath(wavePath, color = TerrainColors.coast.copy(alpha = 0.5f - i * 0.1f), style = Stroke(width = 1.5f))
+    }
+
+    // Maybe add a small ship
+    if (random.nextFloat() > 0.5f) {
+        drawShip(
+            center = Offset(center.x + terrainSize * 0.2f, center.y + terrainSize * 0.3f),
+            size = terrainSize * 0.12f,
+            seed = seed
+        )
+    }
+}
+
+// Draw a small vintage-style ship
+private fun DrawScope.drawShip(center: Offset, size: Float, seed: Int) {
+    val random = kotlin.random.Random(seed)
+    val facing = if (random.nextBoolean()) 1f else -1f
+
+    // Hull
+    val hullPath = Path().apply {
+        moveTo(center.x - size * 0.5f * facing, center.y)
+        lineTo(center.x + size * 0.5f * facing, center.y)
+        lineTo(center.x + size * 0.3f * facing, center.y + size * 0.2f)
+        lineTo(center.x - size * 0.4f * facing, center.y + size * 0.2f)
+        close()
+    }
+    drawPath(hullPath, color = TerrainColors.ink.copy(alpha = 0.6f))
+
+    // Mast
+    drawLine(
+        color = TerrainColors.ink.copy(alpha = 0.7f),
+        start = Offset(center.x, center.y),
+        end = Offset(center.x, center.y - size * 0.6f),
+        strokeWidth = 1.5f
+    )
+
+    // Sail
+    val sailPath = Path().apply {
+        moveTo(center.x, center.y - size * 0.1f)
+        quadraticTo(center.x + size * 0.3f * facing, center.y - size * 0.35f, center.x, center.y - size * 0.55f)
+    }
+    drawPath(sailPath, color = TerrainColors.ink.copy(alpha = 0.5f), style = Stroke(width = 1f))
+}
+
+// Draw swamp terrain - murky water with reeds
+private fun DrawScope.drawSwampTerrain(center: Offset, terrainSize: Float, seed: Int) {
+    val random = kotlin.random.Random(seed)
+
+    // Murky pools
+    repeat(3) {
+        val poolX = center.x + (random.nextFloat() - 0.5f) * terrainSize * 0.5f
+        val poolY = center.y + (random.nextFloat() - 0.5f) * terrainSize * 0.5f
+        drawOval(
+            color = TerrainColors.swamp.copy(alpha = 0.3f),
+            topLeft = Offset(poolX - terrainSize * 0.08f, poolY - terrainSize * 0.05f),
+            size = androidx.compose.ui.geometry.Size(terrainSize * 0.16f, terrainSize * 0.1f)
+        )
+    }
+
+    // Reeds/cattails
+    repeat(6 + random.nextInt(4)) {
+        val reedX = center.x + (random.nextFloat() - 0.5f) * terrainSize * 0.6f
+        val reedY = center.y + (random.nextFloat() - 0.5f) * terrainSize * 0.6f
+        val reedHeight = terrainSize * (0.06f + random.nextFloat() * 0.04f)
+
+        // Reed stem
+        drawLine(
+            color = TerrainColors.swamp,
+            start = Offset(reedX, reedY),
+            end = Offset(reedX, reedY - reedHeight),
+            strokeWidth = 1f
+        )
+        // Reed head
+        drawOval(
+            color = TerrainColors.swamp.copy(alpha = 0.8f),
+            topLeft = Offset(reedX - 2f, reedY - reedHeight - 4f),
+            size = androidx.compose.ui.geometry.Size(4f, 6f)
+        )
+    }
+}
+
+// Draw castle terrain - detailed castle with towers
+private fun DrawScope.drawCastleTerrain(center: Offset, terrainSize: Float, seed: Int) {
+    val random = kotlin.random.Random(seed)
+    val castleX = center.x + (random.nextFloat() - 0.5f) * terrainSize * 0.2f
+    val castleY = center.y + (random.nextFloat() - 0.5f) * terrainSize * 0.2f
+    val castleSize = terrainSize * 0.15f
+
+    // Main keep
+    val keepPath = Path().apply {
+        moveTo(castleX - castleSize * 0.4f, castleY + castleSize * 0.3f)
+        lineTo(castleX - castleSize * 0.4f, castleY - castleSize * 0.2f)
+        // Crenellations
+        lineTo(castleX - castleSize * 0.3f, castleY - castleSize * 0.2f)
+        lineTo(castleX - castleSize * 0.3f, castleY - castleSize * 0.35f)
+        lineTo(castleX - castleSize * 0.1f, castleY - castleSize * 0.35f)
+        lineTo(castleX - castleSize * 0.1f, castleY - castleSize * 0.2f)
+        lineTo(castleX + castleSize * 0.1f, castleY - castleSize * 0.2f)
+        lineTo(castleX + castleSize * 0.1f, castleY - castleSize * 0.35f)
+        lineTo(castleX + castleSize * 0.3f, castleY - castleSize * 0.35f)
+        lineTo(castleX + castleSize * 0.3f, castleY - castleSize * 0.2f)
+        lineTo(castleX + castleSize * 0.4f, castleY - castleSize * 0.2f)
+        lineTo(castleX + castleSize * 0.4f, castleY + castleSize * 0.3f)
+        close()
+    }
+    drawPath(keepPath, color = TerrainColors.building)
+    drawPath(keepPath, color = TerrainColors.ink.copy(alpha = 0.5f), style = Stroke(width = 1.5f))
+
+    // Tower
+    val towerPath = Path().apply {
+        moveTo(castleX, castleY - castleSize * 0.35f)
+        lineTo(castleX - castleSize * 0.15f, castleY - castleSize * 0.7f)
+        lineTo(castleX + castleSize * 0.15f, castleY - castleSize * 0.7f)
+        close()
+    }
+    drawPath(towerPath, color = TerrainColors.building)
+    drawPath(towerPath, color = TerrainColors.ink.copy(alpha = 0.5f), style = Stroke(width = 1f))
+
+    // Flag
+    drawLine(
+        color = TerrainColors.ink,
+        start = Offset(castleX, castleY - castleSize * 0.7f),
+        end = Offset(castleX, castleY - castleSize),
+        strokeWidth = 1f
+    )
+    val flagPath = Path().apply {
+        moveTo(castleX, castleY - castleSize)
+        lineTo(castleX + castleSize * 0.15f, castleY - castleSize * 0.9f)
+        lineTo(castleX, castleY - castleSize * 0.8f)
+    }
+    drawPath(flagPath, color = TerrainColors.ink.copy(alpha = 0.6f))
+}
+
+// Draw church/temple terrain - building with spire
+private fun DrawScope.drawChurchTerrain(center: Offset, terrainSize: Float, seed: Int) {
+    val random = kotlin.random.Random(seed)
+    val churchX = center.x + (random.nextFloat() - 0.5f) * terrainSize * 0.2f
+    val churchY = center.y + (random.nextFloat() - 0.5f) * terrainSize * 0.2f
+    val churchSize = terrainSize * 0.1f
+
+    // Main building
+    val buildingPath = Path().apply {
+        moveTo(churchX - churchSize, churchY + churchSize * 0.5f)
+        lineTo(churchX - churchSize, churchY - churchSize * 0.3f)
+        lineTo(churchX, churchY - churchSize)
+        lineTo(churchX + churchSize, churchY - churchSize * 0.3f)
+        lineTo(churchX + churchSize, churchY + churchSize * 0.5f)
+        close()
+    }
+    drawPath(buildingPath, color = TerrainColors.building)
+    drawPath(buildingPath, color = TerrainColors.ink.copy(alpha = 0.5f), style = Stroke(width = 1f))
+
+    // Spire/steeple
+    drawLine(
+        color = TerrainColors.ink.copy(alpha = 0.7f),
+        start = Offset(churchX, churchY - churchSize),
+        end = Offset(churchX, churchY - churchSize * 2f),
+        strokeWidth = 2f
+    )
+
+    // Cross at top
+    val crossSize = churchSize * 0.25f
+    drawLine(
+        color = TerrainColors.ink,
+        start = Offset(churchX, churchY - churchSize * 2f - crossSize),
+        end = Offset(churchX, churchY - churchSize * 2f + crossSize * 0.3f),
+        strokeWidth = 1.5f
+    )
+    drawLine(
+        color = TerrainColors.ink,
+        start = Offset(churchX - crossSize * 0.5f, churchY - churchSize * 2f),
+        end = Offset(churchX + crossSize * 0.5f, churchY - churchSize * 2f),
+        strokeWidth = 1.5f
+    )
+}
+
+// Draw port terrain - dock with ships
+private fun DrawScope.drawPortTerrain(center: Offset, terrainSize: Float, seed: Int) {
+    val random = kotlin.random.Random(seed)
+
+    // Dock/pier
+    val dockPath = Path().apply {
+        moveTo(center.x - terrainSize * 0.15f, center.y)
+        lineTo(center.x - terrainSize * 0.15f, center.y + terrainSize * 0.35f)
+        lineTo(center.x + terrainSize * 0.15f, center.y + terrainSize * 0.35f)
+        lineTo(center.x + terrainSize * 0.15f, center.y)
+    }
+    drawPath(dockPath, color = TerrainColors.road, style = Stroke(width = 3f))
+
+    // Dock posts
+    repeat(3) { i ->
+        val postX = center.x - terrainSize * 0.1f + i * terrainSize * 0.1f
+        drawCircle(
+            color = TerrainColors.ink.copy(alpha = 0.6f),
+            radius = 3f,
+            center = Offset(postX, center.y + terrainSize * 0.35f)
+        )
+    }
+
+    // Ships at dock
+    drawShip(
+        center = Offset(center.x + terrainSize * 0.3f, center.y + terrainSize * 0.25f),
+        size = terrainSize * 0.15f,
+        seed = seed
+    )
+    if (random.nextFloat() > 0.4f) {
+        drawShip(
+            center = Offset(center.x - terrainSize * 0.25f, center.y + terrainSize * 0.3f),
+            size = terrainSize * 0.1f,
+            seed = seed + 1
+        )
+    }
+}
+
+// Draw ruins terrain - crumbling stone structures
+private fun DrawScope.drawRuinsTerrain(center: Offset, terrainSize: Float, seed: Int) {
+    val random = kotlin.random.Random(seed)
+
+    // Broken columns/walls
+    repeat(3 + random.nextInt(3)) { i ->
+        val angle = (i.toFloat() / 4) * 2 * PI.toFloat() + random.nextFloat()
+        val distance = terrainSize * (0.2f + random.nextFloat() * 0.2f)
+        val ruinX = center.x + cos(angle) * distance
+        val ruinY = center.y + sin(angle) * distance
+        val ruinHeight = terrainSize * (0.08f + random.nextFloat() * 0.06f)
+        val ruinWidth = terrainSize * 0.03f
+
+        // Column
+        val columnPath = Path().apply {
+            moveTo(ruinX - ruinWidth, ruinY)
+            lineTo(ruinX - ruinWidth, ruinY - ruinHeight)
+            // Broken top (irregular)
+            lineTo(ruinX - ruinWidth * 0.5f, ruinY - ruinHeight - random.nextFloat() * ruinWidth)
+            lineTo(ruinX + ruinWidth * 0.3f, ruinY - ruinHeight + random.nextFloat() * ruinWidth)
+            lineTo(ruinX + ruinWidth, ruinY - ruinHeight)
+            lineTo(ruinX + ruinWidth, ruinY)
+            close()
+        }
+        drawPath(columnPath, color = TerrainColors.ruins.copy(alpha = 0.7f))
+        drawPath(columnPath, color = TerrainColors.ink.copy(alpha = 0.3f), style = Stroke(width = 1f))
+    }
+
+    // Scattered stones
+    repeat(5) {
+        val stoneX = center.x + (random.nextFloat() - 0.5f) * terrainSize * 0.5f
+        val stoneY = center.y + (random.nextFloat() - 0.5f) * terrainSize * 0.5f
+        drawCircle(
+            color = TerrainColors.ruins.copy(alpha = 0.4f),
+            radius = terrainSize * 0.015f,
+            center = Offset(stoneX, stoneY)
+        )
+    }
+}
+
 // Master terrain drawing function
 private fun DrawScope.drawLocationTerrain(
     location: LocationDto,
@@ -2122,15 +2667,33 @@ private fun DrawScope.drawLocationTerrain(
     val terrains = parseTerrainFromDescription(location.desc, location.name)
     val seed = location.id.hashCode()
 
-    // Draw in specific order (background first)
+    // Draw in specific order (background terrain first, then structures on top)
+    // Background/base terrain
     if (TerrainType.DESERT in terrains) drawDesertTerrain(center, terrainSize, seed)
     if (TerrainType.GRASS in terrains) drawGrassTerrain(center, terrainSize, seed)
+    if (TerrainType.SWAMP in terrains) drawSwampTerrain(center, terrainSize, seed + 10)
+
+    // Water features
+    if (TerrainType.COAST in terrains) drawCoastTerrain(center, terrainSize, seed + 7)
     if (TerrainType.WATER in terrains) drawWaterTerrain(center, terrainSize, seed + 1)
+    if (TerrainType.PORT in terrains) drawPortTerrain(center, terrainSize, seed + 11)
+
+    // Elevated terrain
+    if (TerrainType.HILLS in terrains) drawHillsTerrain(center, terrainSize, seed + 8)
     if (TerrainType.MOUNTAIN in terrains) drawMountainTerrain(center, terrainSize, seed + 2)
+
+    // Vegetation
     if (TerrainType.FOREST in terrains) drawForestTerrain(center, terrainSize, seed + 3)
+
+    // Infrastructure
     if (TerrainType.ROAD in terrains) drawRoadTerrain(center, terrainSize, seed + 4)
+
+    // Structures (on top)
+    if (TerrainType.RUINS in terrains) drawRuinsTerrain(center, terrainSize, seed + 12)
     if (TerrainType.CAVE in terrains) drawCaveTerrain(center, terrainSize, seed + 5)
     if (TerrainType.BUILDING in terrains) drawBuildingTerrain(center, terrainSize, seed + 6)
+    if (TerrainType.CHURCH in terrains) drawChurchTerrain(center, terrainSize, seed + 9)
+    if (TerrainType.CASTLE in terrains) drawCastleTerrain(center, terrainSize, seed + 13)
 }
 
 private data class NodeState(
@@ -2255,10 +2818,17 @@ fun LocationForm(
     var imageGenError by remember(editLocation?.id) { mutableStateOf<String?>(null) }
     val scope = rememberCoroutineScope()
 
+    // Track if image generation is in progress for this location
+    val generatingEntities by BackgroundImageGenerationManager.generatingEntities.collectAsState()
+    val isImageGenerating = editLocation?.id?.let { it in generatingEntities } ?: false
+
     // Lock state
     var lockedBy by remember(editLocation?.id) { mutableStateOf(editLocation?.lockedBy) }
     var lockerName by remember(editLocation?.id) { mutableStateOf<String?>(null) }
     val isLocked = lockedBy != null
+
+    // Combined disabled state: locked OR image generating
+    val isDisabled = isLocked || isImageGenerating
 
     // State for exit removal confirmation dialog
     var exitToRemove by remember { mutableStateOf<String?>(null) }
@@ -2339,8 +2909,8 @@ fun LocationForm(
                 style = MaterialTheme.typography.titleLarge,
                 modifier = Modifier.weight(1f)
             )
-            // Lock/unlock button for admins in edit mode
-            if (isAdmin && isEditMode && editLocation != null) {
+            // Lock status visible to all users in edit mode
+            if (isEditMode && editLocation != null) {
                 Row(
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(4.dp)
@@ -2352,26 +2922,37 @@ fun LocationForm(
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
                     }
-                    IconButton(
-                        onClick = {
-                            currentUser?.let { user ->
-                                scope.launch {
-                                    ApiClient.toggleLocationLock(editLocation.id, user.id)
-                                        .onSuccess { updatedLocation ->
-                                            lockedBy = updatedLocation.lockedBy
-                                            onLocationUpdated(updatedLocation)
-                                        }
-                                        .onFailure { error ->
-                                            message = "Failed to toggle lock: ${error.message}"
-                                        }
+                    // Only admins can toggle the lock
+                    if (isAdmin) {
+                        IconButton(
+                            onClick = {
+                                currentUser?.let { user ->
+                                    scope.launch {
+                                        ApiClient.toggleLocationLock(editLocation.id, user.id)
+                                            .onSuccess { updatedLocation ->
+                                                lockedBy = updatedLocation.lockedBy
+                                                onLocationUpdated(updatedLocation)
+                                            }
+                                            .onFailure { error ->
+                                                message = "Failed to toggle lock: ${error.message}"
+                                            }
+                                    }
                                 }
                             }
+                        ) {
+                            Icon(
+                                imageVector = if (isLocked) Icons.Filled.Lock else Icons.Filled.LockOpen,
+                                contentDescription = if (isLocked) "Unlock location" else "Lock location",
+                                tint = if (isLocked) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
+                            )
                         }
-                    ) {
+                    } else {
+                        // Non-admins see the lock icon but can't click it
                         Icon(
                             imageVector = if (isLocked) Icons.Filled.Lock else Icons.Filled.LockOpen,
-                            contentDescription = if (isLocked) "Unlock location" else "Lock location",
-                            tint = if (isLocked) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
+                            contentDescription = if (isLocked) "Location is locked" else "Location is unlocked",
+                            tint = if (isLocked) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.padding(12.dp)
                         )
                     }
                 }
@@ -2402,7 +2983,8 @@ fun LocationForm(
                 onValueChange = { name = it },
                 label = { Text("Name") },
                 modifier = Modifier.weight(1f),
-                singleLine = true
+                singleLine = true,
+                enabled = !isDisabled
             )
             GenButton(
                 entityType = GenEntityType.LOCATION,
@@ -2413,7 +2995,8 @@ fun LocationForm(
                 onGenerated = { _, genDesc ->
                     // Only update description, keep the existing name
                     desc = genDesc
-                }
+                },
+                enabled = !isDisabled
             )
         }
 
@@ -2422,7 +3005,8 @@ fun LocationForm(
             onValueChange = { desc = it },
             label = { Text("Description") },
             modifier = Modifier.fillMaxWidth(),
-            minLines = 3
+            minLines = 3,
+            enabled = !isDisabled
         )
 
         IdPillSection(
@@ -2431,8 +3015,9 @@ fun LocationForm(
             entityType = EntityType.ITEM,
             availableOptions = availableItems,
             onPillClick = onNavigateToItem,
-            onAddId = { id -> itemIds = itemIds + id },
-            onRemoveId = { id -> itemIds = itemIds - id }
+            onAddId = { id -> if (!isDisabled) itemIds = itemIds + id },
+            onRemoveId = { id -> if (!isDisabled) itemIds = itemIds - id },
+            enabled = !isDisabled
         )
 
         IdPillSection(
@@ -2441,8 +3026,9 @@ fun LocationForm(
             entityType = EntityType.CREATURE,
             availableOptions = availableCreatures,
             onPillClick = onNavigateToCreature,
-            onAddId = { id -> creatureIds = creatureIds + id },
-            onRemoveId = { id -> creatureIds = creatureIds - id }
+            onAddId = { id -> if (!isDisabled) creatureIds = creatureIds + id },
+            onRemoveId = { id -> if (!isDisabled) creatureIds = creatureIds - id },
+            enabled = !isDisabled
         )
 
         // Show active users at this location (if authenticated and editing)
@@ -2498,6 +3084,7 @@ fun LocationForm(
                 }
             },
             onAddId = { id ->
+                if (isDisabled) return@IdPillSection
                 // Add exit locally
                 exitIds = exitIds + id
                 // Add bidirectional exit on the other location (if we have an id)
@@ -2521,10 +3108,12 @@ fun LocationForm(
                 }
             },
             onRemoveId = { id ->
+                if (isDisabled) return@IdPillSection
                 // Show confirmation dialog for exit removal
                 exitToRemove = id
                 showRemoveExitDialog = true
-            }
+            },
+            enabled = !isDisabled
         )
 
         // Exit removal confirmation dialog
@@ -2600,7 +3189,8 @@ fun LocationForm(
             onValueChange = { features = it },
             label = { Text("Features (comma-separated)") },
             modifier = Modifier.fillMaxWidth(),
-            singleLine = true
+            singleLine = true,
+            enabled = !isDisabled
         )
 
         Row(
@@ -2618,7 +3208,8 @@ fun LocationForm(
                     onImageGenerated = { newImageUrl ->
                         imageUrl = newImageUrl
                     },
-                    onError = { imageGenError = it }
+                    onError = { imageGenError = it },
+                    enabled = !isDisabled
                 )
             }
 
@@ -2648,7 +3239,7 @@ fun LocationForm(
                         }
                     }
                 },
-                enabled = !isLoading && name.isNotBlank()
+                enabled = !isLoading && name.isNotBlank() && !isDisabled
             ) {
                 if (isLoading) {
                     CircularProgressIndicator(
@@ -3110,19 +3701,26 @@ fun ItemForm(
                     scope.launch {
                         isLoading = true
                         message = null
-                        val result = ApiClient.createItem(
-                            CreateItemRequest(
-                                name = name,
-                                desc = desc,
-                                featureIds = featureIds.splitToList()
-                            )
+                        val request = CreateItemRequest(
+                            name = name,
+                            desc = desc,
+                            featureIds = featureIds.splitToList()
                         )
-                        isLoading = false
-                        message = if (result.isSuccess) {
-                            name = ""; desc = ""; featureIds = ""
-                            "Item created successfully!"
+                        val result = if (isEditMode) {
+                            ApiClient.updateItem(editItem!!.id, request)
                         } else {
-                            "Error: ${result.exceptionOrNull()?.message}"
+                            ApiClient.createItem(request)
+                        }
+                        isLoading = false
+                        if (result.isSuccess) {
+                            if (isEditMode) {
+                                onSaved()
+                            } else {
+                                name = ""; desc = ""; featureIds = ""
+                                message = "Item created successfully!"
+                            }
+                        } else {
+                            message = "Error: ${result.exceptionOrNull()?.message}"
                         }
                     }
                 },

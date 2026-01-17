@@ -251,6 +251,14 @@ object ApiClient {
         Unit
     }
 
+    suspend fun updateItem(id: String, request: CreateItemRequest): Result<Unit> = runCatching {
+        client.put("$baseUrl/items/$id") {
+            contentType(ContentType.Application.Json)
+            setBody(request)
+        }
+        Unit
+    }
+
     suspend fun getCreatures(): Result<List<CreatureDto>> = runCatching {
         client.get("$baseUrl/creatures").body()
     }
