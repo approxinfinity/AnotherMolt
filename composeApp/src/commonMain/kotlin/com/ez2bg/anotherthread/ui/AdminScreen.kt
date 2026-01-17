@@ -417,6 +417,7 @@ fun GenerateImageButton(
 sealed class ViewState {
     data object UserAuth : ViewState()
     data class UserProfile(val user: UserDto) : ViewState()
+    data class UserDetail(val userId: String) : ViewState()  // View other user's profile (read-only for non-admins)
     data object LocationGraph : ViewState()
     data object LocationCreate : ViewState()
     data class LocationEdit(val location: LocationDto) : ViewState()
@@ -662,6 +663,8 @@ fun AdminScreen() {
             )
             is ViewState.UserProfile -> UserProfileView(
                 user = state.user,
+                currentUser = currentUser,
+                isAdmin = isAdmin,
                 onUserUpdated = { user ->
                     AuthStorage.saveUser(user)
                     currentUser = user
@@ -672,7 +675,24 @@ fun AdminScreen() {
                     currentUser = null
                     viewState = ViewState.UserAuth
                 },
-                onNavigateToItem = { id -> viewState = ViewState.ItemDetail(id) }
+                onNavigateToItem = { id ->
+                    selectedTab = AdminTab.ITEM
+                    viewState = ViewState.ItemDetail(id)
+                },
+                onBack = null  // No back button for own profile
+            )
+            is ViewState.UserDetail -> UserDetailView(
+                userId = state.userId,
+                currentUser = currentUser,
+                isAdmin = isAdmin,
+                onBack = {
+                    selectedTab = AdminTab.LOCATION
+                    viewState = ViewState.LocationGraph
+                },
+                onNavigateToItem = { id ->
+                    selectedTab = AdminTab.ITEM
+                    viewState = ViewState.ItemDetail(id)
+                }
             )
             is ViewState.LocationGraph -> LocationGraphView(
                 onAddClick = { viewState = ViewState.LocationCreate },
@@ -682,38 +702,76 @@ fun AdminScreen() {
                 editLocation = null,
                 onBack = { viewState = ViewState.LocationGraph },
                 onSaved = { viewState = ViewState.LocationGraph },
-                onNavigateToItem = { id -> viewState = ViewState.ItemDetail(id) },
-                onNavigateToCreature = { id -> viewState = ViewState.CreatureDetail(id) },
+                onNavigateToItem = { id ->
+                    selectedTab = AdminTab.ITEM
+                    viewState = ViewState.ItemDetail(id)
+                },
+                onNavigateToCreature = { id ->
+                    selectedTab = AdminTab.CREATURE
+                    viewState = ViewState.CreatureDetail(id)
+                },
                 onNavigateToLocation = { location -> viewState = ViewState.LocationEdit(location) },
+                onNavigateToUser = { userId ->
+                    selectedTab = AdminTab.USER
+                    viewState = ViewState.UserDetail(userId)
+                },
                 currentUser = currentUser
             )
             is ViewState.LocationEdit -> LocationForm(
                 editLocation = state.location,
                 onBack = { viewState = ViewState.LocationGraph },
                 onSaved = { viewState = ViewState.LocationGraph },
-                onNavigateToItem = { id -> viewState = ViewState.ItemDetail(id) },
-                onNavigateToCreature = { id -> viewState = ViewState.CreatureDetail(id) },
+                onNavigateToItem = { id ->
+                    selectedTab = AdminTab.ITEM
+                    viewState = ViewState.ItemDetail(id)
+                },
+                onNavigateToCreature = { id ->
+                    selectedTab = AdminTab.CREATURE
+                    viewState = ViewState.CreatureDetail(id)
+                },
                 onNavigateToLocation = { location -> viewState = ViewState.LocationEdit(location) },
+                onNavigateToUser = { userId ->
+                    selectedTab = AdminTab.USER
+                    viewState = ViewState.UserDetail(userId)
+                },
                 currentUser = currentUser
             )
             is ViewState.CreatureCreate -> CreatureForm(
                 editCreature = null,
                 onBack = { viewState = ViewState.CreatureCreate },
                 onSaved = { viewState = ViewState.CreatureCreate },
-                onNavigateToItem = { id -> viewState = ViewState.ItemDetail(id) }
+                onNavigateToItem = { id ->
+                    selectedTab = AdminTab.ITEM
+                    viewState = ViewState.ItemDetail(id)
+                }
             )
             is ViewState.CreatureEdit -> CreatureForm(
                 editCreature = state.creature,
                 onBack = { viewState = ViewState.CreatureCreate },
                 onSaved = { viewState = ViewState.CreatureCreate },
-                onNavigateToItem = { id -> viewState = ViewState.ItemDetail(id) }
+                onNavigateToItem = { id ->
+                    selectedTab = AdminTab.ITEM
+                    viewState = ViewState.ItemDetail(id)
+                }
             )
             is ViewState.CreatureDetail -> CreatureDetailView(
                 creatureId = state.id,
-                onBack = { viewState = ViewState.LocationGraph },
-                onEdit = { creature -> viewState = ViewState.CreatureEdit(creature) },
-                onCreateNew = { viewState = ViewState.CreatureCreate },
-                onNavigateToItem = { id -> viewState = ViewState.ItemDetail(id) }
+                onBack = {
+                    selectedTab = AdminTab.LOCATION
+                    viewState = ViewState.LocationGraph
+                },
+                onEdit = { creature ->
+                    selectedTab = AdminTab.CREATURE
+                    viewState = ViewState.CreatureEdit(creature)
+                },
+                onCreateNew = {
+                    selectedTab = AdminTab.CREATURE
+                    viewState = ViewState.CreatureCreate
+                },
+                onNavigateToItem = { id ->
+                    selectedTab = AdminTab.ITEM
+                    viewState = ViewState.ItemDetail(id)
+                }
             )
             is ViewState.ItemCreate -> ItemForm(
                 editItem = null,
@@ -727,9 +785,18 @@ fun AdminScreen() {
             )
             is ViewState.ItemDetail -> ItemDetailView(
                 itemId = state.id,
-                onBack = { viewState = ViewState.LocationGraph },
-                onEdit = { item -> viewState = ViewState.ItemEdit(item) },
-                onCreateNew = { viewState = ViewState.ItemCreate }
+                onBack = {
+                    selectedTab = AdminTab.LOCATION
+                    viewState = ViewState.LocationGraph
+                },
+                onEdit = { item ->
+                    selectedTab = AdminTab.ITEM
+                    viewState = ViewState.ItemEdit(item)
+                },
+                onCreateNew = {
+                    selectedTab = AdminTab.ITEM
+                    viewState = ViewState.ItemCreate
+                }
             )
             is ViewState.AdminPanel -> AdminPanelView()
         }
@@ -857,10 +924,18 @@ fun UserAuthView(
 @Composable
 fun UserProfileView(
     user: UserDto,
+    currentUser: UserDto?,
+    isAdmin: Boolean,
     onUserUpdated: (UserDto) -> Unit,
     onLogout: () -> Unit,
-    onNavigateToItem: (String) -> Unit
+    onNavigateToItem: (String) -> Unit,
+    onBack: (() -> Unit)?  // null for own profile, non-null for viewing others
 ) {
+    // Determine if this is our own profile or someone else's
+    val isOwnProfile = currentUser?.id == user.id
+    // Can edit if: own profile, or is admin
+    val canEdit = isOwnProfile || isAdmin
+
     var isEditing by remember { mutableStateOf(false) }
     var desc by remember { mutableStateOf(user.desc) }
     var features by remember { mutableStateOf(user.featureIds.joinToString(", ")) }
@@ -887,6 +962,22 @@ fun UserProfileView(
             .verticalScroll(rememberScrollState()),
         verticalArrangement = Arrangement.spacedBy(16.dp)
     ) {
+        // Back button for viewing other users
+        if (onBack != null) {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                IconButton(onClick = onBack) {
+                    Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
+                }
+                Text(
+                    text = "User Profile",
+                    style = MaterialTheme.typography.titleLarge
+                )
+            }
+        }
+
         // Display image at top
         EntityImage(
             imageUrl = imageUrl,
@@ -907,7 +998,7 @@ fun UserProfileView(
             }
         }
 
-        if (isEditing) {
+        if (isEditing && canEdit) {
             OutlinedTextField(
                 value = desc,
                 onValueChange = { desc = it },
@@ -1039,22 +1130,28 @@ fun UserProfileView(
                 )
             }
 
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(8.dp)
-            ) {
-                Button(
-                    onClick = { isEditing = true },
-                    modifier = Modifier.weight(1f)
+            // Only show Edit/Logout buttons if canEdit and it's own profile (or admin viewing)
+            if (canEdit) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
-                    Text("Edit Profile")
-                }
+                    Button(
+                        onClick = { isEditing = true },
+                        modifier = Modifier.weight(1f)
+                    ) {
+                        Text("Edit Profile")
+                    }
 
-                OutlinedButton(
-                    onClick = onLogout,
-                    modifier = Modifier.weight(1f)
-                ) {
-                    Text("Logout")
+                    // Only show logout for own profile
+                    if (isOwnProfile) {
+                        OutlinedButton(
+                            onClick = onLogout,
+                            modifier = Modifier.weight(1f)
+                        ) {
+                            Text("Logout")
+                        }
+                    }
                 }
             }
         }
@@ -1064,6 +1161,76 @@ fun UserProfileView(
                 text = it,
                 color = if (it.startsWith("Error")) MaterialTheme.colorScheme.error
                 else MaterialTheme.colorScheme.primary
+            )
+        }
+    }
+}
+
+/**
+ * View for displaying another user's profile (fetched by ID).
+ * Read-only for non-admins, editable for admins.
+ */
+@Composable
+fun UserDetailView(
+    userId: String,
+    currentUser: UserDto?,
+    isAdmin: Boolean,
+    onBack: () -> Unit,
+    onNavigateToItem: (String) -> Unit
+) {
+    var user by remember { mutableStateOf<UserDto?>(null) }
+    var isLoading by remember { mutableStateOf(true) }
+    var error by remember { mutableStateOf<String?>(null) }
+    val scope = rememberCoroutineScope()
+
+    // Fetch user on mount
+    LaunchedEffect(userId) {
+        isLoading = true
+        error = null
+        ApiClient.getUser(userId).onSuccess { fetchedUser ->
+            user = fetchedUser
+        }.onFailure { e ->
+            error = e.message ?: "Failed to load user"
+        }
+        isLoading = false
+    }
+
+    when {
+        isLoading -> {
+            Box(
+                modifier = Modifier.fillMaxSize(),
+                contentAlignment = Alignment.Center
+            ) {
+                CircularProgressIndicator()
+            }
+        }
+        error != null -> {
+            Column(
+                modifier = Modifier.fillMaxSize(),
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.Center
+            ) {
+                Text(
+                    text = error ?: "Unknown error",
+                    color = MaterialTheme.colorScheme.error
+                )
+                Spacer(modifier = Modifier.height(16.dp))
+                Button(onClick = onBack) {
+                    Text("Go Back")
+                }
+            }
+        }
+        user != null -> {
+            UserProfileView(
+                user = user!!,
+                currentUser = currentUser,
+                isAdmin = isAdmin,
+                onUserUpdated = { updatedUser ->
+                    user = updatedUser
+                },
+                onLogout = {}, // Not applicable for viewing other users
+                onNavigateToItem = onNavigateToItem,
+                onBack = onBack
             )
         }
     }
@@ -1521,6 +1688,7 @@ fun LocationForm(
     onNavigateToItem: (String) -> Unit,
     onNavigateToCreature: (String) -> Unit,
     onNavigateToLocation: (LocationDto) -> Unit,
+    onNavigateToUser: (String) -> Unit,
     currentUser: UserDto? = null
 ) {
     val isEditMode = editLocation != null
@@ -1690,6 +1858,7 @@ fun LocationForm(
                         Row(
                             modifier = Modifier
                                 .fillMaxWidth()
+                                .clickable { onNavigateToUser(user.id) }
                                 .padding(vertical = 4.dp),
                             verticalAlignment = Alignment.CenterVertically,
                             horizontalArrangement = Arrangement.spacedBy(8.dp)
@@ -1701,7 +1870,8 @@ fun LocationForm(
                             ) {}
                             Text(
                                 text = user.name,
-                                style = MaterialTheme.typography.bodyMedium
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = MaterialTheme.colorScheme.primary
                             )
                         }
                     }
