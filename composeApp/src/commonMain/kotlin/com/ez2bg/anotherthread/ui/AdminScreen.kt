@@ -1595,6 +1595,14 @@ fun LocationGraph(
             }
         }
 
+        // Terrain size extends beyond the thumbnail
+        val terrainSize = boxSizePx * 1.4f
+
+        // LAYER 1: Parchment background (fixed, doesn't pan)
+        Canvas(modifier = Modifier.fillMaxSize()) {
+            drawParchmentBackground(seed = locations.size)
+        }
+
         Box(
             modifier = Modifier
                 .fillMaxSize()
@@ -1603,36 +1611,20 @@ fun LocationGraph(
                     translationY = offset.value.y
                 }
         ) {
-            // Draw decorative connection lines
+            // LAYER 2: Terrain for each location
             Canvas(modifier = Modifier.fillMaxSize()) {
-                val drawnConnections = mutableSetOf<Pair<String, String>>()
                 locations.forEach { location ->
-                    val fromPos = locationPositions[location.id] ?: return@forEach
-                    location.exitIds.forEach { exitId ->
-                        val toPos = locationPositions[exitId]
-                        if (toPos != null) {
-                            // Only draw each connection once (avoid duplicates for bidirectional exits)
-                            val connectionKey = if (location.id < exitId)
-                                Pair(location.id, exitId) else Pair(exitId, location.id)
-                            if (connectionKey !in drawnConnections) {
-                                drawnConnections.add(connectionKey)
-                                val start = Offset(
-                                    fromPos.x * (width - boxSizePx) + boxSizePx / 2,
-                                    fromPos.y * (height - boxSizePx) + boxSizePx / 2
-                                )
-                                val end = Offset(
-                                    toPos.x * (width - boxSizePx) + boxSizePx / 2,
-                                    toPos.y * (height - boxSizePx) + boxSizePx / 2
-                                )
-                                val style = getConnectionStyle(location.id, exitId)
-                                drawDecorativeConnection(start, end, style)
-                            }
-                        }
-                    }
+                    val pos = locationPositions[location.id] ?: return@forEach
+                    val screenPos = getLocationScreenPos(pos)
+                    drawLocationTerrain(
+                        location = location,
+                        center = screenPos,
+                        terrainSize = terrainSize
+                    )
                 }
             }
 
-            // Draw location nodes with thumbnails
+            // LAYER 3: Location thumbnails (on top)
             locations.forEach { location ->
                 val pos = locationPositions[location.id] ?: return@forEach
                 LocationNodeThumbnail(
@@ -1745,11 +1737,374 @@ private fun FallbackLocationBox(location: LocationDto) {
 // Force-directed layout constants
 private object LayoutConstants {
     const val REPULSION_STRENGTH = 0.02f
-    const val ATTRACTION_STRENGTH = 0.01f
+    const val ATTRACTION_STRENGTH = 0.03f  // Increased for tighter clustering
     const val CENTER_PULL = 0.005f
     const val DAMPING = 0.9f
     const val MIN_DISTANCE = 0.15f
     const val ITERATIONS = 100
+}
+
+// Parchment background colors
+private object ParchmentColors {
+    val base = Color(0xFFF5E6C8)          // Main parchment color
+    val darkSpot = Color(0xFFD4C4A8)      // Darker aging spots
+    val lightSpot = Color(0xFFFFF8E7)     // Lighter worn areas
+    val stain = Color(0xFFE8D5B5)         // Tea stain color
+    val edge = Color(0xFFCBB896)          // Slightly darker edges
+}
+
+// Terrain drawing colors
+private object TerrainColors {
+    val road = Color(0xFFB8976B)           // Tan/brown road
+    val roadOutline = Color(0xFF8B7355)    // Darker road edge
+    val tree = Color(0xFF4A6741)           // Forest green
+    val treeDark = Color(0xFF3A5731)       // Darker trunk/shadow
+    val water = Color(0xFF6B8E9F)          // Muted blue-gray
+    val waterHighlight = Color(0xFF8BB0C4) // Lighter water
+    val mountain = Color(0xFF7D7461)       // Gray-brown
+    val mountainSnow = Color(0xFFE8E4DC)   // Snow cap
+    val grass = Color(0xFF7A9A6D)          // Muted green
+    val building = Color(0xFF8B7355)       // Brown buildings
+    val cave = Color(0xFF5A5A5A)           // Dark gray
+    val sand = Color(0xFFD4C19E)           // Sandy color
+}
+
+// Terrain types for contextual drawing
+private enum class TerrainType {
+    ROAD, FOREST, WATER, MOUNTAIN, GRASS, BUILDING, CAVE, DESERT
+}
+
+// Helper extension for keyword matching
+private fun String.containsAny(vararg keywords: String): Boolean {
+    return keywords.any { this.contains(it) }
+}
+
+// Parse terrain types from location description
+private fun parseTerrainFromDescription(desc: String, name: String): Set<TerrainType> {
+    val text = (desc + " " + name).lowercase()
+    val terrains = mutableSetOf<TerrainType>()
+
+    if (text.containsAny("road", "path", "trail", "highway", "street", "lane", "way")) {
+        terrains.add(TerrainType.ROAD)
+    }
+    if (text.containsAny("forest", "tree", "wood", "grove", "copse", "timber", "oak", "pine")) {
+        terrains.add(TerrainType.FOREST)
+    }
+    if (text.containsAny("river", "stream", "creek", "water", "lake", "pond", "brook", "falls")) {
+        terrains.add(TerrainType.WATER)
+    }
+    if (text.containsAny("mountain", "hill", "cliff", "peak", "ridge", "highland", "slope")) {
+        terrains.add(TerrainType.MOUNTAIN)
+    }
+    if (text.containsAny("grass", "meadow", "field", "plain", "pasture", "clearing")) {
+        terrains.add(TerrainType.GRASS)
+    }
+    if (text.containsAny("town", "village", "castle", "inn", "tavern", "house", "building", "shop", "market")) {
+        terrains.add(TerrainType.BUILDING)
+    }
+    if (text.containsAny("cave", "cavern", "underground", "tunnel", "grotto", "mine")) {
+        terrains.add(TerrainType.CAVE)
+    }
+    if (text.containsAny("desert", "sand", "dune", "arid", "wasteland")) {
+        terrains.add(TerrainType.DESERT)
+    }
+
+    return terrains
+}
+
+// Draw parchment background with texture
+private fun DrawScope.drawParchmentBackground(seed: Int) {
+    val random = kotlin.random.Random(seed)
+
+    // Base fill
+    drawRect(color = ParchmentColors.base)
+
+    // Edge vignette - darker at edges
+    val edgeWidth = size.width * 0.15f
+    val edgeHeight = size.height * 0.15f
+
+    // Top edge
+    drawRect(
+        color = ParchmentColors.edge.copy(alpha = 0.3f),
+        topLeft = Offset.Zero,
+        size = androidx.compose.ui.geometry.Size(size.width, edgeHeight)
+    )
+    // Bottom edge
+    drawRect(
+        color = ParchmentColors.edge.copy(alpha = 0.3f),
+        topLeft = Offset(0f, size.height - edgeHeight),
+        size = androidx.compose.ui.geometry.Size(size.width, edgeHeight)
+    )
+    // Left edge
+    drawRect(
+        color = ParchmentColors.edge.copy(alpha = 0.2f),
+        topLeft = Offset.Zero,
+        size = androidx.compose.ui.geometry.Size(edgeWidth, size.height)
+    )
+    // Right edge
+    drawRect(
+        color = ParchmentColors.edge.copy(alpha = 0.2f),
+        topLeft = Offset(size.width - edgeWidth, 0f),
+        size = androidx.compose.ui.geometry.Size(edgeWidth, size.height)
+    )
+
+    // Random dots/imperfections
+    repeat(80) {
+        val x = random.nextFloat() * size.width
+        val y = random.nextFloat() * size.height
+        val radius = random.nextFloat() * 3f + 1f
+        val color = if (random.nextBoolean())
+            ParchmentColors.darkSpot.copy(alpha = random.nextFloat() * 0.15f)
+        else
+            ParchmentColors.lightSpot.copy(alpha = random.nextFloat() * 0.1f)
+        drawCircle(color = color, radius = radius, center = Offset(x, y))
+    }
+
+    // Occasional larger stains
+    repeat(7) {
+        val x = random.nextFloat() * size.width
+        val y = random.nextFloat() * size.height
+        val radius = random.nextFloat() * 40f + 20f
+        drawCircle(
+            color = ParchmentColors.stain.copy(alpha = random.nextFloat() * 0.08f),
+            radius = radius,
+            center = Offset(x, y)
+        )
+    }
+}
+
+// Draw road/path terrain
+private fun DrawScope.drawRoadTerrain(center: Offset, terrainSize: Float, seed: Int) {
+    val random = kotlin.random.Random(seed)
+    val pathWidth = terrainSize * 0.12f
+
+    val entryAngle = random.nextFloat() * 2 * PI.toFloat()
+    val exitAngle = entryAngle + PI.toFloat() * (0.5f + random.nextFloat() * 0.5f)
+
+    val startX = center.x + cos(entryAngle) * terrainSize * 0.6f
+    val startY = center.y + sin(entryAngle) * terrainSize * 0.6f
+    val endX = center.x + cos(exitAngle) * terrainSize * 0.6f
+    val endY = center.y + sin(exitAngle) * terrainSize * 0.6f
+
+    val roadPath = Path().apply {
+        moveTo(startX, startY)
+        quadraticTo(center.x, center.y, endX, endY)
+    }
+
+    drawPath(
+        path = roadPath,
+        color = TerrainColors.road,
+        style = Stroke(width = pathWidth, cap = StrokeCap.Round)
+    )
+}
+
+// Draw forest terrain - triangular trees
+private fun DrawScope.drawForestTerrain(center: Offset, terrainSize: Float, seed: Int) {
+    val random = kotlin.random.Random(seed)
+    val treeCount = 4 + random.nextInt(4)
+
+    repeat(treeCount) { i ->
+        val angle = (i.toFloat() / treeCount) * 2 * PI.toFloat() + random.nextFloat() * 0.5f
+        val distance = terrainSize * (0.35f + random.nextFloat() * 0.25f)
+        val treeX = center.x + cos(angle) * distance
+        val treeY = center.y + sin(angle) * distance
+        val treeSize = terrainSize * (0.1f + random.nextFloat() * 0.06f)
+
+        val treePath = Path().apply {
+            moveTo(treeX, treeY - treeSize)
+            lineTo(treeX - treeSize * 0.6f, treeY)
+            lineTo(treeX + treeSize * 0.6f, treeY)
+            close()
+        }
+
+        drawPath(treePath, color = TerrainColors.tree)
+
+        drawLine(
+            color = TerrainColors.treeDark,
+            start = Offset(treeX, treeY),
+            end = Offset(treeX, treeY + treeSize * 0.3f),
+            strokeWidth = 2f
+        )
+    }
+}
+
+// Draw water terrain - wavy lines
+private fun DrawScope.drawWaterTerrain(center: Offset, terrainSize: Float, seed: Int) {
+    val random = kotlin.random.Random(seed)
+    val waveCount = 2 + random.nextInt(2)
+
+    repeat(waveCount) { i ->
+        val offsetY = (i - waveCount / 2f) * terrainSize * 0.12f
+        val startX = center.x - terrainSize * 0.4f
+        val endX = center.x + terrainSize * 0.4f
+
+        val waterPath = Path().apply {
+            moveTo(startX, center.y + offsetY)
+            val waveHeight = terrainSize * 0.06f
+            quadraticTo(startX + terrainSize * 0.13f, center.y + offsetY - waveHeight,
+                startX + terrainSize * 0.27f, center.y + offsetY)
+            quadraticTo(startX + terrainSize * 0.4f, center.y + offsetY + waveHeight,
+                startX + terrainSize * 0.53f, center.y + offsetY)
+            quadraticTo(startX + terrainSize * 0.67f, center.y + offsetY - waveHeight,
+                endX, center.y + offsetY)
+        }
+
+        drawPath(
+            path = waterPath,
+            color = TerrainColors.water.copy(alpha = 0.7f),
+            style = Stroke(width = 3f, cap = StrokeCap.Round)
+        )
+    }
+}
+
+// Draw mountain terrain - triangular peaks
+private fun DrawScope.drawMountainTerrain(center: Offset, terrainSize: Float, seed: Int) {
+    val random = kotlin.random.Random(seed)
+    val peakCount = 2 + random.nextInt(2)
+
+    repeat(peakCount) { i ->
+        val offsetX = (i - peakCount / 2f) * terrainSize * 0.2f
+        val peakHeight = terrainSize * (0.25f + random.nextFloat() * 0.12f)
+        val peakWidth = terrainSize * (0.15f + random.nextFloat() * 0.08f)
+        val baseY = center.y + terrainSize * 0.15f
+
+        val mountainPath = Path().apply {
+            moveTo(center.x + offsetX - peakWidth, baseY)
+            lineTo(center.x + offsetX, baseY - peakHeight)
+            lineTo(center.x + offsetX + peakWidth, baseY)
+            close()
+        }
+
+        drawPath(mountainPath, color = TerrainColors.mountain)
+
+        if (peakHeight > terrainSize * 0.3f) {
+            val snowPath = Path().apply {
+                val snowLine = baseY - peakHeight * 0.7f
+                moveTo(center.x + offsetX - peakWidth * 0.3f, snowLine)
+                lineTo(center.x + offsetX, baseY - peakHeight)
+                lineTo(center.x + offsetX + peakWidth * 0.3f, snowLine)
+                close()
+            }
+            drawPath(snowPath, color = TerrainColors.mountainSnow)
+        }
+    }
+}
+
+// Draw grass terrain - small tufts
+private fun DrawScope.drawGrassTerrain(center: Offset, terrainSize: Float, seed: Int) {
+    val random = kotlin.random.Random(seed)
+    val tuftCount = 6 + random.nextInt(4)
+
+    repeat(tuftCount) {
+        val angle = random.nextFloat() * 2 * PI.toFloat()
+        val distance = terrainSize * (0.25f + random.nextFloat() * 0.35f)
+        val tuftX = center.x + cos(angle) * distance
+        val tuftY = center.y + sin(angle) * distance
+
+        repeat(3) { j ->
+            val lineAngle = -PI.toFloat() / 2 + (j - 1) * PI.toFloat() / 8
+            val lineLength = terrainSize * 0.05f
+            drawLine(
+                color = TerrainColors.grass.copy(alpha = 0.6f),
+                start = Offset(tuftX, tuftY),
+                end = Offset(tuftX + cos(lineAngle) * lineLength, tuftY + sin(lineAngle) * lineLength),
+                strokeWidth = 1.5f,
+                cap = StrokeCap.Round
+            )
+        }
+    }
+}
+
+// Draw building terrain - simple house shapes
+private fun DrawScope.drawBuildingTerrain(center: Offset, terrainSize: Float, seed: Int) {
+    val random = kotlin.random.Random(seed)
+    val buildingCount = 1 + random.nextInt(3)
+
+    repeat(buildingCount) { i ->
+        val angle = (i.toFloat() / buildingCount) * 2 * PI.toFloat() + random.nextFloat()
+        val distance = terrainSize * (0.3f + random.nextFloat() * 0.15f)
+        val bldgX = center.x + cos(angle) * distance
+        val bldgY = center.y + sin(angle) * distance
+        val bldgSize = terrainSize * (0.07f + random.nextFloat() * 0.03f)
+
+        val housePath = Path().apply {
+            moveTo(bldgX - bldgSize, bldgY)
+            lineTo(bldgX - bldgSize, bldgY + bldgSize)
+            lineTo(bldgX + bldgSize, bldgY + bldgSize)
+            lineTo(bldgX + bldgSize, bldgY)
+            lineTo(bldgX, bldgY - bldgSize * 0.7f)
+            close()
+        }
+
+        drawPath(housePath, color = TerrainColors.building)
+    }
+}
+
+// Draw cave terrain - dark semicircle entrance
+private fun DrawScope.drawCaveTerrain(center: Offset, terrainSize: Float, seed: Int) {
+    val random = kotlin.random.Random(seed)
+    val caveX = center.x + (random.nextFloat() - 0.5f) * terrainSize * 0.25f
+    val caveY = center.y + terrainSize * 0.25f
+
+    drawArc(
+        color = TerrainColors.cave,
+        startAngle = 0f,
+        sweepAngle = -180f,
+        useCenter = true,
+        topLeft = Offset(caveX - terrainSize * 0.12f, caveY - terrainSize * 0.08f),
+        size = androidx.compose.ui.geometry.Size(terrainSize * 0.24f, terrainSize * 0.16f)
+    )
+}
+
+// Draw desert terrain - dune curves and dots
+private fun DrawScope.drawDesertTerrain(center: Offset, terrainSize: Float, seed: Int) {
+    val random = kotlin.random.Random(seed)
+
+    repeat(3) { i ->
+        val offsetY = (i - 1) * terrainSize * 0.15f
+        val dunePath = Path().apply {
+            moveTo(center.x - terrainSize * 0.35f, center.y + offsetY)
+            quadraticTo(
+                center.x - terrainSize * 0.08f, center.y + offsetY - terrainSize * 0.08f,
+                center.x + terrainSize * 0.15f, center.y + offsetY
+            )
+        }
+        drawPath(
+            path = dunePath,
+            color = TerrainColors.sand.copy(alpha = 0.5f),
+            style = Stroke(width = 2f, cap = StrokeCap.Round)
+        )
+    }
+
+    repeat(8) {
+        val dotX = center.x + (random.nextFloat() - 0.5f) * terrainSize * 0.7f
+        val dotY = center.y + (random.nextFloat() - 0.5f) * terrainSize * 0.7f
+        drawCircle(
+            color = TerrainColors.sand.copy(alpha = 0.4f),
+            radius = 2f,
+            center = Offset(dotX, dotY)
+        )
+    }
+}
+
+// Master terrain drawing function
+private fun DrawScope.drawLocationTerrain(
+    location: LocationDto,
+    center: Offset,
+    terrainSize: Float
+) {
+    val terrains = parseTerrainFromDescription(location.desc, location.name)
+    val seed = location.id.hashCode()
+
+    // Draw in specific order (background first)
+    if (TerrainType.DESERT in terrains) drawDesertTerrain(center, terrainSize, seed)
+    if (TerrainType.GRASS in terrains) drawGrassTerrain(center, terrainSize, seed)
+    if (TerrainType.WATER in terrains) drawWaterTerrain(center, terrainSize, seed + 1)
+    if (TerrainType.MOUNTAIN in terrains) drawMountainTerrain(center, terrainSize, seed + 2)
+    if (TerrainType.FOREST in terrains) drawForestTerrain(center, terrainSize, seed + 3)
+    if (TerrainType.ROAD in terrains) drawRoadTerrain(center, terrainSize, seed + 4)
+    if (TerrainType.CAVE in terrains) drawCaveTerrain(center, terrainSize, seed + 5)
+    if (TerrainType.BUILDING in terrains) drawBuildingTerrain(center, terrainSize, seed + 6)
 }
 
 private data class NodeState(
@@ -1844,165 +2199,6 @@ private fun calculateForceDirectedPositions(
             location = locationMap[node.id]!!,
             x = node.x,
             y = node.y
-        )
-    }
-}
-
-// Connection line styles for visual variety
-private enum class ConnectionStyle {
-    VINE,
-    CHAIN,
-    MYSTICAL
-}
-
-private fun getConnectionStyle(fromId: String, toId: String): ConnectionStyle {
-    val combinedHash = (fromId + toId).hashCode()
-    val styles = ConnectionStyle.entries
-    return styles[abs(combinedHash) % styles.size]
-}
-
-/**
- * Draw a decorative connection line between two locations.
- */
-private fun DrawScope.drawDecorativeConnection(
-    start: Offset,
-    end: Offset,
-    style: ConnectionStyle,
-    strokeWidth: Float = 2.5f
-) {
-    val lineColor = Color.Black
-    val midX = (start.x + end.x) / 2
-    val midY = (start.y + end.y) / 2
-
-    // Calculate perpendicular offset for curve control point
-    val dx = end.x - start.x
-    val dy = end.y - start.y
-    val length = sqrt(dx * dx + dy * dy)
-    if (length < 1f) return // Skip very short connections
-
-    val perpX = -dy / length
-    val perpY = dx / length
-
-    // Curve amount (perpendicular offset)
-    val curveAmount = length * 0.12f
-    val controlX = midX + perpX * curveAmount
-    val controlY = midY + perpY * curveAmount
-
-    // Main curved path
-    val mainPath = Path().apply {
-        moveTo(start.x, start.y)
-        quadraticTo(controlX, controlY, end.x, end.y)
-    }
-
-    drawPath(
-        path = mainPath,
-        color = lineColor,
-        style = Stroke(
-            width = strokeWidth,
-            cap = StrokeCap.Round,
-            join = StrokeJoin.Round
-        )
-    )
-
-    // Add embellishments based on style
-    when (style) {
-        ConnectionStyle.VINE -> drawVineEmbellishments(start, end, controlX, controlY, lineColor, length)
-        ConnectionStyle.CHAIN -> drawChainEmbellishments(start, end, controlX, controlY, lineColor)
-        ConnectionStyle.MYSTICAL -> drawMysticalEmbellishments(start, end, controlX, controlY, lineColor)
-    }
-}
-
-private fun DrawScope.drawVineEmbellishments(
-    start: Offset,
-    end: Offset,
-    ctrlX: Float,
-    ctrlY: Float,
-    color: Color,
-    length: Float
-) {
-    val segments = 3
-    val dx = end.x - start.x
-    val dy = end.y - start.y
-    val pathLength = sqrt(dx * dx + dy * dy)
-
-    for (i in 1 until segments) {
-        val t = i.toFloat() / segments
-        // Quadratic bezier interpolation
-        val px = (1-t)*(1-t)*start.x + 2*(1-t)*t*ctrlX + t*t*end.x
-        val py = (1-t)*(1-t)*start.y + 2*(1-t)*t*ctrlY + t*t*end.y
-
-        // Alternate sides for leaves
-        val side = if (i % 2 == 0) 1f else -1f
-        val perpX = -dy / pathLength * side
-        val perpY = dx / pathLength * side
-
-        val leafSize = 10f
-        val leafPath = Path().apply {
-            moveTo(px, py)
-            quadraticTo(
-                px + perpX * leafSize,
-                py + perpY * leafSize,
-                px + perpX * leafSize * 0.3f + dx / pathLength * leafSize * 0.5f,
-                py + perpY * leafSize * 0.3f + dy / pathLength * leafSize * 0.5f
-            )
-        }
-
-        drawPath(
-            path = leafPath,
-            color = color.copy(alpha = 0.6f),
-            style = Stroke(width = 1.5f, cap = StrokeCap.Round)
-        )
-    }
-}
-
-private fun DrawScope.drawChainEmbellishments(
-    start: Offset,
-    end: Offset,
-    ctrlX: Float,
-    ctrlY: Float,
-    color: Color
-) {
-    val segments = 4
-    for (i in 1 until segments) {
-        val t = i.toFloat() / segments
-        val px = (1-t)*(1-t)*start.x + 2*(1-t)*t*ctrlX + t*t*end.x
-        val py = (1-t)*(1-t)*start.y + 2*(1-t)*t*ctrlY + t*t*end.y
-
-        val diamondSize = 5f
-        val diamondPath = Path().apply {
-            moveTo(px, py - diamondSize)
-            lineTo(px + diamondSize, py)
-            lineTo(px, py + diamondSize)
-            lineTo(px - diamondSize, py)
-            close()
-        }
-
-        drawPath(
-            path = diamondPath,
-            color = color,
-            style = Stroke(width = 1.5f, cap = StrokeCap.Round, join = StrokeJoin.Round)
-        )
-    }
-}
-
-private fun DrawScope.drawMysticalEmbellishments(
-    start: Offset,
-    end: Offset,
-    ctrlX: Float,
-    ctrlY: Float,
-    color: Color
-) {
-    val segments = 5
-    for (i in 1 until segments) {
-        val t = i.toFloat() / segments
-        val px = (1-t)*(1-t)*start.x + 2*(1-t)*t*ctrlX + t*t*end.x
-        val py = (1-t)*(1-t)*start.y + 2*(1-t)*t*ctrlY + t*t*end.y
-
-        drawCircle(
-            color = color.copy(alpha = 0.4f),
-            radius = 4f,
-            center = Offset(px, py),
-            style = Stroke(width = 1.5f)
         )
     }
 }
