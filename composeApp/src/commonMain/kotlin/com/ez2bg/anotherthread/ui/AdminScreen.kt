@@ -622,6 +622,18 @@ fun AdminScreen() {
     }
     var currentUser by remember { mutableStateOf(savedUser) }
 
+    // Refresh user data from server on startup to get latest featureIds, etc.
+    LaunchedEffect(savedUser?.id) {
+        savedUser?.let { user ->
+            ApiClient.getUser(user.id).onSuccess { freshUser ->
+                if (freshUser != null) {
+                    AuthStorage.saveUser(freshUser)
+                    currentUser = freshUser
+                }
+            }
+        }
+    }
+
     Column(
         modifier = Modifier
             .fillMaxSize()
