@@ -1,0 +1,20 @@
+// App configuration template
+// Copy this file to config.js and modify as needed
+// config.js is gitignored to prevent committing sensitive URLs
+
+window.APP_CONFIG = {
+    // ==========================================================================
+    // OPTION 1: Local development (default)
+    // ==========================================================================
+    // Leave tunnelBackendUrl as null to use localhost with the specified port
+    tunnelBackendUrl: null,
+    localBackendPort: 8081,
+
+    // ==========================================================================
+    // OPTION 2: Cloudflare Tunnel
+    // ==========================================================================
+    // Set tunnelBackendUrl to your backend tunnel URL when using cloudflared
+    // Example:
+    // tunnelBackendUrl: "https://your-backend-tunnel.trycloudflare.com",
+    // localBackendPort: 8081
+};

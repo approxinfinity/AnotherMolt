@@ -136,6 +136,58 @@ ollama pull llama3.2
 ### Database
 SQLite database is stored at `server/data/anotherthread.db` by default.
 
+### External Access (Cloudflare Tunnel)
+
+To access the web app from external devices (phones, tablets, other computers):
+
+1. **Install cloudflared:**
+   ```shell
+   brew install cloudflared
+   ```
+
+2. **Start tunnels for both frontend and backend:**
+   ```shell
+   # Terminal 1 - Frontend tunnel (port 8080)
+   cloudflared tunnel --url http://localhost:8080
+
+   # Terminal 2 - Backend tunnel (port 8081)
+   cloudflared tunnel --url http://localhost:8081
+   ```
+
+   Note the tunnel URLs displayed (e.g., `https://xxx-yyy-zzz.trycloudflare.com`).
+
+3. **Configure the frontend to use the backend tunnel:**
+
+   Copy the config template:
+   ```shell
+   cp composeApp/src/wasmJsMain/resources/config.js.template \
+      composeApp/src/wasmJsMain/resources/config.js
+   ```
+
+   Edit `config.js` and set your backend tunnel URL:
+   ```javascript
+   window.APP_CONFIG = {
+       tunnelBackendUrl: "https://YOUR_BACKEND_TUNNEL_URL.trycloudflare.com",
+       localBackendPort: 8081
+   };
+   ```
+
+4. **Rebuild and access:**
+   ```shell
+   ./gradlew :composeApp:wasmJsBrowserDevelopmentRun
+   ```
+
+   Access via the frontend tunnel URL shown in Terminal 1.
+
+**Note:** The `config.js` file is gitignored to prevent committing tunnel URLs. The template provides the default localhost configuration.
+
+#### Config File Reference
+
+| Setting | Description | Default |
+|---------|-------------|---------|
+| `tunnelBackendUrl` | Backend API URL when accessed via tunnel | `null` (uses localhost) |
+| `localBackendPort` | Backend port for local development | `8081` |
+
 ## Tech Stack
 
 - **Kotlin Multiplatform** - Shared code across platforms
