@@ -5,6 +5,7 @@ import io.ktor.client.*
 import io.ktor.client.call.*
 import io.ktor.client.plugins.contentnegotiation.*
 import io.ktor.client.request.*
+import io.ktor.client.request.forms.*
 import io.ktor.client.statement.*
 import io.ktor.http.*
 import io.ktor.serialization.kotlinx.json.*
@@ -158,6 +159,24 @@ data class GenerateImageRequest(
 data class GenerateImageResponse(
     val imageUrl: String
 )
+
+@Serializable
+data class UploadedFileDto(
+    val filename: String,
+    val url: String,
+    val size: Long,
+    val lastModified: Long
+)
+
+@Serializable
+data class FileUploadResponseDto(
+    val success: Boolean,
+    val url: String? = null,
+    val error: String? = null
+)
+
+// Admin feature ID constant
+const val ADMIN_FEATURE_ID = "1"
 
 object ApiClient {
     private val client = HttpClient {
@@ -363,5 +382,39 @@ object ApiClient {
         } else {
             null
         }
+    }
+
+    // Admin file management methods
+    suspend fun getUploadedFiles(): Result<List<UploadedFileDto>> = runCatching {
+        client.get("$baseUrl/admin/files").body()
+    }
+
+    suspend fun uploadFile(filename: String, fileBytes: ByteArray): Result<FileUploadResponseDto> = runCatching {
+        val response = client.post("$baseUrl/admin/files/upload") {
+            setBody(
+                MultiPartFormDataContent(
+                    formData {
+                        append("file", fileBytes, Headers.build {
+                            append(HttpHeaders.ContentDisposition, "filename=\"$filename\"")
+                        })
+                    }
+                )
+            )
+        }
+        if (response.status.isSuccess()) {
+            response.body()
+        } else {
+            FileUploadResponseDto(success = false, error = "Upload failed with status ${response.status}")
+        }
+    }
+
+    suspend fun deleteUploadedFile(filename: String): Result<Boolean> = runCatching {
+        val response = client.delete("$baseUrl/admin/files/$filename")
+        response.status.isSuccess()
+    }
+
+    suspend fun getAllowedFileTypes(): Result<Set<String>> = runCatching {
+        val response: Map<String, Set<String>> = client.get("$baseUrl/admin/files/allowed-types").body()
+        response["allowedExtensions"] ?: emptySet()
     }
 }

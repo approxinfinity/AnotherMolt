@@ -8,6 +8,7 @@ import io.ktor.server.http.content.*
 import io.ktor.server.netty.*
 import io.ktor.server.plugins.contentnegotiation.*
 import io.ktor.server.plugins.cors.routing.*
+import io.ktor.http.content.*
 import io.ktor.server.request.*
 import io.ktor.server.response.*
 import io.ktor.server.routing.*
@@ -48,6 +49,7 @@ data class CreateFeatureCategoryRequest(
 
 @Serializable
 data class CreateFeatureRequest(
+    val id: String? = null,  // Optional - if not provided, UUID is generated
     val name: String,
     val featureCategoryId: String? = null,
     val description: String,
@@ -124,6 +126,24 @@ data class GenerateImageResponse(
     val imageUrl: String
 )
 
+@Serializable
+data class UploadedFileResponse(
+    val filename: String,
+    val url: String,
+    val size: Long,
+    val lastModified: Long
+)
+
+@Serializable
+data class FileUploadResponse(
+    val success: Boolean,
+    val url: String? = null,
+    val error: String? = null
+)
+
+// Admin feature ID constant
+const val ADMIN_FEATURE_ID = "1"
+
 fun main(args: Array<String>) {
     EngineMain.main(args)
 }
@@ -144,6 +164,7 @@ fun Application.module() {
         allowMethod(HttpMethod.Post)
         allowMethod(HttpMethod.Get)
         allowMethod(HttpMethod.Put)
+        allowMethod(HttpMethod.Delete)
     }
 
     // Initialize database (TEST_DB_PATH takes precedence for testing)
@@ -153,9 +174,11 @@ fun Application.module() {
     DatabaseConfig.init(dbPath)
     log.info("Database initialized at $dbPath")
 
-    // Initialize image directory
-    val imageDir = File(System.getenv("IMAGE_DIR") ?: "data/images").also { it.mkdirs() }
-    log.info("Image directory: ${imageDir.absolutePath}")
+    // Initialize file directories
+    val fileDir = File(System.getenv("FILE_DIR") ?: "data/files").also { it.mkdirs() }
+    val imageGenDir = File(fileDir, "imageGen").also { it.mkdirs() }
+    val uploadsDir = File(fileDir, "uploads").also { it.mkdirs() }
+    log.info("Files directory: ${fileDir.absolutePath}")
 
     routing {
         get("/") {
@@ -165,8 +188,11 @@ fun Application.module() {
             call.respondText("OK")
         }
 
-        // Serve static images
-        staticFiles("/images", imageDir)
+        // Serve static files from subfolders
+        staticFiles("/files/imageGen", imageGenDir)
+        staticFiles("/files/uploads", uploadsDir)
+        // Keep legacy /images path for backwards compatibility
+        staticFiles("/images", imageGenDir)
 
         // Image generation status endpoint
         get("/image-generation/status") {
@@ -210,6 +236,68 @@ fun Application.module() {
                 call.respond(HttpStatusCode.InternalServerError, mapOf(
                     "error" to (error.message ?: "Failed to generate image")
                 ))
+            }
+        }
+
+        // File upload routes (admin only)
+        route("/admin/files") {
+            // List all uploaded files
+            get {
+                val files = FileUploadService.listUploadedFiles()
+                call.respond(files.map {
+                    UploadedFileResponse(
+                        filename = it.filename,
+                        url = it.url,
+                        size = it.size,
+                        lastModified = it.lastModified
+                    )
+                })
+            }
+
+            // Upload a file
+            post("/upload") {
+                val multipart = call.receiveMultipart()
+                var fileUrl: String? = null
+                var error: String? = null
+
+                multipart.forEachPart { part ->
+                    when (part) {
+                        is PartData.FileItem -> {
+                            val filename = part.originalFileName ?: "unknown"
+                            val fileBytes = part.streamProvider().readBytes()
+
+                            FileUploadService.saveUploadedFile(filename, fileBytes)
+                                .onSuccess { url -> fileUrl = url }
+                                .onFailure { e -> error = e.message }
+                        }
+                        else -> {}
+                    }
+                    part.dispose()
+                }
+
+                if (fileUrl != null) {
+                    call.respond(FileUploadResponse(success = true, url = fileUrl))
+                } else {
+                    call.respond(
+                        HttpStatusCode.BadRequest,
+                        FileUploadResponse(success = false, error = error ?: "No file provided")
+                    )
+                }
+            }
+
+            // Delete a file
+            delete("/{filename}") {
+                val filename = call.parameters["filename"] ?: return@delete call.respond(HttpStatusCode.BadRequest)
+                if (FileUploadService.deleteUploadedFile(filename)) {
+                    call.respond(HttpStatusCode.OK, mapOf("deleted" to true))
+                } else {
+                    call.respond(HttpStatusCode.NotFound, mapOf("deleted" to false))
+                }
+            }
+
+            // Get allowed file types
+            get("/allowed-types") {
+                call.respond(mapOf("allowedExtensions" to FileUploadService.getAllowedExtensions()))
             }
         }
 
@@ -699,12 +787,22 @@ fun Application.module() {
             }
             post {
                 val request = call.receive<CreateFeatureRequest>()
-                val feature = Feature(
-                    name = request.name,
-                    featureCategoryId = request.featureCategoryId,
-                    description = request.description,
-                    data = request.data
-                )
+                val feature = if (request.id != null) {
+                    Feature(
+                        id = request.id,
+                        name = request.name,
+                        featureCategoryId = request.featureCategoryId,
+                        description = request.description,
+                        data = request.data
+                    )
+                } else {
+                    Feature(
+                        name = request.name,
+                        featureCategoryId = request.featureCategoryId,
+                        description = request.description,
+                        data = request.data
+                    )
+                }
                 val created = FeatureRepository.create(feature)
                 call.respond(HttpStatusCode.Created, created)
             }

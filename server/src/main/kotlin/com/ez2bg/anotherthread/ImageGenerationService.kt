@@ -56,9 +56,13 @@ object ImageGenerationService {
     private val sdApiUrl: String
         get() = System.getenv("STABLE_DIFFUSION_URL") ?: "http://127.0.0.1:7860"
 
-    // Directory to save generated images
+    // Base directory for all files
+    private val baseFileDir: File
+        get() = File(System.getenv("FILE_DIR") ?: "data/files")
+
+    // Directory to save generated images (subfolder of files)
     private val imageDir: File
-        get() = File(System.getenv("IMAGE_DIR") ?: "data/images").also { it.mkdirs() }
+        get() = File(baseFileDir, "imageGen").also { it.mkdirs() }
 
     /**
      * Generate an image from description text and save it locally.
@@ -99,7 +103,7 @@ object ImageGenerationService {
             imageFile.writeBytes(imageData)
 
             // Return the relative path that can be served
-            "/images/$filename"
+            "/files/imageGen/$filename"
         }
     }
 
@@ -136,6 +140,6 @@ object ImageGenerationService {
     fun getLocalImageUrl(entityType: String, entityId: String): String? {
         val filename = "${entityType}_${entityId}.png"
         val imageFile = File(imageDir, filename)
-        return if (imageFile.exists()) "/images/$filename" else null
+        return if (imageFile.exists()) "/files/imageGen/$filename" else null
     }
 }
