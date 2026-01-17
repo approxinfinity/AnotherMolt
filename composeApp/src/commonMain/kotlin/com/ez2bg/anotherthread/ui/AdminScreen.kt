@@ -40,7 +40,9 @@ import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.IntOffset
@@ -444,7 +446,7 @@ fun DragonHeader(modifier: Modifier = Modifier) {
     Box(
         modifier = modifier
             .fillMaxWidth()
-            .height(80.dp),
+            .height(48.dp),
         contentAlignment = Alignment.Center
     ) {
         // Dragon line art behind text
@@ -599,7 +601,7 @@ fun DragonHeader(modifier: Modifier = Modifier) {
         // Title text on top
         Text(
             text = "Another Thread",
-            style = MaterialTheme.typography.headlineLarge,
+            style = MaterialTheme.typography.titleLarge,
             color = textColor,
             textAlign = TextAlign.Center
         )
@@ -623,7 +625,7 @@ fun AdminScreen() {
             .fillMaxSize()
             .padding(16.dp)
     ) {
-        DragonHeader(modifier = Modifier.padding(bottom = 8.dp))
+        DragonHeader(modifier = Modifier.padding(bottom = 4.dp))
 
         // Check if current user has admin privilege
         val isAdmin = currentUser?.featureIds?.contains(ADMIN_FEATURE_ID) == true
@@ -654,7 +656,7 @@ fun AdminScreen() {
             }
         }
 
-        Spacer(modifier = Modifier.height(16.dp))
+        Spacer(modifier = Modifier.height(8.dp))
 
         when (val state = viewState) {
             is ViewState.UserAuth -> UserAuthView(
@@ -835,7 +837,8 @@ fun UserAuthView(
             onValueChange = { name = it; errorMessage = null },
             label = { Text("Username") },
             modifier = Modifier.fillMaxWidth(),
-            singleLine = true
+            singleLine = true,
+            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Text)
         )
 
         OutlinedTextField(
@@ -844,7 +847,8 @@ fun UserAuthView(
             label = { Text("Password") },
             modifier = Modifier.fillMaxWidth(),
             singleLine = true,
-            visualTransformation = PasswordVisualTransformation()
+            visualTransformation = PasswordVisualTransformation(),
+            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password)
         )
 
         if (!isLoginMode) {
@@ -854,7 +858,8 @@ fun UserAuthView(
                 label = { Text("Confirm Password") },
                 modifier = Modifier.fillMaxWidth(),
                 singleLine = true,
-                visualTransformation = PasswordVisualTransformation()
+                visualTransformation = PasswordVisualTransformation(),
+                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password)
             )
         }
 
@@ -1491,10 +1496,12 @@ fun LocationGraphView(
                     modifier = Modifier.align(Alignment.Center),
                     horizontalAlignment = Alignment.CenterHorizontally
                 ) {
-                    Text(
-                        text = "Error: $error",
-                        color = MaterialTheme.colorScheme.error
-                    )
+                    SelectionContainer {
+                        Text(
+                            text = "Error: $error",
+                            color = MaterialTheme.colorScheme.error
+                        )
+                    }
                     Spacer(modifier = Modifier.height(8.dp))
                     Button(onClick = {
                         scope.launch {
@@ -1568,7 +1575,7 @@ fun LocationGraph(
     ) {
         val width = constraints.maxWidth.toFloat()
         val height = constraints.maxHeight.toFloat()
-        val boxSize = 100.dp
+        val boxSize = 70.dp
         val boxSizePx = boxSize.value * 2.5f
 
         // Function to calculate screen position of a location
@@ -1596,7 +1603,7 @@ fun LocationGraph(
         }
 
         // Terrain size extends beyond the thumbnail
-        val terrainSize = boxSizePx * 1.4f
+        val terrainSize = boxSizePx * 2.0f
 
         // LAYER 1: Parchment background (fixed, doesn't pan)
         Canvas(modifier = Modifier.fillMaxSize()) {
@@ -1653,7 +1660,7 @@ private fun LocationNodeThumbnail(
     modifier: Modifier = Modifier,
     onClick: () -> Unit
 ) {
-    val boxSize = 100.dp
+    val boxSize = 70.dp
     val hasImage = location.imageUrl != null
 
     Box(
