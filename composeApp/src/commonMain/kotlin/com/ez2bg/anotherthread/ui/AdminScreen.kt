@@ -35,6 +35,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.StrokeJoin
+import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
@@ -59,8 +60,10 @@ import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 import kotlin.math.PI
+import kotlin.math.abs
 import kotlin.math.cos
 import kotlin.math.sin
+import kotlin.math.sqrt
 
 /**
  * Data class representing a completed image generation
@@ -1545,7 +1548,7 @@ fun LocationGraph(
     modifier: Modifier = Modifier
 ) {
     val locationPositions = remember(locations) {
-        calculateLocationPositions(locations)
+        calculateForceDirectedPositions(locations)
     }
 
     // Pan offset state with animation support
@@ -1600,84 +1603,408 @@ fun LocationGraph(
                     translationY = offset.value.y
                 }
         ) {
-            // Draw connection lines
+            // Draw decorative connection lines
             Canvas(modifier = Modifier.fillMaxSize()) {
+                val drawnConnections = mutableSetOf<Pair<String, String>>()
                 locations.forEach { location ->
                     val fromPos = locationPositions[location.id] ?: return@forEach
                     location.exitIds.forEach { exitId ->
                         val toPos = locationPositions[exitId]
                         if (toPos != null) {
-                            drawLine(
-                                color = Color.Gray,
-                                start = Offset(
+                            // Only draw each connection once (avoid duplicates for bidirectional exits)
+                            val connectionKey = if (location.id < exitId)
+                                Pair(location.id, exitId) else Pair(exitId, location.id)
+                            if (connectionKey !in drawnConnections) {
+                                drawnConnections.add(connectionKey)
+                                val start = Offset(
                                     fromPos.x * (width - boxSizePx) + boxSizePx / 2,
                                     fromPos.y * (height - boxSizePx) + boxSizePx / 2
-                                ),
-                                end = Offset(
+                                )
+                                val end = Offset(
                                     toPos.x * (width - boxSizePx) + boxSizePx / 2,
                                     toPos.y * (height - boxSizePx) + boxSizePx / 2
-                                ),
-                                strokeWidth = 3f
-                            )
+                                )
+                                val style = getConnectionStyle(location.id, exitId)
+                                drawDecorativeConnection(start, end, style)
+                            }
                         }
                     }
                 }
             }
 
-            // Draw location boxes
+            // Draw location nodes with thumbnails
             locations.forEach { location ->
                 val pos = locationPositions[location.id] ?: return@forEach
-                Box(
-                    modifier = Modifier
-                        .offset(
-                            x = (pos.x * (width - boxSizePx) / 2.5f).dp,
-                            y = (pos.y * (height - boxSizePx) / 2.5f).dp
-                        )
-                        .size(boxSize)
-                        .background(
-                            MaterialTheme.colorScheme.primaryContainer,
-                            RoundedCornerShape(8.dp)
-                        )
-                        .clickable {
-                            centerOnLocation(location)
-                            onLocationClick(location)
-                        }
-                        .padding(8.dp),
-                    contentAlignment = Alignment.Center
-                ) {
-                    Text(
-                        text = location.name.ifBlank { location.id.take(8) },
-                        style = MaterialTheme.typography.bodySmall,
-                        textAlign = TextAlign.Center,
-                        maxLines = 2,
-                        overflow = TextOverflow.Ellipsis,
-                        color = MaterialTheme.colorScheme.onPrimaryContainer
-                    )
-                }
+                LocationNodeThumbnail(
+                    location = location,
+                    modifier = Modifier.offset(
+                        x = (pos.x * (width - boxSizePx) / 2.5f).dp,
+                        y = (pos.y * (height - boxSizePx) / 2.5f).dp
+                    ),
+                    onClick = {
+                        centerOnLocation(location)
+                        onLocationClick(location)
+                    }
+                )
             }
         }
     }
 }
 
-private fun calculateLocationPositions(locations: List<LocationDto>): Map<String, LocationPosition> {
+/**
+ * Thumbnail node for a location in the graph view.
+ * Shows image if available, otherwise falls back to colored box with name.
+ */
+@Composable
+private fun LocationNodeThumbnail(
+    location: LocationDto,
+    modifier: Modifier = Modifier,
+    onClick: () -> Unit
+) {
+    val boxSize = 100.dp
+    val hasImage = location.imageUrl != null
+
+    Box(
+        modifier = modifier
+            .size(boxSize)
+            .clip(RoundedCornerShape(8.dp))
+            .clickable(onClick = onClick),
+        contentAlignment = Alignment.Center
+    ) {
+        if (hasImage) {
+            val fullUrl = "${AppConfig.api.baseUrl}${location.imageUrl}"
+            var imageState by remember {
+                mutableStateOf<AsyncImagePainter.State>(AsyncImagePainter.State.Empty)
+            }
+
+            AsyncImage(
+                model = fullUrl,
+                contentDescription = location.name,
+                modifier = Modifier.fillMaxSize(),
+                contentScale = ContentScale.Crop,
+                onState = { imageState = it }
+            )
+
+            // Semi-transparent overlay at bottom for name
+            Box(
+                modifier = Modifier
+                    .align(Alignment.BottomCenter)
+                    .fillMaxWidth()
+                    .background(Color.Black.copy(alpha = 0.6f))
+                    .padding(4.dp)
+            ) {
+                Text(
+                    text = location.name.ifBlank { location.id.take(8) },
+                    style = MaterialTheme.typography.labelSmall,
+                    color = Color.White,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.fillMaxWidth(),
+                    textAlign = TextAlign.Center
+                )
+            }
+
+            // Show loading indicator if still loading
+            if (imageState is AsyncImagePainter.State.Loading) {
+                CircularProgressIndicator(
+                    modifier = Modifier.size(24.dp),
+                    strokeWidth = 2.dp
+                )
+            }
+
+            // Fall back to colored box on error
+            if (imageState is AsyncImagePainter.State.Error) {
+                FallbackLocationBox(location)
+            }
+        } else {
+            FallbackLocationBox(location)
+        }
+    }
+}
+
+@Composable
+private fun FallbackLocationBox(location: LocationDto) {
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(MaterialTheme.colorScheme.primaryContainer),
+        contentAlignment = Alignment.Center
+    ) {
+        Text(
+            text = location.name.ifBlank { location.id.take(8) },
+            style = MaterialTheme.typography.bodySmall,
+            textAlign = TextAlign.Center,
+            maxLines = 2,
+            overflow = TextOverflow.Ellipsis,
+            color = MaterialTheme.colorScheme.onPrimaryContainer,
+            modifier = Modifier.padding(8.dp)
+        )
+    }
+}
+
+// Force-directed layout constants
+private object LayoutConstants {
+    const val REPULSION_STRENGTH = 0.02f
+    const val ATTRACTION_STRENGTH = 0.01f
+    const val CENTER_PULL = 0.005f
+    const val DAMPING = 0.9f
+    const val MIN_DISTANCE = 0.15f
+    const val ITERATIONS = 100
+}
+
+private data class NodeState(
+    val id: String,
+    var x: Float,
+    var y: Float,
+    var vx: Float = 0f,
+    var vy: Float = 0f
+)
+
+/**
+ * Calculate positions using force-directed layout algorithm.
+ * Connected locations are attracted to each other, all locations repel.
+ */
+private fun calculateForceDirectedPositions(
+    locations: List<LocationDto>
+): Map<String, LocationPosition> {
     if (locations.isEmpty()) return emptyMap()
+    if (locations.size == 1) {
+        return mapOf(locations[0].id to LocationPosition(locations[0], 0.5f, 0.5f))
+    }
 
-    val positions = mutableMapOf<String, LocationPosition>()
-    val count = locations.size
+    // Build adjacency map for quick connection lookup
+    val connections = locations.associate { loc ->
+        loc.id to loc.exitIds.toSet()
+    }
 
-    if (count == 1) {
-        positions[locations[0].id] = LocationPosition(locations[0], 0.5f, 0.5f)
-    } else {
-        locations.forEachIndexed { index, location ->
-            val angle = (2 * PI * index / count) - PI / 2
-            val radius = 0.35f
-            val x = 0.5f + (radius * cos(angle)).toFloat()
-            val y = 0.5f + (radius * sin(angle)).toFloat()
-            positions[location.id] = LocationPosition(location, x, y)
+    // Initialize nodes with positions around center
+    val nodes = locations.mapIndexed { index, location ->
+        val angle = (2 * PI * index / locations.size).toFloat()
+        NodeState(
+            id = location.id,
+            x = 0.5f + 0.3f * cos(angle),
+            y = 0.5f + 0.3f * sin(angle)
+        )
+    }
+    val nodeMap = nodes.associateBy { it.id }
+
+    // Run simulation
+    repeat(LayoutConstants.ITERATIONS) {
+        // Calculate forces
+        nodes.forEach { node ->
+            var fx = 0f
+            var fy = 0f
+
+            // Repulsion from all other nodes
+            nodes.forEach { other ->
+                if (other.id != node.id) {
+                    val dx = node.x - other.x
+                    val dy = node.y - other.y
+                    val distance = sqrt(dx * dx + dy * dy)
+                        .coerceAtLeast(LayoutConstants.MIN_DISTANCE)
+                    val force = LayoutConstants.REPULSION_STRENGTH / (distance * distance)
+                    fx += (dx / distance) * force
+                    fy += (dy / distance) * force
+                }
+            }
+
+            // Attraction to connected nodes
+            connections[node.id]?.forEach { connectedId ->
+                nodeMap[connectedId]?.let { other ->
+                    val dx = other.x - node.x
+                    val dy = other.y - node.y
+                    val distance = sqrt(dx * dx + dy * dy)
+                    if (distance > 0.01f) {
+                        fx += dx * LayoutConstants.ATTRACTION_STRENGTH
+                        fy += dy * LayoutConstants.ATTRACTION_STRENGTH
+                    }
+                }
+            }
+
+            // Pull toward center
+            fx += (0.5f - node.x) * LayoutConstants.CENTER_PULL
+            fy += (0.5f - node.y) * LayoutConstants.CENTER_PULL
+
+            // Apply forces to velocity
+            node.vx = (node.vx + fx) * LayoutConstants.DAMPING
+            node.vy = (node.vy + fy) * LayoutConstants.DAMPING
+        }
+
+        // Update positions
+        nodes.forEach { node ->
+            node.x = (node.x + node.vx).coerceIn(0.1f, 0.9f)
+            node.y = (node.y + node.vy).coerceIn(0.1f, 0.9f)
         }
     }
 
-    return positions
+    // Convert to LocationPosition map
+    val locationMap = locations.associateBy { it.id }
+    return nodes.associate { node ->
+        node.id to LocationPosition(
+            location = locationMap[node.id]!!,
+            x = node.x,
+            y = node.y
+        )
+    }
+}
+
+// Connection line styles for visual variety
+private enum class ConnectionStyle {
+    VINE,
+    CHAIN,
+    MYSTICAL
+}
+
+private fun getConnectionStyle(fromId: String, toId: String): ConnectionStyle {
+    val combinedHash = (fromId + toId).hashCode()
+    val styles = ConnectionStyle.entries
+    return styles[abs(combinedHash) % styles.size]
+}
+
+/**
+ * Draw a decorative connection line between two locations.
+ */
+private fun DrawScope.drawDecorativeConnection(
+    start: Offset,
+    end: Offset,
+    style: ConnectionStyle,
+    strokeWidth: Float = 2.5f
+) {
+    val lineColor = Color.Black
+    val midX = (start.x + end.x) / 2
+    val midY = (start.y + end.y) / 2
+
+    // Calculate perpendicular offset for curve control point
+    val dx = end.x - start.x
+    val dy = end.y - start.y
+    val length = sqrt(dx * dx + dy * dy)
+    if (length < 1f) return // Skip very short connections
+
+    val perpX = -dy / length
+    val perpY = dx / length
+
+    // Curve amount (perpendicular offset)
+    val curveAmount = length * 0.12f
+    val controlX = midX + perpX * curveAmount
+    val controlY = midY + perpY * curveAmount
+
+    // Main curved path
+    val mainPath = Path().apply {
+        moveTo(start.x, start.y)
+        quadraticTo(controlX, controlY, end.x, end.y)
+    }
+
+    drawPath(
+        path = mainPath,
+        color = lineColor,
+        style = Stroke(
+            width = strokeWidth,
+            cap = StrokeCap.Round,
+            join = StrokeJoin.Round
+        )
+    )
+
+    // Add embellishments based on style
+    when (style) {
+        ConnectionStyle.VINE -> drawVineEmbellishments(start, end, controlX, controlY, lineColor, length)
+        ConnectionStyle.CHAIN -> drawChainEmbellishments(start, end, controlX, controlY, lineColor)
+        ConnectionStyle.MYSTICAL -> drawMysticalEmbellishments(start, end, controlX, controlY, lineColor)
+    }
+}
+
+private fun DrawScope.drawVineEmbellishments(
+    start: Offset,
+    end: Offset,
+    ctrlX: Float,
+    ctrlY: Float,
+    color: Color,
+    length: Float
+) {
+    val segments = 3
+    val dx = end.x - start.x
+    val dy = end.y - start.y
+    val pathLength = sqrt(dx * dx + dy * dy)
+
+    for (i in 1 until segments) {
+        val t = i.toFloat() / segments
+        // Quadratic bezier interpolation
+        val px = (1-t)*(1-t)*start.x + 2*(1-t)*t*ctrlX + t*t*end.x
+        val py = (1-t)*(1-t)*start.y + 2*(1-t)*t*ctrlY + t*t*end.y
+
+        // Alternate sides for leaves
+        val side = if (i % 2 == 0) 1f else -1f
+        val perpX = -dy / pathLength * side
+        val perpY = dx / pathLength * side
+
+        val leafSize = 10f
+        val leafPath = Path().apply {
+            moveTo(px, py)
+            quadraticTo(
+                px + perpX * leafSize,
+                py + perpY * leafSize,
+                px + perpX * leafSize * 0.3f + dx / pathLength * leafSize * 0.5f,
+                py + perpY * leafSize * 0.3f + dy / pathLength * leafSize * 0.5f
+            )
+        }
+
+        drawPath(
+            path = leafPath,
+            color = color.copy(alpha = 0.6f),
+            style = Stroke(width = 1.5f, cap = StrokeCap.Round)
+        )
+    }
+}
+
+private fun DrawScope.drawChainEmbellishments(
+    start: Offset,
+    end: Offset,
+    ctrlX: Float,
+    ctrlY: Float,
+    color: Color
+) {
+    val segments = 4
+    for (i in 1 until segments) {
+        val t = i.toFloat() / segments
+        val px = (1-t)*(1-t)*start.x + 2*(1-t)*t*ctrlX + t*t*end.x
+        val py = (1-t)*(1-t)*start.y + 2*(1-t)*t*ctrlY + t*t*end.y
+
+        val diamondSize = 5f
+        val diamondPath = Path().apply {
+            moveTo(px, py - diamondSize)
+            lineTo(px + diamondSize, py)
+            lineTo(px, py + diamondSize)
+            lineTo(px - diamondSize, py)
+            close()
+        }
+
+        drawPath(
+            path = diamondPath,
+            color = color,
+            style = Stroke(width = 1.5f, cap = StrokeCap.Round, join = StrokeJoin.Round)
+        )
+    }
+}
+
+private fun DrawScope.drawMysticalEmbellishments(
+    start: Offset,
+    end: Offset,
+    ctrlX: Float,
+    ctrlY: Float,
+    color: Color
+) {
+    val segments = 5
+    for (i in 1 until segments) {
+        val t = i.toFloat() / segments
+        val px = (1-t)*(1-t)*start.x + 2*(1-t)*t*ctrlX + t*t*end.x
+        val py = (1-t)*(1-t)*start.y + 2*(1-t)*t*ctrlY + t*t*end.y
+
+        drawCircle(
+            color = color.copy(alpha = 0.4f),
+            radius = 4f,
+            center = Offset(px, py),
+            style = Stroke(width = 1.5f)
+        )
+    }
 }
 
 @Composable
