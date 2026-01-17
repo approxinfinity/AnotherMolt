@@ -102,6 +102,29 @@ A Kotlin Multiplatform MUD-style game engine with AI-powered content generation.
 ### iOS App
 Open `/iosApp` in Xcode and run.
 
+## Testing
+
+### Unit Tests
+Run unit tests (fast, no external services required):
+```shell
+./gradlew test
+```
+
+### Integration Tests
+Integration tests verify connectivity to external services (Ollama, Stable Diffusion). These are skipped by default and should only be run when:
+- Setting up a new server environment
+- Verifying external service connectivity after configuration changes
+- Debugging content generation issues
+
+Run integration tests:
+```shell
+./gradlew :server:test -PrunIntegrationTests=true
+```
+
+**Prerequisites for integration tests:**
+- Ollama running at `http://localhost:11434` with a model installed
+- (Optional) Stable Diffusion WebUI running at `http://localhost:7860`
+
 ## Configuration
 
 ### Ollama (Content Generation)

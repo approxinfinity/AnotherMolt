@@ -1,13 +1,22 @@
 package com.ez2bg.anotherthread
 
 import kotlinx.coroutines.runBlocking
+import org.junit.Assume
+import org.junit.Before
 import kotlin.test.*
 
 /**
  * Tests for ImageGenerationService.
- * Note: Network-dependent tests are skipped if SD is not available.
+ * Unit tests run by default; integration tests require -PrunIntegrationTests=true
  */
 class ImageGenerationServiceTest {
+
+    companion object {
+        private val runIntegrationTests: Boolean
+            get() = System.getProperty("runIntegrationTests")?.toBoolean() ?: false
+    }
+
+    // ==================== Unit Tests ====================
 
     @Test
     fun testText2ImageRequestDefaults() {
@@ -79,8 +88,12 @@ class ImageGenerationServiceTest {
         assertNull(result)
     }
 
+    // ==================== Integration Tests (require Stable Diffusion service) ====================
+    // Run with: ./gradlew :server:test -PrunIntegrationTests=true
+
     @Test
     fun testIsAvailableDoesNotThrow() = runBlocking {
+        Assume.assumeTrue("Skipping integration test", runIntegrationTests)
         // Test that isAvailable doesn't throw an exception regardless of whether SD is running
         val available = ImageGenerationService.isAvailable()
         // Just verify it returns a boolean without throwing
@@ -89,6 +102,7 @@ class ImageGenerationServiceTest {
 
     @Test
     fun testGenerateImageHandlesServiceState() = runBlocking {
+        Assume.assumeTrue("Skipping integration test", runIntegrationTests)
         // Test that generateImage handles both available and unavailable states gracefully
         val available = ImageGenerationService.isAvailable()
 

@@ -1,13 +1,21 @@
 package com.ez2bg.anotherthread
 
 import kotlinx.coroutines.runBlocking
+import org.junit.Assume
 import kotlin.test.*
 
 /**
  * Tests for ContentGenerationService.
- * Note: Network-dependent tests are skipped if LLM (Ollama) is not available.
+ * Unit tests run by default; integration tests require -PrunIntegrationTests=true
  */
 class ContentGenerationServiceTest {
+
+    companion object {
+        private val runIntegrationTests: Boolean
+            get() = System.getProperty("runIntegrationTests")?.toBoolean() ?: false
+    }
+
+    // ==================== Unit Tests ====================
 
     @Test
     fun testOllamaRequestDefaults() {
@@ -74,8 +82,12 @@ class ContentGenerationServiceTest {
         assertEquals("A dense forest shrouded in magical mist.", content.description)
     }
 
+    // ==================== Integration Tests (require Ollama service) ====================
+    // Run with: ./gradlew :server:test -PrunIntegrationTests=true
+
     @Test
     fun testIsAvailableDoesNotThrow() = runBlocking {
+        Assume.assumeTrue("Skipping integration test", runIntegrationTests)
         // Test that isAvailable returns a boolean without throwing an exception
         // The result depends on whether Ollama is running
         val available = ContentGenerationService.isAvailable()
@@ -85,6 +97,7 @@ class ContentGenerationServiceTest {
 
     @Test
     fun testGenerateLocationContentDoesNotThrow() = runBlocking {
+        Assume.assumeTrue("Skipping integration test", runIntegrationTests)
         // Test that generation either succeeds or fails gracefully (no exception)
         val result = ContentGenerationService.generateLocationContent(
             exitIds = emptyList(),
@@ -98,6 +111,7 @@ class ContentGenerationServiceTest {
 
     @Test
     fun testGenerateCreatureContentDoesNotThrow() = runBlocking {
+        Assume.assumeTrue("Skipping integration test", runIntegrationTests)
         val result = ContentGenerationService.generateCreatureContent(
             existingName = null,
             existingDesc = null
@@ -108,6 +122,7 @@ class ContentGenerationServiceTest {
 
     @Test
     fun testGenerateItemContentDoesNotThrow() = runBlocking {
+        Assume.assumeTrue("Skipping integration test", runIntegrationTests)
         val result = ContentGenerationService.generateItemContent(
             existingName = null,
             existingDesc = null
@@ -118,6 +133,7 @@ class ContentGenerationServiceTest {
 
     @Test
     fun testGenerateLocationContentWithExistingContext() = runBlocking {
+        Assume.assumeTrue("Skipping integration test", runIntegrationTests)
         // Test that the function handles existing context without throwing
         val result = ContentGenerationService.generateLocationContent(
             exitIds = listOf("loc-1", "loc-2"),
@@ -131,6 +147,7 @@ class ContentGenerationServiceTest {
 
     @Test
     fun testGenerateCreatureContentWithExistingContext() = runBlocking {
+        Assume.assumeTrue("Skipping integration test", runIntegrationTests)
         val result = ContentGenerationService.generateCreatureContent(
             existingName = "Basic Goblin",
             existingDesc = "A small green creature"
@@ -141,6 +158,7 @@ class ContentGenerationServiceTest {
 
     @Test
     fun testGenerateItemContentWithExistingContext() = runBlocking {
+        Assume.assumeTrue("Skipping integration test", runIntegrationTests)
         val result = ContentGenerationService.generateItemContent(
             existingName = "Sword",
             existingDesc = "A sharp blade"
@@ -151,6 +169,7 @@ class ContentGenerationServiceTest {
 
     @Test
     fun testGeneratedContentHasValidFields() = runBlocking {
+        Assume.assumeTrue("Skipping integration test", runIntegrationTests)
         // If service is available, test that generated content has valid fields
         if (ContentGenerationService.isAvailable()) {
             val result = ContentGenerationService.generateLocationContent(

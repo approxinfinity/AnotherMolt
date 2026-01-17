@@ -40,3 +40,10 @@ dependencies {
     testImplementation(libs.ktor.serverTestHost)
     testImplementation(libs.kotlin.testJunit)
 }
+
+// Pass system property to control integration test execution
+// Run integration tests with: ./gradlew test -PrunIntegrationTests=true
+tasks.withType<Test> {
+    val runIntegrationTests = project.findProperty("runIntegrationTests")?.toString()?.toBoolean() ?: false
+    systemProperty("runIntegrationTests", runIntegrationTests.toString())
+}
