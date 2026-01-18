@@ -2,8 +2,10 @@ package com.ez2bg.anotherthread.ui
 
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.VectorConverter
+import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.border
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectTapGestures
@@ -49,6 +51,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import coil3.compose.AsyncImage
 import coil3.compose.AsyncImagePainter
 import com.ez2bg.anotherthread.AppConfig
@@ -1582,6 +1585,9 @@ fun LocationGraph(
         calculateForceDirectedPositions(locations)
     }
 
+    // Track which location is expanded (null = none expanded)
+    var expandedLocationId by remember { mutableStateOf<String?>(null) }
+
     // Pan offset state with animation support
     val offset = remember { Animatable(Offset.Zero, Offset.VectorConverter) }
     val scope = rememberCoroutineScope()
@@ -1589,10 +1595,22 @@ fun LocationGraph(
     BoxWithConstraints(
         modifier = modifier
             .clipToBounds()
-            .pointerInput(Unit) {
+            .pointerInput(expandedLocationId) {
                 detectTransformGestures { _, pan, _, _ ->
+                    // Collapse any expanded thumbnail when panning
+                    if (expandedLocationId != null) {
+                        expandedLocationId = null
+                    }
                     scope.launch {
                         offset.snapTo(offset.value + pan)
+                    }
+                }
+            }
+            .pointerInput(expandedLocationId) {
+                detectTapGestures { _ ->
+                    // Collapse expanded thumbnail when tapping on empty space
+                    if (expandedLocationId != null) {
+                        expandedLocationId = null
                     }
                 }
             }
@@ -1655,93 +1673,187 @@ fun LocationGraph(
                 }
             }
 
-            // LAYER 3: Location thumbnails (on top)
+            // LAYER 3: Location dots/thumbnails
             locations.forEach { location ->
                 val pos = locationPositions[location.id] ?: return@forEach
+                val isExpanded = expandedLocationId == location.id
                 LocationNodeThumbnail(
                     location = location,
+                    isExpanded = isExpanded,
                     modifier = Modifier.offset(
                         x = (pos.x * (width - boxSizePx) / 2.5f).dp,
                         y = (pos.y * (height - boxSizePx) / 2.5f).dp
                     ),
                     onClick = {
-                        centerOnLocation(location)
-                        onLocationClick(location)
+                        if (isExpanded) {
+                            // Already expanded, go to detail
+                            onLocationClick(location)
+                        } else {
+                            // Expand this thumbnail and collapse others
+                            expandedLocationId = location.id
+                            centerOnLocation(location)
+                        }
                     }
                 )
+            }
+
+            // LAYER 4: Location labels (separate from dots to not affect positioning)
+            locations.forEach { location ->
+                val pos = locationPositions[location.id] ?: return@forEach
+                val isExpanded = expandedLocationId == location.id
+                if (!isExpanded) {
+                    // Position label centered below the dot
+                    // Dot top-left is at dotX, dotY. Dot is 20dp wide.
+                    val dotX = (pos.x * (width - boxSizePx) / 2.5f).dp
+                    val dotY = (pos.y * (height - boxSizePx) / 2.5f).dp
+
+                    // Use a wide Box centered on the dot, with the label centered inside
+                    Box(
+                        modifier = Modifier
+                            .offset(x = dotX + 10.dp - 75.dp, y = dotY + 22.dp)
+                            .width(150.dp),
+                        contentAlignment = Alignment.TopCenter
+                    ) {
+                        Text(
+                            text = location.name.ifBlank { location.id.take(6) },
+                            style = MaterialTheme.typography.labelSmall,
+                            color = Color.White,
+                            maxLines = 1,
+                            fontSize = 8.sp,
+                            modifier = Modifier
+                                .background(
+                                    color = Color.Black.copy(alpha = 0.5f),
+                                    shape = RoundedCornerShape(4.dp)
+                                )
+                                .padding(horizontal = 4.dp, vertical = 1.dp)
+                        )
+                    }
+                }
             }
         }
     }
 }
 
+// Dark crimson color for dot borders
+private val DotBorderColor = Color(0xFF8B1A1A)
+
 /**
  * Thumbnail node for a location in the graph view.
- * Shows image if available, otherwise falls back to colored box with name.
+ * Collapsed: 20dp circle with color based on terrain, with name label below
+ * Expanded: 100dp box with image/name, centered on where the dot was
  */
 @Composable
 private fun LocationNodeThumbnail(
     location: LocationDto,
+    isExpanded: Boolean,
     modifier: Modifier = Modifier,
     onClick: () -> Unit
 ) {
-    val boxSize = 70.dp
+    val collapsedSize = 20.dp
+    val expandedSize = 100.dp
+
     val hasImage = location.imageUrl != null
 
-    Box(
-        modifier = modifier
-            .size(boxSize)
-            .clip(RoundedCornerShape(8.dp))
-            .clickable(onClick = onClick),
-        contentAlignment = Alignment.Center
-    ) {
-        if (hasImage) {
-            val fullUrl = "${AppConfig.api.baseUrl}${location.imageUrl}"
-            var imageState by remember {
-                mutableStateOf<AsyncImagePainter.State>(AsyncImagePainter.State.Empty)
-            }
+    // Get terrain-based color for collapsed state
+    val terrainColor = remember(location) {
+        getTerrainColor(location.desc, location.name)
+    }
 
-            AsyncImage(
-                model = fullUrl,
-                contentDescription = location.name,
-                modifier = Modifier.fillMaxSize(),
-                contentScale = ContentScale.Crop,
-                onState = { imageState = it }
-            )
+    if (isExpanded) {
+        // Expanded state: 100x100 thumbnail centered on where the dot center was
+        // The modifier positions us at the dot's top-left corner
+        // Dot center is at (10dp, 10dp) from that position
+        // We want the 100x100 box center (50dp, 50dp) to align with dot center
+        // So offset by: 10 - 50 = -40dp in both directions
+        Box(
+            modifier = modifier
+                .offset(x = (-40).dp, y = (-40).dp)
+                .size(expandedSize)
+                .clip(RoundedCornerShape(8.dp))
+                .clickable(onClick = onClick),
+            contentAlignment = Alignment.Center
+        ) {
+            if (hasImage) {
+                val fullUrl = "${AppConfig.api.baseUrl}${location.imageUrl}"
+                var imageState by remember {
+                    mutableStateOf<AsyncImagePainter.State>(AsyncImagePainter.State.Empty)
+                }
 
-            // Semi-transparent overlay at bottom for name
-            Box(
-                modifier = Modifier
-                    .align(Alignment.BottomCenter)
-                    .fillMaxWidth()
-                    .background(Color.Black.copy(alpha = 0.6f))
-                    .padding(4.dp)
-            ) {
-                Text(
-                    text = location.name.ifBlank { location.id.take(8) },
-                    style = MaterialTheme.typography.labelSmall,
-                    color = Color.White,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                    modifier = Modifier.fillMaxWidth(),
-                    textAlign = TextAlign.Center
+                AsyncImage(
+                    model = fullUrl,
+                    contentDescription = location.name,
+                    modifier = Modifier.fillMaxSize(),
+                    contentScale = ContentScale.Crop,
+                    onState = { imageState = it }
                 )
-            }
 
-            // Show loading indicator if still loading
-            if (imageState is AsyncImagePainter.State.Loading) {
-                CircularProgressIndicator(
-                    modifier = Modifier.size(24.dp),
-                    strokeWidth = 2.dp
-                )
-            }
+                // Semi-transparent overlay at bottom for name
+                Box(
+                    modifier = Modifier
+                        .align(Alignment.BottomCenter)
+                        .fillMaxWidth()
+                        .background(Color.Black.copy(alpha = 0.6f))
+                        .padding(4.dp)
+                ) {
+                    Text(
+                        text = location.name.ifBlank { location.id.take(8) },
+                        style = MaterialTheme.typography.labelSmall,
+                        color = Color.White,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier.fillMaxWidth(),
+                        textAlign = TextAlign.Center
+                    )
+                }
 
-            // Fall back to colored box on error
-            if (imageState is AsyncImagePainter.State.Error) {
+                // Show loading indicator if still loading
+                if (imageState is AsyncImagePainter.State.Loading) {
+                    CircularProgressIndicator(
+                        modifier = Modifier.size(24.dp),
+                        strokeWidth = 2.dp
+                    )
+                }
+
+                // Fall back to colored box on error
+                if (imageState is AsyncImagePainter.State.Error) {
+                    FallbackLocationBox(location)
+                }
+            } else {
                 FallbackLocationBox(location)
             }
-        } else {
-            FallbackLocationBox(location)
         }
+    } else {
+        // Collapsed state: just the dot (label is rendered separately in parent)
+        Box(
+            modifier = modifier
+                .size(collapsedSize)
+                .background(terrainColor, CircleShape)
+                .border(1.5.dp, DotBorderColor.copy(alpha = 0.6f), CircleShape)
+                .clickable(onClick = onClick)
+        )
+    }
+}
+
+/**
+ * Get a color based on the location's terrain type.
+ */
+private fun getTerrainColor(desc: String, name: String): Color {
+    val text = (desc + " " + name).lowercase()
+
+    return when {
+        text.containsAny("castle", "fortress", "citadel", "stronghold") -> Color(0xFF8B7355) // Brown
+        text.containsAny("church", "temple", "cathedral", "shrine") -> Color(0xFFE8E4DC) // Light gray
+        text.containsAny("forest", "tree", "wood", "grove") -> Color(0xFF4A6741) // Forest green
+        text.containsAny("mountain", "peak", "summit") -> Color(0xFF7D7461) // Gray-brown
+        text.containsAny("water", "river", "lake", "coast", "sea", "ocean") -> Color(0xFF6B8E9F) // Blue-gray
+        text.containsAny("swamp", "marsh", "bog") -> Color(0xFF5A6B52) // Murky green
+        text.containsAny("desert", "sand", "dune") -> Color(0xFFD4C19E) // Sandy
+        text.containsAny("cave", "cavern", "dungeon") -> Color(0xFF5A5A5A) // Dark gray
+        text.containsAny("town", "village", "inn", "tavern", "shop") -> Color(0xFFB8976B) // Tan
+        text.containsAny("port", "dock", "harbor") -> Color(0xFF8BA4B0) // Coastal blue
+        text.containsAny("ruin", "ancient", "abandon") -> Color(0xFF8A7B6A) // Aged stone
+        text.containsAny("grass", "meadow", "field", "plain") -> Color(0xFF7A9A6D) // Muted green
+        else -> Color(0xFFC4A67C) // Default parchment tan
     }
 }
 
