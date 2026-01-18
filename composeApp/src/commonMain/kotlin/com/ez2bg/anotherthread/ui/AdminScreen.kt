@@ -1763,11 +1763,15 @@ fun ExitPillSection(
         val existingLocationIds = exits.map { it.locationId }.toSet()
         val unselectedOptions = availableOptions.filter { it.id !in existingLocationIds }
 
+        // Filter out already used directions (max 1 exit per direction)
+        val usedDirections = exits.map { it.direction }.toSet()
+        val availableDirections = ExitDirection.entries.filter { it !in usedDirections }
+
         AlertDialog(
             onDismissRequest = {
                 showAddDialog = false
                 selectedLocationId = null
-                selectedDirection = ExitDirection.UNKNOWN
+                selectedDirection = availableDirections.firstOrNull() ?: ExitDirection.UNKNOWN
             },
             title = { Text("Add Exit") },
             text = {
@@ -1775,37 +1779,45 @@ fun ExitPillSection(
                     modifier = Modifier.fillMaxWidth(),
                     verticalArrangement = Arrangement.spacedBy(12.dp)
                 ) {
-                    // Direction dropdown
+                    // Direction dropdown - only show unused directions
                     Text(
                         text = "Direction:",
                         style = MaterialTheme.typography.labelMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
-                    ExposedDropdownMenuBox(
-                        expanded = directionDropdownExpanded,
-                        onExpandedChange = { directionDropdownExpanded = it }
-                    ) {
-                        OutlinedTextField(
-                            value = selectedDirection.toDisplayLabel(),
-                            onValueChange = {},
-                            readOnly = true,
-                            trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = directionDropdownExpanded) },
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .menuAnchor(MenuAnchorType.PrimaryNotEditable)
+                    if (availableDirections.isEmpty()) {
+                        Text(
+                            text = "All directions are in use",
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.error
                         )
-                        ExposedDropdownMenu(
+                    } else {
+                        ExposedDropdownMenuBox(
                             expanded = directionDropdownExpanded,
-                            onDismissRequest = { directionDropdownExpanded = false }
+                            onExpandedChange = { directionDropdownExpanded = it }
                         ) {
-                            ExitDirection.entries.forEach { direction ->
-                                DropdownMenuItem(
-                                    text = { Text(direction.toDisplayLabel()) },
-                                    onClick = {
-                                        selectedDirection = direction
-                                        directionDropdownExpanded = false
-                                    }
-                                )
+                            OutlinedTextField(
+                                value = if (selectedDirection in availableDirections) selectedDirection.toDisplayLabel() else availableDirections.first().toDisplayLabel(),
+                                onValueChange = {},
+                                readOnly = true,
+                                trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = directionDropdownExpanded) },
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .menuAnchor(MenuAnchorType.PrimaryNotEditable)
+                            )
+                            ExposedDropdownMenu(
+                                expanded = directionDropdownExpanded,
+                                onDismissRequest = { directionDropdownExpanded = false }
+                            ) {
+                                availableDirections.forEach { direction ->
+                                    DropdownMenuItem(
+                                        text = { Text(direction.toDisplayLabel()) },
+                                        onClick = {
+                                            selectedDirection = direction
+                                            directionDropdownExpanded = false
+                                        }
+                                    )
+                                }
                             }
                         }
                     }
@@ -1881,14 +1893,15 @@ fun ExitPillSection(
             confirmButton = {
                 Button(
                     onClick = {
-                        if (selectedLocationId != null) {
-                            onAddExit(ExitDto(locationId = selectedLocationId!!, direction = selectedDirection))
+                        if (selectedLocationId != null && availableDirections.isNotEmpty()) {
+                            val directionToUse = if (selectedDirection in availableDirections) selectedDirection else availableDirections.first()
+                            onAddExit(ExitDto(locationId = selectedLocationId!!, direction = directionToUse))
                             showAddDialog = false
                             selectedLocationId = null
                             selectedDirection = ExitDirection.UNKNOWN
                         }
                     },
-                    enabled = selectedLocationId != null
+                    enabled = selectedLocationId != null && availableDirections.isNotEmpty()
                 ) {
                     Text("Save Exit")
                 }
@@ -1905,10 +1918,13 @@ fun ExitPillSection(
         )
     }
 
-    // Edit exit dialog
+    // Edit exit dialog - also enforce one exit per direction
     if (exitToEdit != null) {
         val currentExit = exitToEdit!!
         val locationName = idToNameMap[currentExit.locationId] ?: currentExit.locationId.take(8)
+        // Available directions for edit: unused directions + current exit's direction
+        val usedDirectionsForEdit = exits.filter { it.locationId != currentExit.locationId }.map { it.direction }.toSet()
+        val availableDirectionsForEdit = ExitDirection.entries.filter { it !in usedDirectionsForEdit }
 
         AlertDialog(
             onDismissRequest = {
@@ -1935,7 +1951,7 @@ fun ExitPillSection(
 
                     HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp))
 
-                    // Direction dropdown
+                    // Direction dropdown - only show unused directions
                     Text(
                         text = "Direction:",
                         style = MaterialTheme.typography.labelMedium,
@@ -1958,7 +1974,7 @@ fun ExitPillSection(
                             expanded = editDirectionDropdownExpanded,
                             onDismissRequest = { editDirectionDropdownExpanded = false }
                         ) {
-                            ExitDirection.entries.forEach { direction ->
+                            availableDirectionsForEdit.forEach { direction ->
                                 DropdownMenuItem(
                                     text = { Text(direction.toDisplayLabel()) },
                                     onClick = {
@@ -1978,7 +1994,8 @@ fun ExitPillSection(
                         onUpdateExit(currentExit, newExit)
                         exitToEdit = null
                         editDirection = ExitDirection.UNKNOWN
-                    }
+                    },
+                    enabled = editDirection in availableDirectionsForEdit
                 ) {
                     Text("Save")
                 }
@@ -2440,43 +2457,7 @@ fun LocationGraph(
                 )
             }
 
-            // LAYER 4: Location labels (separate from dots to not affect positioning)
-            locations.forEach { location ->
-                val pos = locationPositions[location.id] ?: return@forEach
-                val isExpanded = expandedLocationId == location.id
-                if (!isExpanded) {
-                    // Position label centered below the dot
-                    // Dot top-left is at dotX, dotY. Dot center is at dotX + 10dp
-                    val dotX = (pos.x * (width - boxSizePx) / 2.5f).dp
-                    val dotY = (pos.y * (height - boxSizePx) / 2.5f).dp
-
-                    // Use Layout to measure text and center it on dot
-                    androidx.compose.ui.layout.Layout(
-                        content = {
-                            Text(
-                                text = location.name.ifBlank { location.id.take(6) },
-                                style = MaterialTheme.typography.labelSmall,
-                                color = Color.White,
-                                maxLines = 1,
-                                fontSize = 8.sp,
-                                modifier = Modifier
-                                    .background(
-                                        color = Color.Black.copy(alpha = 0.5f),
-                                        shape = RoundedCornerShape(4.dp)
-                                    )
-                                    .padding(horizontal = 4.dp, vertical = 1.dp)
-                            )
-                        },
-                        modifier = Modifier.offset(x = dotX + 10.dp, y = dotY + 22.dp)
-                    ) { measurables, constraints ->
-                        val placeable = measurables.first().measure(constraints.copy(maxWidth = Int.MAX_VALUE))
-                        layout(0, 0) {
-                            // Center the label horizontally on the dot center (which is at x=0 due to offset)
-                            placeable.place(-placeable.width / 2, 0)
-                        }
-                    }
-                }
-            }
+            // Labels are only shown when location is expanded (tap to reveal)
         }
     }
 }
@@ -3659,8 +3640,9 @@ private fun getDirectionVector(direction: ExitDirection): Pair<Float, Float> = w
 }
 
 /**
- * Calculate positions using force-directed layout algorithm.
- * Connected locations are attracted to each other with directional bias.
+ * Calculate positions using a grid-based directional layout algorithm.
+ * Locations are placed on a grid based on their exit directions.
+ * If location A has a SOUTH exit to location B, then B is placed directly south of A.
  */
 private fun calculateForceDirectedPositions(
     locations: List<LocationDto>
@@ -3670,97 +3652,114 @@ private fun calculateForceDirectedPositions(
         return mapOf(locations[0].id to LocationPosition(locations[0], 0.5f, 0.5f))
     }
 
-    // Build adjacency map with directional info
-    // Map from location ID to list of (connected location ID, direction)
-    val connections = locations.associate { loc ->
-        loc.id to loc.exits.map { exit -> exit.locationId to exit.direction }
-    }
-
-    // Initialize nodes with positions around center
-    val nodes = locations.mapIndexed { index, location ->
-        val angle = (2 * PI * index / locations.size).toFloat()
-        NodeState(
-            id = location.id,
-            x = 0.5f + 0.3f * cos(angle),
-            y = 0.5f + 0.3f * sin(angle)
-        )
-    }
-    val nodeMap = nodes.associateBy { it.id }
-
-    // Directional force strength - how much directions influence positioning
-    // Needs to be strong enough to overcome repulsion/attraction, but not too strong
-    val directionalStrength = 0.05f
-
-    // Run simulation
-    repeat(LayoutConstants.ITERATIONS) {
-        // Calculate forces
-        nodes.forEach { node ->
-            var fx = 0f
-            var fy = 0f
-
-            // Repulsion from all other nodes
-            nodes.forEach { other ->
-                if (other.id != node.id) {
-                    val dx = node.x - other.x
-                    val dy = node.y - other.y
-                    val distance = sqrt(dx * dx + dy * dy)
-                        .coerceAtLeast(LayoutConstants.MIN_DISTANCE)
-                    val force = LayoutConstants.REPULSION_STRENGTH / (distance * distance)
-                    fx += (dx / distance) * force
-                    fy += (dy / distance) * force
-                }
-            }
-
-            // Attraction to connected nodes with directional bias
-            connections[node.id]?.forEach { (connectedId, direction) ->
-                nodeMap[connectedId]?.let { other ->
-                    val dx = other.x - node.x
-                    val dy = other.y - node.y
-                    val distance = sqrt(dx * dx + dy * dy)
-                    if (distance > 0.01f) {
-                        // Standard attraction toward connected node
-                        fx += dx * LayoutConstants.ATTRACTION_STRENGTH
-                        fy += dy * LayoutConstants.ATTRACTION_STRENGTH
-
-                        // Directional force: if this node has an EAST exit to 'other',
-                        // then 'other' should be to the EAST of this node.
-                        // We achieve this by pushing THIS node in the OPPOSITE direction (WEST),
-                        // which effectively positions 'other' to the EAST relative to this node.
-                        if (direction != ExitDirection.UNKNOWN) {
-                            val (dirX, dirY) = getDirectionVector(direction)
-                            // Apply NEGATIVE force to push this node opposite to the exit direction
-                            fx -= dirX * directionalStrength
-                            fy -= dirY * directionalStrength
-                        }
-                    }
-                }
-            }
-
-            // Pull toward center
-            fx += (0.5f - node.x) * LayoutConstants.CENTER_PULL
-            fy += (0.5f - node.y) * LayoutConstants.CENTER_PULL
-
-            // Apply forces to velocity
-            node.vx = (node.vx + fx) * LayoutConstants.DAMPING
-            node.vy = (node.vy + fy) * LayoutConstants.DAMPING
-        }
-
-        // Update positions
-        nodes.forEach { node ->
-            node.x = (node.x + node.vx).coerceIn(0.1f, 0.9f)
-            node.y = (node.y + node.vy).coerceIn(0.1f, 0.9f)
-        }
-    }
-
-    // Convert to LocationPosition map
     val locationMap = locations.associateBy { it.id }
-    return nodes.associate { node ->
-        node.id to LocationPosition(
-            location = locationMap[node.id]!!,
-            x = node.x,
-            y = node.y
+
+    // Grid positions: (gridX, gridY) where positive X is east, positive Y is south
+    val gridPositions = mutableMapOf<String, Pair<Int, Int>>()
+    val visited = mutableSetOf<String>()
+
+    // Start with the first location at origin
+    val startLocation = locations.first()
+    gridPositions[startLocation.id] = Pair(0, 0)
+
+    // BFS to place all connected locations
+    val queue = ArrayDeque<String>()
+    queue.add(startLocation.id)
+    visited.add(startLocation.id)
+
+    while (queue.isNotEmpty()) {
+        val currentId = queue.removeFirst()
+        val currentPos = gridPositions[currentId] ?: continue
+        val currentLocation = locationMap[currentId] ?: continue
+
+        // Place neighbors based on exit directions
+        for (exit in currentLocation.exits) {
+            val neighborId = exit.locationId
+            if (neighborId !in visited && locationMap.containsKey(neighborId)) {
+                val (dx, dy) = getGridOffset(exit.direction)
+                val newPos = Pair(currentPos.first + dx, currentPos.second + dy)
+
+                // Check if position is already occupied
+                val existingAtPos = gridPositions.entries.find { it.value == newPos }
+                if (existingAtPos == null) {
+                    gridPositions[neighborId] = newPos
+                } else {
+                    // Position occupied, find nearby free spot
+                    gridPositions[neighborId] = findNearbyFreeSpot(newPos, gridPositions.values.toSet())
+                }
+
+                visited.add(neighborId)
+                queue.add(neighborId)
+            }
+        }
+    }
+
+    // Handle disconnected locations (not reachable from first location)
+    locations.filter { it.id !in gridPositions }.forEachIndexed { index, loc ->
+        // Place disconnected locations below the main graph
+        val maxY = gridPositions.values.maxOfOrNull { it.second } ?: 0
+        gridPositions[loc.id] = findNearbyFreeSpot(Pair(index, maxY + 2), gridPositions.values.toSet())
+    }
+
+    // Normalize grid positions to 0.0-1.0 range
+    val allPositions = gridPositions.values.toList()
+    val minX = allPositions.minOfOrNull { it.first } ?: 0
+    val maxX = allPositions.maxOfOrNull { it.first } ?: 0
+    val minY = allPositions.minOfOrNull { it.second } ?: 0
+    val maxY = allPositions.maxOfOrNull { it.second } ?: 0
+
+    val rangeX = (maxX - minX).coerceAtLeast(1)
+    val rangeY = (maxY - minY).coerceAtLeast(1)
+
+    // Add padding and convert to normalized coordinates
+    val padding = 0.15f
+    val availableRange = 1f - 2 * padding
+
+    return gridPositions.mapValues { (id, gridPos) ->
+        val normalizedX = if (rangeX == 1) 0.5f else padding + availableRange * (gridPos.first - minX).toFloat() / rangeX
+        val normalizedY = if (rangeY == 1) 0.5f else padding + availableRange * (gridPos.second - minY).toFloat() / rangeY
+        LocationPosition(
+            location = locationMap[id]!!,
+            x = normalizedX,
+            y = normalizedY
         )
     }
+}
+
+/**
+ * Get grid offset for a direction.
+ * Returns (dx, dy) where positive X is east, positive Y is south.
+ */
+private fun getGridOffset(direction: ExitDirection): Pair<Int, Int> = when (direction) {
+    ExitDirection.NORTH -> Pair(0, -1)
+    ExitDirection.NORTHEAST -> Pair(1, -1)
+    ExitDirection.EAST -> Pair(1, 0)
+    ExitDirection.SOUTHEAST -> Pair(1, 1)
+    ExitDirection.SOUTH -> Pair(0, 1)
+    ExitDirection.SOUTHWEST -> Pair(-1, 1)
+    ExitDirection.WEST -> Pair(-1, 0)
+    ExitDirection.NORTHWEST -> Pair(-1, -1)
+    ExitDirection.UNKNOWN -> Pair(0, 1) // Default to south for unknown
+}
+
+/**
+ * Find a free spot near the target position.
+ */
+private fun findNearbyFreeSpot(target: Pair<Int, Int>, occupied: Set<Pair<Int, Int>>): Pair<Int, Int> {
+    if (target !in occupied) return target
+
+    // Spiral outward to find free spot
+    for (radius in 1..10) {
+        for (dx in -radius..radius) {
+            for (dy in -radius..radius) {
+                if (kotlin.math.abs(dx) == radius || kotlin.math.abs(dy) == radius) {
+                    val candidate = Pair(target.first + dx, target.second + dy)
+                    if (candidate !in occupied) return candidate
+                }
+            }
+        }
+    }
+    return Pair(target.first + 10, target.second) // Fallback
 }
 
 @Composable
