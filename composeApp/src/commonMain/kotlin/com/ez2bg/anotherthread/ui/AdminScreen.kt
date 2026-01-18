@@ -4271,19 +4271,74 @@ fun LocationForm(
             horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.End),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            if (isEditMode) {
-                GenerateImageButton(
-                    entityType = GenEntityType.LOCATION,
-                    entityId = editLocation!!.id,
-                    name = name,
-                    description = desc,
-                    featureIds = features.splitToList(),
-                    onImageGenerated = { newImageUrl ->
-                        imageUrl = newImageUrl
-                    },
-                    onError = { imageGenError = it },
-                    enabled = !isDisabled
-                )
+            // Save & Gen Image / Create & Gen Image button
+            OutlinedButton(
+                onClick = {
+                    scope.launch {
+                        isLoading = true
+                        message = null
+                        imageGenError = null
+                        val request = CreateLocationRequest(
+                            name = name,
+                            desc = desc,
+                            itemIds = itemIds,
+                            creatureIds = creatureIds,
+                            exits = exits,
+                            featureIds = features.splitToList()
+                        )
+                        if (isEditMode) {
+                            val result = ApiClient.updateLocation(editLocation!!.id, request)
+                            isLoading = false
+                            if (result.isSuccess) {
+                                // Start background image generation after successful save
+                                BackgroundImageGenerationManager.startGeneration(
+                                    entityType = "location",
+                                    entityId = editLocation.id,
+                                    name = name,
+                                    description = desc,
+                                    featureIds = features.splitToList()
+                                )
+                                onSaved()
+                            } else {
+                                message = "Error: ${result.exceptionOrNull()?.message}"
+                            }
+                        } else {
+                            val result = ApiClient.createLocation(request)
+                            isLoading = false
+                            result.onSuccess { createdLocation ->
+                                // Start background image generation after successful create
+                                BackgroundImageGenerationManager.startGeneration(
+                                    entityType = "location",
+                                    entityId = createdLocation.id,
+                                    name = name,
+                                    description = desc,
+                                    featureIds = features.splitToList()
+                                )
+                                onSaved()
+                            }.onFailure { error ->
+                                message = "Error: ${error.message}"
+                            }
+                        }
+                    }
+                },
+                enabled = !isLoading && name.isNotBlank() && desc.isNotBlank() && !isDisabled && !isImageGenerating
+            ) {
+                if (isImageGenerating) {
+                    CircularProgressIndicator(
+                        modifier = Modifier.size(16.dp),
+                        strokeWidth = 2.dp
+                    )
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text("Generating...")
+                } else {
+                    Icon(
+                        imageVector = Icons.Default.Image,
+                        contentDescription = null,
+                        modifier = Modifier.size(16.dp)
+                    )
+                    Spacer(modifier = Modifier.width(4.dp))
+                    Text(if (isEditMode) "Save & Gen Image" else "Create & Gen Image")
+                }
             }
 
             Button(
@@ -4299,16 +4354,22 @@ fun LocationForm(
                             exits = exits,
                             featureIds = features.splitToList()
                         )
-                        val result = if (isEditMode) {
-                            ApiClient.updateLocation(editLocation!!.id, request)
+                        if (isEditMode) {
+                            val result = ApiClient.updateLocation(editLocation!!.id, request)
+                            isLoading = false
+                            if (result.isSuccess) {
+                                onSaved()
+                            } else {
+                                message = "Error: ${result.exceptionOrNull()?.message}"
+                            }
                         } else {
-                            ApiClient.createLocation(request)
-                        }
-                        isLoading = false
-                        if (result.isSuccess) {
-                            onSaved()
-                        } else {
-                            message = "Error: ${result.exceptionOrNull()?.message}"
+                            val result = ApiClient.createLocation(request)
+                            isLoading = false
+                            if (result.isSuccess) {
+                                onSaved()
+                            } else {
+                                message = "Error: ${result.exceptionOrNull()?.message}"
+                            }
                         }
                     }
                 },
@@ -4320,7 +4381,7 @@ fun LocationForm(
                         strokeWidth = 2.dp
                     )
                 } else {
-                    Text(if (isEditMode) "Update Location" else "Create Location")
+                    Text(if (isEditMode) "Save Changes" else "Create")
                 }
             }
         }
@@ -4556,19 +4617,72 @@ fun CreatureForm(
             horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.End),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            if (isEditMode) {
-                GenerateImageButton(
-                    entityType = GenEntityType.CREATURE,
-                    entityId = editCreature!!.id,
-                    name = name,
-                    description = desc,
-                    featureIds = features.splitToList(),
-                    onImageGenerated = { newImageUrl ->
-                        imageUrl = newImageUrl
-                    },
-                    onError = { imageGenError = it },
-                    enabled = !isDisabled
-                )
+            // Save & Gen Image / Create & Gen Image button
+            OutlinedButton(
+                onClick = {
+                    scope.launch {
+                        isLoading = true
+                        message = null
+                        imageGenError = null
+                        val request = CreateCreatureRequest(
+                            name = name,
+                            desc = desc,
+                            itemIds = itemIds,
+                            featureIds = features.splitToList()
+                        )
+                        if (isEditMode) {
+                            val result = ApiClient.updateCreature(editCreature!!.id, request)
+                            isLoading = false
+                            if (result.isSuccess) {
+                                // Start background image generation after successful save
+                                BackgroundImageGenerationManager.startGeneration(
+                                    entityType = "creature",
+                                    entityId = editCreature.id,
+                                    name = name,
+                                    description = desc,
+                                    featureIds = features.splitToList()
+                                )
+                                onSaved()
+                            } else {
+                                message = "Error: ${result.exceptionOrNull()?.message}"
+                            }
+                        } else {
+                            val result = ApiClient.createCreature(request)
+                            isLoading = false
+                            result.onSuccess { createdCreature ->
+                                // Start background image generation after successful create
+                                BackgroundImageGenerationManager.startGeneration(
+                                    entityType = "creature",
+                                    entityId = createdCreature.id,
+                                    name = name,
+                                    description = desc,
+                                    featureIds = features.splitToList()
+                                )
+                                onSaved()
+                            }.onFailure { error ->
+                                message = "Error: ${error.message}"
+                            }
+                        }
+                    }
+                },
+                enabled = !isLoading && name.isNotBlank() && desc.isNotBlank() && !isDisabled && !isImageGenerating
+            ) {
+                if (isImageGenerating) {
+                    CircularProgressIndicator(
+                        modifier = Modifier.size(16.dp),
+                        strokeWidth = 2.dp
+                    )
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text("Generating...")
+                } else {
+                    Icon(
+                        imageVector = Icons.Default.Image,
+                        contentDescription = null,
+                        modifier = Modifier.size(16.dp)
+                    )
+                    Spacer(modifier = Modifier.width(4.dp))
+                    Text(if (isEditMode) "Save & Gen Image" else "Create & Gen Image")
+                }
             }
 
             Button(
@@ -4576,20 +4690,28 @@ fun CreatureForm(
                     scope.launch {
                         isLoading = true
                         message = null
-                        val result = ApiClient.createCreature(
-                            CreateCreatureRequest(
-                                name = name,
-                                desc = desc,
-                                itemIds = itemIds,
-                                featureIds = features.splitToList()
-                            )
+                        val request = CreateCreatureRequest(
+                            name = name,
+                            desc = desc,
+                            itemIds = itemIds,
+                            featureIds = features.splitToList()
                         )
-                        isLoading = false
-                        message = if (result.isSuccess) {
-                            name = ""; desc = ""; itemIds = emptyList(); features = ""
-                            "Creature created successfully!"
+                        if (isEditMode) {
+                            val result = ApiClient.updateCreature(editCreature!!.id, request)
+                            isLoading = false
+                            if (result.isSuccess) {
+                                onSaved()
+                            } else {
+                                message = "Error: ${result.exceptionOrNull()?.message}"
+                            }
                         } else {
-                            "Error: ${result.exceptionOrNull()?.message}"
+                            val result = ApiClient.createCreature(request)
+                            isLoading = false
+                            if (result.isSuccess) {
+                                onSaved()
+                            } else {
+                                message = "Error: ${result.exceptionOrNull()?.message}"
+                            }
                         }
                     }
                 },
@@ -4601,7 +4723,7 @@ fun CreatureForm(
                         strokeWidth = 2.dp
                     )
                 } else {
-                    Text(if (isEditMode) "Update Creature" else "Create Creature")
+                    Text(if (isEditMode) "Save Changes" else "Create")
                 }
             }
         }
@@ -4997,19 +5119,71 @@ fun ItemForm(
             horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.End),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            if (isEditMode) {
-                GenerateImageButton(
-                    entityType = GenEntityType.ITEM,
-                    entityId = editItem!!.id,
-                    name = name,
-                    description = desc,
-                    featureIds = featureIds.splitToList(),
-                    onImageGenerated = { newImageUrl ->
-                        imageUrl = newImageUrl
-                    },
-                    onError = { imageGenError = it },
-                    enabled = !isDisabled
-                )
+            // Save & Gen Image / Create & Gen Image button
+            OutlinedButton(
+                onClick = {
+                    scope.launch {
+                        isLoading = true
+                        message = null
+                        imageGenError = null
+                        val request = CreateItemRequest(
+                            name = name,
+                            desc = desc,
+                            featureIds = featureIds.splitToList()
+                        )
+                        if (isEditMode) {
+                            val result = ApiClient.updateItem(editItem!!.id, request)
+                            isLoading = false
+                            if (result.isSuccess) {
+                                // Start background image generation after successful save
+                                BackgroundImageGenerationManager.startGeneration(
+                                    entityType = "item",
+                                    entityId = editItem.id,
+                                    name = name,
+                                    description = desc,
+                                    featureIds = featureIds.splitToList()
+                                )
+                                onSaved()
+                            } else {
+                                message = "Error: ${result.exceptionOrNull()?.message}"
+                            }
+                        } else {
+                            val result = ApiClient.createItem(request)
+                            isLoading = false
+                            result.onSuccess { createdItem ->
+                                // Start background image generation after successful create
+                                BackgroundImageGenerationManager.startGeneration(
+                                    entityType = "item",
+                                    entityId = createdItem.id,
+                                    name = name,
+                                    description = desc,
+                                    featureIds = featureIds.splitToList()
+                                )
+                                onSaved()
+                            }.onFailure { error ->
+                                message = "Error: ${error.message}"
+                            }
+                        }
+                    }
+                },
+                enabled = !isLoading && name.isNotBlank() && desc.isNotBlank() && !isDisabled && !isImageGenerating
+            ) {
+                if (isImageGenerating) {
+                    CircularProgressIndicator(
+                        modifier = Modifier.size(16.dp),
+                        strokeWidth = 2.dp
+                    )
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text("Generating...")
+                } else {
+                    Icon(
+                        imageVector = Icons.Default.Image,
+                        contentDescription = null,
+                        modifier = Modifier.size(16.dp)
+                    )
+                    Spacer(modifier = Modifier.width(4.dp))
+                    Text(if (isEditMode) "Save & Gen Image" else "Create & Gen Image")
+                }
             }
 
             Button(
@@ -5022,21 +5196,22 @@ fun ItemForm(
                             desc = desc,
                             featureIds = featureIds.splitToList()
                         )
-                        val result = if (isEditMode) {
-                            ApiClient.updateItem(editItem!!.id, request)
-                        } else {
-                            ApiClient.createItem(request)
-                        }
-                        isLoading = false
-                        if (result.isSuccess) {
-                            if (isEditMode) {
+                        if (isEditMode) {
+                            val result = ApiClient.updateItem(editItem!!.id, request)
+                            isLoading = false
+                            if (result.isSuccess) {
                                 onSaved()
                             } else {
-                                name = ""; desc = ""; featureIds = ""
-                                message = "Item created successfully!"
+                                message = "Error: ${result.exceptionOrNull()?.message}"
                             }
                         } else {
-                            message = "Error: ${result.exceptionOrNull()?.message}"
+                            val result = ApiClient.createItem(request)
+                            isLoading = false
+                            if (result.isSuccess) {
+                                onSaved()
+                            } else {
+                                message = "Error: ${result.exceptionOrNull()?.message}"
+                            }
                         }
                     }
                 },
@@ -5048,7 +5223,7 @@ fun ItemForm(
                         strokeWidth = 2.dp
                     )
                 } else {
-                    Text(if (isEditMode) "Update Item" else "Create Item")
+                    Text(if (isEditMode) "Save Changes" else "Create")
                 }
             }
         }

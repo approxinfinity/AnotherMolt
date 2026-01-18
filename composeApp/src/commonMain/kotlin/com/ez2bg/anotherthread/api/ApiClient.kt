@@ -219,12 +219,11 @@ object ApiClient {
         client.get("$baseUrl/locations").body()
     }
 
-    suspend fun createLocation(request: CreateLocationRequest): Result<Unit> = runCatching {
+    suspend fun createLocation(request: CreateLocationRequest): Result<LocationDto> = runCatching {
         client.post("$baseUrl/locations") {
             contentType(ContentType.Application.Json)
             setBody(request)
-        }
-        Unit
+        }.body()
     }
 
     suspend fun updateLocation(id: String, request: CreateLocationRequest): Result<Unit> = runCatching {
@@ -276,20 +275,26 @@ object ApiClient {
         Unit
     }
 
-    suspend fun createCreature(request: CreateCreatureRequest): Result<Unit> = runCatching {
+    suspend fun createCreature(request: CreateCreatureRequest): Result<CreatureDto> = runCatching {
         client.post("$baseUrl/creatures") {
+            contentType(ContentType.Application.Json)
+            setBody(request)
+        }.body()
+    }
+
+    suspend fun updateCreature(id: String, request: CreateCreatureRequest): Result<Unit> = runCatching {
+        client.put("$baseUrl/creatures/$id") {
             contentType(ContentType.Application.Json)
             setBody(request)
         }
         Unit
     }
 
-    suspend fun createItem(request: CreateItemRequest): Result<Unit> = runCatching {
+    suspend fun createItem(request: CreateItemRequest): Result<ItemDto> = runCatching {
         client.post("$baseUrl/items") {
             contentType(ContentType.Application.Json)
             setBody(request)
-        }
-        Unit
+        }.body()
     }
 
     suspend fun updateItem(id: String, request: CreateItemRequest): Result<Unit> = runCatching {
