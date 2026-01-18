@@ -26,7 +26,15 @@ import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Image
 import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.LockOpen
+import androidx.compose.material.icons.filled.Person
+import androidx.compose.material.icons.filled.Place
+import androidx.compose.material.icons.filled.Pets
+import androidx.compose.ui.graphics.PathFillType
+import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.graphics.vector.path
+import androidx.compose.material.icons.filled.AdminPanelSettings
 import androidx.compose.material.icons.filled.Upload
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import kotlinx.coroutines.delay
@@ -149,12 +157,50 @@ object BackgroundImageGenerationManager {
     }
 }
 
-enum class AdminTab(val title: String) {
-    USER("User"),
-    LOCATION("Location"),
-    CREATURE("Creature"),
-    ITEM("Item"),
-    ADMIN("Admin")
+// Custom sword icon for Items tab
+val SwordIcon: ImageVector by lazy {
+    ImageVector.Builder(
+        name = "Sword",
+        defaultWidth = 24.dp,
+        defaultHeight = 24.dp,
+        viewportWidth = 24f,
+        viewportHeight = 24f
+    ).apply {
+        path(
+            fill = SolidColor(Color.Black),
+            pathFillType = PathFillType.NonZero
+        ) {
+            // Blade
+            moveTo(6.92f, 5f)
+            lineTo(5f, 6.92f)
+            lineTo(13.06f, 15f)
+            lineTo(10f, 18.06f)
+            lineTo(11.94f, 20f)
+            lineTo(15f, 16.94f)
+            lineTo(16.06f, 18f)
+            lineTo(18f, 16.06f)
+            lineTo(16.94f, 15f)
+            lineTo(20f, 11.94f)
+            lineTo(18.06f, 10f)
+            lineTo(15f, 13.06f)
+            lineTo(6.92f, 5f)
+            close()
+            // Handle
+            moveTo(4.5f, 18.5f)
+            lineTo(5.5f, 19.5f)
+            lineTo(8.5f, 16.5f)
+            lineTo(7.5f, 15.5f)
+            close()
+        }
+    }.build()
+}
+
+enum class AdminTab(val title: String, val icon: ImageVector) {
+    USER("User", Icons.Filled.Person),
+    LOCATION("Location", Icons.Filled.Place),
+    CREATURE("Creature", Icons.Filled.Pets),
+    ITEM("Item", SwordIcon),
+    ADMIN("Admin", Icons.Filled.AdminPanelSettings)
 }
 
 enum class EntityType {
@@ -433,9 +479,11 @@ sealed class ViewState {
     data object LocationGraph : ViewState()
     data object LocationCreate : ViewState()
     data class LocationEdit(val location: LocationDto) : ViewState()
+    data object CreatureList : ViewState()
     data object CreatureCreate : ViewState()
     data class CreatureEdit(val creature: CreatureDto) : ViewState()
     data class CreatureDetail(val id: String) : ViewState()
+    data object ItemList : ViewState()
     data object ItemCreate : ViewState()
     data class ItemEdit(val item: ItemDto) : ViewState()
     data class ItemDetail(val id: String) : ViewState()
@@ -665,12 +713,17 @@ fun AdminScreen() {
                         viewState = when (tab) {
                             AdminTab.USER -> if (currentUser != null) ViewState.UserProfile(currentUser!!) else ViewState.UserAuth
                             AdminTab.LOCATION -> ViewState.LocationGraph
-                            AdminTab.CREATURE -> ViewState.CreatureCreate
-                            AdminTab.ITEM -> ViewState.ItemCreate
+                            AdminTab.CREATURE -> ViewState.CreatureList
+                            AdminTab.ITEM -> ViewState.ItemList
                             AdminTab.ADMIN -> ViewState.AdminPanel
                         }
                     },
-                    text = { Text(tab.title) }
+                    icon = {
+                        Icon(
+                            imageVector = tab.icon,
+                            contentDescription = tab.title
+                        )
+                    }
                 )
             }
         }
@@ -765,10 +818,18 @@ fun AdminScreen() {
                     viewState = ViewState.LocationEdit(updatedLocation)
                 }
             )
+            is ViewState.CreatureList -> CreatureListView(
+                onCreatureClick = { creature ->
+                    viewState = ViewState.CreatureEdit(creature)
+                },
+                onAddClick = {
+                    viewState = ViewState.CreatureCreate
+                }
+            )
             is ViewState.CreatureCreate -> CreatureForm(
                 editCreature = null,
-                onBack = { viewState = ViewState.CreatureCreate },
-                onSaved = { viewState = ViewState.CreatureCreate },
+                onBack = { viewState = ViewState.CreatureList },
+                onSaved = { viewState = ViewState.CreatureList },
                 onNavigateToItem = { id ->
                     selectedTab = AdminTab.ITEM
                     viewState = ViewState.ItemDetail(id)
@@ -776,8 +837,8 @@ fun AdminScreen() {
             )
             is ViewState.CreatureEdit -> CreatureForm(
                 editCreature = state.creature,
-                onBack = { viewState = ViewState.CreatureCreate },
-                onSaved = { viewState = ViewState.CreatureCreate },
+                onBack = { viewState = ViewState.CreatureList },
+                onSaved = { viewState = ViewState.CreatureList },
                 onNavigateToItem = { id ->
                     selectedTab = AdminTab.ITEM
                     viewState = ViewState.ItemDetail(id)
@@ -802,15 +863,23 @@ fun AdminScreen() {
                     viewState = ViewState.ItemDetail(id)
                 }
             )
+            is ViewState.ItemList -> ItemListView(
+                onItemClick = { item ->
+                    viewState = ViewState.ItemEdit(item)
+                },
+                onAddClick = {
+                    viewState = ViewState.ItemCreate
+                }
+            )
             is ViewState.ItemCreate -> ItemForm(
                 editItem = null,
-                onBack = { viewState = ViewState.ItemCreate },
-                onSaved = { viewState = ViewState.ItemCreate }
+                onBack = { viewState = ViewState.ItemList },
+                onSaved = { viewState = ViewState.ItemList }
             )
             is ViewState.ItemEdit -> ItemForm(
                 editItem = state.item,
-                onBack = { viewState = ViewState.ItemCreate },
-                onSaved = { viewState = ViewState.ItemCreate }
+                onBack = { viewState = ViewState.ItemList },
+                onSaved = { viewState = ViewState.ItemList }
             )
             is ViewState.ItemDetail -> ItemDetailView(
                 itemId = state.id,
@@ -1573,6 +1642,214 @@ fun LocationGraphView(
     }
 }
 
+@Composable
+fun CreatureListView(
+    onCreatureClick: (CreatureDto) -> Unit,
+    onAddClick: () -> Unit
+) {
+    var creatures by remember { mutableStateOf<List<CreatureDto>>(emptyList()) }
+    var isLoading by remember { mutableStateOf(true) }
+    var error by remember { mutableStateOf<String?>(null) }
+    val scope = rememberCoroutineScope()
+
+    LaunchedEffect(Unit) {
+        scope.launch {
+            isLoading = true
+            val result = ApiClient.getCreatures()
+            isLoading = false
+            result.onSuccess { creatures = it.sortedBy { c -> c.name.lowercase() } }
+                .onFailure { error = it.message }
+        }
+    }
+
+    Box(modifier = Modifier.fillMaxSize()) {
+        when {
+            isLoading -> {
+                CircularProgressIndicator(
+                    modifier = Modifier.align(Alignment.Center)
+                )
+            }
+            error != null -> {
+                Column(
+                    modifier = Modifier.align(Alignment.Center),
+                    horizontalAlignment = Alignment.CenterHorizontally
+                ) {
+                    SelectionContainer {
+                        Text(
+                            text = "Error: $error",
+                            color = MaterialTheme.colorScheme.error
+                        )
+                    }
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Button(onClick = {
+                        scope.launch {
+                            isLoading = true
+                            error = null
+                            val result = ApiClient.getCreatures()
+                            isLoading = false
+                            result.onSuccess { creatures = it.sortedBy { c -> c.name.lowercase() } }
+                                .onFailure { error = it.message }
+                        }
+                    }) {
+                        Text("Retry")
+                    }
+                }
+            }
+            creatures.isEmpty() -> {
+                Text(
+                    text = "No creatures yet. Tap + to create one.",
+                    modifier = Modifier.align(Alignment.Center),
+                    style = MaterialTheme.typography.bodyLarge,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+            else -> {
+                LazyColumn(
+                    modifier = Modifier.fillMaxSize(),
+                    contentPadding = PaddingValues(bottom = 80.dp)
+                ) {
+                    items(creatures) { creature ->
+                        ListItem(
+                            headlineContent = { Text(creature.name.ifBlank { creature.id.take(8) }) },
+                            supportingContent = if (creature.desc.isNotBlank()) {
+                                { Text(creature.desc.take(50) + if (creature.desc.length > 50) "..." else "") }
+                            } else null,
+                            leadingContent = if (!creature.imageUrl.isNullOrBlank()) {
+                                {
+                                    AsyncImage(
+                                        model = "${AppConfig.api.baseUrl}${creature.imageUrl}",
+                                        contentDescription = creature.name,
+                                        modifier = Modifier
+                                            .size(48.dp)
+                                            .clip(RoundedCornerShape(4.dp)),
+                                        contentScale = ContentScale.Crop
+                                    )
+                                }
+                            } else null,
+                            modifier = Modifier.clickable { onCreatureClick(creature) }
+                        )
+                        HorizontalDivider()
+                    }
+                }
+            }
+        }
+
+        FloatingActionButton(
+            onClick = onAddClick,
+            modifier = Modifier
+                .align(Alignment.BottomEnd)
+                .padding(16.dp),
+            shape = CircleShape
+        ) {
+            Icon(Icons.Filled.Add, contentDescription = "Add Creature")
+        }
+    }
+}
+
+@Composable
+fun ItemListView(
+    onItemClick: (ItemDto) -> Unit,
+    onAddClick: () -> Unit
+) {
+    var items by remember { mutableStateOf<List<ItemDto>>(emptyList()) }
+    var isLoading by remember { mutableStateOf(true) }
+    var error by remember { mutableStateOf<String?>(null) }
+    val scope = rememberCoroutineScope()
+
+    LaunchedEffect(Unit) {
+        scope.launch {
+            isLoading = true
+            val result = ApiClient.getItems()
+            isLoading = false
+            result.onSuccess { items = it.sortedBy { i -> i.name.lowercase() } }
+                .onFailure { error = it.message }
+        }
+    }
+
+    Box(modifier = Modifier.fillMaxSize()) {
+        when {
+            isLoading -> {
+                CircularProgressIndicator(
+                    modifier = Modifier.align(Alignment.Center)
+                )
+            }
+            error != null -> {
+                Column(
+                    modifier = Modifier.align(Alignment.Center),
+                    horizontalAlignment = Alignment.CenterHorizontally
+                ) {
+                    SelectionContainer {
+                        Text(
+                            text = "Error: $error",
+                            color = MaterialTheme.colorScheme.error
+                        )
+                    }
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Button(onClick = {
+                        scope.launch {
+                            isLoading = true
+                            error = null
+                            val result = ApiClient.getItems()
+                            isLoading = false
+                            result.onSuccess { items = it.sortedBy { i -> i.name.lowercase() } }
+                                .onFailure { error = it.message }
+                        }
+                    }) {
+                        Text("Retry")
+                    }
+                }
+            }
+            items.isEmpty() -> {
+                Text(
+                    text = "No items yet. Tap + to create one.",
+                    modifier = Modifier.align(Alignment.Center),
+                    style = MaterialTheme.typography.bodyLarge,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+            else -> {
+                LazyColumn(
+                    modifier = Modifier.fillMaxSize(),
+                    contentPadding = PaddingValues(bottom = 80.dp)
+                ) {
+                    items(items) { item ->
+                        ListItem(
+                            headlineContent = { Text(item.name.ifBlank { item.id.take(8) }) },
+                            supportingContent = if (item.desc.isNotBlank()) {
+                                { Text(item.desc.take(50) + if (item.desc.length > 50) "..." else "") }
+                            } else null,
+                            leadingContent = if (!item.imageUrl.isNullOrBlank()) {
+                                {
+                                    AsyncImage(
+                                        model = "${AppConfig.api.baseUrl}${item.imageUrl}",
+                                        contentDescription = item.name,
+                                        modifier = Modifier
+                                            .size(48.dp)
+                                            .clip(RoundedCornerShape(4.dp)),
+                                        contentScale = ContentScale.Crop
+                                    )
+                                }
+                            } else null,
+                            modifier = Modifier.clickable { onItemClick(item) }
+                        )
+                        HorizontalDivider()
+                    }
+                }
+            }
+        }
+
+        FloatingActionButton(
+            onClick = onAddClick,
+            modifier = Modifier
+                .align(Alignment.BottomEnd)
+                .padding(16.dp),
+            shape = CircleShape
+        ) {
+            Icon(Icons.Filled.Add, contentDescription = "Add Item")
+        }
+    }
+}
+
 data class LocationPosition(val location: LocationDto, val x: Float, val y: Float)
 
 @Composable
@@ -1703,30 +1980,34 @@ fun LocationGraph(
                 val isExpanded = expandedLocationId == location.id
                 if (!isExpanded) {
                     // Position label centered below the dot
-                    // Dot top-left is at dotX, dotY. Dot is 20dp wide.
+                    // Dot top-left is at dotX, dotY. Dot center is at dotX + 10dp
                     val dotX = (pos.x * (width - boxSizePx) / 2.5f).dp
                     val dotY = (pos.y * (height - boxSizePx) / 2.5f).dp
 
-                    // Use a wide Box centered on the dot, with the label centered inside
-                    Box(
-                        modifier = Modifier
-                            .offset(x = dotX + 10.dp - 75.dp, y = dotY + 22.dp)
-                            .width(150.dp),
-                        contentAlignment = Alignment.TopCenter
-                    ) {
-                        Text(
-                            text = location.name.ifBlank { location.id.take(6) },
-                            style = MaterialTheme.typography.labelSmall,
-                            color = Color.White,
-                            maxLines = 1,
-                            fontSize = 8.sp,
-                            modifier = Modifier
-                                .background(
-                                    color = Color.Black.copy(alpha = 0.5f),
-                                    shape = RoundedCornerShape(4.dp)
-                                )
-                                .padding(horizontal = 4.dp, vertical = 1.dp)
-                        )
+                    // Use Layout to measure text and center it on dot
+                    androidx.compose.ui.layout.Layout(
+                        content = {
+                            Text(
+                                text = location.name.ifBlank { location.id.take(6) },
+                                style = MaterialTheme.typography.labelSmall,
+                                color = Color.White,
+                                maxLines = 1,
+                                fontSize = 8.sp,
+                                modifier = Modifier
+                                    .background(
+                                        color = Color.Black.copy(alpha = 0.5f),
+                                        shape = RoundedCornerShape(4.dp)
+                                    )
+                                    .padding(horizontal = 4.dp, vertical = 1.dp)
+                            )
+                        },
+                        modifier = Modifier.offset(x = dotX + 10.dp, y = dotY + 22.dp)
+                    ) { measurables, constraints ->
+                        val placeable = measurables.first().measure(constraints.copy(maxWidth = Int.MAX_VALUE))
+                        layout(0, 0) {
+                            // Center the label horizontally on the dot center (which is at x=0 due to offset)
+                            placeable.place(-placeable.width / 2, 0)
+                        }
                     }
                 }
             }
@@ -1918,7 +2199,7 @@ private object TerrainColors {
 
 // Terrain types for contextual drawing
 private enum class TerrainType {
-    ROAD, FOREST, WATER, MOUNTAIN, GRASS, BUILDING, CAVE, DESERT,
+    ROAD, FOREST, WATER, STREAM, MOUNTAIN, GRASS, BUILDING, CAVE, DESERT,
     COAST, HILLS, SWAMP, CHURCH, CASTLE, PORT, RUINS
 }
 
@@ -1938,7 +2219,10 @@ private fun parseTerrainFromDescription(desc: String, name: String): Set<Terrain
     if (text.containsAny("forest", "tree", "wood", "grove", "copse", "timber", "oak", "pine", "jungle")) {
         terrains.add(TerrainType.FOREST)
     }
-    if (text.containsAny("river", "stream", "creek", "water", "lake", "pond", "brook", "falls", "fountain")) {
+    if (text.containsAny("stream", "creek", "brook")) {
+        terrains.add(TerrainType.STREAM)
+    }
+    if (text.containsAny("river", "water", "lake", "pond", "falls", "fountain")) {
         terrains.add(TerrainType.WATER)
     }
     if (text.containsAny("mountain", "peak", "summit", "alpine")) {
@@ -2175,28 +2459,44 @@ private fun DrawScope.drawCompassRose(center: Offset, size: Float) {
     )
 }
 
-// Draw road/path terrain
+// Draw road/path terrain - winding path that passes through center
 private fun DrawScope.drawRoadTerrain(center: Offset, terrainSize: Float, seed: Int) {
     val random = kotlin.random.Random(seed)
-    val pathWidth = terrainSize * 0.12f
+    val pathWidth = terrainSize * 0.10f
 
+    // Road winds through center so dot appears ON the road
     val entryAngle = random.nextFloat() * 2 * PI.toFloat()
-    val exitAngle = entryAngle + PI.toFloat() * (0.5f + random.nextFloat() * 0.5f)
+    val exitAngle = entryAngle + PI.toFloat() + (random.nextFloat() - 0.5f) * 0.4f // Slightly off opposite
 
-    val startX = center.x + cos(entryAngle) * terrainSize * 0.6f
-    val startY = center.y + sin(entryAngle) * terrainSize * 0.6f
-    val endX = center.x + cos(exitAngle) * terrainSize * 0.6f
-    val endY = center.y + sin(exitAngle) * terrainSize * 0.6f
+    val startX = center.x + cos(entryAngle) * terrainSize * 0.75f
+    val startY = center.y + sin(entryAngle) * terrainSize * 0.75f
+    val endX = center.x + cos(exitAngle) * terrainSize * 0.75f
+    val endY = center.y + sin(exitAngle) * terrainSize * 0.75f
+
+    // Create winding path with multiple curves, but ensure it passes through center
+    // Control points on either side of center create the winding effect
+    val perpAngle = entryAngle + PI.toFloat() / 2
+    val curve1Offset = terrainSize * 0.15f * (0.5f + random.nextFloat() * 0.5f)
+    val curve2Offset = terrainSize * 0.15f * (0.5f + random.nextFloat() * 0.5f)
+
+    // First segment: start to center (curves one way)
+    val ctrl1X = (startX + center.x) / 2 + cos(perpAngle) * curve1Offset
+    val ctrl1Y = (startY + center.y) / 2 + sin(perpAngle) * curve1Offset
+
+    // Second segment: center to end (curves the other way for S-shape)
+    val ctrl2X = (center.x + endX) / 2 - cos(perpAngle) * curve2Offset
+    val ctrl2Y = (center.y + endY) / 2 - sin(perpAngle) * curve2Offset
 
     val roadPath = Path().apply {
         moveTo(startX, startY)
-        quadraticTo(center.x, center.y, endX, endY)
+        quadraticTo(ctrl1X, ctrl1Y, center.x, center.y)
+        quadraticTo(ctrl2X, ctrl2Y, endX, endY)
     }
 
     drawPath(
         path = roadPath,
         color = TerrainColors.road,
-        style = Stroke(width = pathWidth, cap = StrokeCap.Round)
+        style = Stroke(width = pathWidth, cap = StrokeCap.Round, join = StrokeJoin.Round)
     )
 }
 
@@ -2311,6 +2611,65 @@ private fun DrawScope.drawWaterTerrain(center: Offset, terrainSize: Float, seed:
             style = Stroke(width = 3f, cap = StrokeCap.Round)
         )
     }
+}
+
+// Draw stream terrain - a winding, dark stream passing through center
+private fun DrawScope.drawStreamTerrain(center: Offset, terrainSize: Float, seed: Int) {
+    val random = kotlin.random.Random(seed)
+    val streamColor = Color(0xFF2A4A5A) // Dark blue-gray stream color
+    val highlightColor = Color(0xFF4A6A7A) // Lighter highlight
+
+    // Stream winds through center so dot appears ON the stream (like a bridge over it)
+    val entryAngle = random.nextFloat() * 2 * PI.toFloat()
+    val exitAngle = entryAngle + PI.toFloat() + (random.nextFloat() - 0.5f) * 0.3f
+
+    // Stream extends well beyond the terrain area for a longer, more natural look
+    val startX = center.x + cos(entryAngle) * terrainSize * 0.95f
+    val startY = center.y + sin(entryAngle) * terrainSize * 0.95f
+    val endX = center.x + cos(exitAngle) * terrainSize * 0.95f
+    val endY = center.y + sin(exitAngle) * terrainSize * 0.95f
+
+    // Create winding stream with multiple curves passing through center
+    val perpAngle = entryAngle + PI.toFloat() / 2
+    val curve1Offset = terrainSize * 0.18f * (0.6f + random.nextFloat() * 0.4f)
+    val curve2Offset = terrainSize * 0.18f * (0.6f + random.nextFloat() * 0.4f)
+
+    // Midpoints between start/center and center/end
+    val mid1X = (startX + center.x) / 2
+    val mid1Y = (startY + center.y) / 2
+    val mid2X = (center.x + endX) / 2
+    val mid2Y = (center.y + endY) / 2
+
+    // Control points create S-curve winding effect
+    val ctrl1X = mid1X + cos(perpAngle) * curve1Offset
+    val ctrl1Y = mid1Y + sin(perpAngle) * curve1Offset
+    val ctrl2X = mid2X - cos(perpAngle) * curve2Offset
+    val ctrl2Y = mid2Y - sin(perpAngle) * curve2Offset
+
+    val streamPath = Path().apply {
+        moveTo(startX, startY)
+        quadraticTo(ctrl1X, ctrl1Y, center.x, center.y)
+        quadraticTo(ctrl2X, ctrl2Y, endX, endY)
+    }
+
+    // Draw main stream
+    drawPath(
+        path = streamPath,
+        color = streamColor,
+        style = Stroke(width = 5f, cap = StrokeCap.Round, join = StrokeJoin.Round)
+    )
+
+    // Add water highlight on one edge for depth
+    val highlightPath = Path().apply {
+        moveTo(startX + 1.5f, startY + 1.5f)
+        quadraticTo(ctrl1X + 1.5f, ctrl1Y + 1.5f, center.x + 1.5f, center.y + 1.5f)
+        quadraticTo(ctrl2X + 1.5f, ctrl2Y + 1.5f, endX + 1.5f, endY + 1.5f)
+    }
+    drawPath(
+        path = highlightPath,
+        color = highlightColor.copy(alpha = 0.4f),
+        style = Stroke(width = 1.5f, cap = StrokeCap.Round, join = StrokeJoin.Round)
+    )
 }
 
 // Draw mountain terrain - triangular peaks with vintage-style shading
@@ -2788,17 +3147,18 @@ private fun DrawScope.drawLocationTerrain(
     // Water features
     if (TerrainType.COAST in terrains) drawCoastTerrain(center, terrainSize, seed + 7)
     if (TerrainType.WATER in terrains) drawWaterTerrain(center, terrainSize, seed + 1)
+    if (TerrainType.STREAM in terrains) drawStreamTerrain(center, terrainSize, seed + 14)
     if (TerrainType.PORT in terrains) drawPortTerrain(center, terrainSize, seed + 11)
 
     // Elevated terrain
     if (TerrainType.HILLS in terrains) drawHillsTerrain(center, terrainSize, seed + 8)
     if (TerrainType.MOUNTAIN in terrains) drawMountainTerrain(center, terrainSize, seed + 2)
 
-    // Vegetation
-    if (TerrainType.FOREST in terrains) drawForestTerrain(center, terrainSize, seed + 3)
-
-    // Infrastructure
+    // Infrastructure (roads drawn before vegetation so trees appear on top)
     if (TerrainType.ROAD in terrains) drawRoadTerrain(center, terrainSize, seed + 4)
+
+    // Vegetation (trees on top of roads)
+    if (TerrainType.FOREST in terrains) drawForestTerrain(center, terrainSize, seed + 3)
 
     // Structures (on top)
     if (TerrainType.RUINS in terrains) drawRuinsTerrain(center, terrainSize, seed + 12)
@@ -3094,6 +3454,7 @@ fun LocationForm(
                 value = name,
                 onValueChange = { name = it },
                 label = { Text("Name") },
+                placeholder = { Text("Location Name") },
                 modifier = Modifier.weight(1f),
                 singleLine = true,
                 enabled = !isDisabled
@@ -3455,6 +3816,7 @@ fun CreatureForm(
                 value = name,
                 onValueChange = { name = it },
                 label = { Text("Name") },
+                placeholder = { Text("Creature Name") },
                 modifier = Modifier.weight(1f),
                 singleLine = true
             )
@@ -3759,6 +4121,7 @@ fun ItemForm(
                 value = name,
                 onValueChange = { name = it },
                 label = { Text("Name") },
+                placeholder = { Text("Item Name") },
                 modifier = Modifier.weight(1f),
                 singleLine = true
             )
