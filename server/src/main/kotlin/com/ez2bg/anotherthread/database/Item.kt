@@ -2,6 +2,8 @@ package com.ez2bg.anotherthread.database
 
 import kotlinx.serialization.Serializable
 import org.jetbrains.exposed.sql.ResultRow
+import org.jetbrains.exposed.sql.SqlExpressionBuilder.eq
+import org.jetbrains.exposed.sql.deleteWhere
 import org.jetbrains.exposed.sql.insert
 import org.jetbrains.exposed.sql.selectAll
 import org.jetbrains.exposed.sql.transactions.transaction
@@ -85,5 +87,9 @@ object ItemRepository {
         ItemTable.update({ ItemTable.id eq id }) {
             it[ItemTable.lockedBy] = lockedBy
         } > 0
+    }
+
+    fun delete(id: String): Boolean = transaction {
+        ItemTable.deleteWhere { ItemTable.id eq id } > 0
     }
 }

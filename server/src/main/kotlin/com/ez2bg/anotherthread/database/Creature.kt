@@ -2,6 +2,8 @@ package com.ez2bg.anotherthread.database
 
 import kotlinx.serialization.Serializable
 import org.jetbrains.exposed.sql.ResultRow
+import org.jetbrains.exposed.sql.SqlExpressionBuilder.eq
+import org.jetbrains.exposed.sql.deleteWhere
 import org.jetbrains.exposed.sql.insert
 import org.jetbrains.exposed.sql.selectAll
 import org.jetbrains.exposed.sql.transactions.transaction
@@ -89,5 +91,9 @@ object CreatureRepository {
         CreatureTable.update({ CreatureTable.id eq id }) {
             it[CreatureTable.lockedBy] = lockedBy
         } > 0
+    }
+
+    fun delete(id: String): Boolean = transaction {
+        CreatureTable.deleteWhere { CreatureTable.id eq id } > 0
     }
 }

@@ -97,7 +97,7 @@ class ApplicationTest {
 
         val response = client.post("/locations") {
             contentType(ContentType.Application.Json)
-            setBody("""{"name":"Test Location","desc":"A test location description","itemIds":[],"creatureIds":[],"exitIds":[],"featureIds":[]}""")
+            setBody("""{"name":"Test Location","desc":"A test location description","itemIds":[],"creatureIds":[],"exits":[],"featureIds":[]}""")
         }
         assertEquals(HttpStatusCode.Created, response.status)
 
@@ -163,7 +163,7 @@ class ApplicationTest {
 
         val response = client.put("/locations/nonexistent-id-12345") {
             contentType(ContentType.Application.Json)
-            setBody("""{"name":"Updated Location","desc":"Updated description","itemIds":[],"creatureIds":[],"exitIds":[],"featureIds":[]}""")
+            setBody("""{"name":"Updated Location","desc":"Updated description","itemIds":[],"creatureIds":[],"exits":[],"featureIds":[]}""")
         }
         assertEquals(HttpStatusCode.NotFound, response.status)
     }
@@ -577,7 +577,7 @@ class ApplicationTest {
         // Create a location first
         val createResponse = client.post("/locations") {
             contentType(ContentType.Application.Json)
-            setBody("""{"name":"Lockable Location","desc":"Test","itemIds":[],"creatureIds":[],"exitIds":[],"featureIds":[]}""")
+            setBody("""{"name":"Lockable Location","desc":"Test","itemIds":[],"creatureIds":[],"exits":[],"featureIds":[]}""")
         }
         assertEquals(HttpStatusCode.Created, createResponse.status)
         val createBody = createResponse.bodyAsText()
@@ -792,7 +792,7 @@ class ApplicationTest {
         // Create and lock a location
         val createResponse = client.post("/locations") {
             contentType(ContentType.Application.Json)
-            setBody("""{"name":"Locked Test Location","desc":"Test","itemIds":[],"creatureIds":[],"exitIds":[],"featureIds":[]}""")
+            setBody("""{"name":"Locked Test Location","desc":"Test","itemIds":[],"creatureIds":[],"exits":[],"featureIds":[]}""")
         }
         val createBody = createResponse.bodyAsText()
         val idMatch = Regex(""""id":"([^"]+)"""").find(createBody)
@@ -810,5 +810,366 @@ class ApplicationTest {
         val allBody = getAllResponse.bodyAsText()
         assertTrue(allBody.contains("\"lockedBy\""))
         assertTrue(allBody.contains("locker-user"))
+    }
+
+    // ========== Delete Tests ==========
+
+    @Test
+    fun testDeleteLocation() = testApplication {
+        application {
+            module()
+        }
+        val client = createClient {
+            install(ContentNegotiation) {
+                json(Json { ignoreUnknownKeys = true })
+            }
+        }
+
+        // Create a location
+        val createResponse = client.post("/locations") {
+            contentType(ContentType.Application.Json)
+            setBody("""{"name":"Deletable Location","desc":"Test","itemIds":[],"creatureIds":[],"exits":[],"featureIds":[]}""")
+        }
+        assertEquals(HttpStatusCode.Created, createResponse.status)
+        val createBody = createResponse.bodyAsText()
+        val idMatch = Regex(""""id":"([^"]+)"""").find(createBody)
+        val locationId = idMatch?.groupValues?.get(1) ?: fail("Could not extract location ID")
+
+        // Delete the location
+        val deleteResponse = client.delete("/locations/$locationId")
+        assertEquals(HttpStatusCode.NoContent, deleteResponse.status)
+
+        // Verify it's gone
+        val getResponse = client.get("/locations")
+        val locations = getResponse.bodyAsText()
+        assertFalse(locations.contains(locationId))
+    }
+
+    @Test
+    fun testDeleteLocationNotFound() = testApplication {
+        application {
+            module()
+        }
+        val client = createClient {
+            install(ContentNegotiation) {
+                json(Json { ignoreUnknownKeys = true })
+            }
+        }
+
+        val response = client.delete("/locations/nonexistent-id")
+        assertEquals(HttpStatusCode.NotFound, response.status)
+    }
+
+    @Test
+    fun testDeleteCreature() = testApplication {
+        application {
+            module()
+        }
+        val client = createClient {
+            install(ContentNegotiation) {
+                json(Json { ignoreUnknownKeys = true })
+            }
+        }
+
+        // Create a creature
+        val createResponse = client.post("/creatures") {
+            contentType(ContentType.Application.Json)
+            setBody("""{"name":"Deletable Creature","desc":"Test","itemIds":[],"featureIds":[]}""")
+        }
+        assertEquals(HttpStatusCode.Created, createResponse.status)
+        val createBody = createResponse.bodyAsText()
+        val idMatch = Regex(""""id":"([^"]+)"""").find(createBody)
+        val creatureId = idMatch?.groupValues?.get(1) ?: fail("Could not extract creature ID")
+
+        // Delete the creature
+        val deleteResponse = client.delete("/creatures/$creatureId")
+        assertEquals(HttpStatusCode.NoContent, deleteResponse.status)
+
+        // Verify it's gone
+        val getResponse = client.get("/creatures")
+        val creatures = getResponse.bodyAsText()
+        assertFalse(creatures.contains(creatureId))
+    }
+
+    @Test
+    fun testDeleteCreatureNotFound() = testApplication {
+        application {
+            module()
+        }
+        val client = createClient {
+            install(ContentNegotiation) {
+                json(Json { ignoreUnknownKeys = true })
+            }
+        }
+
+        val response = client.delete("/creatures/nonexistent-id")
+        assertEquals(HttpStatusCode.NotFound, response.status)
+    }
+
+    @Test
+    fun testDeleteItem() = testApplication {
+        application {
+            module()
+        }
+        val client = createClient {
+            install(ContentNegotiation) {
+                json(Json { ignoreUnknownKeys = true })
+            }
+        }
+
+        // Create an item
+        val createResponse = client.post("/items") {
+            contentType(ContentType.Application.Json)
+            setBody("""{"name":"Deletable Item","desc":"Test","featureIds":[]}""")
+        }
+        assertEquals(HttpStatusCode.Created, createResponse.status)
+        val createBody = createResponse.bodyAsText()
+        val idMatch = Regex(""""id":"([^"]+)"""").find(createBody)
+        val itemId = idMatch?.groupValues?.get(1) ?: fail("Could not extract item ID")
+
+        // Delete the item
+        val deleteResponse = client.delete("/items/$itemId")
+        assertEquals(HttpStatusCode.NoContent, deleteResponse.status)
+
+        // Verify it's gone
+        val getResponse = client.get("/items")
+        val items = getResponse.bodyAsText()
+        assertFalse(items.contains(itemId))
+    }
+
+    @Test
+    fun testDeleteItemNotFound() = testApplication {
+        application {
+            module()
+        }
+        val client = createClient {
+            install(ContentNegotiation) {
+                json(Json { ignoreUnknownKeys = true })
+            }
+        }
+
+        val response = client.delete("/items/nonexistent-id")
+        assertEquals(HttpStatusCode.NotFound, response.status)
+    }
+
+    @Test
+    fun testDeleteCreatureRemovesFromLocation() = testApplication {
+        application {
+            module()
+        }
+        val client = createClient {
+            install(ContentNegotiation) {
+                json(Json { ignoreUnknownKeys = true })
+            }
+        }
+
+        // Create a creature
+        val creatureResponse = client.post("/creatures") {
+            contentType(ContentType.Application.Json)
+            setBody("""{"name":"Creature to Delete","desc":"Test","itemIds":[],"featureIds":[]}""")
+        }
+        val creatureBody = creatureResponse.bodyAsText()
+        val creatureIdMatch = Regex(""""id":"([^"]+)"""").find(creatureBody)
+        val creatureId = creatureIdMatch?.groupValues?.get(1) ?: fail("Could not extract creature ID")
+
+        // Create a location with that creature
+        val locationResponse = client.post("/locations") {
+            contentType(ContentType.Application.Json)
+            setBody("""{"name":"Location with Creature","desc":"Test","itemIds":[],"creatureIds":["$creatureId"],"exits":[],"featureIds":[]}""")
+        }
+        val locationBody = locationResponse.bodyAsText()
+        val locationIdMatch = Regex(""""id":"([^"]+)"""").find(locationBody)
+        val locationId = locationIdMatch?.groupValues?.get(1) ?: fail("Could not extract location ID")
+
+        // Verify creature is in location
+        val getLocationBefore = client.get("/locations")
+        val beforeBody = getLocationBefore.bodyAsText()
+        assertTrue(beforeBody.contains(creatureId))
+
+        // Delete the creature
+        val deleteResponse = client.delete("/creatures/$creatureId")
+        assertEquals(HttpStatusCode.NoContent, deleteResponse.status)
+
+        // Verify creature ID is removed from location's creatureIds
+        val getLocationAfter = client.get("/locations")
+        val afterBody = getLocationAfter.bodyAsText()
+        // The creature ID should no longer appear in creatureIds array
+        // Find the location and check its creatureIds
+        assertFalse(afterBody.contains(""""creatureIds":["$creatureId"]"""))
+    }
+
+    @Test
+    fun testDeleteItemRemovesFromLocation() = testApplication {
+        application {
+            module()
+        }
+        val client = createClient {
+            install(ContentNegotiation) {
+                json(Json { ignoreUnknownKeys = true })
+            }
+        }
+
+        // Create an item
+        val itemResponse = client.post("/items") {
+            contentType(ContentType.Application.Json)
+            setBody("""{"name":"Item to Delete","desc":"Test","featureIds":[]}""")
+        }
+        val itemBody = itemResponse.bodyAsText()
+        val itemIdMatch = Regex(""""id":"([^"]+)"""").find(itemBody)
+        val itemId = itemIdMatch?.groupValues?.get(1) ?: fail("Could not extract item ID")
+
+        // Create a location with that item
+        val locationResponse = client.post("/locations") {
+            contentType(ContentType.Application.Json)
+            setBody("""{"name":"Location with Item","desc":"Test","itemIds":["$itemId"],"creatureIds":[],"exits":[],"featureIds":[]}""")
+        }
+        val locationBody = locationResponse.bodyAsText()
+
+        // Verify item is in location
+        val getLocationBefore = client.get("/locations")
+        val beforeBody = getLocationBefore.bodyAsText()
+        assertTrue(beforeBody.contains(itemId))
+
+        // Delete the item
+        val deleteResponse = client.delete("/items/$itemId")
+        assertEquals(HttpStatusCode.NoContent, deleteResponse.status)
+
+        // Verify item ID is removed from location's itemIds
+        val getLocationAfter = client.get("/locations")
+        val afterBody = getLocationAfter.bodyAsText()
+        assertFalse(afterBody.contains(""""itemIds":["$itemId"]"""))
+    }
+
+    @Test
+    fun testDeleteLocationRemovesFromExits() = testApplication {
+        application {
+            module()
+        }
+        val client = createClient {
+            install(ContentNegotiation) {
+                json(Json { ignoreUnknownKeys = true })
+            }
+        }
+
+        // Create two locations
+        val location1Response = client.post("/locations") {
+            contentType(ContentType.Application.Json)
+            setBody("""{"name":"Location 1","desc":"Test","itemIds":[],"creatureIds":[],"exits":[],"featureIds":[]}""")
+        }
+        val location1Body = location1Response.bodyAsText()
+        val location1IdMatch = Regex(""""id":"([^"]+)"""").find(location1Body)
+        val location1Id = location1IdMatch?.groupValues?.get(1) ?: fail("Could not extract location 1 ID")
+
+        // Create location 2 with location 1 as an exit (with NORTH direction)
+        val location2Response = client.post("/locations") {
+            contentType(ContentType.Application.Json)
+            setBody("""{"name":"Location 2","desc":"Test","itemIds":[],"creatureIds":[],"exits":[{"locationId":"$location1Id","direction":"NORTH"}],"featureIds":[]}""")
+        }
+        val location2Body = location2Response.bodyAsText()
+        val location2IdMatch = Regex(""""id":"([^"]+)"""").find(location2Body)
+        val location2Id = location2IdMatch?.groupValues?.get(1) ?: fail("Could not extract location 2 ID")
+
+        // Verify location 1 is in location 2's exits
+        val getLocationsBefore = client.get("/locations")
+        val beforeBody = getLocationsBefore.bodyAsText()
+        assertTrue(beforeBody.contains(location1Id))
+
+        // Delete location 1
+        val deleteResponse = client.delete("/locations/$location1Id")
+        assertEquals(HttpStatusCode.NoContent, deleteResponse.status)
+
+        // Verify location 1 ID is removed from location 2's exits
+        val getLocationsAfter = client.get("/locations")
+        val afterBody = getLocationsAfter.bodyAsText()
+        assertFalse(afterBody.contains(""""locationId":"$location1Id""""))
+        // Location 2 should still exist
+        assertTrue(afterBody.contains(location2Id))
+    }
+
+    @Test
+    fun testExitDirectionsAreSavedAndRetrieved() = testApplication {
+        application {
+            module()
+        }
+        val client = createClient {
+            install(ContentNegotiation) {
+                json(Json { ignoreUnknownKeys = true })
+            }
+        }
+
+        // Create location 1 (destination)
+        val loc1Response = client.post("/locations") {
+            contentType(ContentType.Application.Json)
+            setBody("""{"name":"Town Square","desc":"The central square","itemIds":[],"creatureIds":[],"exits":[],"featureIds":[]}""")
+        }
+        val loc1Body = loc1Response.bodyAsText()
+        val loc1IdMatch = Regex(""""id":"([^"]+)"""").find(loc1Body)
+        val loc1Id = loc1IdMatch?.groupValues?.get(1) ?: fail("Could not extract location 1 ID")
+
+        // Create location 2 with exit to location 1 going NORTH
+        val loc2Response = client.post("/locations") {
+            contentType(ContentType.Application.Json)
+            setBody("""{"name":"South Gate","desc":"The southern entrance","itemIds":[],"creatureIds":[],"exits":[{"locationId":"$loc1Id","direction":"NORTH"}],"featureIds":[]}""")
+        }
+        assertEquals(HttpStatusCode.Created, loc2Response.status)
+        val loc2Body = loc2Response.bodyAsText()
+        val loc2IdMatch = Regex(""""id":"([^"]+)"""").find(loc2Body)
+        val loc2Id = loc2IdMatch?.groupValues?.get(1) ?: fail("Could not extract location 2 ID")
+
+        // Retrieve locations and verify the exit direction is preserved
+        val getResponse = client.get("/locations")
+        assertEquals(HttpStatusCode.OK, getResponse.status)
+        val body = getResponse.bodyAsText()
+
+        // Verify the exit with direction is in the response
+        assertTrue(body.contains(""""locationId":"$loc1Id""""))
+        assertTrue(body.contains(""""direction":"NORTH""""))
+    }
+
+    @Test
+    fun testUpdateExitDirectionChangesLayout() = testApplication {
+        application {
+            module()
+        }
+        val client = createClient {
+            install(ContentNegotiation) {
+                json(Json { ignoreUnknownKeys = true })
+            }
+        }
+
+        // Create two locations
+        val loc1Response = client.post("/locations") {
+            contentType(ContentType.Application.Json)
+            setBody("""{"name":"Castle","desc":"A mighty castle","itemIds":[],"creatureIds":[],"exits":[],"featureIds":[]}""")
+        }
+        val loc1Body = loc1Response.bodyAsText()
+        val loc1IdMatch = Regex(""""id":"([^"]+)"""").find(loc1Body)
+        val loc1Id = loc1IdMatch?.groupValues?.get(1) ?: fail("Could not extract location 1 ID")
+
+        val loc2Response = client.post("/locations") {
+            contentType(ContentType.Application.Json)
+            setBody("""{"name":"Village","desc":"A peaceful village","itemIds":[],"creatureIds":[],"exits":[{"locationId":"$loc1Id","direction":"EAST"}],"featureIds":[]}""")
+        }
+        val loc2Body = loc2Response.bodyAsText()
+        val loc2IdMatch = Regex(""""id":"([^"]+)"""").find(loc2Body)
+        val loc2Id = loc2IdMatch?.groupValues?.get(1) ?: fail("Could not extract location 2 ID")
+
+        // Verify initial direction is EAST
+        val getBeforeResponse = client.get("/locations")
+        var body = getBeforeResponse.bodyAsText()
+        assertTrue(body.contains(""""direction":"EAST""""))
+
+        // Update location 2 to change exit direction to WEST
+        val updateResponse = client.put("/locations/$loc2Id") {
+            contentType(ContentType.Application.Json)
+            setBody("""{"name":"Village","desc":"A peaceful village","itemIds":[],"creatureIds":[],"exits":[{"locationId":"$loc1Id","direction":"WEST"}],"featureIds":[]}""")
+        }
+        assertEquals(HttpStatusCode.OK, updateResponse.status)
+
+        // Verify direction changed to WEST
+        val getAfterResponse = client.get("/locations")
+        body = getAfterResponse.bodyAsText()
+        // Should contain WEST now, and ideally not EAST for this specific exit
+        assertTrue(body.contains(""""direction":"WEST""""))
     }
 }

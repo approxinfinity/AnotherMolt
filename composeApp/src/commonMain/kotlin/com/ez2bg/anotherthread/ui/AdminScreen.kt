@@ -23,6 +23,7 @@ import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Image
 import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.LockOpen
@@ -472,11 +473,15 @@ fun GenerateImageButton(
     }
 }
 
+// Simple counter to generate unique refresh keys
+private var refreshKeyCounter = 0L
+private fun nextRefreshKey(): Long = ++refreshKeyCounter
+
 sealed class ViewState {
     data object UserAuth : ViewState()
     data class UserProfile(val user: UserDto) : ViewState()
     data class UserDetail(val userId: String) : ViewState()  // View other user's profile (read-only for non-admins)
-    data object LocationGraph : ViewState()
+    data class LocationGraph(val refreshKey: Long = nextRefreshKey()) : ViewState()
     data object LocationCreate : ViewState()
     data class LocationEdit(val location: LocationDto) : ViewState()
     data object CreatureList : ViewState()
@@ -670,7 +675,7 @@ fun AdminScreen() {
     var selectedTab by remember { mutableStateOf(if (savedUser != null) AdminTab.LOCATION else AdminTab.USER) }
     var viewState by remember {
         mutableStateOf<ViewState>(
-            if (savedUser != null) ViewState.LocationGraph else ViewState.UserAuth
+            if (savedUser != null) ViewState.LocationGraph() else ViewState.UserAuth
         )
     }
     var currentUser by remember { mutableStateOf(savedUser) }
@@ -712,7 +717,7 @@ fun AdminScreen() {
                         selectedTab = tab
                         viewState = when (tab) {
                             AdminTab.USER -> if (currentUser != null) ViewState.UserProfile(currentUser!!) else ViewState.UserAuth
-                            AdminTab.LOCATION -> ViewState.LocationGraph
+                            AdminTab.LOCATION -> ViewState.LocationGraph()
                             AdminTab.CREATURE -> ViewState.CreatureList
                             AdminTab.ITEM -> ViewState.ItemList
                             AdminTab.ADMIN -> ViewState.AdminPanel
@@ -764,7 +769,7 @@ fun AdminScreen() {
                 isAdmin = isAdmin,
                 onBack = {
                     selectedTab = AdminTab.LOCATION
-                    viewState = ViewState.LocationGraph
+                    viewState = ViewState.LocationGraph()
                 },
                 onNavigateToItem = { id ->
                     selectedTab = AdminTab.ITEM
@@ -772,14 +777,15 @@ fun AdminScreen() {
                 }
             )
             is ViewState.LocationGraph -> LocationGraphView(
+                refreshKey = state.refreshKey,
                 onAddClick = { viewState = ViewState.LocationCreate },
                 onLocationClick = { location -> viewState = ViewState.LocationEdit(location) },
                 isAuthenticated = currentUser != null
             )
             is ViewState.LocationCreate -> LocationForm(
                 editLocation = null,
-                onBack = { viewState = ViewState.LocationGraph },
-                onSaved = { viewState = ViewState.LocationGraph },
+                onBack = { viewState = ViewState.LocationGraph() },
+                onSaved = { viewState = ViewState.LocationGraph() },
                 onNavigateToItem = { id ->
                     selectedTab = AdminTab.ITEM
                     viewState = ViewState.ItemDetail(id)
@@ -798,8 +804,8 @@ fun AdminScreen() {
             )
             is ViewState.LocationEdit -> LocationForm(
                 editLocation = state.location,
-                onBack = { viewState = ViewState.LocationGraph },
-                onSaved = { viewState = ViewState.LocationGraph },
+                onBack = { viewState = ViewState.LocationGraph() },
+                onSaved = { viewState = ViewState.LocationGraph() },
                 onNavigateToItem = { id ->
                     selectedTab = AdminTab.ITEM
                     viewState = ViewState.ItemDetail(id)
@@ -857,7 +863,7 @@ fun AdminScreen() {
                 creatureId = state.id,
                 onBack = {
                     selectedTab = AdminTab.LOCATION
-                    viewState = ViewState.LocationGraph
+                    viewState = ViewState.LocationGraph()
                 },
                 onEdit = { creature ->
                     selectedTab = AdminTab.CREATURE
@@ -902,7 +908,7 @@ fun AdminScreen() {
                 itemId = state.id,
                 onBack = {
                     selectedTab = AdminTab.LOCATION
-                    viewState = ViewState.LocationGraph
+                    viewState = ViewState.LocationGraph()
                 },
                 onEdit = { item ->
                     selectedTab = AdminTab.ITEM
@@ -1577,8 +1583,441 @@ fun IdPillSection(
     }
 }
 
+// Helper function to get a short label for direction
+fun ExitDirection.toShortLabel(): String = when (this) {
+    ExitDirection.NORTH -> "N"
+    ExitDirection.NORTHEAST -> "NE"
+    ExitDirection.EAST -> "E"
+    ExitDirection.SOUTHEAST -> "SE"
+    ExitDirection.SOUTH -> "S"
+    ExitDirection.SOUTHWEST -> "SW"
+    ExitDirection.WEST -> "W"
+    ExitDirection.NORTHWEST -> "NW"
+    ExitDirection.UNKNOWN -> "?"
+}
+
+fun ExitDirection.toDisplayLabel(): String = when (this) {
+    ExitDirection.NORTH -> "North"
+    ExitDirection.NORTHEAST -> "Northeast"
+    ExitDirection.EAST -> "East"
+    ExitDirection.SOUTHEAST -> "Southeast"
+    ExitDirection.SOUTH -> "South"
+    ExitDirection.SOUTHWEST -> "Southwest"
+    ExitDirection.WEST -> "West"
+    ExitDirection.NORTHWEST -> "Northwest"
+    ExitDirection.UNKNOWN -> "Unknown"
+}
+
+fun getOppositeDirection(direction: ExitDirection): ExitDirection = when (direction) {
+    ExitDirection.NORTH -> ExitDirection.SOUTH
+    ExitDirection.NORTHEAST -> ExitDirection.SOUTHWEST
+    ExitDirection.EAST -> ExitDirection.WEST
+    ExitDirection.SOUTHEAST -> ExitDirection.NORTHWEST
+    ExitDirection.SOUTH -> ExitDirection.NORTH
+    ExitDirection.SOUTHWEST -> ExitDirection.NORTHEAST
+    ExitDirection.WEST -> ExitDirection.EAST
+    ExitDirection.NORTHWEST -> ExitDirection.SOUTHEAST
+    ExitDirection.UNKNOWN -> ExitDirection.UNKNOWN
+}
+
+@Composable
+fun ExitPill(
+    exit: ExitDto,
+    locationName: String?,
+    color: Color = MaterialTheme.colorScheme.primaryContainer,
+    textColor: Color = MaterialTheme.colorScheme.onPrimaryContainer,
+    onClick: () -> Unit,
+    onEdit: (() -> Unit)? = null
+) {
+    Surface(
+        modifier = Modifier.padding(2.dp),
+        shape = RoundedCornerShape(16.dp),
+        color = color
+    ) {
+        Row(
+            modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(4.dp)
+        ) {
+            // Direction badge
+            Surface(
+                shape = RoundedCornerShape(4.dp),
+                color = textColor.copy(alpha = 0.2f)
+            ) {
+                Text(
+                    text = exit.direction.toShortLabel(),
+                    style = MaterialTheme.typography.labelSmall,
+                    color = textColor,
+                    modifier = Modifier.padding(horizontal = 4.dp, vertical = 2.dp)
+                )
+            }
+            Text(
+                text = locationName ?: exit.locationId.take(8) + if (exit.locationId.length > 8) "..." else "",
+                style = MaterialTheme.typography.labelMedium,
+                color = textColor,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.clickable(onClick = onClick)
+            )
+            if (onEdit != null) {
+                Icon(
+                    imageVector = Icons.Filled.Edit,
+                    contentDescription = "Edit",
+                    modifier = Modifier
+                        .size(16.dp)
+                        .clickable(onClick = onEdit),
+                    tint = textColor
+                )
+            }
+        }
+    }
+}
+
+@OptIn(ExperimentalLayoutApi::class, ExperimentalMaterial3Api::class)
+@Composable
+fun ExitPillSection(
+    label: String,
+    exits: List<ExitDto>,
+    availableOptions: List<IdOption> = emptyList(),
+    onPillClick: (String) -> Unit,
+    onAddExit: (ExitDto) -> Unit,
+    onUpdateExit: (oldExit: ExitDto, newExit: ExitDto) -> Unit,
+    onRemoveExit: (ExitDto) -> Unit,
+    modifier: Modifier = Modifier,
+    enabled: Boolean = true
+) {
+    var showAddDialog by remember { mutableStateOf(false) }
+    var selectedLocationId by remember { mutableStateOf<String?>(null) }
+    var selectedDirection by remember { mutableStateOf(ExitDirection.UNKNOWN) }
+    var directionDropdownExpanded by remember { mutableStateOf(false) }
+
+    // State for edit dialog
+    var exitToEdit by remember { mutableStateOf<ExitDto?>(null) }
+    var editDirection by remember { mutableStateOf(ExitDirection.UNKNOWN) }
+    var editDirectionDropdownExpanded by remember { mutableStateOf(false) }
+
+    val pillColor = MaterialTheme.colorScheme.primaryContainer
+    val pillTextColor = MaterialTheme.colorScheme.onPrimaryContainer
+
+    // Create a map of id -> name for quick lookup
+    val idToNameMap = remember(availableOptions) { availableOptions.associate { it.id to it.name } }
+
+    Column(modifier = modifier.fillMaxWidth()) {
+        Text(
+            text = label,
+            style = MaterialTheme.typography.labelLarge,
+            modifier = Modifier.padding(bottom = 8.dp)
+        )
+
+        FlowRow(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            exits.forEach { exit ->
+                ExitPill(
+                    exit = exit,
+                    locationName = idToNameMap[exit.locationId],
+                    color = pillColor,
+                    textColor = pillTextColor,
+                    onClick = { onPillClick(exit.locationId) },
+                    onEdit = if (enabled) {{
+                        exitToEdit = exit
+                        editDirection = exit.direction
+                    }} else null
+                )
+            }
+
+            // Add button pill (only show when enabled)
+            if (enabled) {
+                Surface(
+                    modifier = Modifier
+                        .clickable { showAddDialog = true }
+                        .padding(2.dp),
+                    shape = RoundedCornerShape(16.dp),
+                    color = MaterialTheme.colorScheme.outline.copy(alpha = 0.3f)
+                ) {
+                    Row(
+                        modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Icon(
+                            imageVector = Icons.Filled.Add,
+                            contentDescription = "Add",
+                            modifier = Modifier.size(16.dp),
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                        Text(
+                            text = "Add",
+                            style = MaterialTheme.typography.labelMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                }
+            }
+        }
+    }
+
+    if (showAddDialog) {
+        // Filter out already selected locations from available options
+        val existingLocationIds = exits.map { it.locationId }.toSet()
+        val unselectedOptions = availableOptions.filter { it.id !in existingLocationIds }
+
+        AlertDialog(
+            onDismissRequest = {
+                showAddDialog = false
+                selectedLocationId = null
+                selectedDirection = ExitDirection.UNKNOWN
+            },
+            title = { Text("Add Exit") },
+            text = {
+                Column(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalArrangement = Arrangement.spacedBy(12.dp)
+                ) {
+                    // Direction dropdown
+                    Text(
+                        text = "Direction:",
+                        style = MaterialTheme.typography.labelMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    ExposedDropdownMenuBox(
+                        expanded = directionDropdownExpanded,
+                        onExpandedChange = { directionDropdownExpanded = it }
+                    ) {
+                        OutlinedTextField(
+                            value = selectedDirection.toDisplayLabel(),
+                            onValueChange = {},
+                            readOnly = true,
+                            trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = directionDropdownExpanded) },
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .menuAnchor(MenuAnchorType.PrimaryNotEditable)
+                        )
+                        ExposedDropdownMenu(
+                            expanded = directionDropdownExpanded,
+                            onDismissRequest = { directionDropdownExpanded = false }
+                        ) {
+                            ExitDirection.entries.forEach { direction ->
+                                DropdownMenuItem(
+                                    text = { Text(direction.toDisplayLabel()) },
+                                    onClick = {
+                                        selectedDirection = direction
+                                        directionDropdownExpanded = false
+                                    }
+                                )
+                            }
+                        }
+                    }
+
+                    HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp))
+
+                    // Show list of available locations
+                    if (unselectedOptions.isNotEmpty()) {
+                        Text(
+                            text = "Select destination:",
+                            style = MaterialTheme.typography.labelMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                        LazyColumn(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .heightIn(max = 200.dp),
+                            verticalArrangement = Arrangement.spacedBy(4.dp)
+                        ) {
+                            items(unselectedOptions) { option ->
+                                val isSelected = selectedLocationId == option.id
+                                Surface(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .clickable {
+                                            selectedLocationId = option.id
+                                        },
+                                    shape = RoundedCornerShape(8.dp),
+                                    color = if (isSelected) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceVariant,
+                                    border = if (isSelected) androidx.compose.foundation.BorderStroke(2.dp, MaterialTheme.colorScheme.primary) else null
+                                ) {
+                                    Column(
+                                        modifier = Modifier.padding(12.dp)
+                                    ) {
+                                        Text(
+                                            text = option.name.ifBlank { "(No name)" },
+                                            style = MaterialTheme.typography.bodyLarge,
+                                            color = if (isSelected) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSurfaceVariant,
+                                            maxLines = 1,
+                                            overflow = TextOverflow.Ellipsis
+                                        )
+                                        Text(
+                                            text = option.id,
+                                            style = MaterialTheme.typography.bodySmall,
+                                            color = if (isSelected) MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.7f) else MaterialTheme.colorScheme.onSurfaceVariant,
+                                            maxLines = 1,
+                                            overflow = TextOverflow.Ellipsis
+                                        )
+                                    }
+                                }
+                            }
+                        }
+                    } else {
+                        Text(
+                            text = "No more locations available",
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+
+                    // Show selected location summary
+                    if (selectedLocationId != null) {
+                        val selectedName = availableOptions.find { it.id == selectedLocationId }?.name ?: selectedLocationId
+                        HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp))
+                        Text(
+                            text = "Selected: $selectedName (${selectedDirection.toDisplayLabel()})",
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.primary
+                        )
+                    }
+                }
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        if (selectedLocationId != null) {
+                            onAddExit(ExitDto(locationId = selectedLocationId!!, direction = selectedDirection))
+                            showAddDialog = false
+                            selectedLocationId = null
+                            selectedDirection = ExitDirection.UNKNOWN
+                        }
+                    },
+                    enabled = selectedLocationId != null
+                ) {
+                    Text("Save Exit")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = {
+                    showAddDialog = false
+                    selectedLocationId = null
+                    selectedDirection = ExitDirection.UNKNOWN
+                }) {
+                    Text("Cancel")
+                }
+            }
+        )
+    }
+
+    // Edit exit dialog
+    if (exitToEdit != null) {
+        val currentExit = exitToEdit!!
+        val locationName = idToNameMap[currentExit.locationId] ?: currentExit.locationId.take(8)
+
+        AlertDialog(
+            onDismissRequest = {
+                exitToEdit = null
+                editDirection = ExitDirection.UNKNOWN
+            },
+            title = { Text("Edit Exit") },
+            text = {
+                Column(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalArrangement = Arrangement.spacedBy(12.dp)
+                ) {
+                    // Show destination (read-only)
+                    Text(
+                        text = "Destination:",
+                        style = MaterialTheme.typography.labelMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    Text(
+                        text = locationName,
+                        style = MaterialTheme.typography.bodyLarge,
+                        color = MaterialTheme.colorScheme.onSurface
+                    )
+
+                    HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp))
+
+                    // Direction dropdown
+                    Text(
+                        text = "Direction:",
+                        style = MaterialTheme.typography.labelMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    ExposedDropdownMenuBox(
+                        expanded = editDirectionDropdownExpanded,
+                        onExpandedChange = { editDirectionDropdownExpanded = it }
+                    ) {
+                        OutlinedTextField(
+                            value = editDirection.toDisplayLabel(),
+                            onValueChange = {},
+                            readOnly = true,
+                            trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = editDirectionDropdownExpanded) },
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .menuAnchor(MenuAnchorType.PrimaryNotEditable)
+                        )
+                        ExposedDropdownMenu(
+                            expanded = editDirectionDropdownExpanded,
+                            onDismissRequest = { editDirectionDropdownExpanded = false }
+                        ) {
+                            ExitDirection.entries.forEach { direction ->
+                                DropdownMenuItem(
+                                    text = { Text(direction.toDisplayLabel()) },
+                                    onClick = {
+                                        editDirection = direction
+                                        editDirectionDropdownExpanded = false
+                                    }
+                                )
+                            }
+                        }
+                    }
+                }
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        val newExit = currentExit.copy(direction = editDirection)
+                        onUpdateExit(currentExit, newExit)
+                        exitToEdit = null
+                        editDirection = ExitDirection.UNKNOWN
+                    }
+                ) {
+                    Text("Save")
+                }
+            },
+            dismissButton = {
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    TextButton(
+                        onClick = {
+                            onRemoveExit(currentExit)
+                            exitToEdit = null
+                            editDirection = ExitDirection.UNKNOWN
+                        },
+                        colors = ButtonDefaults.textButtonColors(
+                            contentColor = MaterialTheme.colorScheme.error
+                        )
+                    ) {
+                        Icon(
+                            imageVector = Icons.Filled.Delete,
+                            contentDescription = null,
+                            modifier = Modifier.size(18.dp)
+                        )
+                        Spacer(modifier = Modifier.width(4.dp))
+                        Text("Delete")
+                    }
+                    TextButton(onClick = {
+                        exitToEdit = null
+                        editDirection = ExitDirection.UNKNOWN
+                    }) {
+                        Text("Cancel")
+                    }
+                }
+            }
+        )
+    }
+}
+
 @Composable
 fun LocationGraphView(
+    refreshKey: Long,
     onAddClick: () -> Unit,
     onLocationClick: (LocationDto) -> Unit,
     isAuthenticated: Boolean
@@ -1588,7 +2027,8 @@ fun LocationGraphView(
     var error by remember { mutableStateOf<String?>(null) }
     val scope = rememberCoroutineScope()
 
-    LaunchedEffect(Unit) {
+    // Re-fetch locations when refreshKey changes (e.g., after saving a location)
+    LaunchedEffect(refreshKey) {
         scope.launch {
             isLoading = true
             val result = ApiClient.getLocations()
@@ -3203,8 +3643,24 @@ private data class NodeState(
 )
 
 /**
+ * Get the unit vector (dx, dy) for a direction.
+ * North is up (negative y), East is right (positive x).
+ */
+private fun getDirectionVector(direction: ExitDirection): Pair<Float, Float> = when (direction) {
+    ExitDirection.NORTH -> Pair(0f, -1f)
+    ExitDirection.NORTHEAST -> Pair(0.707f, -0.707f)
+    ExitDirection.EAST -> Pair(1f, 0f)
+    ExitDirection.SOUTHEAST -> Pair(0.707f, 0.707f)
+    ExitDirection.SOUTH -> Pair(0f, 1f)
+    ExitDirection.SOUTHWEST -> Pair(-0.707f, 0.707f)
+    ExitDirection.WEST -> Pair(-1f, 0f)
+    ExitDirection.NORTHWEST -> Pair(-0.707f, -0.707f)
+    ExitDirection.UNKNOWN -> Pair(0f, 0f) // No directional bias
+}
+
+/**
  * Calculate positions using force-directed layout algorithm.
- * Connected locations are attracted to each other, all locations repel.
+ * Connected locations are attracted to each other with directional bias.
  */
 private fun calculateForceDirectedPositions(
     locations: List<LocationDto>
@@ -3214,9 +3670,10 @@ private fun calculateForceDirectedPositions(
         return mapOf(locations[0].id to LocationPosition(locations[0], 0.5f, 0.5f))
     }
 
-    // Build adjacency map for quick connection lookup
+    // Build adjacency map with directional info
+    // Map from location ID to list of (connected location ID, direction)
     val connections = locations.associate { loc ->
-        loc.id to loc.exitIds.toSet()
+        loc.id to loc.exits.map { exit -> exit.locationId to exit.direction }
     }
 
     // Initialize nodes with positions around center
@@ -3229,6 +3686,10 @@ private fun calculateForceDirectedPositions(
         )
     }
     val nodeMap = nodes.associateBy { it.id }
+
+    // Directional force strength - how much directions influence positioning
+    // Needs to be strong enough to overcome repulsion/attraction, but not too strong
+    val directionalStrength = 0.05f
 
     // Run simulation
     repeat(LayoutConstants.ITERATIONS) {
@@ -3250,15 +3711,27 @@ private fun calculateForceDirectedPositions(
                 }
             }
 
-            // Attraction to connected nodes
-            connections[node.id]?.forEach { connectedId ->
+            // Attraction to connected nodes with directional bias
+            connections[node.id]?.forEach { (connectedId, direction) ->
                 nodeMap[connectedId]?.let { other ->
                     val dx = other.x - node.x
                     val dy = other.y - node.y
                     val distance = sqrt(dx * dx + dy * dy)
                     if (distance > 0.01f) {
+                        // Standard attraction toward connected node
                         fx += dx * LayoutConstants.ATTRACTION_STRENGTH
                         fy += dy * LayoutConstants.ATTRACTION_STRENGTH
+
+                        // Directional force: if this node has an EAST exit to 'other',
+                        // then 'other' should be to the EAST of this node.
+                        // We achieve this by pushing THIS node in the OPPOSITE direction (WEST),
+                        // which effectively positions 'other' to the EAST relative to this node.
+                        if (direction != ExitDirection.UNKNOWN) {
+                            val (dirX, dirY) = getDirectionVector(direction)
+                            // Apply NEGATIVE force to push this node opposite to the exit direction
+                            fx -= dirX * directionalStrength
+                            fy -= dirY * directionalStrength
+                        }
                     }
                 }
             }
@@ -3308,7 +3781,7 @@ fun LocationForm(
     var desc by remember(editLocation?.id) { mutableStateOf(editLocation?.desc ?: "") }
     var itemIds by remember(editLocation?.id) { mutableStateOf(editLocation?.itemIds ?: emptyList()) }
     var creatureIds by remember(editLocation?.id) { mutableStateOf(editLocation?.creatureIds ?: emptyList()) }
-    var exitIds by remember(editLocation?.id) { mutableStateOf(editLocation?.exitIds ?: emptyList()) }
+    var exits by remember(editLocation?.id) { mutableStateOf(editLocation?.exits ?: emptyList()) }
     var features by remember(editLocation?.id) { mutableStateOf(editLocation?.featureIds?.joinToString(", ") ?: "") }
     var imageUrl by remember(editLocation?.id) { mutableStateOf(editLocation?.imageUrl) }
     var isLoading by remember(editLocation?.id) { mutableStateOf(false) }
@@ -3330,8 +3803,12 @@ fun LocationForm(
     val isDisabled = isNotAuthenticated || isLocked || isImageGenerating
 
     // State for exit removal confirmation dialog
-    var exitToRemove by remember { mutableStateOf<String?>(null) }
+    var exitToRemove by remember { mutableStateOf<ExitDto?>(null) }
     var showRemoveExitDialog by remember { mutableStateOf(false) }
+
+    // State for delete confirmation dialog
+    var showDeleteDialog by remember { mutableStateOf(false) }
+    var isDeleting by remember { mutableStateOf(false) }
 
     // Available options for dropdowns
     var availableItems by remember { mutableStateOf<List<IdOption>>(emptyList()) }
@@ -3421,7 +3898,7 @@ fun LocationForm(
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
                     }
-                    // Only admins can toggle the lock
+                    // Only admins can toggle the lock and delete
                     if (isAdmin) {
                         IconButton(
                             onClick = {
@@ -3444,6 +3921,18 @@ fun LocationForm(
                                 contentDescription = if (isLocked) "Unlock location" else "Lock location",
                                 tint = if (isLocked) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
                             )
+                        }
+                        // Show delete button only when unlocked
+                        if (!isLocked) {
+                            IconButton(
+                                onClick = { showDeleteDialog = true }
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Filled.Delete,
+                                    contentDescription = "Delete location",
+                                    tint = MaterialTheme.colorScheme.error
+                                )
+                            }
                         }
                     } else {
                         // Non-admins see the lock icon but can't click it
@@ -3490,7 +3979,7 @@ fun LocationForm(
                 entityType = GenEntityType.LOCATION,
                 currentName = name,
                 currentDesc = desc,
-                exitIds = exitIds,
+                exitIds = exits.map { it.locationId },
                 featureIds = features.splitToList(),
                 onGenerated = { _, genDesc ->
                     // Only update description, keep the existing name
@@ -3571,34 +4060,35 @@ fun LocationForm(
             }
         }
 
-        IdPillSection(
-            label = "Exits (Location IDs)",
-            ids = exitIds,
-            entityType = EntityType.LOCATION,
+        ExitPillSection(
+            label = "Exits",
+            exits = exits,
             availableOptions = availableLocations,
-            onPillClick = { id ->
+            onPillClick = { locationId ->
                 scope.launch {
-                    ApiClient.getLocation(id).onSuccess { loc ->
+                    ApiClient.getLocation(locationId).onSuccess { loc ->
                         if (loc != null) onNavigateToLocation(loc)
                     }
                 }
             },
-            onAddId = { id ->
-                if (isDisabled) return@IdPillSection
+            onAddExit = { newExit ->
+                if (isDisabled) return@ExitPillSection
                 // Add exit locally
-                exitIds = exitIds + id
+                exits = exits + newExit
                 // Add bidirectional exit on the other location (if we have an id)
+                // Use opposite direction for the reverse exit
                 if (editLocation != null) {
                     scope.launch {
-                        ApiClient.getLocation(id).onSuccess { otherLoc ->
-                            if (otherLoc != null && editLocation.id !in otherLoc.exitIds) {
-                                val updatedExits = otherLoc.exitIds + editLocation.id
+                        ApiClient.getLocation(newExit.locationId).onSuccess { otherLoc ->
+                            if (otherLoc != null && otherLoc.exits.none { it.locationId == editLocation.id }) {
+                                val oppositeDirection = getOppositeDirection(newExit.direction)
+                                val updatedExits = otherLoc.exits + ExitDto(editLocation.id, oppositeDirection)
                                 val updateRequest = CreateLocationRequest(
                                     name = otherLoc.name,
                                     desc = otherLoc.desc,
                                     itemIds = otherLoc.itemIds,
                                     creatureIds = otherLoc.creatureIds,
-                                    exitIds = updatedExits,
+                                    exits = updatedExits,
                                     featureIds = otherLoc.featureIds
                                 )
                                 ApiClient.updateLocation(otherLoc.id, updateRequest)
@@ -3607,10 +4097,41 @@ fun LocationForm(
                     }
                 }
             },
-            onRemoveId = { id ->
-                if (isDisabled) return@IdPillSection
+            onUpdateExit = { oldExit, newExit ->
+                if (isDisabled) return@ExitPillSection
+                // Update exit direction locally
+                exits = exits.map { if (it == oldExit) newExit else it }
+                // Update the bidirectional exit on the other location with opposite direction
+                if (editLocation != null) {
+                    scope.launch {
+                        ApiClient.getLocation(newExit.locationId).onSuccess { otherLoc ->
+                            if (otherLoc != null) {
+                                val oppositeDirection = getOppositeDirection(newExit.direction)
+                                val updatedExits = otherLoc.exits.map { exit ->
+                                    if (exit.locationId == editLocation.id) {
+                                        exit.copy(direction = oppositeDirection)
+                                    } else {
+                                        exit
+                                    }
+                                }
+                                val updateRequest = CreateLocationRequest(
+                                    name = otherLoc.name,
+                                    desc = otherLoc.desc,
+                                    itemIds = otherLoc.itemIds,
+                                    creatureIds = otherLoc.creatureIds,
+                                    exits = updatedExits,
+                                    featureIds = otherLoc.featureIds
+                                )
+                                ApiClient.updateLocation(otherLoc.id, updateRequest)
+                            }
+                        }
+                    }
+                }
+            },
+            onRemoveExit = { exit ->
+                if (isDisabled) return@ExitPillSection
                 // Show confirmation dialog for exit removal
-                exitToRemove = id
+                exitToRemove = exit
                 showRemoveExitDialog = true
             },
             enabled = !isDisabled
@@ -3618,8 +4139,8 @@ fun LocationForm(
 
         // Exit removal confirmation dialog
         if (showRemoveExitDialog && exitToRemove != null) {
-            val exitIdToRemove = exitToRemove!!
-            val exitName = availableLocations.find { it.id == exitIdToRemove }?.name ?: exitIdToRemove
+            val exitToRemoveVal = exitToRemove!!
+            val exitName = availableLocations.find { it.id == exitToRemoveVal.locationId }?.name ?: exitToRemoveVal.locationId
             AlertDialog(
                 onDismissRequest = {
                     showRemoveExitDialog = false
@@ -3627,24 +4148,24 @@ fun LocationForm(
                 },
                 title = { Text("Remove Exit") },
                 text = {
-                    Text("Remove exit to \"$exitName\".\n\nShould this be a two-way removal (also remove this location from \"$exitName\"'s exits)?")
+                    Text("Remove exit to \"$exitName\" (${exitToRemoveVal.direction.toDisplayLabel()}).\n\nShould this be a two-way removal (also remove this location from \"$exitName\"'s exits)?")
                 },
                 confirmButton = {
                     TextButton(
                         onClick = {
                             // Two-way removal
-                            exitIds = exitIds - exitIdToRemove
+                            exits = exits.filter { it.locationId != exitToRemoveVal.locationId }
                             if (editLocation != null) {
                                 scope.launch {
-                                    ApiClient.getLocation(exitIdToRemove).onSuccess { otherLoc ->
-                                        if (otherLoc != null && editLocation.id in otherLoc.exitIds) {
-                                            val updatedExits = otherLoc.exitIds - editLocation.id
+                                    ApiClient.getLocation(exitToRemoveVal.locationId).onSuccess { otherLoc ->
+                                        if (otherLoc != null && otherLoc.exits.any { it.locationId == editLocation.id }) {
+                                            val updatedExits = otherLoc.exits.filter { it.locationId != editLocation.id }
                                             val updateRequest = CreateLocationRequest(
                                                 name = otherLoc.name,
                                                 desc = otherLoc.desc,
                                                 itemIds = otherLoc.itemIds,
                                                 creatureIds = otherLoc.creatureIds,
-                                                exitIds = updatedExits,
+                                                exits = updatedExits,
                                                 featureIds = otherLoc.featureIds
                                             )
                                             ApiClient.updateLocation(otherLoc.id, updateRequest)
@@ -3672,13 +4193,65 @@ fun LocationForm(
                         TextButton(
                             onClick = {
                                 // One-way removal (only from this location)
-                                exitIds = exitIds - exitIdToRemove
+                                exits = exits.filter { it.locationId != exitToRemoveVal.locationId }
                                 showRemoveExitDialog = false
                                 exitToRemove = null
                             }
                         ) {
                             Text("Remove One Way")
                         }
+                    }
+                }
+            )
+        }
+
+        // Delete confirmation dialog
+        if (showDeleteDialog && editLocation != null) {
+            AlertDialog(
+                onDismissRequest = { showDeleteDialog = false },
+                title = { Text("Delete Location") },
+                text = {
+                    Text("Are you sure you want to delete \"${editLocation.name}\"?\n\nThis will also remove this location from any exit lists in other locations.")
+                },
+                confirmButton = {
+                    Button(
+                        onClick = {
+                            scope.launch {
+                                isDeleting = true
+                                ApiClient.deleteLocation(editLocation.id)
+                                    .onSuccess {
+                                        showDeleteDialog = false
+                                        onBack()
+                                    }
+                                    .onFailure { error ->
+                                        message = "Failed to delete: ${error.message}"
+                                        showDeleteDialog = false
+                                    }
+                                isDeleting = false
+                            }
+                        },
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = MaterialTheme.colorScheme.error
+                        ),
+                        enabled = !isDeleting
+                    ) {
+                        if (isDeleting) {
+                            CircularProgressIndicator(
+                                modifier = Modifier.size(16.dp),
+                                strokeWidth = 2.dp,
+                                color = MaterialTheme.colorScheme.onError
+                            )
+                        } else {
+                            Text("Delete")
+                        }
+                    }
+                },
+                dismissButton = {
+                    TextButton(
+                        onClick = { showDeleteDialog = false },
+                        enabled = !isDeleting
+                    ) {
+                        Text("Cancel")
                     }
                 }
             )
@@ -3723,7 +4296,7 @@ fun LocationForm(
                             desc = desc,
                             itemIds = itemIds,
                             creatureIds = creatureIds,
-                            exitIds = exitIds,
+                            exits = exits,
                             featureIds = features.splitToList()
                         )
                         val result = if (isEditMode) {
@@ -3810,6 +4383,10 @@ fun CreatureForm(
     // Available options for dropdown
     var availableItems by remember { mutableStateOf<List<IdOption>>(emptyList()) }
 
+    // State for delete confirmation dialog
+    var showDeleteDialog by remember { mutableStateOf(false) }
+    var isDeleting by remember { mutableStateOf(false) }
+
     // Fetch available options on mount
     LaunchedEffect(Unit) {
         ApiClient.getItems().onSuccess { items ->
@@ -3860,7 +4437,7 @@ fun CreatureForm(
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
                     }
-                    // Only admins can toggle the lock
+                    // Only admins can toggle the lock and delete
                     if (isAdmin) {
                         IconButton(
                             onClick = {
@@ -3880,6 +4457,18 @@ fun CreatureForm(
                                 contentDescription = if (isLocked) "Unlock creature" else "Lock creature",
                                 tint = if (isLocked) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
                             )
+                        }
+                        // Show delete button only when unlocked
+                        if (!isLocked) {
+                            IconButton(
+                                onClick = { showDeleteDialog = true }
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Filled.Delete,
+                                    contentDescription = "Delete creature",
+                                    tint = MaterialTheme.colorScheme.error
+                                )
+                            }
                         }
                     } else {
                         Icon(
@@ -4033,6 +4622,58 @@ fun CreatureForm(
                 text = it,
                 color = if (it.startsWith("Error")) MaterialTheme.colorScheme.error
                 else MaterialTheme.colorScheme.primary
+            )
+        }
+
+        // Delete confirmation dialog
+        if (showDeleteDialog && editCreature != null) {
+            AlertDialog(
+                onDismissRequest = { showDeleteDialog = false },
+                title = { Text("Delete Creature") },
+                text = {
+                    Text("Are you sure you want to delete \"${editCreature.name}\"?\n\nThis will also remove this creature from any locations.")
+                },
+                confirmButton = {
+                    Button(
+                        onClick = {
+                            scope.launch {
+                                isDeleting = true
+                                ApiClient.deleteCreature(editCreature.id)
+                                    .onSuccess {
+                                        showDeleteDialog = false
+                                        onBack()
+                                    }
+                                    .onFailure { error ->
+                                        message = "Failed to delete: ${error.message}"
+                                        showDeleteDialog = false
+                                    }
+                                isDeleting = false
+                            }
+                        },
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = MaterialTheme.colorScheme.error
+                        ),
+                        enabled = !isDeleting
+                    ) {
+                        if (isDeleting) {
+                            CircularProgressIndicator(
+                                modifier = Modifier.size(16.dp),
+                                strokeWidth = 2.dp,
+                                color = MaterialTheme.colorScheme.onError
+                            )
+                        } else {
+                            Text("Delete")
+                        }
+                    }
+                },
+                dismissButton = {
+                    TextButton(
+                        onClick = { showDeleteDialog = false },
+                        enabled = !isDeleting
+                    ) {
+                        Text("Cancel")
+                    }
+                }
             )
         }
     }
@@ -4201,6 +4842,10 @@ fun ItemForm(
     val isNotAuthenticated = currentUser == null
     val isDisabled = isNotAuthenticated || isLocked || isImageGenerating
 
+    // State for delete confirmation dialog
+    var showDeleteDialog by remember { mutableStateOf(false) }
+    var isDeleting by remember { mutableStateOf(false) }
+
     // Fetch locker's name when item is locked
     LaunchedEffect(lockedBy) {
         val lockerId = lockedBy
@@ -4244,7 +4889,7 @@ fun ItemForm(
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
                     }
-                    // Only admins can toggle the lock
+                    // Only admins can toggle the lock and delete
                     if (isAdmin) {
                         IconButton(
                             onClick = {
@@ -4264,6 +4909,18 @@ fun ItemForm(
                                 contentDescription = if (isLocked) "Unlock item" else "Lock item",
                                 tint = if (isLocked) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
                             )
+                        }
+                        // Show delete button only when unlocked
+                        if (!isLocked) {
+                            IconButton(
+                                onClick = { showDeleteDialog = true }
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Filled.Delete,
+                                    contentDescription = "Delete item",
+                                    tint = MaterialTheme.colorScheme.error
+                                )
+                            }
                         }
                     } else {
                         Icon(
@@ -4412,6 +5069,58 @@ fun ItemForm(
                 text = it,
                 color = if (it.startsWith("Error")) MaterialTheme.colorScheme.error
                 else MaterialTheme.colorScheme.primary
+            )
+        }
+
+        // Delete confirmation dialog
+        if (showDeleteDialog && editItem != null) {
+            AlertDialog(
+                onDismissRequest = { showDeleteDialog = false },
+                title = { Text("Delete Item") },
+                text = {
+                    Text("Are you sure you want to delete \"${editItem.name}\"?\n\nThis will also remove this item from any locations.")
+                },
+                confirmButton = {
+                    Button(
+                        onClick = {
+                            scope.launch {
+                                isDeleting = true
+                                ApiClient.deleteItem(editItem.id)
+                                    .onSuccess {
+                                        showDeleteDialog = false
+                                        onBack()
+                                    }
+                                    .onFailure { error ->
+                                        message = "Failed to delete: ${error.message}"
+                                        showDeleteDialog = false
+                                    }
+                                isDeleting = false
+                            }
+                        },
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = MaterialTheme.colorScheme.error
+                        ),
+                        enabled = !isDeleting
+                    ) {
+                        if (isDeleting) {
+                            CircularProgressIndicator(
+                                modifier = Modifier.size(16.dp),
+                                strokeWidth = 2.dp,
+                                color = MaterialTheme.colorScheme.onError
+                            )
+                        } else {
+                            Text("Delete")
+                        }
+                    }
+                },
+                dismissButton = {
+                    TextButton(
+                        onClick = { showDeleteDialog = false },
+                        enabled = !isDeleting
+                    ) {
+                        Text("Cancel")
+                    }
+                }
             )
         }
     }

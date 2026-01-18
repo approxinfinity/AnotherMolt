@@ -17,12 +17,18 @@ import kotlinx.serialization.Serializable
 import java.io.File
 
 @Serializable
+data class ExitRequest(
+    val locationId: String,
+    val direction: ExitDirection = ExitDirection.UNKNOWN
+)
+
+@Serializable
 data class CreateLocationRequest(
     val name: String,
     val desc: String,
     val itemIds: List<String> = emptyList(),
     val creatureIds: List<String> = emptyList(),
-    val exitIds: List<String> = emptyList(),
+    val exits: List<ExitRequest> = emptyList(),
     val featureIds: List<String> = emptyList()
 )
 
@@ -383,7 +389,7 @@ fun Application.module() {
                     desc = request.desc,
                     itemIds = request.itemIds,
                     creatureIds = request.creatureIds,
-                    exitIds = request.exitIds,
+                    exits = request.exits.map { Exit(it.locationId, it.direction) },
                     featureIds = request.featureIds
                 )
                 val createdLocation = LocationRepository.create(location)
@@ -421,7 +427,7 @@ fun Application.module() {
                     desc = request.desc,
                     itemIds = request.itemIds,
                     creatureIds = request.creatureIds,
-                    exitIds = request.exitIds,
+                    exits = request.exits.map { Exit(it.locationId, it.direction) },
                     featureIds = request.featureIds,
                     imageUrl = existingLocation?.imageUrl, // Preserve existing image
                     lockedBy = existingLocation?.lockedBy // Preserve lock status
@@ -466,6 +472,21 @@ fun Application.module() {
                 if (LocationRepository.updateLockedBy(id, newLockedBy)) {
                     val updatedLocation = LocationRepository.findById(id)
                     call.respond(HttpStatusCode.OK, updatedLocation!!)
+                } else {
+                    call.respond(HttpStatusCode.InternalServerError)
+                }
+            }
+            delete("/{id}") {
+                val id = call.parameters["id"] ?: return@delete call.respond(HttpStatusCode.BadRequest)
+
+                val existingLocation = LocationRepository.findById(id)
+                    ?: return@delete call.respond(HttpStatusCode.NotFound)
+
+                // Remove this location from other locations' exitIds
+                LocationRepository.removeExitIdFromAll(id)
+
+                if (LocationRepository.delete(id)) {
+                    call.respond(HttpStatusCode.NoContent)
                 } else {
                     call.respond(HttpStatusCode.InternalServerError)
                 }
@@ -561,6 +582,21 @@ fun Application.module() {
                 if (CreatureRepository.updateLockedBy(id, newLockedBy)) {
                     val updatedCreature = CreatureRepository.findById(id)
                     call.respond(HttpStatusCode.OK, updatedCreature!!)
+                } else {
+                    call.respond(HttpStatusCode.InternalServerError)
+                }
+            }
+            delete("/{id}") {
+                val id = call.parameters["id"] ?: return@delete call.respond(HttpStatusCode.BadRequest)
+
+                val existingCreature = CreatureRepository.findById(id)
+                    ?: return@delete call.respond(HttpStatusCode.NotFound)
+
+                // Remove this creature from all locations' creatureIds
+                LocationRepository.removeCreatureIdFromAll(id)
+
+                if (CreatureRepository.delete(id)) {
+                    call.respond(HttpStatusCode.NoContent)
                 } else {
                     call.respond(HttpStatusCode.InternalServerError)
                 }
@@ -795,6 +831,21 @@ fun Application.module() {
                 if (ItemRepository.updateLockedBy(id, newLockedBy)) {
                     val updatedItem = ItemRepository.findById(id)
                     call.respond(HttpStatusCode.OK, updatedItem!!)
+                } else {
+                    call.respond(HttpStatusCode.InternalServerError)
+                }
+            }
+            delete("/{id}") {
+                val id = call.parameters["id"] ?: return@delete call.respond(HttpStatusCode.BadRequest)
+
+                val existingItem = ItemRepository.findById(id)
+                    ?: return@delete call.respond(HttpStatusCode.NotFound)
+
+                // Remove this item from all locations' itemIds
+                LocationRepository.removeItemIdFromAll(id)
+
+                if (ItemRepository.delete(id)) {
+                    call.respond(HttpStatusCode.NoContent)
                 } else {
                     call.respond(HttpStatusCode.InternalServerError)
                 }

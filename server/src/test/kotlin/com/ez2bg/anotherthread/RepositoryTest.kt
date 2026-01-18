@@ -35,7 +35,10 @@ class RepositoryTest {
             desc = "A dark and mysterious place",
             itemIds = listOf("item-1", "item-2"),
             creatureIds = listOf("creature-1"),
-            exitIds = listOf("location-north", "location-south"),
+            exits = listOf(
+                Exit("location-north", ExitDirection.NORTH),
+                Exit("location-south", ExitDirection.SOUTH)
+            ),
             featureIds = listOf("torch", "cobwebs")
         )
 
@@ -49,7 +52,11 @@ class RepositoryTest {
         assertEquals("A dark and mysterious place", found.desc)
         assertEquals(listOf("item-1", "item-2"), found.itemIds)
         assertEquals(listOf("creature-1"), found.creatureIds)
-        assertEquals(listOf("location-north", "location-south"), found.exitIds)
+        assertEquals(2, found.exits.size)
+        assertEquals("location-north", found.exits[0].locationId)
+        assertEquals(ExitDirection.NORTH, found.exits[0].direction)
+        assertEquals("location-south", found.exits[1].locationId)
+        assertEquals(ExitDirection.SOUTH, found.exits[1].direction)
         assertEquals(listOf("torch", "cobwebs"), found.featureIds)
     }
 
@@ -60,7 +67,7 @@ class RepositoryTest {
             desc = "Nothing here",
             itemIds = emptyList(),
             creatureIds = emptyList(),
-            exitIds = emptyList(),
+            exits = emptyList(),
             featureIds = emptyList()
         )
 
@@ -70,7 +77,7 @@ class RepositoryTest {
         assertNotNull(found)
         assertTrue(found.itemIds.isEmpty())
         assertTrue(found.creatureIds.isEmpty())
-        assertTrue(found.exitIds.isEmpty())
+        assertTrue(found.exits.isEmpty())
         assertTrue(found.featureIds.isEmpty())
     }
 
@@ -81,7 +88,7 @@ class RepositoryTest {
             desc = "Description with, commas, and \"quotes\"",
             itemIds = listOf("item-with-dash", "item_with_underscore"),
             creatureIds = emptyList(),
-            exitIds = emptyList(),
+            exits = emptyList(),
             featureIds = listOf("feature with spaces", "another-feature")
         )
 
@@ -101,7 +108,7 @@ class RepositoryTest {
             desc = "Original description",
             itemIds = listOf("item-1"),
             creatureIds = emptyList(),
-            exitIds = emptyList(),
+            exits = emptyList(),
             featureIds = emptyList()
         )
         LocationRepository.create(location)
@@ -128,7 +135,7 @@ class RepositoryTest {
             desc = "Description",
             itemIds = emptyList(),
             creatureIds = emptyList(),
-            exitIds = emptyList(),
+            exits = emptyList(),
             featureIds = emptyList()
         )
         LocationRepository.create(location)
@@ -148,7 +155,7 @@ class RepositoryTest {
             desc = "First",
             itemIds = emptyList(),
             creatureIds = emptyList(),
-            exitIds = emptyList(),
+            exits = emptyList(),
             featureIds = emptyList()
         )
         val location2 = Location(
@@ -156,7 +163,7 @@ class RepositoryTest {
             desc = "Second",
             itemIds = emptyList(),
             creatureIds = emptyList(),
-            exitIds = emptyList(),
+            exits = emptyList(),
             featureIds = emptyList()
         )
         LocationRepository.create(location1)
@@ -310,7 +317,7 @@ class RepositoryTest {
             desc = "Doesn't exist",
             itemIds = emptyList(),
             creatureIds = emptyList(),
-            exitIds = emptyList(),
+            exits = emptyList(),
             featureIds = emptyList()
         )
         val success = LocationRepository.update(location)

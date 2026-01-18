@@ -13,6 +13,16 @@ import io.ktor.serialization.kotlinx.json.*
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
 
+enum class ExitDirection {
+    NORTH, NORTHEAST, EAST, SOUTHEAST, SOUTH, SOUTHWEST, WEST, NORTHWEST, UNKNOWN
+}
+
+@Serializable
+data class ExitDto(
+    val locationId: String,
+    val direction: ExitDirection = ExitDirection.UNKNOWN
+)
+
 @Serializable
 data class LocationDto(
     val id: String,
@@ -20,7 +30,7 @@ data class LocationDto(
     val desc: String,
     val itemIds: List<String> = emptyList(),
     val creatureIds: List<String> = emptyList(),
-    val exitIds: List<String> = emptyList(),
+    val exits: List<ExitDto> = emptyList(),
     val featureIds: List<String> = emptyList(),
     val imageUrl: String? = null,
     val lockedBy: String? = null
@@ -53,7 +63,7 @@ data class CreateLocationRequest(
     val desc: String,
     val itemIds: List<String> = emptyList(),
     val creatureIds: List<String> = emptyList(),
-    val exitIds: List<String> = emptyList(),
+    val exits: List<ExitDto> = emptyList(),
     val featureIds: List<String> = emptyList()
 )
 
@@ -249,6 +259,21 @@ object ApiClient {
             contentType(ContentType.Application.Json)
             setBody(LockRequest(userId))
         }.body()
+    }
+
+    suspend fun deleteLocation(id: String): Result<Unit> = runCatching {
+        client.delete("$baseUrl/locations/$id")
+        Unit
+    }
+
+    suspend fun deleteCreature(id: String): Result<Unit> = runCatching {
+        client.delete("$baseUrl/creatures/$id")
+        Unit
+    }
+
+    suspend fun deleteItem(id: String): Result<Unit> = runCatching {
+        client.delete("$baseUrl/items/$id")
+        Unit
     }
 
     suspend fun createCreature(request: CreateCreatureRequest): Result<Unit> = runCatching {
