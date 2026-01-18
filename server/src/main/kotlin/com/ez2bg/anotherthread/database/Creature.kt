@@ -15,7 +15,8 @@ data class Creature(
     val desc: String,
     val itemIds: List<String>,
     val featureIds: List<String>,
-    val imageUrl: String? = null
+    val imageUrl: String? = null,
+    val lockedBy: String? = null
 )
 
 object CreatureRepository {
@@ -39,7 +40,8 @@ object CreatureRepository {
         desc = this[CreatureTable.desc],
         itemIds = jsonToList(this[CreatureTable.itemIds]),
         featureIds = jsonToList(this[CreatureTable.featureIds]),
-        imageUrl = this[CreatureTable.imageUrl]
+        imageUrl = this[CreatureTable.imageUrl],
+        lockedBy = this[CreatureTable.lockedBy]
     )
 
     fun create(creature: Creature): Creature = transaction {
@@ -50,6 +52,7 @@ object CreatureRepository {
             it[itemIds] = listToJson(creature.itemIds)
             it[featureIds] = listToJson(creature.featureIds)
             it[imageUrl] = creature.imageUrl
+            it[lockedBy] = creature.lockedBy
         }
         creature
     }
@@ -72,12 +75,19 @@ object CreatureRepository {
             it[itemIds] = listToJson(creature.itemIds)
             it[featureIds] = listToJson(creature.featureIds)
             it[imageUrl] = creature.imageUrl
+            it[lockedBy] = creature.lockedBy
         } > 0
     }
 
     fun updateImageUrl(id: String, imageUrl: String): Boolean = transaction {
         CreatureTable.update({ CreatureTable.id eq id }) {
             it[CreatureTable.imageUrl] = imageUrl
+        } > 0
+    }
+
+    fun updateLockedBy(id: String, lockedBy: String?): Boolean = transaction {
+        CreatureTable.update({ CreatureTable.id eq id }) {
+            it[CreatureTable.lockedBy] = lockedBy
         } > 0
     }
 }

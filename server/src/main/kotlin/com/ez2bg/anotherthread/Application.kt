@@ -519,7 +519,8 @@ fun Application.module() {
                     desc = request.desc,
                     itemIds = request.itemIds,
                     featureIds = request.featureIds,
-                    imageUrl = existingCreature?.imageUrl
+                    imageUrl = existingCreature?.imageUrl,
+                    lockedBy = existingCreature?.lockedBy // Preserve lock status
                 )
 
                 if (CreatureRepository.update(creature)) {
@@ -541,6 +542,27 @@ fun Application.module() {
                     call.respond(HttpStatusCode.OK, creature)
                 } else {
                     call.respond(HttpStatusCode.NotFound)
+                }
+            }
+            put("/{id}/lock") {
+                val id = call.parameters["id"] ?: return@put call.respond(HttpStatusCode.BadRequest)
+                val request = call.receive<LockRequest>()
+
+                val existingCreature = CreatureRepository.findById(id)
+                    ?: return@put call.respond(HttpStatusCode.NotFound)
+
+                // Toggle lock: if currently locked by this user, unlock; otherwise lock
+                val newLockedBy = if (existingCreature.lockedBy == request.userId) {
+                    null // Unlock
+                } else {
+                    request.userId // Lock
+                }
+
+                if (CreatureRepository.updateLockedBy(id, newLockedBy)) {
+                    val updatedCreature = CreatureRepository.findById(id)
+                    call.respond(HttpStatusCode.OK, updatedCreature!!)
+                } else {
+                    call.respond(HttpStatusCode.InternalServerError)
                 }
             }
         }
@@ -731,7 +753,8 @@ fun Application.module() {
                     name = request.name,
                     desc = request.desc,
                     featureIds = request.featureIds,
-                    imageUrl = existingItem?.imageUrl
+                    imageUrl = existingItem?.imageUrl,
+                    lockedBy = existingItem?.lockedBy // Preserve lock status
                 )
 
                 if (ItemRepository.update(item)) {
@@ -753,6 +776,27 @@ fun Application.module() {
                     call.respond(HttpStatusCode.OK, item)
                 } else {
                     call.respond(HttpStatusCode.NotFound)
+                }
+            }
+            put("/{id}/lock") {
+                val id = call.parameters["id"] ?: return@put call.respond(HttpStatusCode.BadRequest)
+                val request = call.receive<LockRequest>()
+
+                val existingItem = ItemRepository.findById(id)
+                    ?: return@put call.respond(HttpStatusCode.NotFound)
+
+                // Toggle lock: if currently locked by this user, unlock; otherwise lock
+                val newLockedBy = if (existingItem.lockedBy == request.userId) {
+                    null // Unlock
+                } else {
+                    request.userId // Lock
+                }
+
+                if (ItemRepository.updateLockedBy(id, newLockedBy)) {
+                    val updatedItem = ItemRepository.findById(id)
+                    call.respond(HttpStatusCode.OK, updatedItem!!)
+                } else {
+                    call.respond(HttpStatusCode.InternalServerError)
                 }
             }
         }

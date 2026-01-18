@@ -773,7 +773,8 @@ fun AdminScreen() {
             )
             is ViewState.LocationGraph -> LocationGraphView(
                 onAddClick = { viewState = ViewState.LocationCreate },
-                onLocationClick = { location -> viewState = ViewState.LocationEdit(location) }
+                onLocationClick = { location -> viewState = ViewState.LocationEdit(location) },
+                isAuthenticated = currentUser != null
             )
             is ViewState.LocationCreate -> LocationForm(
                 editLocation = null,
@@ -824,7 +825,8 @@ fun AdminScreen() {
                 },
                 onAddClick = {
                     viewState = ViewState.CreatureCreate
-                }
+                },
+                isAuthenticated = currentUser != null
             )
             is ViewState.CreatureCreate -> CreatureForm(
                 editCreature = null,
@@ -833,7 +835,9 @@ fun AdminScreen() {
                 onNavigateToItem = { id ->
                     selectedTab = AdminTab.ITEM
                     viewState = ViewState.ItemDetail(id)
-                }
+                },
+                currentUser = currentUser,
+                isAdmin = isAdmin
             )
             is ViewState.CreatureEdit -> CreatureForm(
                 editCreature = state.creature,
@@ -842,6 +846,11 @@ fun AdminScreen() {
                 onNavigateToItem = { id ->
                     selectedTab = AdminTab.ITEM
                     viewState = ViewState.ItemDetail(id)
+                },
+                currentUser = currentUser,
+                isAdmin = isAdmin,
+                onCreatureUpdated = { updatedCreature ->
+                    viewState = ViewState.CreatureEdit(updatedCreature)
                 }
             )
             is ViewState.CreatureDetail -> CreatureDetailView(
@@ -869,17 +878,25 @@ fun AdminScreen() {
                 },
                 onAddClick = {
                     viewState = ViewState.ItemCreate
-                }
+                },
+                isAuthenticated = currentUser != null
             )
             is ViewState.ItemCreate -> ItemForm(
                 editItem = null,
                 onBack = { viewState = ViewState.ItemList },
-                onSaved = { viewState = ViewState.ItemList }
+                onSaved = { viewState = ViewState.ItemList },
+                currentUser = currentUser,
+                isAdmin = isAdmin
             )
             is ViewState.ItemEdit -> ItemForm(
                 editItem = state.item,
                 onBack = { viewState = ViewState.ItemList },
-                onSaved = { viewState = ViewState.ItemList }
+                onSaved = { viewState = ViewState.ItemList },
+                currentUser = currentUser,
+                isAdmin = isAdmin,
+                onItemUpdated = { updatedItem ->
+                    viewState = ViewState.ItemEdit(updatedItem)
+                }
             )
             is ViewState.ItemDetail -> ItemDetailView(
                 itemId = state.id,
@@ -1563,7 +1580,8 @@ fun IdPillSection(
 @Composable
 fun LocationGraphView(
     onAddClick: () -> Unit,
-    onLocationClick: (LocationDto) -> Unit
+    onLocationClick: (LocationDto) -> Unit,
+    isAuthenticated: Boolean
 ) {
     var locations by remember { mutableStateOf<List<LocationDto>>(emptyList()) }
     var isLoading by remember { mutableStateOf(true) }
@@ -1630,14 +1648,16 @@ fun LocationGraphView(
             }
         }
 
-        FloatingActionButton(
-            onClick = onAddClick,
-            modifier = Modifier
-                .align(Alignment.BottomEnd)
-                .padding(16.dp),
-            shape = CircleShape
-        ) {
-            Icon(Icons.Filled.Add, contentDescription = "Add Location")
+        if (isAuthenticated) {
+            FloatingActionButton(
+                onClick = onAddClick,
+                modifier = Modifier
+                    .align(Alignment.BottomEnd)
+                    .padding(16.dp),
+                shape = CircleShape
+            ) {
+                Icon(Icons.Filled.Add, contentDescription = "Add Location")
+            }
         }
     }
 }
@@ -1645,7 +1665,8 @@ fun LocationGraphView(
 @Composable
 fun CreatureListView(
     onCreatureClick: (CreatureDto) -> Unit,
-    onAddClick: () -> Unit
+    onAddClick: () -> Unit,
+    isAuthenticated: Boolean
 ) {
     var creatures by remember { mutableStateOf<List<CreatureDto>>(emptyList()) }
     var isLoading by remember { mutableStateOf(true) }
@@ -1734,14 +1755,16 @@ fun CreatureListView(
             }
         }
 
-        FloatingActionButton(
-            onClick = onAddClick,
-            modifier = Modifier
-                .align(Alignment.BottomEnd)
-                .padding(16.dp),
-            shape = CircleShape
-        ) {
-            Icon(Icons.Filled.Add, contentDescription = "Add Creature")
+        if (isAuthenticated) {
+            FloatingActionButton(
+                onClick = onAddClick,
+                modifier = Modifier
+                    .align(Alignment.BottomEnd)
+                    .padding(16.dp),
+                shape = CircleShape
+            ) {
+                Icon(Icons.Filled.Add, contentDescription = "Add Creature")
+            }
         }
     }
 }
@@ -1749,7 +1772,8 @@ fun CreatureListView(
 @Composable
 fun ItemListView(
     onItemClick: (ItemDto) -> Unit,
-    onAddClick: () -> Unit
+    onAddClick: () -> Unit,
+    isAuthenticated: Boolean
 ) {
     var items by remember { mutableStateOf<List<ItemDto>>(emptyList()) }
     var isLoading by remember { mutableStateOf(true) }
@@ -1838,14 +1862,16 @@ fun ItemListView(
             }
         }
 
-        FloatingActionButton(
-            onClick = onAddClick,
-            modifier = Modifier
-                .align(Alignment.BottomEnd)
-                .padding(16.dp),
-            shape = CircleShape
-        ) {
-            Icon(Icons.Filled.Add, contentDescription = "Add Item")
+        if (isAuthenticated) {
+            FloatingActionButton(
+                onClick = onAddClick,
+                modifier = Modifier
+                    .align(Alignment.BottomEnd)
+                    .padding(16.dp),
+                shape = CircleShape
+            ) {
+                Icon(Icons.Filled.Add, contentDescription = "Add Item")
+            }
         }
     }
 }
@@ -3299,8 +3325,9 @@ fun LocationForm(
     var lockerName by remember(editLocation?.id) { mutableStateOf<String?>(null) }
     val isLocked = lockedBy != null
 
-    // Combined disabled state: locked OR image generating
-    val isDisabled = isLocked || isImageGenerating
+    // Combined disabled state: not authenticated OR locked OR image generating
+    val isNotAuthenticated = currentUser == null
+    val isDisabled = isNotAuthenticated || isLocked || isImageGenerating
 
     // State for exit removal confirmation dialog
     var exitToRemove by remember { mutableStateOf<String?>(null) }
@@ -3751,18 +3778,34 @@ fun CreatureForm(
     editCreature: CreatureDto?,
     onBack: () -> Unit,
     onSaved: () -> Unit,
-    onNavigateToItem: (String) -> Unit
+    onNavigateToItem: (String) -> Unit,
+    currentUser: UserDto? = null,
+    isAdmin: Boolean = false,
+    onCreatureUpdated: (CreatureDto) -> Unit = {}
 ) {
     val isEditMode = editCreature != null
-    var name by remember { mutableStateOf(editCreature?.name ?: "") }
-    var desc by remember { mutableStateOf(editCreature?.desc ?: "") }
-    var itemIds by remember { mutableStateOf(editCreature?.itemIds ?: emptyList()) }
-    var features by remember { mutableStateOf(editCreature?.featureIds?.joinToString(", ") ?: "") }
-    var imageUrl by remember { mutableStateOf(editCreature?.imageUrl) }
-    var isLoading by remember { mutableStateOf(false) }
-    var message by remember { mutableStateOf<String?>(null) }
-    var imageGenError by remember { mutableStateOf<String?>(null) }
+    var name by remember(editCreature?.id) { mutableStateOf(editCreature?.name ?: "") }
+    var desc by remember(editCreature?.id) { mutableStateOf(editCreature?.desc ?: "") }
+    var itemIds by remember(editCreature?.id) { mutableStateOf(editCreature?.itemIds ?: emptyList()) }
+    var features by remember(editCreature?.id) { mutableStateOf(editCreature?.featureIds?.joinToString(", ") ?: "") }
+    var imageUrl by remember(editCreature?.id) { mutableStateOf(editCreature?.imageUrl) }
+    var isLoading by remember(editCreature?.id) { mutableStateOf(false) }
+    var message by remember(editCreature?.id) { mutableStateOf<String?>(null) }
+    var imageGenError by remember(editCreature?.id) { mutableStateOf<String?>(null) }
     val scope = rememberCoroutineScope()
+
+    // Track if image generation is in progress for this creature
+    val generatingEntities by BackgroundImageGenerationManager.generatingEntities.collectAsState()
+    val isImageGenerating = editCreature?.id?.let { it in generatingEntities } ?: false
+
+    // Lock state
+    var lockedBy by remember(editCreature?.id) { mutableStateOf(editCreature?.lockedBy) }
+    var lockerName by remember(editCreature?.id) { mutableStateOf<String?>(null) }
+    val isLocked = lockedBy != null
+
+    // Combined disabled state: not authenticated OR locked OR image generating
+    val isNotAuthenticated = currentUser == null
+    val isDisabled = isNotAuthenticated || isLocked || isImageGenerating
 
     // Available options for dropdown
     var availableItems by remember { mutableStateOf<List<IdOption>>(emptyList()) }
@@ -3774,26 +3817,83 @@ fun CreatureForm(
         }
     }
 
+    // Fetch locker's name when creature is locked
+    LaunchedEffect(lockedBy) {
+        val lockerId = lockedBy
+        if (lockerId != null) {
+            ApiClient.getUser(lockerId).onSuccess { user ->
+                lockerName = user?.name
+            }
+        } else {
+            lockerName = null
+        }
+    }
+
     Column(
         modifier = Modifier
             .fillMaxWidth()
             .verticalScroll(rememberScrollState()),
         verticalArrangement = Arrangement.spacedBy(12.dp)
     ) {
-        if (isEditMode) {
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                IconButton(onClick = onBack) {
-                    Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
-                }
-                Text(
-                    text = "Edit Creature",
-                    style = MaterialTheme.typography.titleLarge
-                )
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            IconButton(onClick = onBack) {
+                Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
             }
+            Text(
+                text = if (isEditMode) "Edit Creature" else "Create Creature",
+                style = MaterialTheme.typography.titleLarge,
+                modifier = Modifier.weight(1f)
+            )
+            // Lock status visible to all users in edit mode
+            if (isEditMode && editCreature != null) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(4.dp)
+                ) {
+                    if (isLocked && lockerName != null) {
+                        Text(
+                            text = "Locked by $lockerName",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                    // Only admins can toggle the lock
+                    if (isAdmin) {
+                        IconButton(
+                            onClick = {
+                                scope.launch {
+                                    currentUser?.let { user ->
+                                        ApiClient.toggleCreatureLock(editCreature.id, user.id)
+                                            .onSuccess { updatedCreature ->
+                                                lockedBy = updatedCreature.lockedBy
+                                                onCreatureUpdated(updatedCreature)
+                                            }
+                                    }
+                                }
+                            }
+                        ) {
+                            Icon(
+                                imageVector = if (isLocked) Icons.Filled.Lock else Icons.Filled.LockOpen,
+                                contentDescription = if (isLocked) "Unlock creature" else "Lock creature",
+                                tint = if (isLocked) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                    } else {
+                        Icon(
+                            imageVector = if (isLocked) Icons.Filled.Lock else Icons.Filled.LockOpen,
+                            contentDescription = if (isLocked) "Creature is locked" else "Creature is unlocked",
+                            tint = if (isLocked) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.padding(12.dp)
+                        )
+                    }
+                }
+            }
+        }
 
+        if (isEditMode) {
             // Display image at top when editing
             EntityImage(
                 imageUrl = imageUrl,
@@ -3818,7 +3918,8 @@ fun CreatureForm(
                 label = { Text("Name") },
                 placeholder = { Text("Creature Name") },
                 modifier = Modifier.weight(1f),
-                singleLine = true
+                singleLine = true,
+                enabled = !isDisabled
             )
             GenButton(
                 entityType = GenEntityType.CREATURE,
@@ -3827,7 +3928,8 @@ fun CreatureForm(
                 onGenerated = { genName, genDesc ->
                     name = genName
                     desc = genDesc
-                }
+                },
+                enabled = !isDisabled
             )
         }
 
@@ -3836,7 +3938,8 @@ fun CreatureForm(
             onValueChange = { desc = it },
             label = { Text("Description") },
             modifier = Modifier.fillMaxWidth(),
-            minLines = 3
+            minLines = 3,
+            enabled = !isDisabled
         )
 
         IdPillSection(
@@ -3845,8 +3948,9 @@ fun CreatureForm(
             entityType = EntityType.ITEM,
             availableOptions = availableItems,
             onPillClick = onNavigateToItem,
-            onAddId = { id -> itemIds = itemIds + id },
-            onRemoveId = { id -> itemIds = itemIds - id }
+            onAddId = { id -> if (!isDisabled) itemIds = itemIds + id },
+            onRemoveId = { id -> if (!isDisabled) itemIds = itemIds - id },
+            enabled = !isDisabled
         )
 
         OutlinedTextField(
@@ -3854,7 +3958,8 @@ fun CreatureForm(
             onValueChange = { features = it },
             label = { Text("Features (comma-separated)") },
             modifier = Modifier.fillMaxWidth(),
-            singleLine = true
+            singleLine = true,
+            enabled = !isDisabled
         )
 
         Row(
@@ -3872,7 +3977,8 @@ fun CreatureForm(
                     onImageGenerated = { newImageUrl ->
                         imageUrl = newImageUrl
                     },
-                    onError = { imageGenError = it }
+                    onError = { imageGenError = it },
+                    enabled = !isDisabled
                 )
             }
 
@@ -3898,7 +4004,7 @@ fun CreatureForm(
                         }
                     }
                 },
-                enabled = !isLoading && name.isNotBlank()
+                enabled = !isLoading && name.isNotBlank() && !isDisabled
             ) {
                 if (isLoading) {
                     CircularProgressIndicator(
@@ -4067,17 +4173,45 @@ fun CreatureDetailView(
 fun ItemForm(
     editItem: ItemDto?,
     onBack: () -> Unit,
-    onSaved: () -> Unit
+    onSaved: () -> Unit,
+    currentUser: UserDto? = null,
+    isAdmin: Boolean = false,
+    onItemUpdated: (ItemDto) -> Unit = {}
 ) {
     val isEditMode = editItem != null
-    var name by remember { mutableStateOf(editItem?.name ?: "") }
-    var desc by remember { mutableStateOf(editItem?.desc ?: "") }
-    var featureIds by remember { mutableStateOf(editItem?.featureIds?.joinToString(", ") ?: "") }
-    var imageUrl by remember { mutableStateOf(editItem?.imageUrl) }
-    var isLoading by remember { mutableStateOf(false) }
-    var message by remember { mutableStateOf<String?>(null) }
-    var imageGenError by remember { mutableStateOf<String?>(null) }
+    var name by remember(editItem?.id) { mutableStateOf(editItem?.name ?: "") }
+    var desc by remember(editItem?.id) { mutableStateOf(editItem?.desc ?: "") }
+    var featureIds by remember(editItem?.id) { mutableStateOf(editItem?.featureIds?.joinToString(", ") ?: "") }
+    var imageUrl by remember(editItem?.id) { mutableStateOf(editItem?.imageUrl) }
+    var isLoading by remember(editItem?.id) { mutableStateOf(false) }
+    var message by remember(editItem?.id) { mutableStateOf<String?>(null) }
+    var imageGenError by remember(editItem?.id) { mutableStateOf<String?>(null) }
     val scope = rememberCoroutineScope()
+
+    // Track if image generation is in progress for this item
+    val generatingEntities by BackgroundImageGenerationManager.generatingEntities.collectAsState()
+    val isImageGenerating = editItem?.id?.let { it in generatingEntities } ?: false
+
+    // Lock state
+    var lockedBy by remember(editItem?.id) { mutableStateOf(editItem?.lockedBy) }
+    var lockerName by remember(editItem?.id) { mutableStateOf<String?>(null) }
+    val isLocked = lockedBy != null
+
+    // Combined disabled state: not authenticated OR locked OR image generating
+    val isNotAuthenticated = currentUser == null
+    val isDisabled = isNotAuthenticated || isLocked || isImageGenerating
+
+    // Fetch locker's name when item is locked
+    LaunchedEffect(lockedBy) {
+        val lockerId = lockedBy
+        if (lockerId != null) {
+            ApiClient.getUser(lockerId).onSuccess { user ->
+                lockerName = user?.name
+            }
+        } else {
+            lockerName = null
+        }
+    }
 
     Column(
         modifier = Modifier
@@ -4085,20 +4219,65 @@ fun ItemForm(
             .verticalScroll(rememberScrollState()),
         verticalArrangement = Arrangement.spacedBy(12.dp)
     ) {
-        if (isEditMode) {
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                IconButton(onClick = onBack) {
-                    Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
-                }
-                Text(
-                    text = "Edit Item",
-                    style = MaterialTheme.typography.titleLarge
-                )
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            IconButton(onClick = onBack) {
+                Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
             }
+            Text(
+                text = if (isEditMode) "Edit Item" else "Create Item",
+                style = MaterialTheme.typography.titleLarge,
+                modifier = Modifier.weight(1f)
+            )
+            // Lock status visible to all users in edit mode
+            if (isEditMode && editItem != null) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(4.dp)
+                ) {
+                    if (isLocked && lockerName != null) {
+                        Text(
+                            text = "Locked by $lockerName",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                    // Only admins can toggle the lock
+                    if (isAdmin) {
+                        IconButton(
+                            onClick = {
+                                scope.launch {
+                                    currentUser?.let { user ->
+                                        ApiClient.toggleItemLock(editItem.id, user.id)
+                                            .onSuccess { updatedItem ->
+                                                lockedBy = updatedItem.lockedBy
+                                                onItemUpdated(updatedItem)
+                                            }
+                                    }
+                                }
+                            }
+                        ) {
+                            Icon(
+                                imageVector = if (isLocked) Icons.Filled.Lock else Icons.Filled.LockOpen,
+                                contentDescription = if (isLocked) "Unlock item" else "Lock item",
+                                tint = if (isLocked) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                    } else {
+                        Icon(
+                            imageVector = if (isLocked) Icons.Filled.Lock else Icons.Filled.LockOpen,
+                            contentDescription = if (isLocked) "Item is locked" else "Item is unlocked",
+                            tint = if (isLocked) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.padding(12.dp)
+                        )
+                    }
+                }
+            }
+        }
 
+        if (isEditMode) {
             // Display image at top when editing
             EntityImage(
                 imageUrl = imageUrl,
@@ -4123,7 +4302,8 @@ fun ItemForm(
                 label = { Text("Name") },
                 placeholder = { Text("Item Name") },
                 modifier = Modifier.weight(1f),
-                singleLine = true
+                singleLine = true,
+                enabled = !isDisabled
             )
             GenButton(
                 entityType = GenEntityType.ITEM,
@@ -4132,7 +4312,8 @@ fun ItemForm(
                 onGenerated = { genName, genDesc ->
                     name = genName
                     desc = genDesc
-                }
+                },
+                enabled = !isDisabled
             )
         }
 
@@ -4141,7 +4322,8 @@ fun ItemForm(
             onValueChange = { desc = it },
             label = { Text("Description") },
             modifier = Modifier.fillMaxWidth(),
-            minLines = 3
+            minLines = 3,
+            enabled = !isDisabled
         )
 
         OutlinedTextField(
@@ -4149,7 +4331,8 @@ fun ItemForm(
             onValueChange = { featureIds = it },
             label = { Text("Feature IDs (comma-separated)") },
             modifier = Modifier.fillMaxWidth(),
-            singleLine = true
+            singleLine = true,
+            enabled = !isDisabled
         )
 
         Row(
@@ -4167,7 +4350,8 @@ fun ItemForm(
                     onImageGenerated = { newImageUrl ->
                         imageUrl = newImageUrl
                     },
-                    onError = { imageGenError = it }
+                    onError = { imageGenError = it },
+                    enabled = !isDisabled
                 )
             }
 
@@ -4199,7 +4383,7 @@ fun ItemForm(
                         }
                     }
                 },
-                enabled = !isLoading && name.isNotBlank()
+                enabled = !isLoading && name.isNotBlank() && !isDisabled
             ) {
                 if (isLoading) {
                     CircularProgressIndicator(

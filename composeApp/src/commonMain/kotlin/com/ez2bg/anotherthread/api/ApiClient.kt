@@ -33,7 +33,8 @@ data class CreatureDto(
     val desc: String,
     val itemIds: List<String> = emptyList(),
     val featureIds: List<String> = emptyList(),
-    val imageUrl: String? = null
+    val imageUrl: String? = null,
+    val lockedBy: String? = null
 )
 
 @Serializable
@@ -42,7 +43,8 @@ data class ItemDto(
     val name: String,
     val desc: String,
     val featureIds: List<String> = emptyList(),
-    val imageUrl: String? = null
+    val imageUrl: String? = null,
+    val lockedBy: String? = null
 )
 
 @Serializable
@@ -230,6 +232,20 @@ object ApiClient {
 
     suspend fun toggleLocationLock(locationId: String, userId: String): Result<LocationDto> = runCatching {
         client.put("$baseUrl/locations/$locationId/lock") {
+            contentType(ContentType.Application.Json)
+            setBody(LockRequest(userId))
+        }.body()
+    }
+
+    suspend fun toggleCreatureLock(creatureId: String, userId: String): Result<CreatureDto> = runCatching {
+        client.put("$baseUrl/creatures/$creatureId/lock") {
+            contentType(ContentType.Application.Json)
+            setBody(LockRequest(userId))
+        }.body()
+    }
+
+    suspend fun toggleItemLock(itemId: String, userId: String): Result<ItemDto> = runCatching {
+        client.put("$baseUrl/items/$itemId/lock") {
             contentType(ContentType.Application.Json)
             setBody(LockRequest(userId))
         }.body()

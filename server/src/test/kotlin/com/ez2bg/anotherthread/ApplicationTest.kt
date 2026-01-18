@@ -560,4 +560,255 @@ class ApplicationTest {
         }
         assertEquals(HttpStatusCode.NotFound, response.status)
     }
+
+    // ========== Location Lock Tests ==========
+
+    @Test
+    fun testLockLocation() = testApplication {
+        application {
+            module()
+        }
+        val client = createClient {
+            install(ContentNegotiation) {
+                json(Json { ignoreUnknownKeys = true })
+            }
+        }
+
+        // Create a location first
+        val createResponse = client.post("/locations") {
+            contentType(ContentType.Application.Json)
+            setBody("""{"name":"Lockable Location","desc":"Test","itemIds":[],"creatureIds":[],"exitIds":[],"featureIds":[]}""")
+        }
+        assertEquals(HttpStatusCode.Created, createResponse.status)
+        val createBody = createResponse.bodyAsText()
+        val idMatch = Regex(""""id":"([^"]+)"""").find(createBody)
+        val locationId = idMatch?.groupValues?.get(1) ?: fail("Could not extract location ID")
+
+        // Lock the location
+        val lockResponse = client.put("/locations/$locationId/lock") {
+            contentType(ContentType.Application.Json)
+            setBody("""{"userId":"user-123"}""")
+        }
+        assertEquals(HttpStatusCode.OK, lockResponse.status)
+        val lockBody = lockResponse.bodyAsText()
+        assertTrue(lockBody.contains("\"lockedBy\":\"user-123\""))
+
+        // Unlock the location (toggle)
+        val unlockResponse = client.put("/locations/$locationId/lock") {
+            contentType(ContentType.Application.Json)
+            setBody("""{"userId":"user-123"}""")
+        }
+        assertEquals(HttpStatusCode.OK, unlockResponse.status)
+        val unlockBody = unlockResponse.bodyAsText()
+        assertTrue(unlockBody.contains("\"lockedBy\":null"))
+    }
+
+    @Test
+    fun testLockLocationNotFound() = testApplication {
+        application {
+            module()
+        }
+        val client = createClient {
+            install(ContentNegotiation) {
+                json(Json { ignoreUnknownKeys = true })
+            }
+        }
+
+        val response = client.put("/locations/nonexistent-id/lock") {
+            contentType(ContentType.Application.Json)
+            setBody("""{"userId":"user-123"}""")
+        }
+        assertEquals(HttpStatusCode.NotFound, response.status)
+    }
+
+    // ========== Creature Lock Tests ==========
+
+    @Test
+    fun testLockCreature() = testApplication {
+        application {
+            module()
+        }
+        val client = createClient {
+            install(ContentNegotiation) {
+                json(Json { ignoreUnknownKeys = true })
+            }
+        }
+
+        // Create a creature first
+        val createResponse = client.post("/creatures") {
+            contentType(ContentType.Application.Json)
+            setBody("""{"name":"Lockable Creature","desc":"Test creature","itemIds":[],"featureIds":[]}""")
+        }
+        assertEquals(HttpStatusCode.Created, createResponse.status)
+        val createBody = createResponse.bodyAsText()
+        val idMatch = Regex(""""id":"([^"]+)"""").find(createBody)
+        val creatureId = idMatch?.groupValues?.get(1) ?: fail("Could not extract creature ID")
+
+        // Lock the creature
+        val lockResponse = client.put("/creatures/$creatureId/lock") {
+            contentType(ContentType.Application.Json)
+            setBody("""{"userId":"admin-user"}""")
+        }
+        assertEquals(HttpStatusCode.OK, lockResponse.status)
+        val lockBody = lockResponse.bodyAsText()
+        assertTrue(lockBody.contains("\"lockedBy\":\"admin-user\""))
+
+        // Unlock the creature (toggle by same user)
+        val unlockResponse = client.put("/creatures/$creatureId/lock") {
+            contentType(ContentType.Application.Json)
+            setBody("""{"userId":"admin-user"}""")
+        }
+        assertEquals(HttpStatusCode.OK, unlockResponse.status)
+        val unlockBody = unlockResponse.bodyAsText()
+        assertTrue(unlockBody.contains("\"lockedBy\":null"))
+    }
+
+    @Test
+    fun testLockCreatureByDifferentUser() = testApplication {
+        application {
+            module()
+        }
+        val client = createClient {
+            install(ContentNegotiation) {
+                json(Json { ignoreUnknownKeys = true })
+            }
+        }
+
+        // Create a creature
+        val createResponse = client.post("/creatures") {
+            contentType(ContentType.Application.Json)
+            setBody("""{"name":"Contested Creature","desc":"Test","itemIds":[],"featureIds":[]}""")
+        }
+        val createBody = createResponse.bodyAsText()
+        val idMatch = Regex(""""id":"([^"]+)"""").find(createBody)
+        val creatureId = idMatch?.groupValues?.get(1) ?: fail("Could not extract creature ID")
+
+        // Lock by user A
+        val lockResponse = client.put("/creatures/$creatureId/lock") {
+            contentType(ContentType.Application.Json)
+            setBody("""{"userId":"user-A"}""")
+        }
+        assertEquals(HttpStatusCode.OK, lockResponse.status)
+        assertTrue(lockResponse.bodyAsText().contains("\"lockedBy\":\"user-A\""))
+
+        // User B attempts to lock - should change the lock to user B
+        val lockResponse2 = client.put("/creatures/$creatureId/lock") {
+            contentType(ContentType.Application.Json)
+            setBody("""{"userId":"user-B"}""")
+        }
+        assertEquals(HttpStatusCode.OK, lockResponse2.status)
+        assertTrue(lockResponse2.bodyAsText().contains("\"lockedBy\":\"user-B\""))
+    }
+
+    @Test
+    fun testLockCreatureNotFound() = testApplication {
+        application {
+            module()
+        }
+        val client = createClient {
+            install(ContentNegotiation) {
+                json(Json { ignoreUnknownKeys = true })
+            }
+        }
+
+        val response = client.put("/creatures/nonexistent-id/lock") {
+            contentType(ContentType.Application.Json)
+            setBody("""{"userId":"user-123"}""")
+        }
+        assertEquals(HttpStatusCode.NotFound, response.status)
+    }
+
+    // ========== Item Lock Tests ==========
+
+    @Test
+    fun testLockItem() = testApplication {
+        application {
+            module()
+        }
+        val client = createClient {
+            install(ContentNegotiation) {
+                json(Json { ignoreUnknownKeys = true })
+            }
+        }
+
+        // Create an item first
+        val createResponse = client.post("/items") {
+            contentType(ContentType.Application.Json)
+            setBody("""{"name":"Lockable Item","desc":"A precious artifact","featureIds":[]}""")
+        }
+        assertEquals(HttpStatusCode.Created, createResponse.status)
+        val createBody = createResponse.bodyAsText()
+        val idMatch = Regex(""""id":"([^"]+)"""").find(createBody)
+        val itemId = idMatch?.groupValues?.get(1) ?: fail("Could not extract item ID")
+
+        // Lock the item
+        val lockResponse = client.put("/items/$itemId/lock") {
+            contentType(ContentType.Application.Json)
+            setBody("""{"userId":"curator-001"}""")
+        }
+        assertEquals(HttpStatusCode.OK, lockResponse.status)
+        val lockBody = lockResponse.bodyAsText()
+        assertTrue(lockBody.contains("\"lockedBy\":\"curator-001\""))
+
+        // Unlock the item (toggle by same user)
+        val unlockResponse = client.put("/items/$itemId/lock") {
+            contentType(ContentType.Application.Json)
+            setBody("""{"userId":"curator-001"}""")
+        }
+        assertEquals(HttpStatusCode.OK, unlockResponse.status)
+        val unlockBody = unlockResponse.bodyAsText()
+        assertTrue(unlockBody.contains("\"lockedBy\":null"))
+    }
+
+    @Test
+    fun testLockItemNotFound() = testApplication {
+        application {
+            module()
+        }
+        val client = createClient {
+            install(ContentNegotiation) {
+                json(Json { ignoreUnknownKeys = true })
+            }
+        }
+
+        val response = client.put("/items/nonexistent-id/lock") {
+            contentType(ContentType.Application.Json)
+            setBody("""{"userId":"user-123"}""")
+        }
+        assertEquals(HttpStatusCode.NotFound, response.status)
+    }
+
+    @Test
+    fun testVerifyLockedFieldsReturnedInGetAll() = testApplication {
+        application {
+            module()
+        }
+        val client = createClient {
+            install(ContentNegotiation) {
+                json(Json { ignoreUnknownKeys = true })
+            }
+        }
+
+        // Create and lock a location
+        val createResponse = client.post("/locations") {
+            contentType(ContentType.Application.Json)
+            setBody("""{"name":"Locked Test Location","desc":"Test","itemIds":[],"creatureIds":[],"exitIds":[],"featureIds":[]}""")
+        }
+        val createBody = createResponse.bodyAsText()
+        val idMatch = Regex(""""id":"([^"]+)"""").find(createBody)
+        val locationId = idMatch?.groupValues?.get(1) ?: fail("Could not extract location ID")
+
+        // Lock it
+        client.put("/locations/$locationId/lock") {
+            contentType(ContentType.Application.Json)
+            setBody("""{"userId":"locker-user"}""")
+        }
+
+        // Verify lockedBy is returned in GET /locations
+        val getAllResponse = client.get("/locations")
+        assertEquals(HttpStatusCode.OK, getAllResponse.status)
+        val allBody = getAllResponse.bodyAsText()
+        assertTrue(allBody.contains("\"lockedBy\""))
+        assertTrue(allBody.contains("locker-user"))
+    }
 }

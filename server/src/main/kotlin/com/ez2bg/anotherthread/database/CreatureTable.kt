@@ -9,6 +9,7 @@ object CreatureTable : Table("creature") {
     val itemIds = text("item_ids")
     val featureIds = text("feature_ids")
     val imageUrl = text("image_url").nullable()
+    val lockedBy = varchar("locked_by", 36).nullable()
 
     override val primaryKey = PrimaryKey(id)
 }

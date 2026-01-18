@@ -14,7 +14,8 @@ data class Item(
     val name: String,
     val desc: String,
     val featureIds: List<String>,
-    val imageUrl: String? = null
+    val imageUrl: String? = null,
+    val lockedBy: String? = null
 )
 
 object ItemRepository {
@@ -37,7 +38,8 @@ object ItemRepository {
         name = this[ItemTable.name],
         desc = this[ItemTable.desc],
         featureIds = jsonToList(this[ItemTable.featureIds]),
-        imageUrl = this[ItemTable.imageUrl]
+        imageUrl = this[ItemTable.imageUrl],
+        lockedBy = this[ItemTable.lockedBy]
     )
 
     fun create(item: Item): Item = transaction {
@@ -47,6 +49,7 @@ object ItemRepository {
             it[desc] = item.desc
             it[featureIds] = listToJson(item.featureIds)
             it[imageUrl] = item.imageUrl
+            it[lockedBy] = item.lockedBy
         }
         item
     }
@@ -68,12 +71,19 @@ object ItemRepository {
             it[desc] = item.desc
             it[featureIds] = listToJson(item.featureIds)
             it[imageUrl] = item.imageUrl
+            it[lockedBy] = item.lockedBy
         } > 0
     }
 
     fun updateImageUrl(id: String, imageUrl: String): Boolean = transaction {
         ItemTable.update({ ItemTable.id eq id }) {
             it[ItemTable.imageUrl] = imageUrl
+        } > 0
+    }
+
+    fun updateLockedBy(id: String, lockedBy: String?): Boolean = transaction {
+        ItemTable.update({ ItemTable.id eq id }) {
+            it[ItemTable.lockedBy] = lockedBy
         } > 0
     }
 }

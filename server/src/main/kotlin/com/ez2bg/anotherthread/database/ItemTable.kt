@@ -8,6 +8,7 @@ object ItemTable : Table("item") {
     val desc = text("desc")
     val featureIds = text("feature_ids")
     val imageUrl = text("image_url").nullable()
+    val lockedBy = varchar("locked_by", 36).nullable()
 
     override val primaryKey = PrimaryKey(id)
 }
