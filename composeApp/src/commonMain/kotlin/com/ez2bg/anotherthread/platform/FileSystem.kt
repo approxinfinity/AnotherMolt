@@ -28,3 +28,8 @@ data class FileReadResult(
  * Returns null if the file doesn't exist or can't be read.
  */
 expect fun readFileBytes(path: String): FileReadResult?
+
+/**
+ * Get current time in milliseconds since epoch.
+ */
+expect fun currentTimeMillis(): Long

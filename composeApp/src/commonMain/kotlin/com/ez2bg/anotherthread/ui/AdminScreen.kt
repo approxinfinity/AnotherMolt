@@ -34,6 +34,8 @@ import androidx.compose.ui.graphics.PathFillType
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.vector.path
 import androidx.compose.material.icons.filled.AdminPanelSettings
+import androidx.compose.material.icons.filled.ChevronRight
+import androidx.compose.material.icons.filled.History
 import androidx.compose.material.icons.filled.Upload
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.material3.*
@@ -489,6 +491,7 @@ sealed class ViewState {
     data class ItemEdit(val item: ItemDto) : ViewState()
     data class ItemDetail(val id: String) : ViewState()
     data object AdminPanel : ViewState()
+    data object AuditLogs : ViewState()
 }
 
 /**
@@ -924,7 +927,12 @@ fun AdminScreen() {
                     viewState = ViewState.ItemCreate
                 }
             )
-            is ViewState.AdminPanel -> AdminPanelView()
+            is ViewState.AdminPanel -> AdminPanelView(
+                onViewAuditLogs = { viewState = ViewState.AuditLogs }
+            )
+            is ViewState.AuditLogs -> AuditLogsView(
+                onBack = { viewState = ViewState.AdminPanel }
+            )
         }
     }
 }
@@ -5781,7 +5789,9 @@ private fun String.splitToList(): List<String> =
  * Admin panel view with file upload functionality
  */
 @Composable
-fun AdminPanelView() {
+fun AdminPanelView(
+    onViewAuditLogs: () -> Unit
+) {
     var uploadedFiles by remember { mutableStateOf<List<UploadedFileDto>>(emptyList()) }
     var isLoading by remember { mutableStateOf(true) }
     var uploadMessage by remember { mutableStateOf<String?>(null) }
@@ -5812,6 +5822,48 @@ fun AdminPanelView() {
             text = "Admin Panel",
             style = MaterialTheme.typography.titleLarge
         )
+
+        // Audit Logs Button
+        Card(
+            modifier = Modifier
+                .fillMaxWidth()
+                .clickable { onViewAuditLogs() }
+        ) {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(16.dp),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Row(
+                    horizontalArrangement = Arrangement.spacedBy(12.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.History,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.primary
+                    )
+                    Column {
+                        Text(
+                            text = "Audit Logs",
+                            style = MaterialTheme.typography.titleMedium
+                        )
+                        Text(
+                            text = "View history of all data changes",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                }
+                Icon(
+                    imageVector = Icons.Default.ChevronRight,
+                    contentDescription = "View",
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+        }
 
         // File Upload Section
         Card(modifier = Modifier.fillMaxWidth()) {
@@ -6006,6 +6058,191 @@ fun AdminPanelView() {
                 }
             }
         }
+    }
+}
+
+/**
+ * Audit logs view showing history of all data changes
+ */
+@Composable
+fun AuditLogsView(
+    onBack: () -> Unit
+) {
+    var auditLogs by remember { mutableStateOf<List<AuditLogDto>>(emptyList()) }
+    var isLoading by remember { mutableStateOf(true) }
+    var selectedFilter by remember { mutableStateOf("All") }
+    val filterOptions = listOf("All", "Location", "Creature", "Item", "Feature")
+
+    // Load audit logs
+    LaunchedEffect(selectedFilter) {
+        isLoading = true
+        val result = if (selectedFilter == "All") {
+            ApiClient.getAuditLogs(limit = 200)
+        } else {
+            ApiClient.getAuditLogsByType(selectedFilter, limit = 200)
+        }
+        result.onSuccess { logs ->
+            auditLogs = logs
+        }
+        isLoading = false
+    }
+
+    Column(
+        modifier = Modifier.fillMaxWidth(),
+        verticalArrangement = Arrangement.spacedBy(16.dp)
+    ) {
+        // Header with back button
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(12.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            IconButton(onClick = onBack) {
+                Icon(
+                    imageVector = Icons.AutoMirrored.Filled.ArrowBack,
+                    contentDescription = "Back"
+                )
+            }
+            Text(
+                text = "Audit Logs",
+                style = MaterialTheme.typography.titleLarge
+            )
+        }
+
+        // Filter chips
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            filterOptions.forEach { filter ->
+                FilterChip(
+                    selected = selectedFilter == filter,
+                    onClick = { selectedFilter = filter },
+                    label = { Text(filter) }
+                )
+            }
+        }
+
+        // Logs list
+        if (isLoading) {
+            Box(
+                modifier = Modifier.fillMaxWidth().padding(32.dp),
+                contentAlignment = Alignment.Center
+            ) {
+                CircularProgressIndicator()
+            }
+        } else if (auditLogs.isEmpty()) {
+            Text(
+                text = "No audit logs found",
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.padding(16.dp)
+            )
+        } else {
+            LazyColumn(
+                modifier = Modifier.fillMaxWidth().weight(1f),
+                verticalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                items(auditLogs) { log ->
+                    AuditLogItem(log)
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun AuditLogItem(log: AuditLogDto) {
+    val actionColor = when (log.action) {
+        "CREATE" -> Color(0xFF4CAF50) // Green
+        "UPDATE" -> Color(0xFF2196F3) // Blue
+        "DELETE" -> Color(0xFFF44336) // Red
+        else -> MaterialTheme.colorScheme.onSurface
+    }
+
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
+        )
+    ) {
+        Column(
+            modifier = Modifier.padding(12.dp),
+            verticalArrangement = Arrangement.spacedBy(4.dp)
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Row(
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    // Action badge
+                    Surface(
+                        color = actionColor.copy(alpha = 0.2f),
+                        shape = MaterialTheme.shapes.small
+                    ) {
+                        Text(
+                            text = log.action,
+                            style = MaterialTheme.typography.labelSmall,
+                            color = actionColor,
+                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 2.dp)
+                        )
+                    }
+                    // Record type badge
+                    Surface(
+                        color = MaterialTheme.colorScheme.primaryContainer,
+                        shape = MaterialTheme.shapes.small
+                    ) {
+                        Text(
+                            text = log.recordType,
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onPrimaryContainer,
+                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 2.dp)
+                        )
+                    }
+                }
+                // Timestamp
+                Text(
+                    text = formatTimestamp(log.timestamp),
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+
+            // Record name
+            Text(
+                text = log.recordName,
+                style = MaterialTheme.typography.bodyMedium
+            )
+
+            // User info
+            Text(
+                text = "by ${log.userName}",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
+    }
+}
+
+private fun formatTimestamp(timestamp: Long): String {
+    // Simple relative time formatting
+    val now = com.ez2bg.anotherthread.platform.currentTimeMillis()
+    val diff = now - timestamp
+    val seconds = diff / 1000
+    val minutes = seconds / 60
+    val hours = minutes / 60
+    val days = hours / 24
+
+    return when {
+        seconds < 60 -> "just now"
+        minutes < 60 -> "${minutes}m ago"
+        hours < 24 -> "${hours}h ago"
+        days < 7 -> "${days}d ago"
+        else -> "${days / 7}w ago"
     }
 }
 

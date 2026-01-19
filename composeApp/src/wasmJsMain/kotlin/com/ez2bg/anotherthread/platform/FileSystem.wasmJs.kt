@@ -4,3 +4,7 @@ package com.ez2bg.anotherthread.platform
 actual fun readFileBytes(path: String): FileReadResult? {
     return null
 }
+
+private fun dateNow(): Double = js("Date.now()")
+
+actual fun currentTimeMillis(): Long = dateNow().toLong()

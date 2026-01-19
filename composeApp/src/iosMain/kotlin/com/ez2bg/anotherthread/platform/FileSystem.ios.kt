@@ -4,8 +4,10 @@ import kotlinx.cinterop.ExperimentalForeignApi
 import kotlinx.cinterop.addressOf
 import kotlinx.cinterop.usePinned
 import platform.Foundation.NSData
+import platform.Foundation.NSDate
 import platform.Foundation.NSFileManager
 import platform.Foundation.dataWithContentsOfFile
+import platform.Foundation.timeIntervalSince1970
 import platform.posix.memcpy
 
 @OptIn(ExperimentalForeignApi::class)
@@ -32,3 +34,5 @@ actual fun readFileBytes(path: String): FileReadResult? {
         null
     }
 }
+
+actual fun currentTimeMillis(): Long = (NSDate().timeIntervalSince1970 * 1000).toLong()

@@ -15,3 +15,5 @@ actual fun readFileBytes(path: String): FileReadResult? {
         null
     }
 }
+
+actual fun currentTimeMillis(): Long = System.currentTimeMillis()
