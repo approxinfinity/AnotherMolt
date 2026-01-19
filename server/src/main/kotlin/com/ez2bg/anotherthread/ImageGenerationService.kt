@@ -34,9 +34,11 @@ data class Text2ImageRequest(
 
 @Serializable
 data class Text2ImageResponse(
-    val images: List<String>, // Base64 encoded images
+    val images: List<String>? = null, // Base64 encoded images
     val parameters: Map<String, kotlinx.serialization.json.JsonElement>? = null,
-    val info: String? = null
+    val info: String? = null,
+    val error: String? = null,
+    val detail: String? = null
 )
 
 object ImageGenerationService {
@@ -87,17 +89,33 @@ object ImageGenerationService {
                 cfgScale = 7.5
             )
 
-            val response: Text2ImageResponse = client.post("$sdApiUrl/sdapi/v1/txt2img") {
+            val httpResponse = client.post("$sdApiUrl/sdapi/v1/txt2img") {
                 contentType(ContentType.Application.Json)
                 setBody(request)
-            }.body()
+            }
 
-            if (response.images.isEmpty()) {
+            if (!httpResponse.status.isSuccess()) {
+                val errorBody = httpResponse.bodyAsText()
+                throw Exception("API error (${httpResponse.status}): $errorBody")
+            }
+
+            val response: Text2ImageResponse = httpResponse.body()
+
+            // Check for error in response
+            if (response.error != null) {
+                throw Exception("SD error: ${response.error}")
+            }
+            if (response.detail != null) {
+                throw Exception("SD error: ${response.detail}")
+            }
+
+            val images = response.images
+            if (images.isNullOrEmpty()) {
                 throw Exception("No images generated")
             }
 
             // Decode base64 image and save to file
-            val imageData = Base64.getDecoder().decode(response.images.first())
+            val imageData = Base64.getDecoder().decode(images.first())
             val filename = "${entityType}_${entityId}.png"
             val imageFile = File(imageDir, filename)
             imageFile.writeBytes(imageData)
