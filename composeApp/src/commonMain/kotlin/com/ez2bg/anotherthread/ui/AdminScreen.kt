@@ -227,18 +227,14 @@ fun EntityImage(
         var imageState by remember { mutableStateOf<AsyncImagePainter.State>(AsyncImagePainter.State.Empty) }
 
         Box(
-            modifier = modifier
-                .fillMaxWidth()
-                .height(200.dp)
-                .clip(RoundedCornerShape(12.dp))
-                .background(MaterialTheme.colorScheme.surfaceVariant),
+            modifier = modifier.fillMaxWidth(),
             contentAlignment = Alignment.Center
         ) {
             AsyncImage(
                 model = fullUrl,
                 contentDescription = contentDescription,
-                modifier = Modifier.fillMaxSize(),
-                contentScale = ContentScale.Crop,
+                modifier = Modifier
+                    .clip(RoundedCornerShape(12.dp)),
                 onState = { imageState = it }
             )
 
@@ -2629,7 +2625,8 @@ private object TerrainColors {
     val road = Color(0xFFB8976B)           // Tan/brown road
     val roadOutline = Color(0xFF8B7355)    // Darker road edge
     val tree = Color(0xFF4A6741)           // Forest green
-    val treeDark = Color(0xFF3A5731)       // Darker trunk/shadow
+    val treeDark = Color(0xFF3A5731)       // Darker foliage shadow
+    val treeTrunk = Color(0xFF5A4030)      // Brown trunk
     val water = Color(0xFF6B8E9F)          // Muted blue-gray
     val waterHighlight = Color(0xFF8BB0C4) // Lighter water
     val mountain = Color(0xFF7D7461)       // Gray-brown
@@ -2646,7 +2643,7 @@ private object TerrainColors {
 
 // Terrain types for contextual drawing
 private enum class TerrainType {
-    ROAD, FOREST, WATER, STREAM, MOUNTAIN, GRASS, BUILDING, CAVE, DESERT,
+    ROAD, FOREST, WATER, STREAM, RIVER, LAKE, MOUNTAIN, GRASS, BUILDING, CAVE, DESERT,
     COAST, HILLS, SWAMP, CHURCH, CASTLE, PORT, RUINS
 }
 
@@ -2669,7 +2666,13 @@ private fun parseTerrainFromDescription(desc: String, name: String): Set<Terrain
     if (text.containsAny("stream", "creek", "brook")) {
         terrains.add(TerrainType.STREAM)
     }
-    if (text.containsAny("river", "water", "lake", "pond", "falls", "fountain")) {
+    if (text.containsAny("river")) {
+        terrains.add(TerrainType.RIVER)
+    }
+    if (text.containsAny("lake", "pond")) {
+        terrains.add(TerrainType.LAKE)
+    }
+    if (text.containsAny("water", "falls", "fountain")) {
         terrains.add(TerrainType.WATER)
     }
     if (text.containsAny("mountain", "peak", "summit", "alpine")) {
@@ -2906,31 +2909,30 @@ private fun DrawScope.drawCompassRose(center: Offset, size: Float) {
     )
 }
 
-// Draw road/path terrain - winding path that passes through center
+// Draw road/path terrain - dirt road with borders passing through center
 private fun DrawScope.drawRoadTerrain(center: Offset, terrainSize: Float, seed: Int) {
     val random = kotlin.random.Random(seed)
-    val pathWidth = terrainSize * 0.10f
+    val pathWidth = terrainSize * 0.12f
+    val roadColor = Color(0xFFB8A080) // Dusty brown road
+    val borderColor = Color(0xFF8A7560) // Darker border
+    val edgeColor = Color(0xFF6A5A4A) // Edge texture
 
     // Road winds through center so dot appears ON the road
     val entryAngle = random.nextFloat() * 2 * PI.toFloat()
-    val exitAngle = entryAngle + PI.toFloat() + (random.nextFloat() - 0.5f) * 0.4f // Slightly off opposite
+    val exitAngle = entryAngle + PI.toFloat() + (random.nextFloat() - 0.5f) * 0.3f
 
-    val startX = center.x + cos(entryAngle) * terrainSize * 0.75f
-    val startY = center.y + sin(entryAngle) * terrainSize * 0.75f
-    val endX = center.x + cos(exitAngle) * terrainSize * 0.75f
-    val endY = center.y + sin(exitAngle) * terrainSize * 0.75f
+    val startX = center.x + cos(entryAngle) * terrainSize * 0.85f
+    val startY = center.y + sin(entryAngle) * terrainSize * 0.85f
+    val endX = center.x + cos(exitAngle) * terrainSize * 0.85f
+    val endY = center.y + sin(exitAngle) * terrainSize * 0.85f
 
-    // Create winding path with multiple curves, but ensure it passes through center
-    // Control points on either side of center create the winding effect
+    // Control points for gentle curve through center
     val perpAngle = entryAngle + PI.toFloat() / 2
-    val curve1Offset = terrainSize * 0.15f * (0.5f + random.nextFloat() * 0.5f)
-    val curve2Offset = terrainSize * 0.15f * (0.5f + random.nextFloat() * 0.5f)
+    val curve1Offset = terrainSize * 0.12f * (0.3f + random.nextFloat() * 0.4f)
+    val curve2Offset = terrainSize * 0.12f * (0.3f + random.nextFloat() * 0.4f)
 
-    // First segment: start to center (curves one way)
     val ctrl1X = (startX + center.x) / 2 + cos(perpAngle) * curve1Offset
     val ctrl1Y = (startY + center.y) / 2 + sin(perpAngle) * curve1Offset
-
-    // Second segment: center to end (curves the other way for S-shape)
     val ctrl2X = (center.x + endX) / 2 - cos(perpAngle) * curve2Offset
     val ctrl2Y = (center.y + endY) / 2 - sin(perpAngle) * curve2Offset
 
@@ -2940,220 +2942,529 @@ private fun DrawScope.drawRoadTerrain(center: Offset, terrainSize: Float, seed: 
         quadraticTo(ctrl2X, ctrl2Y, endX, endY)
     }
 
+    // Draw outer border (darkest)
     drawPath(
         path = roadPath,
-        color = TerrainColors.road,
+        color = edgeColor,
+        style = Stroke(width = pathWidth + 4f, cap = StrokeCap.Round, join = StrokeJoin.Round)
+    )
+
+    // Draw middle border
+    drawPath(
+        path = roadPath,
+        color = borderColor,
+        style = Stroke(width = pathWidth + 2f, cap = StrokeCap.Round, join = StrokeJoin.Round)
+    )
+
+    // Draw main road surface
+    drawPath(
+        path = roadPath,
+        color = roadColor,
         style = Stroke(width = pathWidth, cap = StrokeCap.Round, join = StrokeJoin.Round)
     )
+
+    // Add subtle texture marks on the road
+    val markCount = 3 + random.nextInt(3)
+    repeat(markCount) { i ->
+        val t = (i + 1).toFloat() / (markCount + 1)
+        // Approximate point along curve
+        val markX = startX * (1 - t) * (1 - t) + 2 * ctrl1X * (1 - t) * t * 0.5f + center.x * t * t * 0.5f +
+                center.x * (1 - t) * (1 - t) * 0.5f + 2 * ctrl2X * (1 - t) * t * 0.5f + endX * t * t
+        val markY = startY * (1 - t) * (1 - t) + 2 * ctrl1Y * (1 - t) * t * 0.5f + center.y * t * t * 0.5f +
+                center.y * (1 - t) * (1 - t) * 0.5f + 2 * ctrl2Y * (1 - t) * t * 0.5f + endY * t * t
+
+        val markSize = terrainSize * 0.015f
+        drawCircle(
+            color = borderColor.copy(alpha = 0.3f),
+            radius = markSize,
+            center = Offset(markX * 0.5f + center.x * 0.5f, markY * 0.5f + center.y * 0.5f)
+        )
+    }
 }
 
-// Draw forest terrain - mixed tree styles (conifer and deciduous)
+// Draw forest terrain - varied tree styles (conifers, deciduous, bushes)
 private fun DrawScope.drawForestTerrain(center: Offset, terrainSize: Float, seed: Int) {
     val random = kotlin.random.Random(seed)
     val treeCount = 5 + random.nextInt(4)
 
     repeat(treeCount) { i ->
         val angle = (i.toFloat() / treeCount) * 2 * PI.toFloat() + random.nextFloat() * 0.6f
-        val distance = terrainSize * (0.3f + random.nextFloat() * 0.3f)
+        val distance = terrainSize * (0.28f + random.nextFloat() * 0.32f)
         val treeX = center.x + cos(angle) * distance
         val treeY = center.y + sin(angle) * distance
-        val treeSize = terrainSize * (0.08f + random.nextFloat() * 0.06f)
+        val treeSize = terrainSize * (0.07f + random.nextFloat() * 0.07f)
 
-        // Randomly choose tree type
-        val isConifer = random.nextFloat() > 0.4f
+        // Tree type: 0=tall conifer, 1=short conifer, 2=deciduous round, 3=deciduous oval, 4=bush
+        val treeType = random.nextInt(5)
 
-        if (isConifer) {
-            // Conifer tree (triangular with multiple tiers like vintage maps)
-            val treePath = Path().apply {
-                // Bottom tier
-                moveTo(treeX, treeY - treeSize * 0.3f)
-                lineTo(treeX - treeSize * 0.5f, treeY)
-                lineTo(treeX + treeSize * 0.5f, treeY)
-                close()
+        when (treeType) {
+            0 -> {
+                // Tall conifer (3 tiers) - trunk first, then foliage
+                drawLine(
+                    color = TerrainColors.treeTrunk,
+                    start = Offset(treeX, treeY + treeSize * 0.15f),
+                    end = Offset(treeX, treeY - treeSize * 0.1f),
+                    strokeWidth = 2.5f
+                )
+
+                val treePath = Path().apply {
+                    moveTo(treeX, treeY - treeSize * 0.3f)
+                    lineTo(treeX - treeSize * 0.5f, treeY)
+                    lineTo(treeX + treeSize * 0.5f, treeY)
+                    close()
+                }
+                drawPath(treePath, color = TerrainColors.tree)
+
+                val midPath = Path().apply {
+                    moveTo(treeX, treeY - treeSize * 0.7f)
+                    lineTo(treeX - treeSize * 0.4f, treeY - treeSize * 0.2f)
+                    lineTo(treeX + treeSize * 0.4f, treeY - treeSize * 0.2f)
+                    close()
+                }
+                drawPath(midPath, color = TerrainColors.tree)
+
+                val topPath = Path().apply {
+                    moveTo(treeX, treeY - treeSize)
+                    lineTo(treeX - treeSize * 0.25f, treeY - treeSize * 0.5f)
+                    lineTo(treeX + treeSize * 0.25f, treeY - treeSize * 0.5f)
+                    close()
+                }
+                drawPath(topPath, color = TerrainColors.tree)
             }
-            drawPath(treePath, color = TerrainColors.tree)
+            1 -> {
+                // Short/wide conifer (single triangle) - trunk first
+                drawLine(
+                    color = TerrainColors.treeTrunk,
+                    start = Offset(treeX, treeY + treeSize * 0.1f),
+                    end = Offset(treeX, treeY - treeSize * 0.1f),
+                    strokeWidth = 2f
+                )
 
-            // Middle tier
-            val midPath = Path().apply {
-                moveTo(treeX, treeY - treeSize * 0.7f)
-                lineTo(treeX - treeSize * 0.4f, treeY - treeSize * 0.2f)
-                lineTo(treeX + treeSize * 0.4f, treeY - treeSize * 0.2f)
-                close()
+                val shortPath = Path().apply {
+                    moveTo(treeX, treeY - treeSize * 0.7f)
+                    lineTo(treeX - treeSize * 0.55f, treeY)
+                    lineTo(treeX + treeSize * 0.55f, treeY)
+                    close()
+                }
+                drawPath(shortPath, color = TerrainColors.tree.copy(alpha = 0.9f))
             }
-            drawPath(midPath, color = TerrainColors.tree)
+            2 -> {
+                // Round deciduous tree - trunk connects to canopy bottom
+                val canopyY = treeY - treeSize * 0.45f
+                val canopyRadius = treeSize * 0.38f
 
-            // Top tier
-            val topPath = Path().apply {
-                moveTo(treeX, treeY - treeSize)
-                lineTo(treeX - treeSize * 0.25f, treeY - treeSize * 0.5f)
-                lineTo(treeX + treeSize * 0.25f, treeY - treeSize * 0.5f)
-                close()
+                // Trunk from ground up into canopy
+                drawLine(
+                    color = TerrainColors.treeTrunk,
+                    start = Offset(treeX, treeY + treeSize * 0.1f),
+                    end = Offset(treeX, canopyY + canopyRadius * 0.3f),
+                    strokeWidth = 3f
+                )
+
+                // Main canopy
+                drawCircle(
+                    color = TerrainColors.tree,
+                    radius = canopyRadius,
+                    center = Offset(treeX, canopyY)
+                )
+                // Side lobes
+                drawCircle(
+                    color = TerrainColors.tree,
+                    radius = treeSize * 0.25f,
+                    center = Offset(treeX - treeSize * 0.22f, canopyY + treeSize * 0.12f)
+                )
+                drawCircle(
+                    color = TerrainColors.tree,
+                    radius = treeSize * 0.25f,
+                    center = Offset(treeX + treeSize * 0.22f, canopyY + treeSize * 0.12f)
+                )
             }
-            drawPath(topPath, color = TerrainColors.tree)
-        } else {
-            // Deciduous tree (round canopy like vintage maps)
-            // Trunk
-            drawLine(
-                color = TerrainColors.treeDark,
-                start = Offset(treeX, treeY),
-                end = Offset(treeX, treeY - treeSize * 0.4f),
-                strokeWidth = 2f
-            )
+            3 -> {
+                // Oval/tall deciduous tree - trunk connects to canopy
+                val canopyY = treeY - treeSize * 0.5f
+                val ovalHeight = treeSize * 0.45f
 
-            // Canopy (cloud-like shape)
-            val canopyY = treeY - treeSize * 0.6f
-            drawCircle(
-                color = TerrainColors.tree,
-                radius = treeSize * 0.35f,
-                center = Offset(treeX, canopyY)
-            )
-            drawCircle(
-                color = TerrainColors.tree,
-                radius = treeSize * 0.28f,
-                center = Offset(treeX - treeSize * 0.2f, canopyY + treeSize * 0.1f)
-            )
-            drawCircle(
-                color = TerrainColors.tree,
-                radius = treeSize * 0.28f,
-                center = Offset(treeX + treeSize * 0.2f, canopyY + treeSize * 0.1f)
-            )
-        }
+                // Trunk from ground up into canopy
+                drawLine(
+                    color = TerrainColors.treeTrunk,
+                    start = Offset(treeX, treeY + treeSize * 0.1f),
+                    end = Offset(treeX, canopyY + ovalHeight * 0.2f),
+                    strokeWidth = 2.5f
+                )
 
-        // Trunk for conifer
-        if (isConifer) {
-            drawLine(
-                color = TerrainColors.treeDark,
-                start = Offset(treeX, treeY),
-                end = Offset(treeX, treeY + treeSize * 0.2f),
-                strokeWidth = 2f
-            )
+                // Oval canopy
+                val ovalPath = Path().apply {
+                    val ovalWidth = treeSize * 0.3f
+                    addOval(
+                        androidx.compose.ui.geometry.Rect(
+                            treeX - ovalWidth,
+                            canopyY - ovalHeight,
+                            treeX + ovalWidth,
+                            canopyY + ovalHeight * 0.3f
+                        )
+                    )
+                }
+                drawPath(ovalPath, color = TerrainColors.tree)
+            }
+            else -> {
+                // Bush (low, wide, no trunk)
+                val bushY = treeY - treeSize * 0.15f
+                drawCircle(
+                    color = TerrainColors.tree.copy(alpha = 0.85f),
+                    radius = treeSize * 0.3f,
+                    center = Offset(treeX, bushY)
+                )
+                drawCircle(
+                    color = TerrainColors.tree.copy(alpha = 0.85f),
+                    radius = treeSize * 0.22f,
+                    center = Offset(treeX - treeSize * 0.2f, bushY + treeSize * 0.05f)
+                )
+                drawCircle(
+                    color = TerrainColors.tree.copy(alpha = 0.85f),
+                    radius = treeSize * 0.22f,
+                    center = Offset(treeX + treeSize * 0.2f, bushY + treeSize * 0.05f)
+                )
+            }
         }
     }
 }
 
-// Draw water terrain - wavy lines
+// Draw water terrain - fountain or small water feature with gentle waves
 private fun DrawScope.drawWaterTerrain(center: Offset, terrainSize: Float, seed: Int) {
     val random = kotlin.random.Random(seed)
-    val waveCount = 2 + random.nextInt(2)
+    val waterColor = Color(0xFF4A7A9A)
+    val highlightColor = Color(0xFF6A9ABA)
 
-    repeat(waveCount) { i ->
-        val offsetY = (i - waveCount / 2f) * terrainSize * 0.12f
-        val startX = center.x - terrainSize * 0.4f
-        val endX = center.x + terrainSize * 0.4f
+    // Small circular pool
+    val poolRadius = terrainSize * 0.25f
 
-        val waterPath = Path().apply {
-            moveTo(startX, center.y + offsetY)
-            val waveHeight = terrainSize * 0.06f
-            quadraticTo(startX + terrainSize * 0.13f, center.y + offsetY - waveHeight,
-                startX + terrainSize * 0.27f, center.y + offsetY)
-            quadraticTo(startX + terrainSize * 0.4f, center.y + offsetY + waveHeight,
-                startX + terrainSize * 0.53f, center.y + offsetY)
-            quadraticTo(startX + terrainSize * 0.67f, center.y + offsetY - waveHeight,
-                endX, center.y + offsetY)
-        }
+    // Draw pool
+    drawCircle(
+        color = waterColor,
+        radius = poolRadius,
+        center = center
+    )
 
-        drawPath(
-            path = waterPath,
-            color = TerrainColors.water.copy(alpha = 0.7f),
-            style = Stroke(width = 3f, cap = StrokeCap.Round)
+    // Add highlight
+    drawCircle(
+        color = highlightColor.copy(alpha = 0.4f),
+        radius = poolRadius * 0.6f,
+        center = Offset(center.x - poolRadius * 0.2f, center.y - poolRadius * 0.2f)
+    )
+
+    // Add gentle ripples
+    repeat(2) { i ->
+        val rippleRadius = poolRadius * (0.5f + i * 0.35f)
+        drawCircle(
+            color = highlightColor.copy(alpha = 0.2f - i * 0.08f),
+            radius = rippleRadius,
+            center = center,
+            style = Stroke(width = 1.5f)
         )
     }
 }
 
-// Draw stream terrain - a winding, dark stream passing through center
+// Draw lake terrain - actual body of water with natural shoreline
+private fun DrawScope.drawLakeTerrain(center: Offset, terrainSize: Float, seed: Int) {
+    val random = kotlin.random.Random(seed)
+    val waterColor = Color(0xFF3A6A8A) // Deep lake blue
+    val shoreColor = Color(0xFF4A7A9A) // Lighter shore
+    val highlightColor = Color(0xFF5A8AAA) // Water highlight
+
+    // Create organic lake shape using bezier curves
+    val lakePath = Path().apply {
+        val points = 8
+        val baseRadius = terrainSize * 0.35f
+
+        // Generate irregular lake outline
+        val radii = (0 until points).map {
+            baseRadius * (0.7f + random.nextFloat() * 0.5f)
+        }
+
+        val firstAngle = 0f
+        val firstRadius = radii[0]
+        moveTo(
+            center.x + cos(firstAngle) * firstRadius,
+            center.y + sin(firstAngle) * firstRadius
+        )
+
+        for (i in 0 until points) {
+            val nextI = (i + 1) % points
+            val angle1 = (i.toFloat() / points) * 2 * PI.toFloat()
+            val angle2 = (nextI.toFloat() / points) * 2 * PI.toFloat()
+            val midAngle = (angle1 + angle2) / 2
+
+            val r1 = radii[i]
+            val r2 = radii[nextI]
+            val midR = (r1 + r2) / 2 * (0.85f + random.nextFloat() * 0.3f)
+
+            val ctrlX = center.x + cos(midAngle) * midR
+            val ctrlY = center.y + sin(midAngle) * midR
+            val endX = center.x + cos(angle2) * r2
+            val endY = center.y + sin(angle2) * r2
+
+            quadraticTo(ctrlX, ctrlY, endX, endY)
+        }
+        close()
+    }
+
+    // Draw lake with solid fill (covers anything underneath)
+    drawPath(
+        path = lakePath,
+        color = waterColor
+    )
+
+    // Draw shore outline
+    drawPath(
+        path = lakePath,
+        color = shoreColor,
+        style = Stroke(width = 2f)
+    )
+
+    // Add water highlights (lighter area)
+    val highlightOffset = terrainSize * 0.08f
+    drawCircle(
+        color = highlightColor.copy(alpha = 0.3f),
+        radius = terrainSize * 0.15f,
+        center = Offset(center.x - highlightOffset, center.y - highlightOffset)
+    )
+
+    // Add subtle ripple lines
+    repeat(2) { i ->
+        val rippleY = center.y + (i - 0.5f) * terrainSize * 0.15f
+        val ripplePath = Path().apply {
+            val startX = center.x - terrainSize * 0.2f
+            moveTo(startX, rippleY)
+            quadraticTo(
+                center.x, rippleY - terrainSize * 0.03f,
+                center.x + terrainSize * 0.2f, rippleY
+            )
+        }
+        drawPath(
+            path = ripplePath,
+            color = highlightColor.copy(alpha = 0.25f),
+            style = Stroke(width = 1f)
+        )
+    }
+}
+
+// Draw river terrain - flowing water with tributaries
+private fun DrawScope.drawRiverTerrain(center: Offset, terrainSize: Float, seed: Int) {
+    val random = kotlin.random.Random(seed)
+    val riverColor = Color(0xFF4A7A9A) // River blue
+    val bankColor = Color(0xFF3A6080) // Darker bank edge
+    val highlightColor = Color(0xFF6A9ABA) // Water highlight
+
+    // River flows through the tile with natural meander
+    // Entry from top-ish, exit bottom-ish for more natural flow
+    val entryX = center.x + (random.nextFloat() - 0.5f) * terrainSize * 0.3f
+    val entryY = center.y - terrainSize * 0.45f
+    val exitX = center.x + (random.nextFloat() - 0.5f) * terrainSize * 0.3f
+    val exitY = center.y + terrainSize * 0.45f
+
+    // Create natural meandering with multiple control points
+    val meander1 = (random.nextFloat() - 0.5f) * terrainSize * 0.35f
+    val meander2 = (random.nextFloat() - 0.5f) * terrainSize * 0.35f
+
+    // River path with smooth S-curve meander
+    val riverPath = Path().apply {
+        moveTo(entryX, entryY)
+        // First meander curve
+        cubicTo(
+            entryX + meander1 * 0.5f, entryY + terrainSize * 0.15f,
+            center.x + meander1, center.y - terrainSize * 0.1f,
+            center.x + meander1 * 0.3f, center.y
+        )
+        // Second meander curve
+        cubicTo(
+            center.x - meander2 * 0.3f, center.y + terrainSize * 0.1f,
+            exitX + meander2, exitY - terrainSize * 0.15f,
+            exitX, exitY
+        )
+    }
+
+    // Draw river bank (darker edge)
+    drawPath(
+        path = riverPath,
+        color = bankColor,
+        style = Stroke(width = 10f, cap = StrokeCap.Round, join = StrokeJoin.Round)
+    )
+
+    // Draw main river channel
+    drawPath(
+        path = riverPath,
+        color = riverColor,
+        style = Stroke(width = 7f, cap = StrokeCap.Round, join = StrokeJoin.Round)
+    )
+
+    // Draw water highlight (center line)
+    drawPath(
+        path = riverPath,
+        color = highlightColor.copy(alpha = 0.5f),
+        style = Stroke(width = 2f, cap = StrokeCap.Round, join = StrokeJoin.Round)
+    )
+}
+
+// Draw stream terrain - a smaller winding creek
 private fun DrawScope.drawStreamTerrain(center: Offset, terrainSize: Float, seed: Int) {
     val random = kotlin.random.Random(seed)
-    val streamColor = Color(0xFF2A4A5A) // Dark blue-gray stream color
-    val highlightColor = Color(0xFF4A6A7A) // Lighter highlight
+    val streamColor = Color(0xFF3A6A8A) // Blue-gray stream color
+    val bankColor = Color(0xFF2A5060) // Darker edge
+    val highlightColor = Color(0xFF5A8AAA) // Lighter highlight
 
-    // Stream winds through center so dot appears ON the stream (like a bridge over it)
-    val entryAngle = random.nextFloat() * 2 * PI.toFloat()
-    val exitAngle = entryAngle + PI.toFloat() + (random.nextFloat() - 0.5f) * 0.3f
+    // Stream flows through tile with gentle meander
+    val entryX = center.x + (random.nextFloat() - 0.5f) * terrainSize * 0.4f
+    val entryY = center.y - terrainSize * 0.4f
+    val exitX = center.x + (random.nextFloat() - 0.5f) * terrainSize * 0.4f
+    val exitY = center.y + terrainSize * 0.4f
 
-    // Stream extends well beyond the terrain area for a longer, more natural look
-    val startX = center.x + cos(entryAngle) * terrainSize * 0.95f
-    val startY = center.y + sin(entryAngle) * terrainSize * 0.95f
-    val endX = center.x + cos(exitAngle) * terrainSize * 0.95f
-    val endY = center.y + sin(exitAngle) * terrainSize * 0.95f
-
-    // Create winding stream with multiple curves passing through center
-    val perpAngle = entryAngle + PI.toFloat() / 2
-    val curve1Offset = terrainSize * 0.18f * (0.6f + random.nextFloat() * 0.4f)
-    val curve2Offset = terrainSize * 0.18f * (0.6f + random.nextFloat() * 0.4f)
-
-    // Midpoints between start/center and center/end
-    val mid1X = (startX + center.x) / 2
-    val mid1Y = (startY + center.y) / 2
-    val mid2X = (center.x + endX) / 2
-    val mid2Y = (center.y + endY) / 2
-
-    // Control points create S-curve winding effect
-    val ctrl1X = mid1X + cos(perpAngle) * curve1Offset
-    val ctrl1Y = mid1Y + sin(perpAngle) * curve1Offset
-    val ctrl2X = mid2X - cos(perpAngle) * curve2Offset
-    val ctrl2Y = mid2Y - sin(perpAngle) * curve2Offset
+    // Create gentle meandering
+    val meander = (random.nextFloat() - 0.5f) * terrainSize * 0.25f
 
     val streamPath = Path().apply {
-        moveTo(startX, startY)
-        quadraticTo(ctrl1X, ctrl1Y, center.x, center.y)
-        quadraticTo(ctrl2X, ctrl2Y, endX, endY)
+        moveTo(entryX, entryY)
+        cubicTo(
+            entryX + meander * 0.7f, entryY + terrainSize * 0.2f,
+            center.x + meander, center.y,
+            exitX - meander * 0.3f, exitY
+        )
     }
+
+    // Draw stream bank
+    drawPath(
+        path = streamPath,
+        color = bankColor,
+        style = Stroke(width = 5f, cap = StrokeCap.Round, join = StrokeJoin.Round)
+    )
 
     // Draw main stream
     drawPath(
         path = streamPath,
         color = streamColor,
-        style = Stroke(width = 5f, cap = StrokeCap.Round, join = StrokeJoin.Round)
+        style = Stroke(width = 3.5f, cap = StrokeCap.Round, join = StrokeJoin.Round)
     )
 
-    // Add water highlight on one edge for depth
-    val highlightPath = Path().apply {
-        moveTo(startX + 1.5f, startY + 1.5f)
-        quadraticTo(ctrl1X + 1.5f, ctrl1Y + 1.5f, center.x + 1.5f, center.y + 1.5f)
-        quadraticTo(ctrl2X + 1.5f, ctrl2Y + 1.5f, endX + 1.5f, endY + 1.5f)
-    }
+    // Add highlight
     drawPath(
-        path = highlightPath,
+        path = streamPath,
         color = highlightColor.copy(alpha = 0.4f),
         style = Stroke(width = 1.5f, cap = StrokeCap.Round, join = StrokeJoin.Round)
     )
+
+    // Add one or two small tributaries flowing into stream
+    val tribCount = 1 + random.nextInt(2)
+    repeat(tribCount) { i ->
+        val joinT = 0.3f + i * 0.35f
+        val joinX = entryX + (exitX - entryX) * joinT + meander * (0.5f - abs(joinT - 0.5f))
+        val joinY = entryY + (exitY - entryY) * joinT
+
+        val side = if (i % 2 == 0) 1f else -1f
+        val tribLength = terrainSize * (0.1f + random.nextFloat() * 0.08f)
+
+        // Tributary flows into stream at acute angle
+        val tribAngle = PI.toFloat() / 2 + side * (PI.toFloat() * 0.55f + random.nextFloat() * 0.25f)
+        val tribStartX = joinX + cos(tribAngle) * tribLength
+        val tribStartY = joinY + sin(tribAngle) * tribLength
+
+        val tribPath = Path().apply {
+            moveTo(tribStartX, tribStartY)
+            quadraticTo(
+                tribStartX + (joinX - tribStartX) * 0.6f,
+                tribStartY + (joinY - tribStartY) * 0.7f,
+                joinX, joinY
+            )
+        }
+
+        drawPath(
+            path = tribPath,
+            color = bankColor.copy(alpha = 0.6f),
+            style = Stroke(width = 2.5f, cap = StrokeCap.Round)
+        )
+        drawPath(
+            path = tribPath,
+            color = streamColor.copy(alpha = 0.75f),
+            style = Stroke(width = 1.5f, cap = StrokeCap.Round)
+        )
+    }
 }
 
-// Draw mountain terrain - triangular peaks with vintage-style shading
+// Draw mountain terrain - varied peaks with different shapes (jagged, rounded, steep)
 private fun DrawScope.drawMountainTerrain(center: Offset, terrainSize: Float, seed: Int) {
     val random = kotlin.random.Random(seed)
     val peakCount = 2 + random.nextInt(2)
 
     repeat(peakCount) { i ->
-        val offsetX = (i - peakCount / 2f) * terrainSize * 0.22f
-        val peakHeight = terrainSize * (0.28f + random.nextFloat() * 0.15f)
-        val peakWidth = terrainSize * (0.16f + random.nextFloat() * 0.08f)
-        val baseY = center.y + terrainSize * 0.15f
+        val offsetX = (i - peakCount / 2f) * terrainSize * 0.25f + (random.nextFloat() - 0.5f) * terrainSize * 0.1f
+        val peakHeight = terrainSize * (0.28f + random.nextFloat() * 0.18f)
+        val peakWidth = terrainSize * (0.14f + random.nextFloat() * 0.1f)
+        val baseY = center.y + terrainSize * 0.18f
         val peakX = center.x + offsetX
 
-        // Main mountain shape (filled)
+        // Choose mountain style: 0=sharp, 1=rounded, 2=jagged, 3=asymmetric
+        val style = random.nextInt(4)
+
         val mountainPath = Path().apply {
-            moveTo(peakX - peakWidth, baseY)
-            lineTo(peakX, baseY - peakHeight)
-            lineTo(peakX + peakWidth, baseY)
-            close()
+            when (style) {
+                0 -> {
+                    // Sharp pointed peak
+                    moveTo(peakX - peakWidth, baseY)
+                    lineTo(peakX, baseY - peakHeight)
+                    lineTo(peakX + peakWidth, baseY)
+                    close()
+                }
+                1 -> {
+                    // Rounded/dome peak
+                    moveTo(peakX - peakWidth, baseY)
+                    quadraticTo(
+                        peakX - peakWidth * 0.5f, baseY - peakHeight * 0.8f,
+                        peakX, baseY - peakHeight
+                    )
+                    quadraticTo(
+                        peakX + peakWidth * 0.5f, baseY - peakHeight * 0.8f,
+                        peakX + peakWidth, baseY
+                    )
+                    close()
+                }
+                2 -> {
+                    // Jagged/craggy peak with multiple points
+                    moveTo(peakX - peakWidth, baseY)
+                    lineTo(peakX - peakWidth * 0.6f, baseY - peakHeight * 0.5f)
+                    lineTo(peakX - peakWidth * 0.3f, baseY - peakHeight * 0.4f)
+                    lineTo(peakX, baseY - peakHeight)
+                    lineTo(peakX + peakWidth * 0.25f, baseY - peakHeight * 0.7f)
+                    lineTo(peakX + peakWidth * 0.5f, baseY - peakHeight * 0.55f)
+                    lineTo(peakX + peakWidth, baseY)
+                    close()
+                }
+                else -> {
+                    // Asymmetric peak (steeper on one side)
+                    val steep = random.nextBoolean()
+                    moveTo(peakX - peakWidth * (if (steep) 0.6f else 1.2f), baseY)
+                    lineTo(peakX - peakWidth * 0.1f, baseY - peakHeight * 0.6f)
+                    lineTo(peakX, baseY - peakHeight)
+                    lineTo(peakX + peakWidth * (if (steep) 1.2f else 0.6f), baseY)
+                    close()
+                }
+            }
         }
-        drawPath(mountainPath, color = TerrainColors.mountain.copy(alpha = 0.6f))
+
+        // Draw mountain fill (solid to cover anything underneath)
+        drawPath(mountainPath, color = TerrainColors.mountain)
 
         // Outline
-        drawPath(mountainPath, color = TerrainColors.ink.copy(alpha = 0.5f), style = Stroke(width = 1.5f))
+        drawPath(mountainPath, color = TerrainColors.ink.copy(alpha = 0.45f), style = Stroke(width = 1.5f))
 
-        // Vintage-style shading lines on the right side (shadow side)
-        val shadingLines = 4 + random.nextInt(3)
+        // Shading lines on shadow side (varies by style)
+        val shadingLines = 3 + random.nextInt(3)
         repeat(shadingLines) { j ->
             val lineProgress = (j + 1).toFloat() / (shadingLines + 1)
-            val lineStartY = baseY - peakHeight * (1f - lineProgress * 0.7f)
+            val lineStartY = baseY - peakHeight * (0.9f - lineProgress * 0.6f)
             val lineEndY = baseY
-            val lineX = peakX + peakWidth * (0.1f + lineProgress * 0.7f)
-            val lineTopX = peakX + peakWidth * lineProgress * 0.3f
+            val lineX = peakX + peakWidth * (0.15f + lineProgress * 0.65f)
+            val lineTopX = peakX + peakWidth * lineProgress * 0.25f
 
             drawLine(
-                color = TerrainColors.ink.copy(alpha = 0.25f - j * 0.03f),
+                color = TerrainColors.ink.copy(alpha = 0.22f - j * 0.025f),
                 start = Offset(lineTopX, lineStartY),
                 end = Offset(lineX, lineEndY),
                 strokeWidth = 1f
@@ -3161,15 +3472,46 @@ private fun DrawScope.drawMountainTerrain(center: Offset, terrainSize: Float, se
         }
 
         // Snow cap for taller peaks
-        if (peakHeight > terrainSize * 0.32f) {
+        if (peakHeight > terrainSize * 0.30f) {
             val snowPath = Path().apply {
-                val snowLine = baseY - peakHeight * 0.75f
-                moveTo(peakX - peakWidth * 0.25f, snowLine)
-                lineTo(peakX, baseY - peakHeight)
-                lineTo(peakX + peakWidth * 0.25f, snowLine)
-                close()
+                val snowLine = baseY - peakHeight * 0.72f
+                when (style) {
+                    1 -> {
+                        // Rounded snow cap
+                        moveTo(peakX - peakWidth * 0.2f, snowLine)
+                        quadraticTo(peakX, baseY - peakHeight - terrainSize * 0.02f, peakX + peakWidth * 0.2f, snowLine)
+                        close()
+                    }
+                    2 -> {
+                        // Jagged snow cap
+                        moveTo(peakX - peakWidth * 0.15f, snowLine)
+                        lineTo(peakX, baseY - peakHeight)
+                        lineTo(peakX + peakWidth * 0.15f, baseY - peakHeight * 0.75f)
+                        close()
+                    }
+                    else -> {
+                        // Standard triangular snow cap
+                        moveTo(peakX - peakWidth * 0.22f, snowLine)
+                        lineTo(peakX, baseY - peakHeight)
+                        lineTo(peakX + peakWidth * 0.22f, snowLine)
+                        close()
+                    }
+                }
             }
             drawPath(snowPath, color = TerrainColors.mountainSnow)
+        }
+
+        // Add small crags/rocks at base for some mountains
+        if (random.nextFloat() > 0.5f) {
+            val cragX = peakX + (random.nextFloat() - 0.5f) * peakWidth
+            val cragSize = terrainSize * 0.04f
+            val cragPath = Path().apply {
+                moveTo(cragX - cragSize, baseY)
+                lineTo(cragX, baseY - cragSize * 1.5f)
+                lineTo(cragX + cragSize, baseY)
+                close()
+            }
+            drawPath(cragPath, color = TerrainColors.mountain.copy(alpha = 0.5f))
         }
     }
 }
@@ -3585,29 +3927,34 @@ private fun DrawScope.drawLocationTerrain(
     val terrains = parseTerrainFromDescription(location.desc, location.name)
     val seed = location.id.hashCode()
 
-    // Draw in specific order (background terrain first, then structures on top)
-    // Background/base terrain
+    // Draw in specific order (bottom layer first, then features on top)
+
+    // 1. Rivers/streams at the very bottom (like carved into terrain)
+    if (TerrainType.RIVER in terrains) drawRiverTerrain(center, terrainSize, seed + 16)
+    if (TerrainType.STREAM in terrains) drawStreamTerrain(center, terrainSize, seed + 14)
+
+    // 2. Base terrain (ground cover)
     if (TerrainType.DESERT in terrains) drawDesertTerrain(center, terrainSize, seed)
     if (TerrainType.GRASS in terrains) drawGrassTerrain(center, terrainSize, seed)
     if (TerrainType.SWAMP in terrains) drawSwampTerrain(center, terrainSize, seed + 10)
 
-    // Water features
+    // 3. Water bodies (lakes, coast, pools - on top of base but below terrain features)
     if (TerrainType.COAST in terrains) drawCoastTerrain(center, terrainSize, seed + 7)
+    if (TerrainType.LAKE in terrains) drawLakeTerrain(center, terrainSize, seed + 15)
     if (TerrainType.WATER in terrains) drawWaterTerrain(center, terrainSize, seed + 1)
-    if (TerrainType.STREAM in terrains) drawStreamTerrain(center, terrainSize, seed + 14)
     if (TerrainType.PORT in terrains) drawPortTerrain(center, terrainSize, seed + 11)
 
-    // Elevated terrain
+    // 4. Elevated terrain
     if (TerrainType.HILLS in terrains) drawHillsTerrain(center, terrainSize, seed + 8)
     if (TerrainType.MOUNTAIN in terrains) drawMountainTerrain(center, terrainSize, seed + 2)
 
-    // Infrastructure (roads drawn before vegetation so trees appear on top)
+    // 5. Infrastructure
     if (TerrainType.ROAD in terrains) drawRoadTerrain(center, terrainSize, seed + 4)
 
-    // Vegetation (trees on top of roads)
+    // 6. Vegetation (trees on top of roads)
     if (TerrainType.FOREST in terrains) drawForestTerrain(center, terrainSize, seed + 3)
 
-    // Structures (on top)
+    // 7. Structures (on top of everything)
     if (TerrainType.RUINS in terrains) drawRuinsTerrain(center, terrainSize, seed + 12)
     if (TerrainType.CAVE in terrains) drawCaveTerrain(center, terrainSize, seed + 5)
     if (TerrainType.BUILDING in terrains) drawBuildingTerrain(center, terrainSize, seed + 6)
