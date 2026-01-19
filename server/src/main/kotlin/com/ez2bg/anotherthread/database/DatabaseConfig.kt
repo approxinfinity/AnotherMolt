@@ -23,7 +23,8 @@ object DatabaseConfig {
                 ItemTable,
                 UserTable,
                 FeatureCategoryTable,
-                FeatureTable
+                FeatureTable,
+                AuditLogTable
             )
         }
     }

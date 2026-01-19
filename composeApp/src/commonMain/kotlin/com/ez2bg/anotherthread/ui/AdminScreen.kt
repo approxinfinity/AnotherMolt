@@ -676,6 +676,15 @@ fun AdminScreen() {
     }
     var currentUser by remember { mutableStateOf(savedUser) }
 
+    // Set user context for audit logging when user changes
+    LaunchedEffect(currentUser) {
+        if (currentUser != null) {
+            ApiClient.setUserContext(currentUser!!.id, currentUser!!.name)
+        } else {
+            ApiClient.clearUserContext()
+        }
+    }
+
     // Refresh user data from server on startup to get latest featureIds, etc.
     LaunchedEffect(savedUser?.id) {
         savedUser?.let { user ->

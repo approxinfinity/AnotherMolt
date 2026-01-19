@@ -1,6 +1,7 @@
 package com.ez2bg.anotherthread
 
 import com.ez2bg.anotherthread.database.*
+import io.ktor.server.request.header
 import io.ktor.http.*
 import io.ktor.serialization.kotlinx.json.*
 import io.ktor.server.application.*
@@ -396,6 +397,9 @@ fun Application.module() {
             }
             post {
                 val request = call.receive<CreateLocationRequest>()
+                val userId = call.request.header("X-User-Id") ?: "unknown"
+                val userName = call.request.header("X-User-Name") ?: "unknown"
+
                 val location = Location(
                     name = request.name,
                     desc = request.desc,
@@ -405,6 +409,16 @@ fun Application.module() {
                     featureIds = request.featureIds
                 )
                 val createdLocation = LocationRepository.create(location)
+
+                // Audit log
+                AuditLogRepository.log(
+                    recordId = createdLocation.id,
+                    recordType = "Location",
+                    recordName = createdLocation.name,
+                    action = AuditAction.CREATE,
+                    userId = userId,
+                    userName = userName
+                )
 
                 // Trigger image generation in background if description is provided
                 if (request.desc.isNotBlank()) {
@@ -428,6 +442,8 @@ fun Application.module() {
             put("/{id}") {
                 val id = call.parameters["id"] ?: return@put call.respond(HttpStatusCode.BadRequest)
                 val request = call.receive<CreateLocationRequest>()
+                val userId = call.request.header("X-User-Id") ?: "unknown"
+                val userName = call.request.header("X-User-Name") ?: "unknown"
 
                 // Get existing location to check if description changed
                 val existingLocation = LocationRepository.findById(id)
@@ -446,6 +462,15 @@ fun Application.module() {
                 )
 
                 if (LocationRepository.update(location)) {
+                    // Audit log
+                    AuditLogRepository.log(
+                        recordId = location.id,
+                        recordType = "Location",
+                        recordName = location.name,
+                        action = AuditAction.UPDATE,
+                        userId = userId,
+                        userName = userName
+                    )
                     // Regenerate image if description changed
                     if (descChanged && request.desc.isNotBlank()) {
                         application.launch {
@@ -490,6 +515,8 @@ fun Application.module() {
             }
             delete("/{id}") {
                 val id = call.parameters["id"] ?: return@delete call.respond(HttpStatusCode.BadRequest)
+                val userId = call.request.header("X-User-Id") ?: "unknown"
+                val userName = call.request.header("X-User-Name") ?: "unknown"
 
                 val existingLocation = LocationRepository.findById(id)
                     ?: return@delete call.respond(HttpStatusCode.NotFound)
@@ -498,6 +525,15 @@ fun Application.module() {
                 LocationRepository.removeExitIdFromAll(id)
 
                 if (LocationRepository.delete(id)) {
+                    // Audit log
+                    AuditLogRepository.log(
+                        recordId = id,
+                        recordType = "Location",
+                        recordName = existingLocation.name,
+                        action = AuditAction.DELETE,
+                        userId = userId,
+                        userName = userName
+                    )
                     call.respond(HttpStatusCode.NoContent)
                 } else {
                     call.respond(HttpStatusCode.InternalServerError)
@@ -512,6 +548,9 @@ fun Application.module() {
             }
             post {
                 val request = call.receive<CreateCreatureRequest>()
+                val userId = call.request.header("X-User-Id") ?: "unknown"
+                val userName = call.request.header("X-User-Name") ?: "unknown"
+
                 val creature = Creature(
                     name = request.name,
                     desc = request.desc,
@@ -519,6 +558,16 @@ fun Application.module() {
                     featureIds = request.featureIds
                 )
                 val createdCreature = CreatureRepository.create(creature)
+
+                // Audit log
+                AuditLogRepository.log(
+                    recordId = createdCreature.id,
+                    recordType = "Creature",
+                    recordName = createdCreature.name,
+                    action = AuditAction.CREATE,
+                    userId = userId,
+                    userName = userName
+                )
 
                 // Trigger image generation in background
                 if (request.desc.isNotBlank()) {
@@ -542,6 +591,8 @@ fun Application.module() {
             put("/{id}") {
                 val id = call.parameters["id"] ?: return@put call.respond(HttpStatusCode.BadRequest)
                 val request = call.receive<CreateCreatureRequest>()
+                val userId = call.request.header("X-User-Id") ?: "unknown"
+                val userName = call.request.header("X-User-Name") ?: "unknown"
 
                 val existingCreature = CreatureRepository.findById(id)
                 val descChanged = existingCreature?.desc != request.desc
@@ -557,6 +608,15 @@ fun Application.module() {
                 )
 
                 if (CreatureRepository.update(creature)) {
+                    // Audit log
+                    AuditLogRepository.log(
+                        recordId = creature.id,
+                        recordType = "Creature",
+                        recordName = creature.name,
+                        action = AuditAction.UPDATE,
+                        userId = userId,
+                        userName = userName
+                    )
                     if (descChanged && request.desc.isNotBlank()) {
                         application.launch {
                             ImageGenerationService.generateImage(
@@ -600,6 +660,8 @@ fun Application.module() {
             }
             delete("/{id}") {
                 val id = call.parameters["id"] ?: return@delete call.respond(HttpStatusCode.BadRequest)
+                val userId = call.request.header("X-User-Id") ?: "unknown"
+                val userName = call.request.header("X-User-Name") ?: "unknown"
 
                 val existingCreature = CreatureRepository.findById(id)
                     ?: return@delete call.respond(HttpStatusCode.NotFound)
@@ -608,6 +670,15 @@ fun Application.module() {
                 LocationRepository.removeCreatureIdFromAll(id)
 
                 if (CreatureRepository.delete(id)) {
+                    // Audit log
+                    AuditLogRepository.log(
+                        recordId = id,
+                        recordType = "Creature",
+                        recordName = existingCreature.name,
+                        action = AuditAction.DELETE,
+                        userId = userId,
+                        userName = userName
+                    )
                     call.respond(HttpStatusCode.NoContent)
                 } else {
                     call.respond(HttpStatusCode.InternalServerError)
@@ -763,12 +834,25 @@ fun Application.module() {
             }
             post {
                 val request = call.receive<CreateItemRequest>()
+                val userId = call.request.header("X-User-Id") ?: "unknown"
+                val userName = call.request.header("X-User-Name") ?: "unknown"
+
                 val item = Item(
                     name = request.name,
                     desc = request.desc,
                     featureIds = request.featureIds
                 )
                 val createdItem = ItemRepository.create(item)
+
+                // Audit log
+                AuditLogRepository.log(
+                    recordId = createdItem.id,
+                    recordType = "Item",
+                    recordName = createdItem.name,
+                    action = AuditAction.CREATE,
+                    userId = userId,
+                    userName = userName
+                )
 
                 // Trigger image generation in background
                 if (request.desc.isNotBlank()) {
@@ -792,6 +876,8 @@ fun Application.module() {
             put("/{id}") {
                 val id = call.parameters["id"] ?: return@put call.respond(HttpStatusCode.BadRequest)
                 val request = call.receive<CreateItemRequest>()
+                val userId = call.request.header("X-User-Id") ?: "unknown"
+                val userName = call.request.header("X-User-Name") ?: "unknown"
 
                 val existingItem = ItemRepository.findById(id)
                 val descChanged = existingItem?.desc != request.desc
@@ -806,6 +892,15 @@ fun Application.module() {
                 )
 
                 if (ItemRepository.update(item)) {
+                    // Audit log
+                    AuditLogRepository.log(
+                        recordId = item.id,
+                        recordType = "Item",
+                        recordName = item.name,
+                        action = AuditAction.UPDATE,
+                        userId = userId,
+                        userName = userName
+                    )
                     if (descChanged && request.desc.isNotBlank()) {
                         application.launch {
                             ImageGenerationService.generateImage(
@@ -849,6 +944,8 @@ fun Application.module() {
             }
             delete("/{id}") {
                 val id = call.parameters["id"] ?: return@delete call.respond(HttpStatusCode.BadRequest)
+                val userId = call.request.header("X-User-Id") ?: "unknown"
+                val userName = call.request.header("X-User-Name") ?: "unknown"
 
                 val existingItem = ItemRepository.findById(id)
                     ?: return@delete call.respond(HttpStatusCode.NotFound)
@@ -857,6 +954,15 @@ fun Application.module() {
                 LocationRepository.removeItemIdFromAll(id)
 
                 if (ItemRepository.delete(id)) {
+                    // Audit log
+                    AuditLogRepository.log(
+                        recordId = id,
+                        recordType = "Item",
+                        recordName = existingItem.name,
+                        action = AuditAction.DELETE,
+                        userId = userId,
+                        userName = userName
+                    )
                     call.respond(HttpStatusCode.NoContent)
                 } else {
                     call.respond(HttpStatusCode.InternalServerError)
@@ -923,6 +1029,9 @@ fun Application.module() {
             }
             post {
                 val request = call.receive<CreateFeatureRequest>()
+                val userId = call.request.header("X-User-Id") ?: "unknown"
+                val userName = call.request.header("X-User-Name") ?: "unknown"
+
                 val feature = if (request.id != null) {
                     Feature(
                         id = request.id,
@@ -940,11 +1049,25 @@ fun Application.module() {
                     )
                 }
                 val created = FeatureRepository.create(feature)
+
+                // Audit log
+                AuditLogRepository.log(
+                    recordId = created.id,
+                    recordType = "Feature",
+                    recordName = created.name,
+                    action = AuditAction.CREATE,
+                    userId = userId,
+                    userName = userName
+                )
+
                 call.respond(HttpStatusCode.Created, created)
             }
             put("/{id}") {
                 val id = call.parameters["id"] ?: return@put call.respond(HttpStatusCode.BadRequest)
                 val request = call.receive<CreateFeatureRequest>()
+                val userId = call.request.header("X-User-Id") ?: "unknown"
+                val userName = call.request.header("X-User-Name") ?: "unknown"
+
                 val feature = Feature(
                     id = id,
                     name = request.name,
@@ -953,10 +1076,42 @@ fun Application.module() {
                     data = request.data
                 )
                 if (FeatureRepository.update(feature)) {
+                    // Audit log
+                    AuditLogRepository.log(
+                        recordId = feature.id,
+                        recordType = "Feature",
+                        recordName = feature.name,
+                        action = AuditAction.UPDATE,
+                        userId = userId,
+                        userName = userName
+                    )
                     call.respond(HttpStatusCode.OK, feature)
                 } else {
                     call.respond(HttpStatusCode.NotFound)
                 }
+            }
+        }
+
+        // Audit log routes
+        route("/audit-logs") {
+            get {
+                val limit = call.request.queryParameters["limit"]?.toIntOrNull() ?: 100
+                val offset = call.request.queryParameters["offset"]?.toLongOrNull() ?: 0
+                call.respond(AuditLogRepository.findAll(limit, offset))
+            }
+            get("/by-record/{recordId}") {
+                val recordId = call.parameters["recordId"] ?: return@get call.respond(HttpStatusCode.BadRequest)
+                call.respond(AuditLogRepository.findByRecordId(recordId))
+            }
+            get("/by-type/{recordType}") {
+                val recordType = call.parameters["recordType"] ?: return@get call.respond(HttpStatusCode.BadRequest)
+                val limit = call.request.queryParameters["limit"]?.toIntOrNull() ?: 100
+                call.respond(AuditLogRepository.findByRecordType(recordType, limit))
+            }
+            get("/by-user/{userId}") {
+                val userId = call.parameters["userId"] ?: return@get call.respond(HttpStatusCode.BadRequest)
+                val limit = call.request.queryParameters["limit"]?.toIntOrNull() ?: 100
+                call.respond(AuditLogRepository.findByUserId(userId, limit))
             }
         }
     }

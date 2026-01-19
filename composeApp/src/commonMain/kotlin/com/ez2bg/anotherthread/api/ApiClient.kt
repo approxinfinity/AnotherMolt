@@ -198,7 +198,34 @@ data class FileUploadResponseDto(
 // Admin feature ID constant
 const val ADMIN_FEATURE_ID = "1"
 
+// Audit log DTOs
+@Serializable
+data class AuditLogDto(
+    val id: String,
+    val recordId: String,
+    val recordType: String,
+    val recordName: String,
+    val action: String,
+    val userId: String,
+    val userName: String,
+    val timestamp: Long
+)
+
 object ApiClient {
+    // User context for audit logging
+    private var currentUserId: String? = null
+    private var currentUserName: String? = null
+
+    fun setUserContext(userId: String?, userName: String?) {
+        currentUserId = userId
+        currentUserName = userName
+    }
+
+    fun clearUserContext() {
+        currentUserId = null
+        currentUserName = null
+    }
+
     private val client = HttpClient {
         install(ContentNegotiation) {
             json(Json {
@@ -210,6 +237,11 @@ object ApiClient {
             requestTimeoutMillis = 180_000 // 3 minutes for image generation
             connectTimeoutMillis = 30_000
             socketTimeoutMillis = 180_000
+        }
+        install(DefaultRequest) {
+            // Add user headers for audit logging if available
+            currentUserId?.let { header("X-User-Id", it) }
+            currentUserName?.let { header("X-User-Name", it) }
         }
     }
 
@@ -491,5 +523,29 @@ object ApiClient {
     suspend fun getAllowedFileTypes(): Result<Set<String>> = runCatching {
         val response: Map<String, Set<String>> = client.get("$baseUrl/admin/files/allowed-types").body()
         response["allowedExtensions"] ?: emptySet()
+    }
+
+    // Audit log methods
+    suspend fun getAuditLogs(limit: Int = 100, offset: Long = 0): Result<List<AuditLogDto>> = runCatching {
+        client.get("$baseUrl/audit-logs") {
+            parameter("limit", limit)
+            parameter("offset", offset)
+        }.body()
+    }
+
+    suspend fun getAuditLogsByRecord(recordId: String): Result<List<AuditLogDto>> = runCatching {
+        client.get("$baseUrl/audit-logs/by-record/$recordId").body()
+    }
+
+    suspend fun getAuditLogsByType(recordType: String, limit: Int = 100): Result<List<AuditLogDto>> = runCatching {
+        client.get("$baseUrl/audit-logs/by-type/$recordType") {
+            parameter("limit", limit)
+        }.body()
+    }
+
+    suspend fun getAuditLogsByUser(userId: String, limit: Int = 100): Result<List<AuditLogDto>> = runCatching {
+        client.get("$baseUrl/audit-logs/by-user/$userId") {
+            parameter("limit", limit)
+        }.body()
     }
 }
