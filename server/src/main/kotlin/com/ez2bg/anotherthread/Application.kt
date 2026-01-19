@@ -200,6 +200,18 @@ fun Application.module() {
             call.respondText("OK")
         }
 
+        // Apple App Site Association for iOS password autofill
+        get("/.well-known/apple-app-site-association") {
+            val aasaContent = this::class.java.classLoader
+                .getResourceAsStream(".well-known/apple-app-site-association")
+                ?.bufferedReader()?.readText()
+            if (aasaContent != null) {
+                call.respondText(aasaContent, ContentType.Application.Json)
+            } else {
+                call.respond(HttpStatusCode.NotFound)
+            }
+        }
+
         // Serve static files from subfolders
         staticFiles("/files/imageGen", imageGenDir)
         staticFiles("/files/uploads", uploadsDir)
