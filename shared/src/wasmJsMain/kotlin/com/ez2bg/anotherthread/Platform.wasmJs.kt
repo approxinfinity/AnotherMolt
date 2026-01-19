@@ -22,8 +22,10 @@ actual fun developmentBaseUrl(): String {
     val tunnelUrl = getTunnelBackendUrl()?.toString()
     val localPort = getLocalBackendPort()
 
-    // Use tunnel URL if configured and we're on a tunnel hostname
-    return if (tunnelUrl != null && tunnelUrl != "null" && hostname.contains("trycloudflare.com")) {
+    // If on ez2bgood.com, use api subdomain for backend
+    return if (hostname == "anotherthread.ez2bgood.com") {
+        "https://api.ez2bgood.com"
+    } else if (tunnelUrl != null && tunnelUrl != "null" && hostname.contains("trycloudflare.com")) {
         tunnelUrl
     } else {
         "http://$hostname:$localPort"

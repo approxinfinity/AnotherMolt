@@ -220,7 +220,11 @@ data class ForestParamsDto(
 
 @Serializable
 data class LakeParamsDto(
-    val diameterMultiplier: Float? = null
+    val diameterMultiplier: Float? = null,  // Legacy - used when X and Y are linked
+    val diameterMultiplierX: Float? = null,
+    val diameterMultiplierY: Float? = null,
+    val shapePoints: Int? = null,
+    val noiseScale: Float? = null
 )
 
 @Serializable
@@ -257,7 +261,11 @@ data class DesertParamsDto(
 
 @Serializable
 data class SwampParamsDto(
-    val densityMultiplier: Float? = null
+    val densityMultiplier: Float? = null,
+    val diameterMultiplierX: Float? = null,
+    val diameterMultiplierY: Float? = null,
+    val shapePoints: Int? = null,
+    val noiseScale: Float? = null
 )
 
 @Serializable

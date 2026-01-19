@@ -1172,4 +1172,183 @@ class ApplicationTest {
         // Should contain WEST now, and ideally not EAST for this specific exit
         assertTrue(body.contains(""""direction":"WEST""""))
     }
+
+    // ========== Terrain Override Lock Tests ==========
+
+    @Test
+    fun testUpdateTerrainOverrideOnLockedLocationByDifferentUserFails() = testApplication {
+        application {
+            module()
+        }
+        val client = createClient {
+            install(ContentNegotiation) {
+                json(Json { ignoreUnknownKeys = true })
+            }
+        }
+
+        // Create a location
+        val createResponse = client.post("/locations") {
+            contentType(ContentType.Application.Json)
+            setBody("""{"name":"Terrain Test Location","desc":"Test","itemIds":[],"creatureIds":[],"exits":[],"featureIds":[]}""")
+        }
+        assertEquals(HttpStatusCode.Created, createResponse.status)
+        val createBody = createResponse.bodyAsText()
+        val idMatch = Regex(""""id":"([^"]+)"""").find(createBody)
+        val locationId = idMatch?.groupValues?.get(1) ?: fail("Could not extract location ID")
+
+        // Lock the location by user-A
+        val lockResponse = client.put("/locations/$locationId/lock") {
+            contentType(ContentType.Application.Json)
+            setBody("""{"userId":"user-A"}""")
+        }
+        assertEquals(HttpStatusCode.OK, lockResponse.status)
+        assertTrue(lockResponse.bodyAsText().contains("\"lockedBy\":\"user-A\""))
+
+        // Try to update terrain overrides as user-B (should fail with 403)
+        val updateResponse = client.put("/locations/$locationId/terrain-overrides") {
+            contentType(ContentType.Application.Json)
+            header("X-User-Id", "user-B")
+            setBody("""{"forest":{"treeCount":50}}""")
+        }
+        assertEquals(HttpStatusCode.Forbidden, updateResponse.status)
+    }
+
+    @Test
+    fun testUpdateTerrainOverrideOnLockedLocationBySameUserSucceeds() = testApplication {
+        application {
+            module()
+        }
+        val client = createClient {
+            install(ContentNegotiation) {
+                json(Json { ignoreUnknownKeys = true })
+            }
+        }
+
+        // Create a location
+        val createResponse = client.post("/locations") {
+            contentType(ContentType.Application.Json)
+            setBody("""{"name":"Same User Terrain Test","desc":"Test","itemIds":[],"creatureIds":[],"exits":[],"featureIds":[]}""")
+        }
+        assertEquals(HttpStatusCode.Created, createResponse.status)
+        val createBody = createResponse.bodyAsText()
+        val idMatch = Regex(""""id":"([^"]+)"""").find(createBody)
+        val locationId = idMatch?.groupValues?.get(1) ?: fail("Could not extract location ID")
+
+        // Lock the location by user-A
+        val lockResponse = client.put("/locations/$locationId/lock") {
+            contentType(ContentType.Application.Json)
+            setBody("""{"userId":"user-A"}""")
+        }
+        assertEquals(HttpStatusCode.OK, lockResponse.status)
+
+        // Update terrain overrides as the same user-A (should succeed)
+        val updateResponse = client.put("/locations/$locationId/terrain-overrides") {
+            contentType(ContentType.Application.Json)
+            header("X-User-Id", "user-A")
+            setBody("""{"forest":{"treeCount":100}}""")
+        }
+        assertEquals(HttpStatusCode.OK, updateResponse.status)
+        assertTrue(updateResponse.bodyAsText().contains("\"treeCount\":100"))
+    }
+
+    @Test
+    fun testDeleteTerrainOverrideOnLockedLocationByDifferentUserFails() = testApplication {
+        application {
+            module()
+        }
+        val client = createClient {
+            install(ContentNegotiation) {
+                json(Json { ignoreUnknownKeys = true })
+            }
+        }
+
+        // Create a location
+        val createResponse = client.post("/locations") {
+            contentType(ContentType.Application.Json)
+            setBody("""{"name":"Delete Terrain Test","desc":"Test","itemIds":[],"creatureIds":[],"exits":[],"featureIds":[]}""")
+        }
+        assertEquals(HttpStatusCode.Created, createResponse.status)
+        val createBody = createResponse.bodyAsText()
+        val idMatch = Regex(""""id":"([^"]+)"""").find(createBody)
+        val locationId = idMatch?.groupValues?.get(1) ?: fail("Could not extract location ID")
+
+        // First, add some terrain overrides
+        client.put("/locations/$locationId/terrain-overrides") {
+            contentType(ContentType.Application.Json)
+            header("X-User-Id", "user-A")
+            setBody("""{"mountain":{"peakCount":5}}""")
+        }
+
+        // Lock the location by user-A
+        val lockResponse = client.put("/locations/$locationId/lock") {
+            contentType(ContentType.Application.Json)
+            setBody("""{"userId":"user-A"}""")
+        }
+        assertEquals(HttpStatusCode.OK, lockResponse.status)
+
+        // Try to delete terrain overrides as user-B (should fail with 403)
+        val deleteResponse = client.delete("/locations/$locationId/terrain-overrides") {
+            header("X-User-Id", "user-B")
+        }
+        assertEquals(HttpStatusCode.Forbidden, deleteResponse.status)
+    }
+
+    @Test
+    fun testUpdateTerrainOverrideOnUnlockedLocationSucceeds() = testApplication {
+        application {
+            module()
+        }
+        val client = createClient {
+            install(ContentNegotiation) {
+                json(Json { ignoreUnknownKeys = true })
+            }
+        }
+
+        // Create a location (not locked)
+        val createResponse = client.post("/locations") {
+            contentType(ContentType.Application.Json)
+            setBody("""{"name":"Unlocked Terrain Test","desc":"Test","itemIds":[],"creatureIds":[],"exits":[],"featureIds":[]}""")
+        }
+        assertEquals(HttpStatusCode.Created, createResponse.status)
+        val createBody = createResponse.bodyAsText()
+        val idMatch = Regex(""""id":"([^"]+)"""").find(createBody)
+        val locationId = idMatch?.groupValues?.get(1) ?: fail("Could not extract location ID")
+
+        // Update terrain overrides (location not locked, should succeed)
+        val updateResponse = client.put("/locations/$locationId/terrain-overrides") {
+            contentType(ContentType.Application.Json)
+            header("X-User-Id", "any-user")
+            setBody("""{"lake":{"diameterMultiplier":1.5}}""")
+        }
+        assertEquals(HttpStatusCode.OK, updateResponse.status)
+        assertTrue(updateResponse.bodyAsText().contains("\"diameterMultiplier\":1.5"))
+    }
+
+    @Test
+    fun testGetTerrainOverrideDoesNotRequireAuthentication() = testApplication {
+        application {
+            module()
+        }
+        val client = createClient {
+            install(ContentNegotiation) {
+                json(Json { ignoreUnknownKeys = true })
+            }
+        }
+
+        // Create a location
+        val createResponse = client.post("/locations") {
+            contentType(ContentType.Application.Json)
+            setBody("""{"name":"Read Terrain Test","desc":"Test","itemIds":[],"creatureIds":[],"exits":[],"featureIds":[]}""")
+        }
+        assertEquals(HttpStatusCode.Created, createResponse.status)
+        val createBody = createResponse.bodyAsText()
+        val idMatch = Regex(""""id":"([^"]+)"""").find(createBody)
+        val locationId = idMatch?.groupValues?.get(1) ?: fail("Could not extract location ID")
+
+        // GET terrain overrides without authentication (should succeed - read-only)
+        val getResponse = client.get("/locations/$locationId/terrain-overrides")
+        assertEquals(HttpStatusCode.OK, getResponse.status)
+        // Should return default empty overrides
+        assertTrue(getResponse.bodyAsText().contains("\"locationId\":\"$locationId\""))
+    }
 }

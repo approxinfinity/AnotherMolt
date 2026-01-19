@@ -6,6 +6,7 @@ import com.ez2bg.anotherthread.util.BiomeBlender
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.VectorConverter
 import androidx.compose.animation.core.animateDpAsState
+import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.border
@@ -48,6 +49,7 @@ import androidx.compose.runtime.*
 import kotlinx.coroutines.delay
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.geometry.Offset
@@ -204,11 +206,10 @@ val SwordIcon: ImageVector by lazy {
 }
 
 enum class AdminTab(val title: String, val icon: ImageVector) {
-    USER("User", Icons.Filled.Person),
     LOCATION("Location", Icons.Filled.Place),
     CREATURE("Creature", Icons.Filled.Pets),
     ITEM("Item", SwordIcon),
-    ADMIN("Admin", Icons.Filled.AdminPanelSettings)
+    USER("User", Icons.Filled.Person)
 }
 
 enum class EntityType {
@@ -241,7 +242,9 @@ fun EntityImage(
                 model = fullUrl,
                 contentDescription = contentDescription,
                 modifier = Modifier
+                    .fillMaxWidth()
                     .clip(RoundedCornerShape(12.dp)),
+                contentScale = ContentScale.FillWidth,
                 onState = { imageState = it }
             )
 
@@ -676,12 +679,8 @@ fun DragonHeader(modifier: Modifier = Modifier) {
 fun AdminScreen() {
     // Restore persisted auth state on startup
     val savedUser = remember { AuthStorage.getUser() }
-    var selectedTab by remember { mutableStateOf(if (savedUser != null) AdminTab.LOCATION else AdminTab.USER) }
-    var viewState by remember {
-        mutableStateOf<ViewState>(
-            if (savedUser != null) ViewState.LocationGraph() else ViewState.UserAuth
-        )
-    }
+    var selectedTab by remember { mutableStateOf(AdminTab.LOCATION) }
+    var viewState by remember { mutableStateOf<ViewState>(ViewState.LocationGraph()) }
     var currentUser by remember { mutableStateOf(savedUser) }
 
     // Set user context for audit logging when user changes
@@ -715,12 +714,8 @@ fun AdminScreen() {
         // Check if current user has admin privilege
         val isAdmin = currentUser?.featureIds?.contains(ADMIN_FEATURE_ID) == true
 
-        // Filter tabs - only show Admin tab if user is admin
-        val visibleTabs = if (isAdmin) {
-            AdminTab.entries
-        } else {
-            AdminTab.entries.filter { it != AdminTab.ADMIN }
-        }
+        // All tabs are visible
+        val visibleTabs = AdminTab.entries
 
         TabRow(selectedTabIndex = visibleTabs.indexOf(selectedTab).coerceAtLeast(0)) {
             visibleTabs.forEach { tab ->
@@ -733,7 +728,6 @@ fun AdminScreen() {
                             AdminTab.LOCATION -> ViewState.LocationGraph()
                             AdminTab.CREATURE -> ViewState.CreatureList
                             AdminTab.ITEM -> ViewState.ItemList
-                            AdminTab.ADMIN -> ViewState.AdminPanel
                         }
                     },
                     icon = {
@@ -774,7 +768,8 @@ fun AdminScreen() {
                     selectedTab = AdminTab.ITEM
                     viewState = ViewState.ItemDetail(id)
                 },
-                onBack = null  // No back button for own profile
+                onBack = null,  // No back button for own profile
+                onNavigateToAdmin = if (isAdmin) {{ viewState = ViewState.AdminPanel }} else null
             )
             is ViewState.UserDetail -> UserDetailView(
                 userId = state.userId,
@@ -794,7 +789,8 @@ fun AdminScreen() {
                 onAddClick = { viewState = ViewState.LocationCreate },
                 onLocationClick = { location -> viewState = ViewState.LocationEdit(location) },
                 isAuthenticated = currentUser != null,
-                isAdmin = isAdmin
+                isAdmin = isAdmin,
+                currentUser = currentUser
             )
             is ViewState.LocationCreate -> LocationForm(
                 editLocation = null,
@@ -890,7 +886,8 @@ fun AdminScreen() {
                 onNavigateToItem = { id ->
                     selectedTab = AdminTab.ITEM
                     viewState = ViewState.ItemDetail(id)
-                }
+                },
+                isAdmin = isAdmin
             )
             is ViewState.ItemList -> ItemListView(
                 onItemClick = { item ->
@@ -931,7 +928,8 @@ fun AdminScreen() {
                 onCreateNew = {
                     selectedTab = AdminTab.ITEM
                     viewState = ViewState.ItemCreate
-                }
+                },
+                isAdmin = isAdmin
             )
             is ViewState.AdminPanel -> AdminPanelView(
                 onViewAuditLogs = { viewState = ViewState.AuditLogs }
@@ -1072,7 +1070,8 @@ fun UserProfileView(
     onUserUpdated: (UserDto) -> Unit,
     onLogout: () -> Unit,
     onNavigateToItem: (String) -> Unit,
-    onBack: (() -> Unit)?  // null for own profile, non-null for viewing others
+    onBack: (() -> Unit)?,  // null for own profile, non-null for viewing others
+    onNavigateToAdmin: (() -> Unit)? = null  // Only provided if isAdmin
 ) {
     // Determine if this is our own profile or someone else's
     val isOwnProfile = currentUser?.id == user.id
@@ -1105,19 +1104,34 @@ fun UserProfileView(
             .verticalScroll(rememberScrollState()),
         verticalArrangement = Arrangement.spacedBy(16.dp)
     ) {
-        // Back button for viewing other users
-        if (onBack != null) {
+        // Header row with back button (if viewing others) and admin icon (if admin on own profile)
+        if (onBack != null || (isOwnProfile && onNavigateToAdmin != null)) {
             Row(
                 verticalAlignment = Alignment.CenterVertically,
-                modifier = Modifier.fillMaxWidth()
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween
             ) {
-                IconButton(onClick = onBack) {
-                    Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    if (onBack != null) {
+                        IconButton(onClick = onBack) {
+                            Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
+                        }
+                        Text(
+                            text = "User Profile",
+                            style = MaterialTheme.typography.titleLarge
+                        )
+                    }
                 }
-                Text(
-                    text = "User Profile",
-                    style = MaterialTheme.typography.titleLarge
-                )
+                // Admin panel icon for admins on their own profile
+                if (isOwnProfile && onNavigateToAdmin != null) {
+                    IconButton(onClick = onNavigateToAdmin) {
+                        Icon(
+                            imageVector = Icons.Default.AdminPanelSettings,
+                            contentDescription = "Admin Panel",
+                            tint = MaterialTheme.colorScheme.primary
+                        )
+                    }
+                }
             }
         }
 
@@ -2057,7 +2071,8 @@ fun LocationGraphView(
     onAddClick: () -> Unit,
     onLocationClick: (LocationDto) -> Unit,
     isAuthenticated: Boolean,
-    isAdmin: Boolean = false
+    isAdmin: Boolean = false,
+    currentUser: UserDto? = null
 ) {
     var locations by remember { mutableStateOf<List<LocationDto>>(emptyList()) }
     var isLoading by remember { mutableStateOf(true) }
@@ -2116,7 +2131,8 @@ fun LocationGraphView(
                             selectedLocationForSettings = null
                         }
                 }
-            }
+            },
+            currentUser = currentUser
         )
     }
 
@@ -2184,6 +2200,24 @@ fun LocationGraphView(
                 shape = CircleShape
             ) {
                 Icon(Icons.Filled.Add, contentDescription = "Add Location")
+            }
+        } else {
+            // "Login to Create" message for unauthenticated users
+            Box(
+                modifier = Modifier
+                    .align(Alignment.BottomCenter)
+                    .padding(bottom = 24.dp)
+                    .background(
+                        color = MaterialTheme.colorScheme.surface.copy(alpha = 0.85f),
+                        shape = RoundedCornerShape(8.dp)
+                    )
+                    .padding(horizontal = 16.dp, vertical = 8.dp)
+            ) {
+                Text(
+                    text = "Login to Create",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f)
+                )
             }
         }
     }
@@ -2764,10 +2798,28 @@ private fun LocationNodeThumbnail(
                         mutableStateOf<AsyncImagePainter.State>(AsyncImagePainter.State.Empty)
                     }
 
+                    val isLoaded = imageState is AsyncImagePainter.State.Success
+                    val imageAlpha by animateFloatAsState(
+                        targetValue = if (isLoaded) 1f else 0f,
+                        animationSpec = tween(durationMillis = 300),
+                        label = "imageAlpha"
+                    )
+
+                    // Semi-opaque placeholder while loading
+                    if (!isLoaded) {
+                        Box(
+                            modifier = Modifier
+                                .fillMaxSize()
+                                .background(terrainColor.copy(alpha = 0.5f))
+                        )
+                    }
+
                     AsyncImage(
                         model = fullUrl,
                         contentDescription = location.name,
-                        modifier = Modifier.fillMaxSize(),
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .alpha(imageAlpha),
                         contentScale = ContentScale.Crop,
                         onState = { imageState = it }
                     )
@@ -2792,10 +2844,11 @@ private fun LocationNodeThumbnail(
                     }
 
                     // Show loading indicator if still loading
-                    if (imageState is AsyncImagePainter.State.Loading) {
+                    if (imageState is AsyncImagePainter.State.Loading || imageState is AsyncImagePainter.State.Empty) {
                         CircularProgressIndicator(
                             modifier = Modifier.size(24.dp),
-                            strokeWidth = 2.dp
+                            strokeWidth = 2.dp,
+                            color = Color.White
                         )
                     }
 
@@ -2812,23 +2865,7 @@ private fun LocationNodeThumbnail(
             Column(
                 verticalArrangement = Arrangement.spacedBy(4.dp)
             ) {
-                    // Settings/Terrain icon
-                    Box(
-                        modifier = Modifier
-                            .size(28.dp)
-                            .background(Color.Black.copy(alpha = 0.7f), CircleShape)
-                            .clickable(onClick = onSettingsClick)
-                            .padding(5.dp)
-                    ) {
-                        Icon(
-                            imageVector = Icons.Default.Settings,
-                            contentDescription = "Terrain Settings",
-                            modifier = Modifier.fillMaxSize(),
-                            tint = Color.White
-                        )
-                    }
-
-                    // Edit/Detail icon
+                    // Edit/Detail icon (pencil on top)
                     Box(
                         modifier = Modifier
                             .size(28.dp)
@@ -2839,6 +2876,22 @@ private fun LocationNodeThumbnail(
                         Icon(
                             imageVector = Icons.Default.Edit,
                             contentDescription = "Edit Location",
+                            modifier = Modifier.fillMaxSize(),
+                            tint = Color.White
+                        )
+                    }
+
+                    // Settings/Terrain icon (gear below)
+                    Box(
+                        modifier = Modifier
+                            .size(28.dp)
+                            .background(Color.Black.copy(alpha = 0.7f), CircleShape)
+                            .clickable(onClick = onSettingsClick)
+                            .padding(5.dp)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Settings,
+                            contentDescription = "Terrain Settings",
                             modifier = Modifier.fillMaxSize(),
                             tint = Color.White
                         )
@@ -3823,32 +3876,51 @@ private fun DrawScope.drawLakeTerrain(center: Offset, terrainSize: Float, seed: 
     val shallowWater = Color(0xFF5A8AAA) // Shallow edge blue
     val shoreColor = Color(0xFF8A9A7A) // Sandy/muddy shore
     val highlightColor = Color(0xFF8ACAEE) // Bright water sparkle
-    val sizeMultiplier = params?.diameterMultiplier ?: 1f
 
-    // Generate very smooth organic lake shape with 20 points for ultra-smooth curves
-    val points = 20
-    val baseRadius = terrainSize * 0.38f * sizeMultiplier
+    // Support both legacy single multiplier and new X/Y multipliers
+    val sizeMultiplierX = params?.diameterMultiplierX ?: params?.diameterMultiplier ?: 1f
+    val sizeMultiplierY = params?.diameterMultiplierY ?: params?.diameterMultiplier ?: 1f
 
-    // Generate smooth radii using Simplex noise for organic variation
-    val radii = (0 until points).map { i ->
+    // Generate amoeba-like organic lake shape - configurable via params
+    val points = params?.shapePoints ?: 20
+    val noiseScale = params?.noiseScale ?: 0.35f  // How much noise affects shape (0-1)
+    val baseRadiusX = terrainSize * 0.38f * sizeMultiplierX
+    val baseRadiusY = terrainSize * 0.38f * sizeMultiplierY
+
+    // Use seed to create unique offset into noise space - large offsets ensure unique shapes
+    val seedOffsetX = (seed % 1000) * 7.3f
+    val seedOffsetY = ((seed / 1000) % 1000) * 11.7f
+
+    // Generate irregular radii using multiple octaves of Simplex noise for amoeba shape
+    // Now returns pairs of (radiusX, radiusY) for elliptical shapes
+    val radiiPairs = (0 until points).map { i ->
         val angle = (i.toFloat() / points) * 2 * PI.toFloat()
-        val noiseVal = SimplexNoise.noise2D(
-            cos(angle) * 2f + seed * 0.1f,
-            sin(angle) * 2f + seed * 0.1f
-        )
-        baseRadius * (0.82f + noiseVal * 0.18f)
+        val nx = cos(angle)
+        val ny = sin(angle)
+
+        // Multiple octaves of noise for organic irregularity - scaled by noiseScale
+        val noise1 = SimplexNoise.noise2D(nx * 1.5f + seedOffsetX, ny * 1.5f + seedOffsetY) * 0.5f
+        val noise2 = SimplexNoise.noise2D(nx * 3f + seedOffsetX + 100f, ny * 3f + seedOffsetY + 100f) * 0.25f
+        val noise3 = SimplexNoise.noise2D(nx * 5f + seedOffsetX + 200f, ny * 5f + seedOffsetY + 200f) * 0.12f
+
+        // Add lobes - some points bulge out more dramatically
+        val lobeNoise = SimplexNoise.noise2D(nx * 0.8f + seedOffsetX + 300f, ny * 0.8f + seedOffsetY + 300f)
+        val lobe = if (lobeNoise > 0.4f) (lobeNoise - 0.4f) * 0.3f else 0f
+
+        val totalNoise = (noise1 + noise2 + noise3 + lobe) * noiseScale
+        val noiseMultiplier = 0.75f + totalNoise * 0.5f + 0.1f
+        Pair(baseRadiusX * noiseMultiplier, baseRadiusY * noiseMultiplier)
     }
 
     // Helper to create ultra-smooth lake path using cubic bezier curves
     fun createSmoothLakePath(scale: Float): Path = Path().apply {
-        val scaledRadii = radii.map { it * scale }
-
-        // Calculate points on the curve
+        // Calculate points on the curve using elliptical radii
         val curvePoints = (0 until points).map { i ->
             val angle = (i.toFloat() / points) * 2 * PI.toFloat()
+            val (rx, ry) = radiiPairs[i]
             Offset(
-                center.x + cos(angle) * scaledRadii[i],
-                center.y + sin(angle) * scaledRadii[i]
+                center.x + cos(angle) * rx * scale,
+                center.y + sin(angle) * ry * scale
             )
         }
 
@@ -3921,9 +3993,10 @@ private fun DrawScope.drawLakeTerrain(center: Offset, terrainSize: Float, seed: 
     drawPath(deepestPath, color = deepestColor)
 
     // Add organic shoreline detail (small rocks/pebbles)
+    val avgBaseRadius = (baseRadiusX + baseRadiusY) / 2f
     repeat(10) {
         val angle = random.nextFloat() * 2 * PI.toFloat()
-        val dist = baseRadius * (1.02f + random.nextFloat() * 0.08f)
+        val dist = avgBaseRadius * (1.02f + random.nextFloat() * 0.08f)
         val rockX = center.x + cos(angle) * dist
         val rockY = center.y + sin(angle) * dist
         val rockSize = terrainSize * (0.008f + random.nextFloat() * 0.012f)
@@ -3982,9 +4055,10 @@ private fun DrawScope.drawLakeTerrain(center: Offset, terrainSize: Float, seed: 
     )
 
     // Maybe add a tiny island in larger lakes
-    if (sizeMultiplier > 1.2f && random.nextFloat() > 0.5f) {
-        val islandX = center.x + (random.nextFloat() - 0.5f) * baseRadius * 0.4f
-        val islandY = center.y + (random.nextFloat() - 0.5f) * baseRadius * 0.4f
+    val avgSizeMultiplier = (sizeMultiplierX + sizeMultiplierY) / 2f
+    if (avgSizeMultiplier > 1.2f && random.nextFloat() > 0.5f) {
+        val islandX = center.x + (random.nextFloat() - 0.5f) * baseRadiusX * 0.4f
+        val islandY = center.y + (random.nextFloat() - 0.5f) * baseRadiusY * 0.4f
         val islandSize = terrainSize * 0.04f
         // Island base with soft edge
         drawCircle(
@@ -5389,152 +5463,282 @@ private fun DrawScope.drawSwampTerrain(center: Offset, terrainSize: Float, seed:
     val random = kotlin.random.Random(seed)
     val densityMultiplier = params?.densityMultiplier ?: 1f
 
-    // Atmospheric colors
+    // Atmospheric colors - smooth gradient from dark to light
     val murkyWater = Color(0xFF2A4A3A) // Dark murky green-brown
-    val stagnantWater = Color(0xFF3A5A4A) // Slightly lighter
+    val murkyWaterMid = Color(0xFF324E3E) // Slightly lighter murky
+    val stagnantWater = Color(0xFF3A5A4A) // Lighter stagnant
     val algaeColor = Color(0xFF4A6A4A) // Green algae
     val mudColor = Color(0xFF4A3A2A) // Brown mud
+    val shallowMud = Color(0xFF5A4A3A) // Shallower mud areas (where trees can go)
     val reedDark = Color(0xFF3A4A2A) // Dark reed
     val reedLight = Color(0xFF5A6A3A) // Light reed
     val mistColor = Color(0xFF8A9A8A) // Foggy mist
     val deadTreeColor = Color(0xFF4A4A3A) // Dead wood
 
-    // Draw murky water base
-    val swampBasePath = Path().apply {
-        val points = 8
-        val baseRadius = terrainSize * 0.42f
-        val radii = (0 until points).map {
-            baseRadius * (0.7f + random.nextFloat() * 0.4f)
+    // Generate amoeba-like swamp shape - configurable via params
+    val points = params?.shapePoints ?: 20
+    val noiseScale = params?.noiseScale ?: 0.35f  // How much noise affects shape (0-1)
+    val sizeMultiplierX = params?.diameterMultiplierX ?: 1f
+    val sizeMultiplierY = params?.diameterMultiplierY ?: 1f
+    val baseRadiusX = terrainSize * 0.42f * sizeMultiplierX
+    val baseRadiusY = terrainSize * 0.42f * sizeMultiplierY
+
+    // Use seed to create unique offset into noise space - large offsets ensure unique shapes
+    val seedOffsetX = (seed % 1000) * 7.3f
+    val seedOffsetY = ((seed / 1000) % 1000) * 11.7f
+
+    // Generate irregular radii using multiple octaves of Simplex noise for amoeba shape
+    // Returns pairs of (radiusX, radiusY) for elliptical shapes
+    val radiiPairs = (0 until points).map { i ->
+        val angle = (i.toFloat() / points) * 2 * PI.toFloat()
+        val nx = cos(angle)
+        val ny = sin(angle)
+
+        // Multiple octaves of noise for organic irregularity - scaled by noiseScale
+        val noise1 = SimplexNoise.noise2D(nx * 1.5f + seedOffsetX, ny * 1.5f + seedOffsetY) * 0.5f
+        val noise2 = SimplexNoise.noise2D(nx * 3f + seedOffsetX + 100f, ny * 3f + seedOffsetY + 100f) * 0.25f
+        val noise3 = SimplexNoise.noise2D(nx * 5f + seedOffsetX + 200f, ny * 5f + seedOffsetY + 200f) * 0.12f
+
+        // Add lobes - some points bulge out more dramatically
+        val lobeNoise = SimplexNoise.noise2D(nx * 0.8f + seedOffsetX + 300f, ny * 0.8f + seedOffsetY + 300f)
+        val lobe = if (lobeNoise > 0.4f) (lobeNoise - 0.4f) * 0.3f else 0f
+
+        val totalNoise = (noise1 + noise2 + noise3 + lobe) * noiseScale
+        val noiseMultiplier = 0.75f + totalNoise * 0.5f + 0.1f
+        Pair(baseRadiusX * noiseMultiplier, baseRadiusY * noiseMultiplier)
+    }
+
+    // Helper to create smooth swamp path using cubic bezier (like lake)
+    fun createSmoothSwampPath(scale: Float): Path = Path().apply {
+        val curvePoints = (0 until points).map { i ->
+            val angle = (i.toFloat() / points) * 2 * PI.toFloat()
+            val (rx, ry) = radiiPairs[i]
+            Offset(
+                center.x + cos(angle) * rx * scale,
+                center.y + sin(angle) * ry * scale
+            )
         }
 
-        moveTo(center.x + radii[0], center.y)
-        for (i in 0 until points) {
-            val nextI = (i + 1) % points
-            val angle1 = (i.toFloat() / points) * 2 * PI.toFloat()
-            val angle2 = (nextI.toFloat() / points) * 2 * PI.toFloat()
-            val midAngle = (angle1 + angle2) / 2
-            val midR = (radii[i] + radii[nextI]) / 2 * (0.85f + random.nextFloat() * 0.2f)
+        moveTo(curvePoints[0].x, curvePoints[0].y)
 
-            quadraticTo(
-                center.x + cos(midAngle) * midR, center.y + sin(midAngle) * midR,
-                center.x + cos(angle2) * radii[nextI], center.y + sin(angle2) * radii[nextI]
-            )
+        // Use cubic bezier for ultra-smooth curves
+        for (i in 0 until points) {
+            val p0 = curvePoints[(i - 1 + points) % points]
+            val p1 = curvePoints[i]
+            val p2 = curvePoints[(i + 1) % points]
+            val p3 = curvePoints[(i + 2) % points]
+
+            val tension = 0.4f
+            val ctrl1X = p1.x + (p2.x - p0.x) * tension
+            val ctrl1Y = p1.y + (p2.y - p0.y) * tension
+            val ctrl2X = p2.x - (p3.x - p1.x) * tension
+            val ctrl2Y = p2.y - (p3.y - p1.y) * tension
+
+            cubicTo(ctrl1X, ctrl1Y, ctrl2X, ctrl2Y, p2.x, p2.y)
         }
         close()
     }
-    drawPath(swampBasePath, color = murkyWater)
 
-    // Draw irregular stagnant pools
+    // Draw layered swamp base with smooth color blending
+    val outerPath = createSmoothSwampPath(1.0f)
+    drawPath(outerPath, color = murkyWater)
+
+    // Blend layer - transition color
+    val midPath = createSmoothSwampPath(0.85f)
+    drawPath(midPath, color = murkyWaterMid)
+
+    // Inner slightly lighter area
+    val innerPath = createSmoothSwampPath(0.65f)
+    drawPath(innerPath, color = stagnantWater.copy(alpha = 0.6f))
+
+    // Track shallow areas (edges) for tree placement
+    data class ShallowArea(val x: Float, val y: Float)
+    val shallowAreas = mutableListOf<ShallowArea>()
+
+    // Draw irregular stagnant pools with organic shapes and blending
     val poolCount = (3 + random.nextInt(2) * densityMultiplier).toInt().coerceAtLeast(2)
-    repeat(poolCount) {
-        val poolX = center.x + (random.nextFloat() - 0.5f) * terrainSize * 0.45f
-        val poolY = center.y + (random.nextFloat() - 0.5f) * terrainSize * 0.45f
-        val poolW = terrainSize * (0.08f + random.nextFloat() * 0.08f)
-        val poolH = poolW * (0.5f + random.nextFloat() * 0.3f)
+    repeat(poolCount) { p ->
+        val poolRandom = kotlin.random.Random(seed + p * 13)
+        val poolX = center.x + (poolRandom.nextFloat() - 0.5f) * terrainSize * 0.4f
+        val poolY = center.y + (poolRandom.nextFloat() - 0.5f) * terrainSize * 0.4f
+        val poolSize = terrainSize * (0.06f + poolRandom.nextFloat() * 0.05f)
 
-        // Pool with organic shape
+        // Create organic pool shape using noise-based points
+        val poolPoints = 8
         val poolPath = Path().apply {
-            addOval(androidx.compose.ui.geometry.Rect(poolX - poolW, poolY - poolH, poolX + poolW, poolY + poolH))
-        }
-        drawPath(poolPath, color = stagnantWater)
+            val poolRadii = (0 until poolPoints).map { i ->
+                val angle = (i.toFloat() / poolPoints) * 2 * PI.toFloat()
+                val noise = SimplexNoise.noise2D(
+                    poolX * 0.1f + cos(angle) * 2f,
+                    poolY * 0.1f + sin(angle) * 2f
+                )
+                poolSize * (0.7f + noise * 0.4f)
+            }
 
-        // Algae patches on pool
-        if (random.nextFloat() > 0.4f) {
-            drawCircle(color = algaeColor.copy(alpha = 0.5f), radius = poolW * 0.4f,
-                center = Offset(poolX + poolW * 0.2f, poolY - poolH * 0.3f))
+            val firstAngle = 0f
+            moveTo(poolX + poolRadii[0], poolY)
+
+            for (i in 0 until poolPoints) {
+                val nextI = (i + 1) % poolPoints
+                val angle1 = (i.toFloat() / poolPoints) * 2 * PI.toFloat()
+                val angle2 = (nextI.toFloat() / poolPoints) * 2 * PI.toFloat()
+                val midAngle = (angle1 + angle2) / 2
+                val midR = (poolRadii[i] + poolRadii[nextI]) / 2 * 0.9f
+
+                quadraticTo(
+                    poolX + cos(midAngle) * midR, poolY + sin(midAngle) * midR,
+                    poolX + cos(angle2) * poolRadii[nextI], poolY + sin(angle2) * poolRadii[nextI]
+                )
+            }
+            close()
+        }
+
+        // Draw pool with soft outer glow for blending
+        drawPath(poolPath, color = stagnantWater.copy(alpha = 0.4f))
+
+        // Inner darker pool
+        val innerPoolPath = Path().apply {
+            addOval(androidx.compose.ui.geometry.Rect(
+                poolX - poolSize * 0.5f, poolY - poolSize * 0.4f,
+                poolX + poolSize * 0.5f, poolY + poolSize * 0.4f
+            ))
+        }
+        drawPath(innerPoolPath, color = murkyWaterMid.copy(alpha = 0.5f))
+
+        // Algae patches on pool - also organic shapes
+        if (poolRandom.nextFloat() > 0.4f) {
+            val algaeSize = poolSize * 0.35f
+            drawCircle(color = algaeColor.copy(alpha = 0.35f), radius = algaeSize * 1.2f,
+                center = Offset(poolX + poolSize * 0.15f, poolY - poolSize * 0.2f))
+            drawCircle(color = algaeColor.copy(alpha = 0.5f), radius = algaeSize,
+                center = Offset(poolX + poolSize * 0.15f, poolY - poolSize * 0.2f))
         }
     }
 
-    // Draw mud patches
-    repeat(3) {
-        val mudX = center.x + (random.nextFloat() - 0.5f) * terrainSize * 0.5f
-        val mudY = center.y + (random.nextFloat() - 0.5f) * terrainSize * 0.5f
-        drawCircle(color = mudColor.copy(alpha = 0.4f), radius = terrainSize * (0.04f + random.nextFloat() * 0.03f),
-            center = Offset(mudX, mudY))
+    // Draw mud patches at edges (shallow areas) with soft blending
+    repeat(5) { m ->
+        val mudRandom = kotlin.random.Random(seed + 100 + m)
+        // Place mud patches towards edges (shallow areas)
+        val angle = mudRandom.nextFloat() * 2 * PI.toFloat()
+        val dist = terrainSize * (0.28f + mudRandom.nextFloat() * 0.12f)
+        val mudX = center.x + cos(angle) * dist
+        val mudY = center.y + sin(angle) * dist
+        val mudSize = terrainSize * (0.035f + mudRandom.nextFloat() * 0.025f)
+
+        // Soft outer ring
+        drawCircle(color = mudColor.copy(alpha = 0.2f), radius = mudSize * 1.4f, center = Offset(mudX, mudY))
+        // Main mud patch
+        drawCircle(color = mudColor.copy(alpha = 0.35f), radius = mudSize, center = Offset(mudX, mudY))
+        // Inner darker spot
+        drawCircle(color = shallowMud.copy(alpha = 0.25f), radius = mudSize * 0.6f, center = Offset(mudX, mudY))
+
+        // These are good spots for trees (shallow mud areas)
+        shallowAreas.add(ShallowArea(mudX, mudY))
     }
 
-    // Draw dead/twisted tree stumps
+    // Draw dead/twisted tree stumps - only in shallow areas (edges)
     val stumpCount = (1 + random.nextInt(2) * densityMultiplier).toInt()
-    repeat(stumpCount) {
-        val stumpX = center.x + (random.nextFloat() - 0.5f) * terrainSize * 0.5f
-        val stumpY = center.y + (random.nextFloat() - 0.5f) * terrainSize * 0.5f
-        val stumpHeight = terrainSize * (0.08f + random.nextFloat() * 0.06f)
+    repeat(stumpCount) { s ->
+        // Place trees in shallow areas (near edges or on mud patches)
+        val stumpRandom = kotlin.random.Random(seed + 200 + s)
+
+        val (stumpX, stumpY) = if (shallowAreas.isNotEmpty() && stumpRandom.nextFloat() > 0.3f) {
+            // Use a shallow area
+            val area = shallowAreas[stumpRandom.nextInt(shallowAreas.size)]
+            Pair(area.x + (stumpRandom.nextFloat() - 0.5f) * terrainSize * 0.08f,
+                 area.y + (stumpRandom.nextFloat() - 0.5f) * terrainSize * 0.08f)
+        } else {
+            // Place near edge (high radius)
+            val angle = stumpRandom.nextFloat() * 2 * PI.toFloat()
+            val dist = terrainSize * (0.3f + stumpRandom.nextFloat() * 0.1f)
+            Pair(center.x + cos(angle) * dist, center.y + sin(angle) * dist)
+        }
+
+        val stumpHeight = terrainSize * (0.07f + stumpRandom.nextFloat() * 0.05f)
 
         // Twisted trunk
         val trunkPath = Path().apply {
             moveTo(stumpX, stumpY)
-            val twist = (random.nextFloat() - 0.5f) * terrainSize * 0.03f
+            val twist = (stumpRandom.nextFloat() - 0.5f) * terrainSize * 0.025f
             quadraticTo(stumpX + twist, stumpY - stumpHeight * 0.5f, stumpX + twist * 0.5f, stumpY - stumpHeight)
         }
-        drawPath(trunkPath, color = deadTreeColor, style = Stroke(width = 3f, cap = StrokeCap.Round))
+        drawPath(trunkPath, color = deadTreeColor, style = Stroke(width = 2.5f, cap = StrokeCap.Round))
 
         // Bare branches
         repeat(2) { b ->
-            val branchAngle = (random.nextFloat() - 0.5f) * PI.toFloat() * 0.6f
-            val branchLen = stumpHeight * 0.4f
-            val branchStartY = stumpY - stumpHeight * (0.5f + b * 0.3f)
+            val branchAngle = (stumpRandom.nextFloat() - 0.5f) * PI.toFloat() * 0.5f
+            val branchLen = stumpHeight * 0.35f
+            val branchStartY = stumpY - stumpHeight * (0.5f + b * 0.25f)
             drawLine(
-                color = deadTreeColor.copy(alpha = 0.7f),
+                color = deadTreeColor.copy(alpha = 0.6f),
                 start = Offset(stumpX, branchStartY),
-                end = Offset(stumpX + kotlin.math.sin(branchAngle) * branchLen, branchStartY - kotlin.math.cos(branchAngle) * branchLen * 0.5f),
-                strokeWidth = 1.5f,
+                end = Offset(stumpX + kotlin.math.sin(branchAngle) * branchLen, branchStartY - kotlin.math.cos(branchAngle) * branchLen * 0.4f),
+                strokeWidth = 1.2f,
                 cap = StrokeCap.Round
             )
         }
     }
 
-    // Draw reeds and cattails
+    // Draw reeds and cattails - prefer shallow edges
     val reedCount = ((8 + random.nextInt(5)) * densityMultiplier).toInt().coerceAtLeast(3)
     repeat(reedCount) { r ->
-        val reedX = center.x + (random.nextFloat() - 0.5f) * terrainSize * 0.6f
-        val reedY = center.y + (random.nextFloat() - 0.5f) * terrainSize * 0.6f
-        val reedHeight = terrainSize * (0.05f + random.nextFloat() * 0.05f)
-        val isCattail = random.nextFloat() > 0.6f
+        val reedRandom = kotlin.random.Random(seed + 300 + r)
+
+        // Bias towards edges (shallow water)
+        val angle = reedRandom.nextFloat() * 2 * PI.toFloat()
+        val dist = terrainSize * (0.25f + reedRandom.nextFloat() * 0.18f)
+        val reedX = center.x + cos(angle) * dist + (reedRandom.nextFloat() - 0.5f) * terrainSize * 0.1f
+        val reedY = center.y + sin(angle) * dist + (reedRandom.nextFloat() - 0.5f) * terrainSize * 0.1f
+
+        val reedHeight = terrainSize * (0.04f + reedRandom.nextFloat() * 0.04f)
+        val isCattail = reedRandom.nextFloat() > 0.6f
 
         // Reed stem with slight curve
-        val stemCurve = (random.nextFloat() - 0.5f) * terrainSize * 0.02f
+        val stemCurve = (reedRandom.nextFloat() - 0.5f) * terrainSize * 0.015f
         val stemPath = Path().apply {
             moveTo(reedX, reedY)
             quadraticTo(reedX + stemCurve, reedY - reedHeight * 0.5f, reedX + stemCurve * 0.7f, reedY - reedHeight)
         }
-        drawPath(stemPath, color = if (r % 2 == 0) reedDark else reedLight, style = Stroke(width = 1.2f, cap = StrokeCap.Round))
+        drawPath(stemPath, color = if (r % 2 == 0) reedDark else reedLight, style = Stroke(width = 1f, cap = StrokeCap.Round))
 
         if (isCattail) {
-            // Cattail head (fuzzy brown top)
             val headY = reedY - reedHeight
             drawOval(
                 color = Color(0xFF5A4A3A),
-                topLeft = Offset(reedX + stemCurve * 0.7f - 2f, headY - 5f),
-                size = androidx.compose.ui.geometry.Size(4f, 8f)
+                topLeft = Offset(reedX + stemCurve * 0.7f - 1.5f, headY - 4f),
+                size = androidx.compose.ui.geometry.Size(3f, 6f)
             )
         } else {
-            // Reed tip (pointed grass blade)
-            val tipAngle = -PI.toFloat() / 2 + stemCurve * 0.1f
-            val tipLen = reedHeight * 0.15f
+            val tipAngle = -PI.toFloat() / 2 + stemCurve * 0.08f
+            val tipLen = reedHeight * 0.12f
             drawLine(
                 color = reedLight,
                 start = Offset(reedX + stemCurve * 0.7f, reedY - reedHeight),
-                end = Offset(reedX + stemCurve * 0.7f + kotlin.math.cos(tipAngle) * tipLen * 0.3f, reedY - reedHeight - tipLen),
-                strokeWidth = 0.8f,
+                end = Offset(reedX + stemCurve * 0.7f + kotlin.math.cos(tipAngle) * tipLen * 0.25f, reedY - reedHeight - tipLen),
+                strokeWidth = 0.6f,
                 cap = StrokeCap.Round
             )
         }
     }
 
-    // Add atmospheric mist/fog patches
-    repeat(2) {
-        val mistX = center.x + (random.nextFloat() - 0.5f) * terrainSize * 0.3f
-        val mistY = center.y + (random.nextFloat() - 0.5f) * terrainSize * 0.3f
-        drawCircle(color = mistColor.copy(alpha = 0.15f), radius = terrainSize * 0.12f,
-            center = Offset(mistX, mistY))
+    // Add atmospheric mist/fog patches with soft edges
+    repeat(3) { m ->
+        val mistRandom = kotlin.random.Random(seed + 400 + m)
+        val mistX = center.x + (mistRandom.nextFloat() - 0.5f) * terrainSize * 0.35f
+        val mistY = center.y + (mistRandom.nextFloat() - 0.5f) * terrainSize * 0.35f
+        val mistSize = terrainSize * (0.08f + mistRandom.nextFloat() * 0.06f)
+        // Layered mist for soft edges
+        drawCircle(color = mistColor.copy(alpha = 0.08f), radius = mistSize * 1.5f, center = Offset(mistX, mistY))
+        drawCircle(color = mistColor.copy(alpha = 0.12f), radius = mistSize, center = Offset(mistX, mistY))
     }
 
     // Bubbles rising from murky water
-    repeat(3) {
-        val bubbleX = center.x + (random.nextFloat() - 0.5f) * terrainSize * 0.4f
-        val bubbleY = center.y + (random.nextFloat() - 0.5f) * terrainSize * 0.4f
-        drawCircle(color = stagnantWater.copy(alpha = 0.5f), radius = 2f, center = Offset(bubbleX, bubbleY))
-        drawCircle(color = algaeColor.copy(alpha = 0.3f), radius = 1f, center = Offset(bubbleX - 0.5f, bubbleY - 0.5f))
+    repeat(4) { b ->
+        val bubbleRandom = kotlin.random.Random(seed + 500 + b)
+        val bubbleX = center.x + (bubbleRandom.nextFloat() - 0.5f) * terrainSize * 0.35f
+        val bubbleY = center.y + (bubbleRandom.nextFloat() - 0.5f) * terrainSize * 0.35f
+        drawCircle(color = stagnantWater.copy(alpha = 0.4f), radius = 1.5f, center = Offset(bubbleX, bubbleY))
+        drawCircle(color = algaeColor.copy(alpha = 0.2f), radius = 0.8f, center = Offset(bubbleX - 0.3f, bubbleY - 0.3f))
     }
 }
 
@@ -6564,11 +6768,13 @@ fun LocationForm(
                 contentDescription = "Image of ${editLocation?.name ?: "location"}"
             )
 
-            Text(
-                text = "ID: ${editLocation?.id}",
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
+            if (isAdmin) {
+                Text(
+                    text = "ID: ${editLocation?.id}",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
         }
 
         Row(
@@ -7160,11 +7366,13 @@ fun CreatureForm(
                 contentDescription = "Image of ${editCreature?.name ?: "creature"}"
             )
 
-            Text(
-                text = "ID: ${editCreature?.id}",
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
+            if (isAdmin) {
+                Text(
+                    text = "ID: ${editCreature?.id}",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
         }
 
         Row(
@@ -7417,7 +7625,8 @@ fun CreatureDetailView(
     onBack: () -> Unit,
     onEdit: (CreatureDto) -> Unit,
     onCreateNew: () -> Unit,
-    onNavigateToItem: (String) -> Unit
+    onNavigateToItem: (String) -> Unit,
+    isAdmin: Boolean = false
 ) {
     var creature by remember { mutableStateOf<CreatureDto?>(null) }
     var isLoading by remember { mutableStateOf(true) }
@@ -7498,11 +7707,13 @@ fun CreatureDetailView(
                             text = creature!!.name,
                             style = MaterialTheme.typography.headlineSmall
                         )
-                        Text(
-                            text = "ID: ${creature!!.id}",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
+                        if (isAdmin) {
+                            Text(
+                                text = "ID: ${creature!!.id}",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
                         Spacer(modifier = Modifier.height(8.dp))
                         Text(
                             text = creature!!.desc,
@@ -7673,11 +7884,13 @@ fun ItemForm(
                 contentDescription = "Image of ${editItem?.name ?: "item"}"
             )
 
-            Text(
-                text = "ID: ${editItem?.id}",
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
+            if (isAdmin) {
+                Text(
+                    text = "ID: ${editItem?.id}",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
         }
 
         Row(
@@ -7916,7 +8129,8 @@ fun ItemDetailView(
     itemId: String,
     onBack: () -> Unit,
     onEdit: (ItemDto) -> Unit,
-    onCreateNew: () -> Unit
+    onCreateNew: () -> Unit,
+    isAdmin: Boolean = false
 ) {
     var item by remember { mutableStateOf<ItemDto?>(null) }
     var isLoading by remember { mutableStateOf(true) }
@@ -7997,11 +8211,13 @@ fun ItemDetailView(
                             text = item!!.name,
                             style = MaterialTheme.typography.headlineSmall
                         )
-                        Text(
-                            text = "ID: ${item!!.id}",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
+                        if (isAdmin) {
+                            Text(
+                                text = "ID: ${item!!.id}",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
                         Spacer(modifier = Modifier.height(8.dp))
                         Text(
                             text = item!!.desc,
@@ -8484,8 +8700,12 @@ private fun TerrainSettingsDialog(
     currentOverrides: TerrainOverridesDto?,
     onDismiss: () -> Unit,
     onSave: (TerrainOverridesDto) -> Unit,
-    onReset: () -> Unit
+    onReset: () -> Unit,
+    currentUser: UserDto? = null
 ) {
+    val isNotAuthenticated = currentUser == null
+    val isLocked = location.lockedBy != null
+    val isDisabled = isNotAuthenticated || isLocked
     // Parse what terrains this location has
     val detectedTerrains = remember(location) {
         parseTerrainFromDescription(location.desc, location.name)
@@ -8521,8 +8741,30 @@ private fun TerrainSettingsDialog(
                 Text(
                     text = location.name,
                     style = MaterialTheme.typography.titleMedium,
-                    modifier = Modifier.padding(bottom = 16.dp)
+                    modifier = Modifier.padding(bottom = if (isDisabled) 8.dp else 16.dp)
                 )
+
+                // Disabled indicator (not authenticated or locked)
+                if (isDisabled) {
+                    Row(
+                        modifier = Modifier.padding(bottom = 16.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Lock,
+                            contentDescription = if (isNotAuthenticated) "Not authenticated" else "Locked",
+                            tint = MaterialTheme.colorScheme.error,
+                            modifier = Modifier.size(16.dp)
+                        )
+                        Spacer(modifier = Modifier.width(4.dp))
+                        Text(
+                            text = if (isNotAuthenticated) "Login required to edit settings"
+                                   else "Locked by ${location.lockedBy} - settings are read-only",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.error
+                        )
+                    }
+                }
 
                 // Scrollable content
                 Column(
@@ -8545,7 +8787,8 @@ private fun TerrainSettingsDialog(
                             valueRange = -1f..1f,
                             onValueChange = { value ->
                                 overrides = overrides.copy(elevation = value)
-                            }
+                            },
+                            enabled = !isDisabled
                         )
                         Text(
                             text = elevationDescription(overrides.elevation ?: autoElevation),
@@ -8575,7 +8818,8 @@ private fun TerrainSettingsDialog(
                                             treeCount = value.toInt()
                                         )
                                     )
-                                }
+                                },
+                                enabled = !isDisabled
                             )
                             SliderWithLabel(
                                 label = "Tree Size",
@@ -8587,23 +8831,120 @@ private fun TerrainSettingsDialog(
                                             sizeMultiplier = value
                                         )
                                     )
-                                }
+                                },
+                                enabled = !isDisabled
                             )
                         }
                     }
 
                     // Lake settings
                     if (TerrainType.LAKE in detectedTerrains) {
+                        // Determine if X/Y are linked (both null, both equal, or legacy diameterMultiplier is set)
+                        val lakeXYLinked = overrides.lake?.let { lake ->
+                            val hasLegacy = lake.diameterMultiplier != null
+                            val xEqualsY = lake.diameterMultiplierX == lake.diameterMultiplierY
+                            hasLegacy || (lake.diameterMultiplierX == null && lake.diameterMultiplierY == null) || xEqualsY
+                        } ?: true
+
                         TerrainSection(title = "Lake") {
+                            // Link X/Y checkbox
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                modifier = Modifier.padding(bottom = 8.dp)
+                            ) {
+                                Checkbox(
+                                    checked = lakeXYLinked,
+                                    onCheckedChange = { linked ->
+                                        val currentX = overrides.lake?.diameterMultiplierX ?: overrides.lake?.diameterMultiplier ?: 1f
+                                        val currentY = overrides.lake?.diameterMultiplierY ?: overrides.lake?.diameterMultiplier ?: 1f
+                                        overrides = overrides.copy(
+                                            lake = (overrides.lake ?: LakeParamsDto()).copy(
+                                                diameterMultiplier = if (linked) currentX else null,
+                                                diameterMultiplierX = if (linked) null else currentX,
+                                                diameterMultiplierY = if (linked) null else currentY
+                                            )
+                                        )
+                                    },
+                                    enabled = !isDisabled
+                                )
+                                Text("Link X/Y Size", style = MaterialTheme.typography.bodySmall)
+                            }
+
+                            if (lakeXYLinked) {
+                                // Single size slider when linked
+                                SliderWithLabel(
+                                    label = "Lake Size",
+                                    value = overrides.lake?.diameterMultiplier ?: overrides.lake?.diameterMultiplierX ?: 1f,
+                                    valueRange = 0.5f..2f,
+                                    onValueChange = { value ->
+                                        overrides = overrides.copy(
+                                            lake = (overrides.lake ?: LakeParamsDto()).copy(
+                                                diameterMultiplier = value,
+                                                diameterMultiplierX = null,
+                                                diameterMultiplierY = null
+                                            )
+                                        )
+                                    },
+                                    enabled = !isDisabled
+                                )
+                            } else {
+                                // Separate X and Y sliders when unlinked
+                                SliderWithLabel(
+                                    label = "Width (X)",
+                                    value = overrides.lake?.diameterMultiplierX ?: 1f,
+                                    valueRange = 0.5f..2f,
+                                    onValueChange = { value ->
+                                        overrides = overrides.copy(
+                                            lake = (overrides.lake ?: LakeParamsDto()).copy(
+                                                diameterMultiplier = null,
+                                                diameterMultiplierX = value
+                                            )
+                                        )
+                                    },
+                                    enabled = !isDisabled
+                                )
+                                SliderWithLabel(
+                                    label = "Height (Y)",
+                                    value = overrides.lake?.diameterMultiplierY ?: 1f,
+                                    valueRange = 0.5f..2f,
+                                    onValueChange = { value ->
+                                        overrides = overrides.copy(
+                                            lake = (overrides.lake ?: LakeParamsDto()).copy(
+                                                diameterMultiplier = null,
+                                                diameterMultiplierY = value
+                                            )
+                                        )
+                                    },
+                                    enabled = !isDisabled
+                                )
+                            }
+
                             SliderWithLabel(
-                                label = "Lake Size",
-                                value = overrides.lake?.diameterMultiplier ?: 1f,
-                                valueRange = 0.5f..2f,
+                                label = "Shape Points",
+                                value = (overrides.lake?.shapePoints ?: 20).toFloat(),
+                                valueRange = 8f..32f,
+                                steps = 24,
                                 onValueChange = { value ->
                                     overrides = overrides.copy(
-                                        lake = LakeParamsDto(diameterMultiplier = value)
+                                        lake = (overrides.lake ?: LakeParamsDto()).copy(
+                                            shapePoints = value.toInt()
+                                        )
                                     )
-                                }
+                                },
+                                enabled = !isDisabled
+                            )
+                            SliderWithLabel(
+                                label = "Shape Roughness",
+                                value = overrides.lake?.noiseScale ?: 0.35f,
+                                valueRange = 0f..1f,
+                                onValueChange = { value ->
+                                    overrides = overrides.copy(
+                                        lake = (overrides.lake ?: LakeParamsDto()).copy(
+                                            noiseScale = value
+                                        )
+                                    )
+                                },
+                                enabled = !isDisabled
                             )
                         }
                     }
@@ -8619,7 +8960,8 @@ private fun TerrainSettingsDialog(
                                     overrides = overrides.copy(
                                         river = RiverParamsDto(widthMultiplier = value)
                                     )
-                                }
+                                },
+                                enabled = !isDisabled
                             )
                         }
                     }
@@ -8635,7 +8977,8 @@ private fun TerrainSettingsDialog(
                                     overrides = overrides.copy(
                                         stream = StreamParamsDto(widthMultiplier = value)
                                     )
-                                }
+                                },
+                                enabled = !isDisabled
                             )
                         }
                     }
@@ -8654,7 +8997,8 @@ private fun TerrainSettingsDialog(
                                             peakCount = value.toInt()
                                         )
                                     )
-                                }
+                                },
+                                enabled = !isDisabled
                             )
                             SliderWithLabel(
                                 label = "Mountain Height",
@@ -8666,7 +9010,8 @@ private fun TerrainSettingsDialog(
                                             heightMultiplier = value
                                         )
                                     )
-                                }
+                                },
+                                enabled = !isDisabled
                             )
                         }
                     }
@@ -8682,7 +9027,8 @@ private fun TerrainSettingsDialog(
                                     overrides = overrides.copy(
                                         hills = HillsParamsDto(heightMultiplier = value)
                                     )
-                                }
+                                },
+                                enabled = !isDisabled
                             )
                         }
                     }
@@ -8699,7 +9045,8 @@ private fun TerrainSettingsDialog(
                                     overrides = overrides.copy(
                                         grass = GrassParamsDto(tuftCount = value.toInt())
                                     )
-                                }
+                                },
+                                enabled = !isDisabled
                             )
                         }
                     }
@@ -8718,7 +9065,8 @@ private fun TerrainSettingsDialog(
                                             duneCount = value.toInt()
                                         )
                                     )
-                                }
+                                },
+                                enabled = !isDisabled
                             )
                             SliderWithLabel(
                                 label = "Dune Height",
@@ -8730,13 +9078,20 @@ private fun TerrainSettingsDialog(
                                             heightMultiplier = value
                                         )
                                     )
-                                }
+                                },
+                                enabled = !isDisabled
                             )
                         }
                     }
 
                     // Swamp settings
                     if (TerrainType.SWAMP in detectedTerrains) {
+                        // Determine if X/Y are linked
+                        val swampXYLinked = overrides.swamp?.let { swamp ->
+                            val xEqualsY = swamp.diameterMultiplierX == swamp.diameterMultiplierY
+                            (swamp.diameterMultiplierX == null && swamp.diameterMultiplierY == null) || xEqualsY
+                        } ?: true
+
                         TerrainSection(title = "Swamp") {
                             SliderWithLabel(
                                 label = "Density",
@@ -8744,9 +9099,108 @@ private fun TerrainSettingsDialog(
                                 valueRange = 0.5f..2f,
                                 onValueChange = { value ->
                                     overrides = overrides.copy(
-                                        swamp = SwampParamsDto(densityMultiplier = value)
+                                        swamp = (overrides.swamp ?: SwampParamsDto()).copy(
+                                            densityMultiplier = value
+                                        )
                                     )
-                                }
+                                },
+                                enabled = !isDisabled
+                            )
+
+                            // Link X/Y checkbox
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                modifier = Modifier.padding(vertical = 8.dp)
+                            ) {
+                                Checkbox(
+                                    checked = swampXYLinked,
+                                    onCheckedChange = { linked ->
+                                        val currentX = overrides.swamp?.diameterMultiplierX ?: 1f
+                                        val currentY = overrides.swamp?.diameterMultiplierY ?: 1f
+                                        overrides = overrides.copy(
+                                            swamp = (overrides.swamp ?: SwampParamsDto()).copy(
+                                                diameterMultiplierX = if (linked) null else currentX,
+                                                diameterMultiplierY = if (linked) null else currentY
+                                            )
+                                        )
+                                    },
+                                    enabled = !isDisabled
+                                )
+                                Text("Link X/Y Size", style = MaterialTheme.typography.bodySmall)
+                            }
+
+                            if (swampXYLinked) {
+                                // Single size slider when linked
+                                SliderWithLabel(
+                                    label = "Swamp Size",
+                                    value = overrides.swamp?.diameterMultiplierX ?: 1f,
+                                    valueRange = 0.5f..2f,
+                                    onValueChange = { value ->
+                                        overrides = overrides.copy(
+                                            swamp = (overrides.swamp ?: SwampParamsDto()).copy(
+                                                diameterMultiplierX = value,
+                                                diameterMultiplierY = value
+                                            )
+                                        )
+                                    },
+                                    enabled = !isDisabled
+                                )
+                            } else {
+                                // Separate X and Y sliders when unlinked
+                                SliderWithLabel(
+                                    label = "Width (X)",
+                                    value = overrides.swamp?.diameterMultiplierX ?: 1f,
+                                    valueRange = 0.5f..2f,
+                                    onValueChange = { value ->
+                                        overrides = overrides.copy(
+                                            swamp = (overrides.swamp ?: SwampParamsDto()).copy(
+                                                diameterMultiplierX = value
+                                            )
+                                        )
+                                    },
+                                    enabled = !isDisabled
+                                )
+                                SliderWithLabel(
+                                    label = "Height (Y)",
+                                    value = overrides.swamp?.diameterMultiplierY ?: 1f,
+                                    valueRange = 0.5f..2f,
+                                    onValueChange = { value ->
+                                        overrides = overrides.copy(
+                                            swamp = (overrides.swamp ?: SwampParamsDto()).copy(
+                                                diameterMultiplierY = value
+                                            )
+                                        )
+                                    },
+                                    enabled = !isDisabled
+                                )
+                            }
+
+                            SliderWithLabel(
+                                label = "Shape Points",
+                                value = (overrides.swamp?.shapePoints ?: 20).toFloat(),
+                                valueRange = 8f..32f,
+                                steps = 24,
+                                onValueChange = { value ->
+                                    overrides = overrides.copy(
+                                        swamp = (overrides.swamp ?: SwampParamsDto()).copy(
+                                            shapePoints = value.toInt()
+                                        )
+                                    )
+                                },
+                                enabled = !isDisabled
+                            )
+                            SliderWithLabel(
+                                label = "Shape Roughness",
+                                value = overrides.swamp?.noiseScale ?: 0.35f,
+                                valueRange = 0f..1f,
+                                onValueChange = { value ->
+                                    overrides = overrides.copy(
+                                        swamp = (overrides.swamp ?: SwampParamsDto()).copy(
+                                            noiseScale = value
+                                        )
+                                    )
+                                },
+                                enabled = !isDisabled
                             )
                         }
                     }
@@ -8760,7 +9214,7 @@ private fun TerrainSettingsDialog(
                         .padding(top = 16.dp),
                     horizontalArrangement = Arrangement.End
                 ) {
-                    TextButton(onClick = onReset) {
+                    TextButton(onClick = onReset, enabled = !isDisabled) {
                         Text("Reset")
                     }
                     Spacer(modifier = Modifier.width(8.dp))
@@ -8768,7 +9222,7 @@ private fun TerrainSettingsDialog(
                         Text("Cancel")
                     }
                     Spacer(modifier = Modifier.width(8.dp))
-                    Button(onClick = { onSave(overrides) }) {
+                    Button(onClick = { onSave(overrides) }, enabled = !isDisabled) {
                         Text("Save")
                     }
                 }
@@ -8800,9 +9254,10 @@ private fun SliderWithLabel(
     value: Float,
     valueRange: ClosedFloatingPointRange<Float>,
     steps: Int = 0,
-    onValueChange: (Float) -> Unit
+    onValueChange: (Float) -> Unit,
+    enabled: Boolean = true
 ) {
-    Column(modifier = Modifier.padding(vertical = 4.dp)) {
+    Column(modifier = Modifier.padding(vertical = 4.dp).alpha(if (enabled) 1f else 0.5f)) {
         Row(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.SpaceBetween
@@ -8821,7 +9276,8 @@ private fun SliderWithLabel(
             value = value,
             onValueChange = onValueChange,
             valueRange = valueRange,
-            steps = steps
+            steps = steps,
+            enabled = enabled
         )
     }
 }

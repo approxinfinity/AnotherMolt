@@ -1,0 +1,51 @@
+<!DOCTYPE html>
+<html>
+<head><title>Debug</title></head>
+<body>
+<h1>Debug Info</h1>
+<pre id="output"></pre>
+
+<h2>Test 1: Relative URL</h2>
+<img id="img1" width="100" height="100" style="border:1px solid red">
+
+<h2>Test 2: Full URL</h2>
+<img id="img2" width="100" height="100" style="border:1px solid blue">
+
+<h2>Test 3: Protocol-relative</h2>
+<img id="img3" width="100" height="100" style="border:1px solid green">
+
+<div id="results"></div>
+
+<script>
+const hostname = window.location.hostname;
+const protocol = window.location.protocol;
+const testImagePath = '/files/imageGen/location_4cf767ca-98cf-4f8d-9eae-80e518d35ac2.png';
+
+const urls = {
+    relative: testImagePath,
+    full: protocol + '//' + hostname + testImagePath,
+    protocolRelative: '//' + hostname + testImagePath
+};
+
+document.getElementById('output').textContent = JSON.stringify({
+    hostname: hostname,
+    protocol: protocol,
+    urls: urls
+}, null, 2);
+
+function testImage(img, url, name) {
+    img.onload = () => {
+        document.getElementById('results').innerHTML += '<p style="color:green">' + name + ' (' + url + '): SUCCESS</p>';
+    };
+    img.onerror = (e) => {
+        document.getElementById('results').innerHTML += '<p style="color:red">' + name + ' (' + url + '): FAILED - ' + e.type + '</p>';
+    };
+    img.src = url;
+}
+
+testImage(document.getElementById('img1'), urls.relative, 'Relative');
+testImage(document.getElementById('img2'), urls.full, 'Full');
+testImage(document.getElementById('img3'), urls.protocolRelative, 'Protocol-relative');
+</script>
+</body>
+</html>
