@@ -10,5 +10,5 @@ actual fun getPlatform(): Platform = JsPlatform()
 
 actual fun developmentBaseUrl(): String {
     val hostname = window.location.hostname
-    return "http://$hostname:8080"
+    return "http://$hostname:8081"
 }

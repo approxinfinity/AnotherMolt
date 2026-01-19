@@ -77,6 +77,45 @@ A Kotlin Multiplatform MUD-style game engine with AI-powered content generation.
 - `POST /generate/creature` - Generate creature name/description
 - `POST /generate/item` - Generate item name/description
 
+## Ports Configuration
+
+**IMPORTANT: The application uses two separate servers on different ports:**
+
+| Port | Service | Description |
+|------|---------|-------------|
+| **8080** | Web Client | Frontend (HTML/JS/Wasm) served by webpack dev server |
+| **8081** | Backend API | Ktor REST API server with database |
+
+### Key Files for Port Configuration
+
+| File | Purpose |
+|------|---------|
+| `server/src/main/resources/application.conf` | Backend port (8081) and CORS allowed hosts |
+| `shared/src/jsMain/kotlin/.../Platform.js.kt` | JS client backend URL (must use port 8081) |
+| `shared/src/wasmJsMain/kotlin/.../Platform.wasmJs.kt` | Wasm client backend URL (must use port 8081) |
+
+### Local Network Access
+
+To access from other devices on your network (e.g., `192.168.1.239`):
+
+1. **Add your IP to CORS allowed hosts** in `server/src/main/resources/application.conf`:
+   ```hocon
+   cors {
+       allowedHosts = ["localhost:3000", "localhost:8080", "192.168.1.239:8080"]
+   }
+   ```
+
+2. **Ensure Platform files point to port 8081** (the backend), not 8080:
+   ```kotlin
+   // In Platform.js.kt and Platform.wasmJs.kt
+   actual fun developmentBaseUrl(): String {
+       val hostname = window.location.hostname
+       return "http://$hostname:8081"  // <-- MUST be 8081, not 8080
+   }
+   ```
+
+3. **Restart both servers** after configuration changes.
+
 ## Running the Project
 
 ### Server

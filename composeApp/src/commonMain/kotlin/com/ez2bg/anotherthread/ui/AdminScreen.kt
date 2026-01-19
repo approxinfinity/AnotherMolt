@@ -1,5 +1,8 @@
 package com.ez2bg.anotherthread.ui
 
+import com.ez2bg.anotherthread.util.SimplexNoise
+import com.ez2bg.anotherthread.util.VoronoiNoise
+import com.ez2bg.anotherthread.util.BiomeBlender
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.VectorConverter
 import androidx.compose.animation.core.animateDpAsState
@@ -2943,6 +2946,128 @@ private enum class TerrainType {
     COAST, HILLS, SWAMP, CHURCH, CASTLE, PORT, RUINS
 }
 
+// Voronoi-based biome blending for terrain variation
+private object BiomeBlending {
+    /**
+     * Get biome blend information for a position within a terrain tile.
+     * Uses Voronoi cells to create natural-looking biome transitions.
+     *
+     * @param localX X position within tile (0 to terrainSize)
+     * @param localY Y position within tile (0 to terrainSize)
+     * @param terrainSize Size of the terrain tile
+     * @param seed Seed for reproducible results
+     * @param cellScale Scale of Voronoi cells relative to terrain
+     * @return BiomeBlendResult with blend factors
+     */
+    data class BiomeBlendResult(
+        val primaryWeight: Float,      // Weight of primary biome (0-1)
+        val secondaryWeight: Float,    // Weight of secondary biome (0-1)
+        val edgeDistance: Float,       // Distance to cell edge (for transition effects)
+        val cellId: Int,               // ID of the current cell (for consistent variation)
+        val distanceToCenter: Float    // Distance from cell center (for radial effects)
+    )
+
+    fun getBlendInfo(
+        localX: Float,
+        localY: Float,
+        terrainSize: Float,
+        seed: Int,
+        cellScale: Float = 0.5f  // Larger cells for more visible effect
+    ): BiomeBlendResult {
+        val scale = terrainSize * cellScale
+        val voronoi = VoronoiNoise.cellular(localX, localY, scale, 0.8f, seed)
+        val (w1, w2) = voronoi.cellWeights(0.5f)  // Wider blend zone
+
+        return BiomeBlendResult(
+            primaryWeight = w1,
+            secondaryWeight = w2,
+            edgeDistance = voronoi.edgeDistance,
+            cellId = voronoi.cellId1,
+            distanceToCenter = voronoi.distance1
+        )
+    }
+
+    /**
+     * Get color variation based on Voronoi cell position.
+     * Creates natural-looking color variation within terrain.
+     */
+    fun getColorVariation(
+        localX: Float,
+        localY: Float,
+        terrainSize: Float,
+        seed: Int,
+        variationAmount: Float = 0.15f
+    ): Float {
+        val blend = getBlendInfo(localX, localY, terrainSize, seed, 0.3f)
+        // Use cell ID to create consistent variation per cell
+        val cellVariation = ((blend.cellId and 0xFF) / 255f) * 2f - 1f
+        // Blend with edge proximity for smooth transitions
+        val edgeFactor = (blend.edgeDistance / (terrainSize * 0.1f)).coerceIn(0f, 1f)
+        return cellVariation * variationAmount * (1f - edgeFactor * 0.5f)
+    }
+
+    /**
+     * Get density multiplier for features (trees, grass, etc.) based on Voronoi cells.
+     * Creates natural clustering patterns.
+     */
+    fun getDensityMultiplier(
+        localX: Float,
+        localY: Float,
+        terrainSize: Float,
+        seed: Int
+    ): Float {
+        val blend = getBlendInfo(localX, localY, terrainSize, seed + 1000, 0.4f)
+        // Higher density near cell centers, lower near edges
+        val centerFactor = 1f - (blend.distanceToCenter / (terrainSize * 0.2f)).coerceIn(0f, 0.5f)
+        // Cell-based variation
+        val cellBonus = ((blend.cellId and 0x7F) / 127f) * 0.3f
+        return (0.7f + centerFactor * 0.3f + cellBonus).coerceIn(0.5f, 1.3f)
+    }
+
+    /**
+     * Interpolate between two colors based on position using Voronoi blending.
+     */
+    fun blendColors(
+        color1: Color,
+        color2: Color,
+        localX: Float,
+        localY: Float,
+        terrainSize: Float,
+        seed: Int
+    ): Color {
+        val blend = getBlendInfo(localX, localY, terrainSize, seed, 0.5f)
+        // Use cell ID to determine which color dominates in each cell
+        val cellPreference = ((blend.cellId and 0xFF) / 255f)
+        // Stronger blending - cells clearly show different colors
+        val factor = if (cellPreference > 0.5f) {
+            (0.6f + blend.secondaryWeight * 0.4f).coerceIn(0f, 1f)
+        } else {
+            (blend.secondaryWeight * 0.4f).coerceIn(0f, 1f)
+        }
+
+        return Color(
+            red = color1.red * (1f - factor) + color2.red * factor,
+            green = color1.green * (1f - factor) + color2.green * factor,
+            blue = color1.blue * (1f - factor) + color2.blue * factor,
+            alpha = color1.alpha * (1f - factor) + color2.alpha * factor
+        )
+    }
+
+    /**
+     * Get biome transition effect - useful for drawing edge features.
+     * Returns a value from 0 (cell center) to 1 (cell edge).
+     */
+    fun getEdgeProximity(
+        localX: Float,
+        localY: Float,
+        terrainSize: Float,
+        seed: Int
+    ): Float {
+        val blend = getBlendInfo(localX, localY, terrainSize, seed, 0.3f)
+        return (1f - blend.primaryWeight).coerceIn(0f, 1f)
+    }
+}
+
 // Helper extension for keyword matching
 private fun String.containsAny(vararg keywords: String): Boolean {
     return keywords.any { this.contains(it) }
@@ -3257,7 +3382,7 @@ private fun DrawScope.drawCompassRose(center: Offset, size: Float) {
 // Draw road/path terrain - dirt road with borders passing through center
 private fun DrawScope.drawRoadTerrain(center: Offset, terrainSize: Float, seed: Int) {
     val random = kotlin.random.Random(seed)
-    val pathWidth = terrainSize * 0.12f
+    val pathWidth = terrainSize * 0.05f  // Narrower road
     val roadColor = Color(0xFFB8A080) // Dusty brown road
     val borderColor = Color(0xFF8A7560) // Darker border
     val edgeColor = Color(0xFF6A5A4A) // Edge texture
@@ -3291,14 +3416,14 @@ private fun DrawScope.drawRoadTerrain(center: Offset, terrainSize: Float, seed: 
     drawPath(
         path = roadPath,
         color = edgeColor,
-        style = Stroke(width = pathWidth + 4f, cap = StrokeCap.Round, join = StrokeJoin.Round)
+        style = Stroke(width = pathWidth + 2f, cap = StrokeCap.Round, join = StrokeJoin.Round)
     )
 
     // Draw middle border
     drawPath(
         path = roadPath,
         color = borderColor,
-        style = Stroke(width = pathWidth + 2f, cap = StrokeCap.Round, join = StrokeJoin.Round)
+        style = Stroke(width = pathWidth + 1f, cap = StrokeCap.Round, join = StrokeJoin.Round)
     )
 
     // Draw main road surface
@@ -3318,7 +3443,7 @@ private fun DrawScope.drawRoadTerrain(center: Offset, terrainSize: Float, seed: 
         val markY = startY * (1 - t) * (1 - t) + 2 * ctrl1Y * (1 - t) * t * 0.5f + center.y * t * t * 0.5f +
                 center.y * (1 - t) * (1 - t) * 0.5f + 2 * ctrl2Y * (1 - t) * t * 0.5f + endY * t * t
 
-        val markSize = terrainSize * 0.015f
+        val markSize = terrainSize * 0.008f
         drawCircle(
             color = borderColor.copy(alpha = 0.3f),
             radius = markSize,
@@ -3330,32 +3455,127 @@ private fun DrawScope.drawRoadTerrain(center: Offset, terrainSize: Float, seed: 
 // Draw forest terrain - varied tree styles (conifers, deciduous, bushes)
 private fun DrawScope.drawForestTerrain(center: Offset, terrainSize: Float, seed: Int, params: ForestParamsDto? = null) {
     val random = kotlin.random.Random(seed)
-    val baseTreeCount = 5 + random.nextInt(4)
+    val baseTreeCount = 45 + random.nextInt(20) // 6x more trees (45-64 base)
     val treeCount = params?.treeCount ?: baseTreeCount
-    val sizeMultiplier = params?.sizeMultiplier ?: 1f
+    val sizeMultiplier = (params?.sizeMultiplier ?: 1f) * 0.55f // Smaller trees to fit more
+
+    // Simplex noise parameters for natural tree clustering
+    val noiseScale = 0.06f
+    val noiseSeed = seed * 0.1f
 
     // Color variations for depth and variety
-    val darkGreen = Color(0xFF1A4A2A) // Shadow/back trees
-    val midGreen = Color(0xFF2A6A3A) // Mid-layer
-    val lightGreen = Color(0xFF3A8A4A) // Front/lit trees
-    val highlightGreen = Color(0xFF5AAA6A) // Sunlit highlights
+    // Base forest colors (deep green, lush forest)
+    val darkGreenBase = Color(0xFF0A4A2A) // Deep shadow/back trees
+    val midGreenBase = Color(0xFF1A6A3A) // Rich mid-layer
+    val lightGreenBase = Color(0xFF2A8A4A) // Vibrant front/lit trees
+    val highlightGreenBase = Color(0xFF4ABA6A) // Bright sunlit highlights
+
+    // Alternative biome colors (autumn forest - oranges and browns)
+    val darkGreenAlt = Color(0xFF6A3A1A)  // Deep brown-orange
+    val midGreenAlt = Color(0xFF8A5A2A)   // Rust orange
+    val lightGreenAlt = Color(0xFFAA7A3A) // Bright orange
+    val highlightGreenAlt = Color(0xFFCC9A4A) // Golden yellow
+
     val shadowColor = Color(0xFF0A2A1A) // Ground shadow
 
     // Generate trees with depth (y-position determines drawing order and size)
-    data class TreeData(val x: Float, val y: Float, val size: Float, val type: Int, val depth: Float)
+    // Using Simplex noise for natural clustering and Voronoi for biome variation
+    data class TreeData(
+        val x: Float, val y: Float, val size: Float, val type: Int, val depth: Float,
+        val darkGreen: Color, val midGreen: Color, val lightGreen: Color, val highlightGreen: Color
+    )
     val trees = mutableListOf<TreeData>()
 
-    repeat(treeCount) { i ->
-        val angle = (i.toFloat() / treeCount) * 2 * PI.toFloat() + random.nextFloat() * 0.6f
-        val distance = terrainSize * (0.25f + random.nextFloat() * 0.35f)
-        val treeX = center.x + cos(angle) * distance
-        val treeY = center.y + sin(angle) * distance
-        val depth = (treeY - center.y + terrainSize * 0.5f) / terrainSize // 0=back, 1=front
-        val baseSize = terrainSize * (0.06f + random.nextFloat() * 0.06f) * sizeMultiplier
-        val sizeByDepth = baseSize * (0.7f + depth * 0.4f) // Back trees smaller
-        val treeType = random.nextInt(6) // Added willow type
+    // Use cluster-based placement - trees grow in natural groves and runs
+    // First, generate cluster centers using varied distribution
+    val numClusters = 4 + random.nextInt(3) // 4-6 clusters per tile
+    data class ClusterCenter(val x: Float, val y: Float, val size: Float, val density: Float)
+    val clusters = (0 until numClusters).map { c ->
+        val cRandom = kotlin.random.Random(seed + c * 17)
+        // Distribute cluster centers across the tile with randomness
+        val angle = (c.toFloat() / numClusters) * 2 * PI.toFloat() + cRandom.nextFloat() * 0.8f
+        val dist = terrainSize * (0.1f + cRandom.nextFloat() * 0.25f)
+        ClusterCenter(
+            x = center.x + cos(angle) * dist + (cRandom.nextFloat() - 0.5f) * terrainSize * 0.2f,
+            y = center.y + sin(angle) * dist + (cRandom.nextFloat() - 0.5f) * terrainSize * 0.2f,
+            size = terrainSize * (0.12f + cRandom.nextFloat() * 0.12f), // Cluster radius
+            density = 0.6f + cRandom.nextFloat() * 0.4f // How dense this cluster is
+        )
+    }
 
-        trees.add(TreeData(treeX, treeY, sizeByDepth, treeType, depth))
+    // Also add a main central cluster for connected feel
+    val centralCluster = ClusterCenter(
+        x = center.x + (random.nextFloat() - 0.5f) * terrainSize * 0.1f,
+        y = center.y + (random.nextFloat() - 0.5f) * terrainSize * 0.1f,
+        size = terrainSize * 0.22f,
+        density = 0.8f + random.nextFloat() * 0.2f
+    )
+    val allClusters = clusters + centralCluster
+
+    repeat(treeCount) { i ->
+        val tRandom = kotlin.random.Random(seed + i * 31)
+
+        // Pick a cluster to place this tree near (weighted by cluster density)
+        val clusterWeights = allClusters.map { it.density }
+        val totalWeight = clusterWeights.sum()
+        var pick = tRandom.nextFloat() * totalWeight
+        var chosenCluster = allClusters[0]
+        for (cluster in allClusters) {
+            pick -= cluster.density
+            if (pick <= 0) {
+                chosenCluster = cluster
+                break
+            }
+        }
+
+        // Position tree within chosen cluster with natural falloff
+        // Use noise to create "runs" - elongated groups of trees
+        val runAngle = SimplexNoise.noise2D(noiseSeed + i * 0.5f, seed * 0.1f) * PI.toFloat()
+        val runStretch = 1.3f + SimplexNoise.noise2DNormalized(noiseSeed + i * 0.3f, seed * 0.2f) * 0.8f
+
+        // Distance from cluster center with exponential falloff for natural clustering
+        val distFactor = tRandom.nextFloat()
+        val dist = chosenCluster.size * kotlin.math.sqrt(distFactor) // sqrt gives more trees near center
+
+        // Apply run stretching - trees form elongated groups
+        val baseAngle = tRandom.nextFloat() * 2 * PI.toFloat()
+        val stretchedX = cos(baseAngle) * dist
+        val stretchedY = sin(baseAngle) * dist * (1f / runStretch)
+
+        // Rotate by run angle
+        val finalX = stretchedX * cos(runAngle) - stretchedY * sin(runAngle)
+        val finalY = stretchedX * sin(runAngle) + stretchedY * cos(runAngle)
+
+        val treeX = chosenCluster.x + finalX + (tRandom.nextFloat() - 0.5f) * terrainSize * 0.025f
+        val treeY = chosenCluster.y + finalY + (tRandom.nextFloat() - 0.5f) * terrainSize * 0.025f
+
+        // Skip trees too far from center (keep within circular bounds)
+        val distFromCenter = kotlin.math.sqrt((treeX - center.x) * (treeX - center.x) + (treeY - center.y) * (treeY - center.y))
+        if (distFromCenter > terrainSize * 0.47f) return@repeat
+
+        val depth = (treeY - center.y + terrainSize * 0.5f) / terrainSize // 0=back, 1=front
+
+        // Use Voronoi biome blending for color variation
+        val localX = treeX - center.x + terrainSize * 0.5f
+        val localY = treeY - center.y + terrainSize * 0.5f
+        val densityMult = BiomeBlending.getDensityMultiplier(localX, localY, terrainSize, seed)
+
+        // Blend tree colors based on Voronoi cells
+        val darkGreen = BiomeBlending.blendColors(darkGreenBase, darkGreenAlt, localX, localY, terrainSize, seed)
+        val midGreen = BiomeBlending.blendColors(midGreenBase, midGreenAlt, localX, localY, terrainSize, seed)
+        val lightGreen = BiomeBlending.blendColors(lightGreenBase, lightGreenAlt, localX, localY, terrainSize, seed)
+        val highlightGreen = BiomeBlending.blendColors(highlightGreenBase, highlightGreenAlt, localX, localY, terrainSize, seed)
+
+        // Use noise for size variation - trees in cluster centers tend to be larger
+        val sizeNoise = SimplexNoise.noise2DNormalized(treeX * noiseScale, treeY * noiseScale)
+        val clusterCenterBonus = 1f - (distFactor * 0.25f) // Trees near cluster centers are bigger
+        val baseSize = terrainSize * (0.025f + sizeNoise * 0.04f) * sizeMultiplier * clusterCenterBonus * (0.85f + densityMult * 0.3f)
+        val sizeByDepth = baseSize * (0.55f + depth * 0.55f) // Back trees smaller
+        // Only use conifer types (0, 1) and bushes (4), willow (5) - skip round/oval deciduous (2, 3)
+        val allowedTypes = listOf(0, 1, 4, 5)
+        val treeType = allowedTypes[tRandom.nextInt(allowedTypes.size)]
+
+        trees.add(TreeData(treeX, treeY, sizeByDepth, treeType, depth, darkGreen, midGreen, lightGreen, highlightGreen))
     }
 
     // Sort by Y position (back to front)
@@ -3380,12 +3600,13 @@ private fun DrawScope.drawForestTerrain(center: Offset, terrainSize: Float, seed
         val treeType = tree.type
         val depth = tree.depth
 
-        // Color based on depth (back trees darker)
+        // Color based on depth (back trees darker) - using per-tree biome-blended colors
         val treeColor = when {
-            depth < 0.33f -> darkGreen
-            depth < 0.66f -> midGreen
-            else -> lightGreen
+            depth < 0.33f -> tree.darkGreen
+            depth < 0.66f -> tree.midGreen
+            else -> tree.lightGreen
         }
+        val highlightGreen = tree.highlightGreen
         val trunkColor = TerrainColors.treeTrunk.copy(alpha = 0.7f + depth * 0.3f)
 
         when (treeType) {
@@ -3467,7 +3688,7 @@ private fun DrawScope.drawForestTerrain(center: Offset, terrainSize: Float, seed
 
                 // Shadow side of canopy
                 drawCircle(
-                    color = darkGreen,
+                    color = tree.darkGreen,
                     radius = canopyRadius,
                     center = Offset(treeX + treeSize * 0.05f, canopyY + treeSize * 0.03f)
                 )
@@ -3515,7 +3736,7 @@ private fun DrawScope.drawForestTerrain(center: Offset, terrainSize: Float, seed
                 val bushColor = treeColor.copy(alpha = 0.85f)
 
                 // Multiple overlapping circles for organic shape
-                drawCircle(color = darkGreen.copy(alpha = 0.6f), radius = treeSize * 0.28f,
+                drawCircle(color = tree.darkGreen.copy(alpha = 0.6f), radius = treeSize * 0.28f,
                     center = Offset(treeX + treeSize * 0.08f, bushY + treeSize * 0.05f))
                 drawCircle(color = bushColor, radius = treeSize * 0.25f,
                     center = Offset(treeX, bushY))
@@ -3604,111 +3825,160 @@ private fun DrawScope.drawLakeTerrain(center: Offset, terrainSize: Float, seed: 
     val highlightColor = Color(0xFF8ACAEE) // Bright water sparkle
     val sizeMultiplier = params?.diameterMultiplier ?: 1f
 
-    // Generate more organic lake shape with 12 points for smoother curves
-    val points = 12
+    // Generate very smooth organic lake shape with 20 points for ultra-smooth curves
+    val points = 20
     val baseRadius = terrainSize * 0.38f * sizeMultiplier
 
-    // Generate irregular radii with smooth variation
+    // Generate smooth radii using Simplex noise for organic variation
     val radii = (0 until points).map { i ->
-        val variation = kotlin.math.sin(i * 0.8f + seed * 0.1f) * 0.15f
-        baseRadius * (0.75f + variation + random.nextFloat() * 0.25f)
-    }
-
-    // Pre-generate mid-radius variations so all lake layers align
-    val midVariations = (0 until points).map { i ->
-        0.92f + kotlin.math.sin(seed * 0.3f + i * 0.7f) * 0.08f
-    }
-
-    // Helper to create lake path at a given scale
-    fun createLakePath(scale: Float): Path = Path().apply {
-        val firstAngle = 0f
-        val firstRadius = radii[0] * scale
-        moveTo(
-            center.x + cos(firstAngle) * firstRadius,
-            center.y + sin(firstAngle) * firstRadius
+        val angle = (i.toFloat() / points) * 2 * PI.toFloat()
+        val noiseVal = SimplexNoise.noise2D(
+            cos(angle) * 2f + seed * 0.1f,
+            sin(angle) * 2f + seed * 0.1f
         )
+        baseRadius * (0.82f + noiseVal * 0.18f)
+    }
 
+    // Helper to create ultra-smooth lake path using cubic bezier curves
+    fun createSmoothLakePath(scale: Float): Path = Path().apply {
+        val scaledRadii = radii.map { it * scale }
+
+        // Calculate points on the curve
+        val curvePoints = (0 until points).map { i ->
+            val angle = (i.toFloat() / points) * 2 * PI.toFloat()
+            Offset(
+                center.x + cos(angle) * scaledRadii[i],
+                center.y + sin(angle) * scaledRadii[i]
+            )
+        }
+
+        moveTo(curvePoints[0].x, curvePoints[0].y)
+
+        // Use cubic bezier for smoother curves
         for (i in 0 until points) {
-            val nextI = (i + 1) % points
-            val angle1 = (i.toFloat() / points) * 2 * PI.toFloat()
-            val angle2 = (nextI.toFloat() / points) * 2 * PI.toFloat()
-            val midAngle = (angle1 + angle2) / 2
+            val p0 = curvePoints[(i - 1 + points) % points]
+            val p1 = curvePoints[i]
+            val p2 = curvePoints[(i + 1) % points]
+            val p3 = curvePoints[(i + 2) % points]
 
-            val r1 = radii[i] * scale
-            val r2 = radii[nextI] * scale
-            val midR = (r1 + r2) / 2 * midVariations[i]
+            // Catmull-Rom to Bezier conversion for smooth curves
+            val tension = 0.4f
+            val ctrl1X = p1.x + (p2.x - p0.x) * tension
+            val ctrl1Y = p1.y + (p2.y - p0.y) * tension
+            val ctrl2X = p2.x - (p3.x - p1.x) * tension
+            val ctrl2Y = p2.y - (p3.y - p1.y) * tension
 
-            val ctrlX = center.x + cos(midAngle) * midR
-            val ctrlY = center.y + sin(midAngle) * midR
-            val endX = center.x + cos(angle2) * r2
-            val endY = center.y + sin(angle2) * r2
-
-            quadraticTo(ctrlX, ctrlY, endX, endY)
+            cubicTo(ctrl1X, ctrl1Y, ctrl2X, ctrl2Y, p2.x, p2.y)
         }
         close()
     }
 
     // Draw shore/beach ring (slightly larger than lake)
-    val shorePath = createLakePath(1.08f)
+    val shorePath = createSmoothLakePath(1.08f)
     drawPath(shorePath, color = shoreColor)
 
-    // Draw shallow water ring
-    val shallowPath = createLakePath(1.0f)
+    // Draw multiple blended water layers for smooth color transition
+    // Layer 1: Outer shallow water
+    val shallowPath = createSmoothLakePath(1.0f)
     drawPath(shallowPath, color = shallowWater)
 
-    // Draw mid-depth water
-    val midPath = createLakePath(0.75f)
+    // Blend layer 1-2: Transition from shallow to mid
+    val blend1Path = createSmoothLakePath(0.88f)
+    val blend1Color = Color(
+        red = (shallowWater.red + midWater.red) / 2f,
+        green = (shallowWater.green + midWater.green) / 2f,
+        blue = (shallowWater.blue + midWater.blue) / 2f,
+        alpha = 1f
+    )
+    drawPath(blend1Path, color = blend1Color)
+
+    // Layer 2: Mid-depth water
+    val midPath = createSmoothLakePath(0.75f)
     drawPath(midPath, color = midWater)
 
-    // Draw deep center
-    val deepPath = createLakePath(0.45f)
+    // Blend layer 2-3: Transition from mid to deep
+    val blend2Path = createSmoothLakePath(0.62f)
+    val blend2Color = Color(
+        red = (midWater.red + deepWater.red) / 2f,
+        green = (midWater.green + deepWater.green) / 2f,
+        blue = (midWater.blue + deepWater.blue) / 2f,
+        alpha = 1f
+    )
+    drawPath(blend2Path, color = blend2Color)
+
+    // Layer 3: Deep center
+    val deepPath = createSmoothLakePath(0.48f)
     drawPath(deepPath, color = deepWater)
 
+    // Deepest center - slightly darker
+    val deepestPath = createSmoothLakePath(0.3f)
+    val deepestColor = Color(
+        red = deepWater.red * 0.85f,
+        green = deepWater.green * 0.85f,
+        blue = deepWater.blue * 0.9f,
+        alpha = 1f
+    )
+    drawPath(deepestPath, color = deepestColor)
+
     // Add organic shoreline detail (small rocks/pebbles)
-    repeat(8) {
+    repeat(10) {
         val angle = random.nextFloat() * 2 * PI.toFloat()
-        val dist = baseRadius * (1.0f + random.nextFloat() * 0.1f)
+        val dist = baseRadius * (1.02f + random.nextFloat() * 0.08f)
         val rockX = center.x + cos(angle) * dist
         val rockY = center.y + sin(angle) * dist
-        val rockSize = terrainSize * (0.01f + random.nextFloat() * 0.015f)
+        val rockSize = terrainSize * (0.008f + random.nextFloat() * 0.012f)
         drawCircle(
-            color = shoreColor.copy(alpha = 0.7f),
+            color = shoreColor.copy(alpha = 0.5f + random.nextFloat() * 0.3f),
             radius = rockSize,
             center = Offset(rockX, rockY)
         )
     }
 
-    // Add water surface details - gentle ripples
-    repeat(3) { i ->
-        val rippleY = center.y + (i - 1) * terrainSize * 0.12f
-        val rippleOffset = (random.nextFloat() - 0.5f) * terrainSize * 0.1f
+    // Add water surface details - gentle ripples with soft edges
+    repeat(4) { i ->
+        val rippleY = center.y + (i - 1.5f) * terrainSize * 0.1f
+        val rippleOffset = (random.nextFloat() - 0.5f) * terrainSize * 0.08f
         val ripplePath = Path().apply {
-            val startX = center.x - terrainSize * 0.18f + rippleOffset
+            val startX = center.x - terrainSize * 0.15f + rippleOffset
             moveTo(startX, rippleY)
             cubicTo(
-                startX + terrainSize * 0.1f, rippleY - terrainSize * 0.025f,
-                startX + terrainSize * 0.25f, rippleY + terrainSize * 0.015f,
-                startX + terrainSize * 0.36f, rippleY
+                startX + terrainSize * 0.08f, rippleY - terrainSize * 0.018f,
+                startX + terrainSize * 0.2f, rippleY + terrainSize * 0.012f,
+                startX + terrainSize * 0.3f, rippleY
             )
         }
         drawPath(
             path = ripplePath,
-            color = highlightColor.copy(alpha = 0.25f - i * 0.05f),
-            style = Stroke(width = 1.2f, cap = StrokeCap.Round)
+            color = highlightColor.copy(alpha = 0.18f - i * 0.03f),
+            style = Stroke(width = 1f, cap = StrokeCap.Round)
         )
     }
 
-    // Add sparkle highlights (sun reflection)
+    // Add soft sparkle highlights (sun reflection) with gradient-like effect
     val highlightOffset = terrainSize * 0.1f
+    // Outer glow
     drawCircle(
-        color = highlightColor.copy(alpha = 0.4f),
+        color = highlightColor.copy(alpha = 0.15f),
+        radius = terrainSize * 0.09f,
+        center = Offset(center.x - highlightOffset, center.y - highlightOffset * 0.8f)
+    )
+    // Mid glow
+    drawCircle(
+        color = highlightColor.copy(alpha = 0.25f),
         radius = terrainSize * 0.06f,
         center = Offset(center.x - highlightOffset, center.y - highlightOffset * 0.8f)
     )
+    // Bright center
     drawCircle(
-        color = highlightColor.copy(alpha = 0.25f),
+        color = highlightColor.copy(alpha = 0.4f),
         radius = terrainSize * 0.035f,
-        center = Offset(center.x - highlightOffset * 1.5f, center.y - highlightOffset * 0.5f)
+        center = Offset(center.x - highlightOffset, center.y - highlightOffset * 0.8f)
+    )
+    // Secondary smaller highlight
+    drawCircle(
+        color = highlightColor.copy(alpha = 0.2f),
+        radius = terrainSize * 0.025f,
+        center = Offset(center.x - highlightOffset * 1.6f, center.y - highlightOffset * 0.4f)
     )
 
     // Maybe add a tiny island in larger lakes
@@ -3716,7 +3986,12 @@ private fun DrawScope.drawLakeTerrain(center: Offset, terrainSize: Float, seed: 
         val islandX = center.x + (random.nextFloat() - 0.5f) * baseRadius * 0.4f
         val islandY = center.y + (random.nextFloat() - 0.5f) * baseRadius * 0.4f
         val islandSize = terrainSize * 0.04f
-        // Island base
+        // Island base with soft edge
+        drawCircle(
+            color = shoreColor.copy(alpha = 0.5f),
+            radius = islandSize * 1.2f,
+            center = Offset(islandX, islandY)
+        )
         drawCircle(
             color = shoreColor,
             radius = islandSize,
@@ -4136,8 +4411,98 @@ private fun DrawScope.drawStreamTerrain(center: Offset, terrainSize: Float, seed
     }
 }
 
+// Draw small foothills leading up to mountains - gentle rolling hills with vegetation
+private fun DrawScope.drawFoothillsTerrain(center: Offset, terrainSize: Float, seed: Int) {
+    val random = kotlin.random.Random(seed)
+    val footHillCount = 6 + random.nextInt(4) // Multiple small foothills
+
+    // Foothill colors - earthy greens and browns
+    val hillGreen1 = Color(0xFF4A6A4A) // Dark green
+    val hillGreen2 = Color(0xFF5A7A5A) // Medium green
+    val hillGreen3 = Color(0xFF6A8A6A) // Light green
+    val hillBrown = Color(0xFF7A6A5A)  // Earthy brown for dry areas
+    val shadowColor = Color(0xFF3A4A3A) // Shadow
+
+    // Draw foothills from back to front
+    data class FoothillData(val x: Float, val y: Float, val width: Float, val height: Float, val color: Color)
+    val foothills = mutableListOf<FoothillData>()
+
+    repeat(footHillCount) { i ->
+        val angle = (i.toFloat() / footHillCount) * 2 * PI.toFloat() + random.nextFloat() * 0.5f
+        val distance = terrainSize * (0.25f + random.nextFloat() * 0.2f)
+        val hillX = center.x + cos(angle) * distance
+        val hillY = center.y + sin(angle) * distance
+        val hillWidth = terrainSize * (0.12f + random.nextFloat() * 0.1f)
+        val hillHeight = terrainSize * (0.04f + random.nextFloat() * 0.04f) // Small hills
+
+        // Vary color based on position using noise
+        val colorNoise = SimplexNoise.noise2DNormalized(hillX * 0.05f + seed, hillY * 0.05f)
+        val hillColor = when {
+            colorNoise < 0.25f -> hillBrown
+            colorNoise < 0.5f -> hillGreen1
+            colorNoise < 0.75f -> hillGreen2
+            else -> hillGreen3
+        }
+
+        foothills.add(FoothillData(hillX, hillY, hillWidth, hillHeight, hillColor))
+    }
+
+    // Sort by Y (back to front)
+    foothills.sortBy { it.y }
+
+    // Draw each foothill
+    for (hill in foothills) {
+        // Draw shadow first
+        drawOval(
+            color = shadowColor.copy(alpha = 0.2f),
+            topLeft = Offset(hill.x - hill.width * 0.5f + hill.height * 0.3f, hill.y - hill.height * 0.1f),
+            size = androidx.compose.ui.geometry.Size(hill.width, hill.height * 0.5f)
+        )
+
+        // Draw foothill as gentle rounded shape
+        val hillPath = Path().apply {
+            moveTo(hill.x - hill.width * 0.5f, hill.y)
+            // Gentle curve up
+            quadraticTo(
+                hill.x - hill.width * 0.25f, hill.y - hill.height * 0.6f,
+                hill.x, hill.y - hill.height
+            )
+            // Gentle curve down
+            quadraticTo(
+                hill.x + hill.width * 0.25f, hill.y - hill.height * 0.5f,
+                hill.x + hill.width * 0.5f, hill.y
+            )
+            close()
+        }
+        drawPath(hillPath, color = hill.color.copy(alpha = 0.7f))
+
+        // Add subtle highlight on top
+        val highlightPath = Path().apply {
+            moveTo(hill.x - hill.width * 0.3f, hill.y - hill.height * 0.5f)
+            quadraticTo(
+                hill.x, hill.y - hill.height * 1.05f,
+                hill.x + hill.width * 0.2f, hill.y - hill.height * 0.6f
+            )
+        }
+        drawPath(highlightPath, color = Color.White.copy(alpha = 0.15f), style = Stroke(width = 1.5f))
+
+        // Add tiny vegetation dots on some hills
+        if (random.nextFloat() > 0.5f) {
+            repeat(3 + random.nextInt(3)) {
+                val dotX = hill.x + (random.nextFloat() - 0.5f) * hill.width * 0.6f
+                val dotY = hill.y - hill.height * (0.3f + random.nextFloat() * 0.5f)
+                val dotSize = terrainSize * (0.003f + random.nextFloat() * 0.004f)
+                drawCircle(color = hillGreen1.copy(alpha = 0.5f), radius = dotSize, center = Offset(dotX, dotY))
+            }
+        }
+    }
+}
+
 // Draw mountain terrain - layered mountain range with depth and atmospheric perspective
 private fun DrawScope.drawMountainTerrain(center: Offset, terrainSize: Float, seed: Int, params: MountainParamsDto? = null) {
+    // Draw foothills first (behind mountains)
+    drawFoothillsTerrain(center, terrainSize, seed + 100)
+
     val random = kotlin.random.Random(seed)
     val basePeakCount = 2 + random.nextInt(2)
     val peakCount = params?.peakCount ?: basePeakCount
@@ -4317,19 +4682,44 @@ private fun DrawScope.drawMountainTerrain(center: Offset, terrainSize: Float, se
             }
         }
     }
+
+    // Add scattered boulders at mountain base
+    repeat(4 + random.nextInt(3)) { b ->
+        val bRandom = kotlin.random.Random(seed + 200 + b)
+        val boulderAngle = bRandom.nextFloat() * 2 * PI.toFloat()
+        val boulderDist = terrainSize * (0.3f + bRandom.nextFloat() * 0.15f)
+        val boulderX = center.x + cos(boulderAngle) * boulderDist
+        val boulderY = center.y + sin(boulderAngle) * boulderDist * 0.5f + terrainSize * 0.15f
+        drawBoulder(boulderX, boulderY, terrainSize * (0.025f + bRandom.nextFloat() * 0.03f), bRandom.nextInt())
+    }
 }
 
-// Draw grass terrain - lush meadow with varied grass and flowers
+// Draw grass terrain - lush meadow with varied grass, dirt patches, and flowers
 private fun DrawScope.drawGrassTerrain(center: Offset, terrainSize: Float, seed: Int, params: GrassParamsDto? = null) {
     val random = kotlin.random.Random(seed)
-    val baseTuftCount = 8 + random.nextInt(5)
+    val baseTuftCount = 12 + random.nextInt(6) // More grass tufts
     val tuftCount = params?.tuftCount ?: baseTuftCount
 
-    // Grass color variations
-    val grassDark = Color(0xFF3A6A3A) // Dark grass
-    val grassMid = Color(0xFF4A8A4A) // Medium grass
-    val grassLight = Color(0xFF5AAA5A) // Light/young grass
-    val grassTip = Color(0xFF7ABA6A) // Sunlit tips
+    // Simplex noise parameters for natural grass distribution
+    val noiseScale = 0.05f
+    val noiseSeed = seed * 0.1f
+
+    // Base grass color variations (lush green)
+    val grassDarkBase = Color(0xFF2A6A2A) // Dark lush grass
+    val grassMidBase = Color(0xFF3A9A3A) // Medium lush grass
+    val grassLightBase = Color(0xFF4ABA4A) // Light lush grass
+    val grassTipBase = Color(0xFF6ADA6A) // Bright sunlit tips
+
+    // Alternative biome colors for blending (dry/autumn grass - more yellow/brown)
+    val grassDryDark = Color(0xFF7A6A2A)  // Brown-yellow dark
+    val grassDryMid = Color(0xFFAA8A3A)   // Golden mid
+    val grassDryLight = Color(0xFFCCAA4A) // Bright yellow-gold
+
+    // Dirt colors for ground texture
+    val dirtDark = Color(0xFF5A4A3A)   // Dark earth
+    val dirtMid = Color(0xFF7A6A5A)    // Medium brown dirt
+    val dirtLight = Color(0xFF9A8A7A)  // Light dusty dirt
+
     val flowerColors = listOf(
         Color(0xFFEAEA5A), // Yellow
         Color(0xFFFFFFFF), // White
@@ -4337,13 +4727,78 @@ private fun DrawScope.drawGrassTerrain(center: Offset, terrainSize: Float, seed:
         Color(0xFFEA7A7A)  // Pink/red
     )
 
-    // Draw scattered grass tufts with varying heights and colors
+    // LAYER 1: Ground texture with dirt patches and gradation
+    // Draw base ground texture using noise for natural variation
+    repeat(15) { i ->
+        val patchAngle = random.nextFloat() * 2 * PI.toFloat()
+        val patchDist = random.nextFloat() * terrainSize * 0.45f
+        val patchX = center.x + cos(patchAngle) * patchDist
+        val patchY = center.y + sin(patchAngle) * patchDist
+
+        // Use noise to determine if this is a dirt patch or grass patch
+        val groundNoise = SimplexNoise.noise2DNormalized(patchX * 0.08f + seed, patchY * 0.08f)
+        val isDirt = groundNoise < 0.35f
+
+        if (isDirt) {
+            // Draw irregular dirt patch
+            val patchSize = terrainSize * (0.03f + random.nextFloat() * 0.04f)
+            val dirtColor = when {
+                groundNoise < 0.15f -> dirtDark
+                groundNoise < 0.25f -> dirtMid
+                else -> dirtLight
+            }
+            // Draw elongated oval for more natural shape
+            val stretchX = 0.8f + random.nextFloat() * 0.4f
+            val stretchY = 0.8f + random.nextFloat() * 0.4f
+            drawOval(
+                color = dirtColor.copy(alpha = 0.3f + random.nextFloat() * 0.2f),
+                topLeft = Offset(patchX - patchSize * stretchX, patchY - patchSize * stretchY),
+                size = androidx.compose.ui.geometry.Size(patchSize * 2 * stretchX, patchSize * 2 * stretchY)
+            )
+        }
+    }
+
+    // LAYER 2: Small pebbles and ground detail in dirt areas
+    repeat(8) {
+        val pebbleX = center.x + (random.nextFloat() - 0.5f) * terrainSize * 0.7f
+        val pebbleY = center.y + (random.nextFloat() - 0.5f) * terrainSize * 0.7f
+        val groundNoise = SimplexNoise.noise2DNormalized(pebbleX * 0.08f + seed, pebbleY * 0.08f)
+        if (groundNoise < 0.4f) { // Only in dirt-ish areas
+            val pebbleSize = terrainSize * (0.005f + random.nextFloat() * 0.008f)
+            val pebbleColor = if (random.nextBoolean()) dirtDark else dirtMid
+            drawCircle(color = pebbleColor.copy(alpha = 0.4f), radius = pebbleSize, center = Offset(pebbleX, pebbleY))
+        }
+    }
+
+    // LAYER 3: Scattered grass tufts with Simplex noise for natural clustering
     repeat(tuftCount) { t ->
-        val angle = random.nextFloat() * 2 * PI.toFloat()
-        val distance = terrainSize * (0.2f + random.nextFloat() * 0.4f)
+        val baseAngle = (t.toFloat() / tuftCount) * 2 * PI.toFloat()
+
+        // Use Simplex noise to offset positions for organic clustering
+        val noiseX = cos(baseAngle) * noiseScale * 10 + noiseSeed
+        val noiseY = sin(baseAngle) * noiseScale * 10 + noiseSeed
+        val clusterNoise = SimplexNoise.noise2D(noiseX, noiseY)
+        val distanceNoise = SimplexNoise.noise2D(noiseX + 100f, noiseY + 100f)
+
+        val angle = baseAngle + clusterNoise * 0.8f
+        val distance = terrainSize * (0.12f + (distanceNoise + 1f) * 0.22f + random.nextFloat() * 0.1f)
         val tuftX = center.x + cos(angle) * distance
         val tuftY = center.y + sin(angle) * distance
-        val tuftHeight = terrainSize * (0.04f + random.nextFloat() * 0.04f)
+
+        // Use Voronoi biome blending for color variation across the terrain
+        val localX = tuftX - center.x + terrainSize * 0.5f
+        val localY = tuftY - center.y + terrainSize * 0.5f
+
+        // Blend between lush and dry grass based on Voronoi cells
+        val grassDark = BiomeBlending.blendColors(grassDarkBase, grassDryDark, localX, localY, terrainSize, seed)
+        val grassMid = BiomeBlending.blendColors(grassMidBase, grassDryMid, localX, localY, terrainSize, seed)
+        val grassLight = BiomeBlending.blendColors(grassLightBase, grassDryLight, localX, localY, terrainSize, seed)
+
+        // Use noise for height variation - creates natural looking patches
+        // Also factor in biome density - drier areas have shorter grass
+        val heightNoise = SimplexNoise.noise2DNormalized(tuftX * noiseScale, tuftY * noiseScale)
+        val densityMultiplier = BiomeBlending.getDensityMultiplier(localX, localY, terrainSize, seed)
+        val tuftHeight = terrainSize * (0.025f + heightNoise * 0.045f) * (0.8f + densityMultiplier * 0.2f)
 
         // Each tuft has 4-6 blades
         val bladeCount = 4 + random.nextInt(3)
@@ -4351,12 +4806,12 @@ private fun DrawScope.drawGrassTerrain(center: Offset, terrainSize: Float, seed:
             val bladeSpread = (b - bladeCount / 2f) * 0.25f
             val bladeAngle = -PI.toFloat() / 2 + bladeSpread + (random.nextFloat() - 0.5f) * 0.3f
             val bladeHeight = tuftHeight * (0.7f + random.nextFloat() * 0.4f)
-            val bladeCurve = (random.nextFloat() - 0.5f) * terrainSize * 0.015f
+            val bladeCurve = (random.nextFloat() - 0.5f) * terrainSize * 0.012f
 
             // Color varies by height position
             val bladeColor = when {
                 b == bladeCount / 2 -> grassLight
-                random.nextFloat() > 0.7f -> grassTip
+                random.nextFloat() > 0.7f -> grassTipBase
                 else -> grassMid
             }
 
@@ -4372,24 +4827,61 @@ private fun DrawScope.drawGrassTerrain(center: Offset, terrainSize: Float, seed:
                 )
             }
             drawPath(bladePath, color = bladeColor.copy(alpha = 0.7f + random.nextFloat() * 0.3f),
-                style = Stroke(width = 1.3f, cap = StrokeCap.Round))
+                style = Stroke(width = 1.2f, cap = StrokeCap.Round))
         }
 
         // Occasionally add small flowers
-        if (random.nextFloat() > 0.85f) {
+        if (random.nextFloat() > 0.88f) {
             val flowerColor = flowerColors[random.nextInt(flowerColors.size)]
-            val flowerX = tuftX + (random.nextFloat() - 0.5f) * terrainSize * 0.03f
+            val flowerX = tuftX + (random.nextFloat() - 0.5f) * terrainSize * 0.025f
             val flowerY = tuftY - tuftHeight * 0.8f
-            drawCircle(color = flowerColor, radius = 2f, center = Offset(flowerX, flowerY))
+            drawCircle(color = flowerColor, radius = 1.5f, center = Offset(flowerX, flowerY))
         }
     }
 
-    // Add some ground-level texture (clover patches, bare spots)
-    repeat(3) {
+    // LAYER 4: Additional scattered short grass for density
+    repeat(tuftCount / 2) {
+        val shortX = center.x + (random.nextFloat() - 0.5f) * terrainSize * 0.6f
+        val shortY = center.y + (random.nextFloat() - 0.5f) * terrainSize * 0.6f
+        val localX = shortX - center.x + terrainSize * 0.5f
+        val localY = shortY - center.y + terrainSize * 0.5f
+        val shortGrassColor = BiomeBlending.blendColors(grassMidBase, grassDryMid, localX, localY, terrainSize, seed)
+
+        // 2-3 very short blades
+        repeat(2 + random.nextInt(2)) {
+            val bladeAngle = -PI.toFloat() / 2 + (random.nextFloat() - 0.5f) * 0.6f
+            val bladeHeight = terrainSize * (0.015f + random.nextFloat() * 0.015f)
+            val bladePath = Path().apply {
+                moveTo(shortX, shortY)
+                lineTo(shortX + cos(bladeAngle) * bladeHeight, shortY + sin(bladeAngle) * bladeHeight)
+            }
+            drawPath(bladePath, color = shortGrassColor.copy(alpha = 0.5f + random.nextFloat() * 0.3f),
+                style = Stroke(width = 1f, cap = StrokeCap.Round))
+        }
+    }
+
+    // LAYER 5: Clover/moss patches with gradation
+    repeat(5) {
         val patchX = center.x + (random.nextFloat() - 0.5f) * terrainSize * 0.5f
         val patchY = center.y + (random.nextFloat() - 0.5f) * terrainSize * 0.5f
-        drawCircle(color = grassDark.copy(alpha = 0.2f), radius = terrainSize * 0.04f,
-            center = Offset(patchX, patchY))
+        val localPatchX = patchX - center.x + terrainSize * 0.5f
+        val localPatchY = patchY - center.y + terrainSize * 0.5f
+        val patchColor = BiomeBlending.blendColors(grassDarkBase, grassDryDark, localPatchX, localPatchY, terrainSize, seed)
+        val patchSize = terrainSize * (0.025f + random.nextFloat() * 0.03f)
+
+        // Draw with radial gradient effect (darker center, lighter edges)
+        drawCircle(color = patchColor.copy(alpha = 0.25f), radius = patchSize, center = Offset(patchX, patchY))
+        drawCircle(color = patchColor.copy(alpha = 0.15f), radius = patchSize * 1.3f, center = Offset(patchX, patchY))
+    }
+
+    // LAYER 6: Occasional small boulders
+    if (random.nextFloat() > 0.5f) { // Only 50% of grass tiles get boulders
+        repeat(1 + random.nextInt(2)) { b ->
+            val bRandom = kotlin.random.Random(seed + 400 + b)
+            val boulderX = center.x + (bRandom.nextFloat() - 0.5f) * terrainSize * 0.6f
+            val boulderY = center.y + (bRandom.nextFloat() - 0.5f) * terrainSize * 0.6f
+            drawBoulder(boulderX, boulderY, terrainSize * (0.015f + bRandom.nextFloat() * 0.015f), bRandom.nextInt())
+        }
     }
 }
 
@@ -4440,6 +4932,10 @@ private fun DrawScope.drawDesertTerrain(center: Offset, terrainSize: Float, seed
     val duneCount = params?.duneCount ?: 3
     val heightMultiplier = params?.heightMultiplier ?: 1f
 
+    // Simplex noise parameters for natural dune variation
+    val noiseScale = 0.03f
+    val noiseSeed = seed * 0.1f
+
     // Desert colors
     val sandLight = Color(0xFFEAD8B0) // Sunlit sand
     val sandMid = Color(0xFFD0C090) // Middle tone
@@ -4447,12 +4943,14 @@ private fun DrawScope.drawDesertTerrain(center: Offset, terrainSize: Float, seed
     val sandHighlight = Color(0xFFFAE8C0) // Bright highlights
     val rockColor = Color(0xFF8A7A6A) // Desert rocks
 
-    // Draw layered dunes from back to front
+    // Draw layered dunes from back to front with Simplex noise variation
     repeat(duneCount) { i ->
+        // Use Simplex noise for natural dune positioning and size variation
+        val duneNoise = SimplexNoise.noise2D(noiseSeed + i * 2f, noiseSeed + i * 3f)
         val offsetY = (duneCount - 1 - i) * terrainSize * 0.12f - terrainSize * 0.1f
-        val duneHeight = terrainSize * (0.1f + i * 0.03f) * heightMultiplier
-        val duneWidth = terrainSize * (0.6f + random.nextFloat() * 0.2f)
-        val duneX = center.x + (random.nextFloat() - 0.5f) * terrainSize * 0.2f
+        val duneHeight = terrainSize * (0.1f + i * 0.03f + duneNoise * 0.02f) * heightMultiplier
+        val duneWidth = terrainSize * (0.55f + (duneNoise + 1f) * 0.15f)
+        val duneX = center.x + duneNoise * terrainSize * 0.15f
 
         // Windward (gentle) slope
         val windwardPath = Path().apply {
@@ -4486,20 +4984,22 @@ private fun DrawScope.drawDesertTerrain(center: Offset, terrainSize: Float, seed
         drawPath(ridgePath, color = sandHighlight.copy(alpha = 0.6f),
             style = Stroke(width = 1.5f, cap = StrokeCap.Round))
 
-        // Wind ripples on front dunes
+        // Wind ripples on front dunes with Simplex noise for natural variation
         if (i == duneCount - 1) {
-            repeat(4) { r ->
-                val rippleY = center.y + offsetY - duneHeight * (0.3f + r * 0.15f)
-                val rippleOffset = r * terrainSize * 0.02f
+            repeat(5) { r ->
+                val rippleNoise = SimplexNoise.noise2D(noiseSeed + r * 5f, noiseSeed + r * 7f)
+                val rippleY = center.y + offsetY - duneHeight * (0.25f + r * 0.14f + rippleNoise * 0.03f)
+                val rippleOffset = r * terrainSize * 0.018f + rippleNoise * terrainSize * 0.01f
+                val rippleCurve = SimplexNoise.noise2D(noiseSeed + r * 10f, noiseSeed) * terrainSize * 0.012f
                 val ripplePath = Path().apply {
-                    moveTo(duneX - duneWidth * 0.35f + rippleOffset, rippleY)
+                    moveTo(duneX - duneWidth * 0.38f + rippleOffset, rippleY)
                     quadraticTo(
-                        duneX - duneWidth * 0.1f + rippleOffset, rippleY - terrainSize * 0.015f,
-                        duneX + duneWidth * 0.1f + rippleOffset, rippleY
+                        duneX - duneWidth * 0.1f + rippleOffset, rippleY - terrainSize * 0.012f + rippleCurve,
+                        duneX + duneWidth * 0.12f + rippleOffset, rippleY + rippleCurve * 0.5f
                     )
                 }
-                drawPath(ripplePath, color = sandDark.copy(alpha = 0.2f - r * 0.03f),
-                    style = Stroke(width = 0.8f))
+                drawPath(ripplePath, color = sandDark.copy(alpha = 0.18f - r * 0.025f),
+                    style = Stroke(width = 0.7f + rippleNoise * 0.2f))
             }
         }
     }
@@ -4545,10 +5045,98 @@ private fun DrawScope.drawDesertTerrain(center: Offset, terrainSize: Float, seed
     }
 }
 
+// Draw a single boulder with natural irregular shape and shading
+private fun DrawScope.drawBoulder(x: Float, y: Float, size: Float, seed: Int) {
+    val random = kotlin.random.Random(seed)
+
+    // Boulder colors
+    val boulderDark = Color(0xFF5A5A5A)   // Dark gray
+    val boulderMid = Color(0xFF7A7A7A)    // Medium gray
+    val boulderLight = Color(0xFF9A9A9A)  // Light gray
+    val boulderHighlight = Color(0xFFB0B0B0) // Highlight
+
+    // Create irregular boulder shape using noise-based control points
+    val numPoints = 6 + random.nextInt(3)
+    val points = (0 until numPoints).map { i ->
+        val angle = (i.toFloat() / numPoints) * 2 * PI.toFloat()
+        val radiusVariation = 0.7f + random.nextFloat() * 0.5f
+        val px = x + cos(angle) * size * radiusVariation
+        val py = y + sin(angle) * size * radiusVariation * 0.7f // Flatten vertically
+        Offset(px, py)
+    }
+
+    // Draw shadow
+    val shadowPath = Path().apply {
+        moveTo(points[0].x + size * 0.15f, points[0].y + size * 0.1f)
+        for (i in points.indices) {
+            val curr = points[i]
+            val next = points[(i + 1) % points.size]
+            quadraticTo(
+                curr.x + size * 0.15f, curr.y + size * 0.1f,
+                (curr.x + next.x) / 2 + size * 0.15f, (curr.y + next.y) / 2 + size * 0.1f
+            )
+        }
+        close()
+    }
+    drawPath(shadowPath, color = Color(0xFF3A3A3A).copy(alpha = 0.3f))
+
+    // Draw main boulder body
+    val boulderPath = Path().apply {
+        moveTo(points[0].x, points[0].y)
+        for (i in points.indices) {
+            val curr = points[i]
+            val next = points[(i + 1) % points.size]
+            quadraticTo(curr.x, curr.y, (curr.x + next.x) / 2, (curr.y + next.y) / 2)
+        }
+        close()
+    }
+    drawPath(boulderPath, color = boulderMid)
+
+    // Add darker lower portion for grounding
+    val lowerPath = Path().apply {
+        moveTo(x - size * 0.8f, y)
+        quadraticTo(x - size * 0.4f, y + size * 0.3f, x, y + size * 0.2f)
+        quadraticTo(x + size * 0.4f, y + size * 0.3f, x + size * 0.8f, y)
+        lineTo(x + size * 0.6f, y - size * 0.1f)
+        lineTo(x - size * 0.6f, y - size * 0.1f)
+        close()
+    }
+    drawPath(lowerPath, color = boulderDark.copy(alpha = 0.5f))
+
+    // Add highlight on upper left
+    val highlightPath = Path().apply {
+        moveTo(x - size * 0.3f, y - size * 0.4f)
+        quadraticTo(x - size * 0.5f, y - size * 0.3f, x - size * 0.4f, y - size * 0.1f)
+        quadraticTo(x - size * 0.2f, y - size * 0.35f, x, y - size * 0.45f)
+        close()
+    }
+    drawPath(highlightPath, color = boulderHighlight.copy(alpha = 0.4f))
+
+    // Add small surface details (cracks/texture)
+    if (size > 3f) {
+        repeat(2 + random.nextInt(2)) {
+            val crackX = x + (random.nextFloat() - 0.5f) * size * 0.8f
+            val crackY = y + (random.nextFloat() - 0.5f) * size * 0.5f
+            val crackLen = size * (0.15f + random.nextFloat() * 0.2f)
+            val crackAngle = random.nextFloat() * PI.toFloat()
+            drawLine(
+                color = boulderDark.copy(alpha = 0.3f),
+                start = Offset(crackX, crackY),
+                end = Offset(crackX + cos(crackAngle) * crackLen, crackY + sin(crackAngle) * crackLen * 0.5f),
+                strokeWidth = 0.5f
+            )
+        }
+    }
+}
+
 // Draw hills terrain - rolling hills with depth, grass, and atmospheric perspective
 private fun DrawScope.drawHillsTerrain(center: Offset, terrainSize: Float, seed: Int, params: HillsParamsDto? = null) {
     val random = kotlin.random.Random(seed)
     val heightMultiplier = params?.heightMultiplier ?: 1f
+
+    // Simplex noise parameters for natural hill variation
+    val noiseScale = 0.04f
+    val noiseSeed = seed * 0.1f
 
     // Colors for depth layers
     val farHillColor = Color(0xFF8BA888)   // Misty green
@@ -4557,7 +5145,7 @@ private fun DrawScope.drawHillsTerrain(center: Offset, terrainSize: Float, seed:
     val shadowColor = Color(0xFF4A6A48)    // Dark shadow
     val highlightColor = Color(0xFFAAD4A5) // Light highlight
 
-    // Draw ground base with subtle texture
+    // Draw ground base with subtle texture using Simplex noise
     drawCircle(
         color = Color(0xFFB8D4A8).copy(alpha = 0.3f),
         radius = terrainSize * 0.45f,
@@ -4568,41 +5156,44 @@ private fun DrawScope.drawHillsTerrain(center: Offset, terrainSize: Float, seed:
     data class Hill(val x: Float, val y: Float, val width: Float, val height: Float, val layer: Int)
     val hills = mutableListOf<Hill>()
 
-    // Far hills (smaller, lighter)
+    // Far hills (smaller, lighter) with Simplex noise variation
     repeat(2 + random.nextInt(2)) { i ->
-        val angle = random.nextFloat() * PI.toFloat() - PI.toFloat() / 2 // Top half
-        val dist = terrainSize * (0.25f + random.nextFloat() * 0.15f)
+        val hillNoise = SimplexNoise.noise2D(noiseSeed + i * 3f, noiseSeed + i * 5f)
+        val angle = (hillNoise + 1f) * PI.toFloat() / 2 - PI.toFloat() / 2 // Top half with noise
+        val dist = terrainSize * (0.25f + (hillNoise + 1f) * 0.08f)
         hills.add(Hill(
             x = center.x + cos(angle) * dist * 0.8f,
             y = center.y - terrainSize * 0.15f + sin(angle) * dist * 0.3f,
-            width = terrainSize * (0.25f + random.nextFloat() * 0.1f),
-            height = terrainSize * (0.08f + random.nextFloat() * 0.04f) * heightMultiplier,
+            width = terrainSize * (0.24f + (hillNoise + 1f) * 0.06f),
+            height = terrainSize * (0.07f + (hillNoise + 1f) * 0.025f) * heightMultiplier,
             layer = 0
         ))
     }
 
-    // Mid hills
+    // Mid hills with Simplex noise
     repeat(2 + random.nextInt(2)) { i ->
-        val angle = random.nextFloat() * PI.toFloat() * 2
-        val dist = terrainSize * (0.15f + random.nextFloat() * 0.2f)
+        val hillNoise = SimplexNoise.noise2D(noiseSeed + i * 7f + 50f, noiseSeed + i * 11f)
+        val angle = (hillNoise + 1f) * PI.toFloat()
+        val dist = terrainSize * (0.15f + (hillNoise + 1f) * 0.1f)
         hills.add(Hill(
             x = center.x + cos(angle) * dist,
             y = center.y + sin(angle) * dist * 0.5f,
-            width = terrainSize * (0.2f + random.nextFloat() * 0.12f),
-            height = terrainSize * (0.1f + random.nextFloat() * 0.06f) * heightMultiplier,
+            width = terrainSize * (0.18f + (hillNoise + 1f) * 0.07f),
+            height = terrainSize * (0.09f + (hillNoise + 1f) * 0.035f) * heightMultiplier,
             layer = 1
         ))
     }
 
-    // Near hills (larger, more detailed)
+    // Near hills (larger, more detailed) with Simplex noise
     repeat(1 + random.nextInt(2)) { i ->
-        val angle = random.nextFloat() * PI.toFloat() + PI.toFloat() / 2 // Bottom half bias
-        val dist = terrainSize * (0.1f + random.nextFloat() * 0.15f)
+        val hillNoise = SimplexNoise.noise2D(noiseSeed + i * 13f + 100f, noiseSeed + i * 17f)
+        val angle = (hillNoise + 1f) * PI.toFloat() / 2 + PI.toFloat() / 2 // Bottom half bias
+        val dist = terrainSize * (0.1f + (hillNoise + 1f) * 0.08f)
         hills.add(Hill(
             x = center.x + cos(angle) * dist,
-            y = center.y + terrainSize * 0.1f + random.nextFloat() * terrainSize * 0.15f,
-            width = terrainSize * (0.22f + random.nextFloat() * 0.15f),
-            height = terrainSize * (0.12f + random.nextFloat() * 0.08f) * heightMultiplier,
+            y = center.y + terrainSize * 0.1f + (hillNoise + 1f) * terrainSize * 0.08f,
+            width = terrainSize * (0.2f + (hillNoise + 1f) * 0.09f),
+            height = terrainSize * (0.11f + (hillNoise + 1f) * 0.045f) * heightMultiplier,
             layer = 2
         ))
     }
@@ -4701,6 +5292,14 @@ private fun DrawScope.drawHillsTerrain(center: Offset, terrainSize: Float, seed:
                         style = Stroke(width = 0.5f))
             }
         }
+    }
+
+    // Add scattered boulders
+    repeat(3 + random.nextInt(3)) { b ->
+        val bRandom = kotlin.random.Random(seed + 300 + b)
+        val boulderX = center.x + (bRandom.nextFloat() - 0.5f) * terrainSize * 0.7f
+        val boulderY = center.y + (bRandom.nextFloat() - 0.3f) * terrainSize * 0.5f
+        drawBoulder(boulderX, boulderY, terrainSize * (0.02f + bRandom.nextFloat() * 0.025f), bRandom.nextInt())
     }
 
     // Add a few scattered wildflowers in foreground
@@ -5225,11 +5824,12 @@ private fun DrawScope.drawLocationTerrain(
     if (hasForest) drawForestTerrain(center, terrainSize, seed + 3, overrides?.forest)
 
     // 7. Structures (on top of everything, but not on swamps)
-    if (TerrainType.RUINS in terrains) drawRuinsTerrain(center, terrainSize, seed + 12)
+    // Buildings, ruins, and castles disabled - shapes too simplistic
+    // if (TerrainType.RUINS in terrains) drawRuinsTerrain(center, terrainSize, seed + 12)
     if (TerrainType.CAVE in terrains) drawCaveTerrain(center, terrainSize, seed + 5)
-    if (TerrainType.BUILDING in terrains && !hasSwamp) drawBuildingTerrain(center, terrainSize, seed + 6)
+    // if (TerrainType.BUILDING in terrains && !hasSwamp) drawBuildingTerrain(center, terrainSize, seed + 6)
     if (TerrainType.CHURCH in terrains && !hasSwamp) drawChurchTerrain(center, terrainSize, seed + 9)
-    if (TerrainType.CASTLE in terrains && !hasSwamp) drawCastleTerrain(center, terrainSize, seed + 13)
+    // if (TerrainType.CASTLE in terrains && !hasSwamp) drawCastleTerrain(center, terrainSize, seed + 13)
 
     // 8. Elevation shading overlay with directional gradient
     drawElevationShading(center, terrainSize, elevation, neighborElevations, seed)
@@ -5305,14 +5905,26 @@ private fun DrawScope.drawElevationShading(
     val hasFlow = neighbors != null && (neighbors.north != null || neighbors.south != null ||
                                          neighbors.east != null || neighbors.west != null)
 
-    // Generate organic amoeba-like shape with 10 control points
+    // Generate organic amoeba-like shape with 10 control points using Simplex noise
+    // Combined with Voronoi for biome-like terrain cell variation
     val numPoints = 10
+    val noiseScale = 0.8f
+    val noiseSeed = seed * 0.01f
     val points = (0 until numPoints).map { i ->
         val angle = (i.toFloat() / numPoints) * 2 * PI.toFloat()
-        // Vary radius with noise for organic shape
-        val noisePhase = seed * 0.1f + i * 1.3f
-        val noise = kotlin.math.sin(noisePhase) * 0.15f + kotlin.math.sin(noisePhase * 2.7f) * 0.08f
-        val r = baseRadius * (0.85f + noise + random.nextFloat() * 0.12f)
+        // Use Simplex noise for smoother, more natural variation
+        val noiseX = kotlin.math.cos(angle) * noiseScale + noiseSeed
+        val noiseY = kotlin.math.sin(angle) * noiseScale + noiseSeed
+        val simplexNoise = SimplexNoise.noise2D(noiseX, noiseY) * 0.14f
+
+        // Add Voronoi-based edge proximity for biome transition effects
+        val localX = terrainSize * 0.5f + kotlin.math.cos(angle) * baseRadius * 0.8f
+        val localY = terrainSize * 0.5f + kotlin.math.sin(angle) * baseRadius * 0.8f
+        val voronoiEdge = BiomeBlending.getEdgeProximity(localX, localY, terrainSize, seed + 500)
+        val voronoiNoise = voronoiEdge * 0.08f
+
+        val noise = simplexNoise + voronoiNoise
+        val r = baseRadius * (0.86f + noise + random.nextFloat() * 0.08f)
         Offset(center.x + kotlin.math.cos(angle) * r, center.y + kotlin.math.sin(angle) * r)
     }
 
