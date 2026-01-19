@@ -211,6 +211,77 @@ data class AuditLogDto(
     val timestamp: Long
 )
 
+// Terrain override DTOs
+@Serializable
+data class ForestParamsDto(
+    val treeCount: Int? = null,
+    val sizeMultiplier: Float? = null
+)
+
+@Serializable
+data class LakeParamsDto(
+    val diameterMultiplier: Float? = null
+)
+
+@Serializable
+data class RiverParamsDto(
+    val widthMultiplier: Float? = null
+)
+
+@Serializable
+data class MountainParamsDto(
+    val peakCount: Int? = null,
+    val heightMultiplier: Float? = null
+)
+
+@Serializable
+data class GrassParamsDto(
+    val tuftCount: Int? = null
+)
+
+@Serializable
+data class HillsParamsDto(
+    val heightMultiplier: Float? = null
+)
+
+@Serializable
+data class StreamParamsDto(
+    val widthMultiplier: Float? = null
+)
+
+@Serializable
+data class DesertParamsDto(
+    val duneCount: Int? = null,
+    val heightMultiplier: Float? = null
+)
+
+@Serializable
+data class SwampParamsDto(
+    val densityMultiplier: Float? = null
+)
+
+@Serializable
+data class TerrainOverridesDto(
+    val forest: ForestParamsDto? = null,
+    val lake: LakeParamsDto? = null,
+    val river: RiverParamsDto? = null,
+    val mountain: MountainParamsDto? = null,
+    val grass: GrassParamsDto? = null,
+    val hills: HillsParamsDto? = null,
+    val stream: StreamParamsDto? = null,
+    val desert: DesertParamsDto? = null,
+    val swamp: SwampParamsDto? = null,
+    val elevation: Float? = null  // -1.0 (deep water) to 1.0 (mountain peak), null = auto-calculate
+)
+
+@Serializable
+data class TerrainOverrideDto(
+    val locationId: String,
+    val overrides: TerrainOverridesDto,
+    val updatedBy: String? = null,
+    val updatedAt: Long? = null
+)
+
 object ApiClient {
     // User context for audit logging
     private var currentUserId: String? = null
@@ -547,5 +618,22 @@ object ApiClient {
         client.get("$baseUrl/audit-logs/by-user/$userId") {
             parameter("limit", limit)
         }.body()
+    }
+
+    // Terrain override methods
+    suspend fun getTerrainOverrides(locationId: String): Result<TerrainOverrideDto> = runCatching {
+        client.get("$baseUrl/locations/$locationId/terrain-overrides").body()
+    }
+
+    suspend fun updateTerrainOverrides(locationId: String, overrides: TerrainOverridesDto): Result<TerrainOverrideDto> = runCatching {
+        client.put("$baseUrl/locations/$locationId/terrain-overrides") {
+            contentType(ContentType.Application.Json)
+            setBody(overrides)
+        }.body()
+    }
+
+    suspend fun resetTerrainOverrides(locationId: String): Result<Unit> = runCatching {
+        client.delete("$baseUrl/locations/$locationId/terrain-overrides")
+        Unit
     }
 }

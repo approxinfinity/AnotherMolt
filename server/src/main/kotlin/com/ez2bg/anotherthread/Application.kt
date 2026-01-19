@@ -174,10 +174,14 @@ fun Application.module() {
     install(CORS) {
         anyHost()
         allowHeader(HttpHeaders.ContentType)
-        allowMethod(HttpMethod.Post)
+        allowHeader("X-User-Id")
+        allowHeader("X-User-Name")
+        allowNonSimpleContentTypes = true
         allowMethod(HttpMethod.Get)
+        allowMethod(HttpMethod.Post)
         allowMethod(HttpMethod.Put)
         allowMethod(HttpMethod.Delete)
+        allowMethod(HttpMethod.Options)
     }
 
     // Initialize database (TEST_DB_PATH takes precedence for testing)
@@ -537,6 +541,87 @@ fun Application.module() {
                     call.respond(HttpStatusCode.NoContent)
                 } else {
                     call.respond(HttpStatusCode.InternalServerError)
+                }
+            }
+
+            // Terrain overrides for a location (admin only)
+            route("/{locationId}/terrain-overrides") {
+                get {
+                    val locationId = call.parameters["locationId"]
+                        ?: return@get call.respond(HttpStatusCode.BadRequest)
+                    val override = TerrainOverrideRepository.findByLocationId(locationId)
+                    if (override != null) {
+                        call.respond(override)
+                    } else {
+                        // Return empty defaults
+                        call.respond(TerrainOverride(locationId = locationId, overrides = TerrainOverrides()))
+                    }
+                }
+
+                put {
+                    val locationId = call.parameters["locationId"]
+                        ?: return@put call.respond(HttpStatusCode.BadRequest)
+                    val userId = call.request.header("X-User-Id") ?: "unknown"
+                    val userName = call.request.header("X-User-Name") ?: "unknown"
+
+                    val location = LocationRepository.findById(locationId)
+                        ?: return@put call.respond(HttpStatusCode.NotFound, "Location not found")
+
+                    // Check if location is locked by someone else
+                    if (location.lockedBy != null && location.lockedBy != userId) {
+                        return@put call.respond(HttpStatusCode.Forbidden, "Location is locked by another user")
+                    }
+
+                    val request = call.receive<TerrainOverrides>()
+                    val override = TerrainOverride(
+                        locationId = locationId,
+                        overrides = request,
+                        updatedBy = userId,
+                        updatedAt = System.currentTimeMillis()
+                    )
+
+                    TerrainOverrideRepository.upsert(override)
+
+                    // Audit log
+                    AuditLogRepository.log(
+                        recordId = locationId,
+                        recordType = "TerrainOverride",
+                        recordName = "Terrain settings for ${location.name}",
+                        action = AuditAction.UPDATE,
+                        userId = userId,
+                        userName = userName
+                    )
+
+                    call.respond(HttpStatusCode.OK, override)
+                }
+
+                delete {
+                    val locationId = call.parameters["locationId"]
+                        ?: return@delete call.respond(HttpStatusCode.BadRequest)
+                    val userId = call.request.header("X-User-Id") ?: "unknown"
+                    val userName = call.request.header("X-User-Name") ?: "unknown"
+
+                    val location = LocationRepository.findById(locationId)
+                        ?: return@delete call.respond(HttpStatusCode.NotFound, "Location not found")
+
+                    // Check if location is locked by someone else
+                    if (location.lockedBy != null && location.lockedBy != userId) {
+                        return@delete call.respond(HttpStatusCode.Forbidden, "Location is locked by another user")
+                    }
+
+                    TerrainOverrideRepository.delete(locationId)
+
+                    // Audit log
+                    AuditLogRepository.log(
+                        recordId = locationId,
+                        recordType = "TerrainOverride",
+                        recordName = "Reset terrain settings for ${location.name}",
+                        action = AuditAction.DELETE,
+                        userId = userId,
+                        userName = userName
+                    )
+
+                    call.respond(HttpStatusCode.NoContent)
                 }
             }
         }

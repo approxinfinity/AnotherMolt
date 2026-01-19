@@ -24,7 +24,8 @@ object DatabaseConfig {
                 UserTable,
                 FeatureCategoryTable,
                 FeatureTable,
-                AuditLogTable
+                AuditLogTable,
+                TerrainOverrideTable
             )
         }
     }
