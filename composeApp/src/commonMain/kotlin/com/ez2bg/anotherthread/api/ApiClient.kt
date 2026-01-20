@@ -17,6 +17,14 @@ enum class ExitDirection {
     NORTH, NORTHEAST, EAST, SOUTHEAST, SOUTH, SOUTHWEST, WEST, NORTHWEST, UNKNOWN
 }
 
+enum class LocationType {
+    OUTDOOR_GROUND,  // Ground level outdoor - generates wilderness around it
+    INDOOR,          // Indoor locations - no wilderness generation
+    UNDERGROUND,     // Underground/cave locations
+    UNDERWATER,      // Underwater locations
+    AERIAL           // Sky/aerial locations
+}
+
 @Serializable
 data class ExitDto(
     val locationId: String,
@@ -37,7 +45,12 @@ data class LocationDto(
     // Grid coordinates - null means not yet placed in a coordinate system
     val gridX: Int? = null,
     val gridY: Int? = null,
-    val gridZ: Int? = null
+    val gridZ: Int? = null,
+    // Last edited tracking - null means never edited by a user (e.g., auto-generated)
+    val lastEditedBy: String? = null,
+    val lastEditedAt: String? = null, // ISO datetime string
+    // Location type for determining behavior
+    val locationType: LocationType? = null
 )
 
 @Serializable

@@ -16,6 +16,7 @@ import io.ktor.server.routing.*
 import kotlinx.coroutines.launch
 import kotlinx.serialization.Serializable
 import java.io.File
+import java.time.LocalDateTime
 
 @Serializable
 data class ExitRequest(
@@ -990,7 +991,12 @@ fun Application.module() {
                     // First location gets (0,0,0), others start without coordinates until connected
                     gridX = if (isFirstLocation) 0 else null,
                     gridY = if (isFirstLocation) 0 else null,
-                    gridZ = if (isFirstLocation) 0 else null
+                    gridZ = if (isFirstLocation) 0 else null,
+                    // Set lastEditedBy/At for user-created locations
+                    lastEditedBy = userId,
+                    lastEditedAt = LocalDateTime.now().toString(),
+                    // Default to OUTDOOR_GROUND for user-created locations
+                    locationType = LocationType.OUTDOOR_GROUND
                 )
                 val createdLocation = LocationRepository.create(location)
 
@@ -1055,7 +1061,12 @@ fun Application.module() {
                     lockedBy = existingLocation?.lockedBy, // Preserve lock status
                     gridX = existingLocation?.gridX, // Preserve coordinates
                     gridY = existingLocation?.gridY,
-                    gridZ = existingLocation?.gridZ
+                    gridZ = existingLocation?.gridZ,
+                    // Update lastEditedBy/At for user edits
+                    lastEditedBy = userId,
+                    lastEditedAt = LocalDateTime.now().toString(),
+                    // Preserve location type (or default to OUTDOOR_GROUND if not set)
+                    locationType = existingLocation?.locationType ?: LocationType.OUTDOOR_GROUND
                 )
 
                 if (LocationRepository.update(location)) {
@@ -1137,6 +1148,102 @@ fun Application.module() {
                     call.respond(HttpStatusCode.InternalServerError)
                 }
             }
+            // Generate wilderness around a specific location
+            post("/{id}/generate-wilderness") {
+                val id = call.parameters["id"] ?: return@post call.respond(HttpStatusCode.BadRequest)
+                val userId = call.request.header("X-User-Id") ?: "unknown"
+                val userName = call.request.header("X-User-Name") ?: "unknown"
+
+                val location = LocationRepository.findById(id)
+                    ?: return@post call.respond(HttpStatusCode.NotFound)
+
+                if (location.gridX == null || location.gridY == null) {
+                    return@post call.respond(HttpStatusCode.BadRequest, "Location has no coordinates")
+                }
+
+                val wildernessLocations = createWildernessLocationsForParent(location, userId, userName)
+                if (wildernessLocations.isNotEmpty()) {
+                    addWildernessExitsToParent(location, wildernessLocations)
+                }
+
+                call.respond(HttpStatusCode.OK, mapOf(
+                    "created" to wildernessLocations.size,
+                    "directions" to wildernessLocations.keys.map { it.name }
+                ))
+            }
+
+            // Generate wilderness around all locations with coordinates
+            post("/generate-all-wilderness") {
+                val userId = call.request.header("X-User-Id") ?: "unknown"
+                val userName = call.request.header("X-User-Name") ?: "unknown"
+
+                val allLocations = LocationRepository.findAll()
+                var totalCreated = 0
+
+                for (location in allLocations) {
+                    if (location.gridX == null || location.gridY == null) continue
+                    if (location.name == "Wilderness") continue // Don't generate wilderness around wilderness
+
+                    val wildernessLocations = createWildernessLocationsForParent(location, userId, userName)
+                    if (wildernessLocations.isNotEmpty()) {
+                        addWildernessExitsToParent(location, wildernessLocations)
+                        totalCreated += wildernessLocations.size
+                    }
+                }
+
+                call.respond(HttpStatusCode.OK, mapOf("totalCreated" to totalCreated))
+            }
+
+            // Backfill existing wilderness locations with features from adjacent non-wilderness locations
+            post("/backfill-wilderness-features") {
+                val userId = call.request.header("X-User-Id") ?: "unknown"
+                val userName = call.request.header("X-User-Name") ?: "unknown"
+
+                val allLocations = LocationRepository.findAll()
+                var totalUpdated = 0
+
+                // Find all wilderness locations
+                val wildernessLocations = allLocations.filter { it.name == "Wilderness" }
+
+                for (wilderness in wildernessLocations) {
+                    val wx = wilderness.gridX ?: continue
+                    val wy = wilderness.gridY ?: continue
+                    val wz = wilderness.gridZ ?: 0
+
+                    // Find all adjacent non-wilderness locations
+                    val adjacentFeatureIds = mutableSetOf<String>()
+                    for (direction in ALL_DIRECTIONS) {
+                        val (dx, dy) = getDirectionOffset(direction)
+                        val adjacentLoc = LocationRepository.findByCoordinates(wx + dx, wy + dy, wz)
+                        if (adjacentLoc != null && adjacentLoc.name != "Wilderness") {
+                            adjacentFeatureIds.addAll(adjacentLoc.featureIds)
+                        }
+                    }
+
+                    // Update wilderness with combined features from all adjacent locations
+                    if (adjacentFeatureIds.isNotEmpty() && adjacentFeatureIds != wilderness.featureIds.toSet()) {
+                        val updatedWilderness = wilderness.copy(
+                            featureIds = adjacentFeatureIds.toList(),
+                            desc = generateWildernessDescription(adjacentFeatureIds.toList(), "")
+                        )
+                        LocationRepository.update(updatedWilderness)
+                        totalUpdated++
+
+                        // Audit log
+                        AuditLogRepository.log(
+                            recordId = wilderness.id,
+                            recordType = "Location",
+                            recordName = "Wilderness (backfill features)",
+                            action = AuditAction.UPDATE,
+                            userId = userId,
+                            userName = userName
+                        )
+                    }
+                }
+
+                call.respond(HttpStatusCode.OK, mapOf("totalUpdated" to totalUpdated))
+            }
+
             delete("/{id}") {
                 val id = call.parameters["id"] ?: return@delete call.respond(HttpStatusCode.BadRequest)
                 val userId = call.request.header("X-User-Id") ?: "unknown"

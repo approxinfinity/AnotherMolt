@@ -42,6 +42,7 @@ import androidx.compose.material.icons.filled.ChevronRight
 import androidx.compose.material.icons.filled.History
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Upload
+import androidx.compose.material.icons.filled.CenterFocusWeak
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.material3.*
 import androidx.compose.ui.window.Dialog
@@ -60,6 +61,7 @@ import androidx.compose.ui.graphics.StrokeJoin
 import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.input.pointer.PointerEventType
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.input.KeyboardType
@@ -228,7 +230,8 @@ data class IdOption(
 fun EntityImage(
     imageUrl: String?,
     contentDescription: String,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    isGenerating: Boolean = false
 ) {
     if (imageUrl != null) {
         val fullUrl = "${AppConfig.api.baseUrl}$imageUrl"
@@ -276,8 +279,8 @@ fun EntityImage(
                 else -> {}
             }
         }
-    } else {
-        // Placeholder when no image exists yet
+    } else if (isGenerating) {
+        // Show generating state only when actually generating
         Box(
             modifier = modifier
                 .fillMaxWidth()
@@ -290,12 +293,12 @@ fun EntityImage(
                 horizontalAlignment = Alignment.CenterHorizontally,
                 verticalArrangement = Arrangement.Center
             ) {
-                Icon(
-                    imageVector = Icons.Default.Image,
-                    contentDescription = null,
+                CircularProgressIndicator(
                     modifier = Modifier.size(32.dp),
-                    tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f)
+                    strokeWidth = 2.dp,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f)
                 )
+                Spacer(modifier = Modifier.height(8.dp))
                 Text(
                     text = "Image generating...",
                     style = MaterialTheme.typography.bodySmall,
@@ -304,6 +307,7 @@ fun EntityImage(
             }
         }
     }
+    // If no imageUrl and not generating, show nothing (no placeholder)
 }
 
 enum class GenEntityType {
@@ -798,7 +802,11 @@ fun AdminScreen() {
                     onLocationClick = { location -> viewState = ViewState.LocationEdit(location) },
                     isAuthenticated = currentUser != null,
                     isAdmin = isAdmin,
-                    currentUser = currentUser
+                    currentUser = currentUser,
+                    onLoginClick = {
+                        selectedTab = AdminTab.USER
+                        viewState = ViewState.UserAuth
+                    }
                 )
             }
             is ViewState.LocationCreate -> LocationForm(
@@ -2229,7 +2237,8 @@ fun LocationGraphView(
     onLocationClick: (LocationDto) -> Unit,
     isAuthenticated: Boolean,
     isAdmin: Boolean = false,
-    currentUser: UserDto? = null
+    currentUser: UserDto? = null,
+    onLoginClick: () -> Unit = {}
 ) {
     var locations by remember(refreshKey) { mutableStateOf<List<LocationDto>>(emptyList()) }
     var isLoading by remember(refreshKey) { mutableStateOf(true) }
@@ -2361,7 +2370,7 @@ fun LocationGraphView(
                 Icon(Icons.Filled.Add, contentDescription = "Add Location")
             }
         } else {
-            // "Login to Create" message for unauthenticated users
+            // "Login to Create" message for unauthenticated users - clickable to navigate to auth
             Box(
                 modifier = Modifier
                     .align(Alignment.BottomCenter)
@@ -2370,12 +2379,13 @@ fun LocationGraphView(
                         color = MaterialTheme.colorScheme.surface.copy(alpha = 0.85f),
                         shape = RoundedCornerShape(8.dp)
                     )
+                    .clickable(onClick = onLoginClick)
                     .padding(horizontal = 16.dp, vertical = 8.dp)
             ) {
                 Text(
                     text = "Login to Create",
                     style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f)
+                    color = MaterialTheme.colorScheme.primary
                 )
             }
         }
@@ -2630,19 +2640,34 @@ fun LocationGraph(
 
     // Pan offset state with animation support
     val offset = remember { Animatable(Offset.Zero, Offset.VectorConverter) }
+    // Zoom scale state (1.0 = 100%, min 0.5 = 50%, max 3.0 = 300%)
+    var scale by remember { mutableStateOf(1f) }
+    val minScale = 0.3f
+    val maxScale = 3f
     val scope = rememberCoroutineScope()
 
     BoxWithConstraints(
         modifier = modifier
             .clipToBounds()
             .pointerInput(expandedLocationId) {
-                detectTransformGestures { _, pan, _, _ ->
-                    // Collapse any expanded thumbnail when panning
+                detectTransformGestures { centroid, pan, zoom, _ ->
+                    // Collapse any expanded thumbnail when panning/zooming
                     if (expandedLocationId != null) {
                         expandedLocationId = null
                     }
+
+                    // Apply zoom with limits
+                    val newScale = (scale * zoom).coerceIn(minScale, maxScale)
+                    val scaleFactor = newScale / scale
+
+                    // Adjust pan to zoom toward centroid
+                    // When zooming, we want the point under the centroid to stay in place
+                    val newOffsetX = centroid.x - (centroid.x - offset.value.x) * scaleFactor + pan.x
+                    val newOffsetY = centroid.y - (centroid.y - offset.value.y) * scaleFactor + pan.y
+
+                    scale = newScale
                     scope.launch {
-                        offset.snapTo(offset.value + pan)
+                        offset.snapTo(Offset(newOffsetX, newOffsetY))
                     }
                 }
             }
@@ -2651,6 +2676,35 @@ fun LocationGraph(
                     // Collapse expanded thumbnail when tapping on empty space
                     if (expandedLocationId != null) {
                         expandedLocationId = null
+                    }
+                }
+            }
+            // Scroll wheel zoom support for desktop/web
+            .pointerInput(Unit) {
+                awaitPointerEventScope {
+                    while (true) {
+                        val event = awaitPointerEvent()
+                        if (event.type == PointerEventType.Scroll) {
+                            val scrollDelta = event.changes.firstOrNull()?.scrollDelta ?: continue
+                            // Scroll up (negative Y) = zoom in, scroll down (positive Y) = zoom out
+                            val zoomFactor = if (scrollDelta.y < 0) 1.1f else 0.9f
+                            val newScale = (scale * zoomFactor).coerceIn(minScale, maxScale)
+
+                            if (newScale != scale) {
+                                // Get the pointer position for zoom centering
+                                val pointerPos = event.changes.firstOrNull()?.position ?: Offset.Zero
+                                val scaleFactor = newScale / scale
+
+                                // Zoom toward pointer position
+                                val newOffsetX = pointerPos.x - (pointerPos.x - offset.value.x) * scaleFactor
+                                val newOffsetY = pointerPos.y - (pointerPos.y - offset.value.y) * scaleFactor
+
+                                scale = newScale
+                                scope.launch {
+                                    offset.snapTo(Offset(newOffsetX, newOffsetY))
+                                }
+                            }
+                        }
                     }
                 }
             }
@@ -2696,6 +2750,8 @@ fun LocationGraph(
             modifier = Modifier
                 .fillMaxSize()
                 .graphicsLayer {
+                    scaleX = scale
+                    scaleY = scale
                     translationX = offset.value.x
                     translationY = offset.value.y
                 }
@@ -2916,6 +2972,91 @@ fun LocationGraph(
 
             // Labels are only shown when location is expanded (tap to reveal)
         }
+
+        // Zoom controls overlay (top-right corner)
+        Column(
+            modifier = Modifier
+                .align(Alignment.TopEnd)
+                .padding(8.dp),
+            verticalArrangement = Arrangement.spacedBy(4.dp)
+        ) {
+            // Zoom in button
+            Box(
+                modifier = Modifier
+                    .size(36.dp)
+                    .background(Color.Black.copy(alpha = 0.6f), RoundedCornerShape(8.dp))
+                    .clickable {
+                        val newScale = (scale * 1.25f).coerceIn(minScale, maxScale)
+                        if (newScale != scale) {
+                            // Zoom toward center
+                            val centerX = width / 2
+                            val centerY = height / 2
+                            val scaleFactor = newScale / scale
+                            val newOffsetX = centerX - (centerX - offset.value.x) * scaleFactor
+                            val newOffsetY = centerY - (centerY - offset.value.y) * scaleFactor
+                            scale = newScale
+                            scope.launch { offset.snapTo(Offset(newOffsetX, newOffsetY)) }
+                        }
+                    },
+                contentAlignment = Alignment.Center
+            ) {
+                Text("+", color = Color.White, style = MaterialTheme.typography.titleMedium)
+            }
+
+            // Zoom out button
+            Box(
+                modifier = Modifier
+                    .size(36.dp)
+                    .background(Color.Black.copy(alpha = 0.6f), RoundedCornerShape(8.dp))
+                    .clickable {
+                        val newScale = (scale * 0.8f).coerceIn(minScale, maxScale)
+                        if (newScale != scale) {
+                            // Zoom toward center
+                            val centerX = width / 2
+                            val centerY = height / 2
+                            val scaleFactor = newScale / scale
+                            val newOffsetX = centerX - (centerX - offset.value.x) * scaleFactor
+                            val newOffsetY = centerY - (centerY - offset.value.y) * scaleFactor
+                            scale = newScale
+                            scope.launch { offset.snapTo(Offset(newOffsetX, newOffsetY)) }
+                        }
+                    },
+                contentAlignment = Alignment.Center
+            ) {
+                Text("-", color = Color.White, style = MaterialTheme.typography.titleMedium)
+            }
+
+            // Reset zoom/pan button
+            Box(
+                modifier = Modifier
+                    .size(36.dp)
+                    .background(Color.Black.copy(alpha = 0.6f), RoundedCornerShape(8.dp))
+                    .clickable {
+                        scale = 1f
+                        scope.launch { offset.animateTo(Offset.Zero, tween(300)) }
+                    },
+                contentAlignment = Alignment.Center
+            ) {
+                Icon(
+                    imageVector = Icons.Default.CenterFocusWeak,
+                    contentDescription = "Reset view",
+                    tint = Color.White,
+                    modifier = Modifier.size(20.dp)
+                )
+            }
+        }
+
+        // Zoom level indicator (bottom-right corner)
+        Text(
+            text = "${(scale * 100).toInt()}%",
+            modifier = Modifier
+                .align(Alignment.BottomEnd)
+                .padding(8.dp)
+                .background(Color.Black.copy(alpha = 0.5f), RoundedCornerShape(4.dp))
+                .padding(horizontal = 8.dp, vertical = 4.dp),
+            color = Color.White,
+            style = MaterialTheme.typography.labelSmall
+        )
     }
 }
 
@@ -3074,13 +3215,47 @@ private fun LocationNodeThumbnail(
         }
     } else {
         // Collapsed state: just the dot (label is rendered separately in parent)
+        // Locations never edited by a user (lastEditedAt == null) are smaller
+        val isUnedited = location.lastEditedAt == null
+        val editedSize = 14.dp  // Edited locations: 14dp
+        val wildernessSize = 10.dp  // Wilderness: 10dp
+        val dotSize = if (isUnedited) wildernessSize else editedSize
+
+        // Center dots within the space where a full-size dot would be
+        val centeringOffset = (collapsedSize - dotSize) / 2
+
+        // Light tan color - 15% alpha for both
+        val tanColor = Color(0xFFD4B896)
+        val fillAlpha = 0.15f
+
         Box(
             modifier = modifier
-                .size(collapsedSize)
-                .background(terrainColor, CircleShape)
-                .border(1.5.dp, DotBorderColor.copy(alpha = 0.6f), CircleShape)
+                .offset(x = centeringOffset, y = centeringOffset)
+                .size(dotSize)
                 .clickable(onClick = onClick)
-        )
+        ) {
+            Canvas(modifier = Modifier.fillMaxSize()) {
+                val radius = size.minDimension / 2
+                val center = Offset(size.width / 2, size.height / 2)
+
+                // Draw simple tan fill
+                drawCircle(
+                    color = tanColor.copy(alpha = fillAlpha),
+                    radius = radius,
+                    center = center
+                )
+
+                // Draw red border only for edited locations (non-wilderness)
+                if (!isUnedited) {
+                    drawCircle(
+                        color = DotBorderColor,
+                        radius = radius,
+                        center = center,
+                        style = Stroke(width = 1.5.dp.toPx())
+                    )
+                }
+            }
+        }
     }
 }
 
@@ -3109,21 +3284,77 @@ private fun getTerrainColor(desc: String, name: String): Color {
 
 @Composable
 private fun FallbackLocationBox(location: LocationDto) {
+    // Mimic the look of a real location image: terrain background, mystery icon, name at bottom
+    val terrainColor = remember(location) { getTerrainColor(location.desc, location.name) }
+
     Box(
         modifier = Modifier
             .fillMaxSize()
-            .background(MaterialTheme.colorScheme.primaryContainer),
-        contentAlignment = Alignment.Center
+            .background(terrainColor.copy(alpha = 0.7f))
     ) {
-        Text(
-            text = location.name.ifBlank { location.id.take(8) },
-            style = MaterialTheme.typography.bodySmall,
-            textAlign = TextAlign.Center,
-            maxLines = 2,
-            overflow = TextOverflow.Ellipsis,
-            color = MaterialTheme.colorScheme.onPrimaryContainer,
-            modifier = Modifier.padding(8.dp)
-        )
+        // Draw a simple hill silhouette with question mark
+        Canvas(modifier = Modifier.fillMaxSize()) {
+            val width = size.width
+            val height = size.height
+
+            // Draw rolling hills silhouette at the bottom third
+            val hillColor = Color(0xFF2A3A2A).copy(alpha = 0.6f)
+            val hillPath = Path().apply {
+                moveTo(0f, height * 0.75f)
+                // First hill
+                quadraticTo(width * 0.15f, height * 0.55f, width * 0.3f, height * 0.7f)
+                // Second hill (taller)
+                quadraticTo(width * 0.5f, height * 0.45f, width * 0.7f, height * 0.65f)
+                // Third hill
+                quadraticTo(width * 0.85f, height * 0.5f, width, height * 0.7f)
+                lineTo(width, height)
+                lineTo(0f, height)
+                close()
+            }
+            drawPath(hillPath, color = hillColor)
+
+            // Draw question mark silhouette in the center-upper area
+            val questionMarkColor = Color.White.copy(alpha = 0.4f)
+            val qmCenterX = width * 0.5f
+            val qmCenterY = height * 0.35f
+            val qmSize = minOf(width, height) * 0.25f
+
+            // Question mark curve (top part)
+            val qmPath = Path().apply {
+                // Arc part of question mark
+                moveTo(qmCenterX - qmSize * 0.3f, qmCenterY - qmSize * 0.3f)
+                quadraticTo(qmCenterX - qmSize * 0.3f, qmCenterY - qmSize * 0.6f, qmCenterX, qmCenterY - qmSize * 0.6f)
+                quadraticTo(qmCenterX + qmSize * 0.4f, qmCenterY - qmSize * 0.6f, qmCenterX + qmSize * 0.4f, qmCenterY - qmSize * 0.2f)
+                quadraticTo(qmCenterX + qmSize * 0.4f, qmCenterY + qmSize * 0.1f, qmCenterX, qmCenterY + qmSize * 0.2f)
+            }
+            drawPath(qmPath, color = questionMarkColor, style = Stroke(width = qmSize * 0.15f, cap = StrokeCap.Round))
+
+            // Question mark dot
+            drawCircle(
+                color = questionMarkColor,
+                radius = qmSize * 0.1f,
+                center = Offset(qmCenterX, qmCenterY + qmSize * 0.45f)
+            )
+        }
+
+        // Name label at bottom with black background (like real location images)
+        Box(
+            modifier = Modifier
+                .align(Alignment.BottomCenter)
+                .fillMaxWidth()
+                .background(Color.Black.copy(alpha = 0.6f))
+                .padding(4.dp)
+        ) {
+            Text(
+                text = location.name.ifBlank { location.id.take(8) },
+                style = MaterialTheme.typography.labelSmall,
+                color = Color.White,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.fillMaxWidth(),
+                textAlign = TextAlign.Center
+            )
+        }
     }
 }
 
@@ -3301,8 +3532,10 @@ private fun String.containsAny(vararg keywords: String): Boolean {
 }
 
 // Parse terrain types from location description
+// Uses smarter detection to avoid false positives (e.g., "near Lake Rainier" shouldn't make it a lake)
 private fun parseTerrainFromDescription(desc: String, name: String): Set<TerrainType> {
     val text = (desc + " " + name).lowercase()
+    val nameLower = name.lowercase()
     val terrains = mutableSetOf<TerrainType>()
 
     if (text.containsAny("road", "path", "trail", "highway", "street", "lane", "way")) {
@@ -3317,7 +3550,14 @@ private fun parseTerrainFromDescription(desc: String, name: String): Set<Terrain
     if (text.containsAny("river")) {
         terrains.add(TerrainType.RIVER)
     }
-    if (text.containsAny("lake", "pond")) {
+    // Lake detection is more careful:
+    // - If name contains "lake" or "pond", it's definitely a lake
+    // - If description has patterns like "the lake", "a lake", "this lake" (not "Lake SomeName"), it's a lake
+    // - Avoid false positives from references like "near Lake Rainier" or "feeds into Lake X"
+    val isLakeByName = nameLower.containsAny("lake", "pond")
+    val hasLakeDescription = text.contains(Regex("\\b(the|a|this|in the|on the|of the|into the|across the) (lake|pond)\\b"))
+    val isOnLake = text.containsAny("on the lake", "in the lake", "across the lake", "middle of the lake")
+    if (isLakeByName || hasLakeDescription || isOnLake) {
         terrains.add(TerrainType.LAKE)
     }
     if (text.containsAny("water", "falls", "fountain")) {
@@ -3607,12 +3847,15 @@ private fun DrawScope.drawCompassRose(center: Offset, size: Float) {
 }
 
 // Draw road/path terrain - dirt road with borders passing through center
-private fun DrawScope.drawRoadTerrain(center: Offset, terrainSize: Float, seed: Int) {
+// If hasRiver or hasStream, draws a bridge over the water
+private fun DrawScope.drawRoadTerrain(center: Offset, terrainSize: Float, seed: Int, hasRiver: Boolean = false, hasStream: Boolean = false) {
     val random = kotlin.random.Random(seed)
     val pathWidth = terrainSize * 0.05f  // Narrower road
     val roadColor = Color(0xFFB8A080) // Dusty brown road
     val borderColor = Color(0xFF8A7560) // Darker border
     val edgeColor = Color(0xFF6A5A4A) // Edge texture
+    val bridgeWoodColor = Color(0xFF8B7355) // Darker wood for bridge
+    val bridgeRailColor = Color(0xFF5C4033) // Dark railing
 
     // Road winds through center so dot appears ON the road
     val entryAngle = random.nextFloat() * 2 * PI.toFloat()
@@ -3677,14 +3920,77 @@ private fun DrawScope.drawRoadTerrain(center: Offset, terrainSize: Float, seed: 
             center = Offset(markX * 0.5f + center.x * 0.5f, markY * 0.5f + center.y * 0.5f)
         )
     }
+
+    // Draw bridge over river/stream near the center
+    if (hasRiver || hasStream) {
+        val bridgeLength = terrainSize * (if (hasRiver) 0.22f else 0.15f)
+        val bridgeWidth = pathWidth * 1.8f
+
+        // Bridge runs perpendicular to the road at center
+        val bridgePerpAngle = entryAngle + PI.toFloat() / 2
+
+        // Bridge planks (horizontal lines across the bridge)
+        val plankCount = if (hasRiver) 8 else 5
+        repeat(plankCount) { i ->
+            val plankOffset = (i.toFloat() / (plankCount - 1) - 0.5f) * bridgeLength * 0.9f
+            val plankX = center.x + cos(bridgePerpAngle) * plankOffset
+            val plankY = center.y + sin(bridgePerpAngle) * plankOffset
+
+            // Draw plank perpendicular to bridge direction (along road direction)
+            val plankHalfLen = bridgeWidth * 0.6f
+            drawLine(
+                color = bridgeWoodColor,
+                start = Offset(
+                    plankX - cos(entryAngle) * plankHalfLen,
+                    plankY - sin(entryAngle) * plankHalfLen
+                ),
+                end = Offset(
+                    plankX + cos(entryAngle) * plankHalfLen,
+                    plankY + sin(entryAngle) * plankHalfLen
+                ),
+                strokeWidth = terrainSize * 0.012f,
+                cap = StrokeCap.Butt
+            )
+        }
+
+        // Bridge railings (two lines along the sides)
+        val railOffset = bridgeWidth * 0.5f
+        listOf(-1f, 1f).forEach { side ->
+            val railStartX = center.x + cos(bridgePerpAngle) * (-bridgeLength * 0.45f) + cos(entryAngle) * railOffset * side
+            val railStartY = center.y + sin(bridgePerpAngle) * (-bridgeLength * 0.45f) + sin(entryAngle) * railOffset * side
+            val railEndX = center.x + cos(bridgePerpAngle) * (bridgeLength * 0.45f) + cos(entryAngle) * railOffset * side
+            val railEndY = center.y + sin(bridgePerpAngle) * (bridgeLength * 0.45f) + sin(entryAngle) * railOffset * side
+
+            drawLine(
+                color = bridgeRailColor,
+                start = Offset(railStartX, railStartY),
+                end = Offset(railEndX, railEndY),
+                strokeWidth = terrainSize * 0.008f,
+                cap = StrokeCap.Round
+            )
+        }
+
+        // Bridge posts at ends
+        listOf(-0.45f, 0.45f).forEach { endPos ->
+            listOf(-1f, 1f).forEach { side ->
+                val postX = center.x + cos(bridgePerpAngle) * (bridgeLength * endPos) + cos(entryAngle) * railOffset * side
+                val postY = center.y + sin(bridgePerpAngle) * (bridgeLength * endPos) + sin(entryAngle) * railOffset * side
+                drawCircle(
+                    color = bridgeRailColor,
+                    radius = terrainSize * 0.012f,
+                    center = Offset(postX, postY)
+                )
+            }
+        }
+    }
 }
 
 // Draw forest terrain - varied tree styles (conifers, deciduous, bushes)
 private fun DrawScope.drawForestTerrain(center: Offset, terrainSize: Float, seed: Int, params: ForestParamsDto? = null) {
     val random = kotlin.random.Random(seed)
-    val baseTreeCount = 45 + random.nextInt(20) // 6x more trees (45-64 base)
+    val baseTreeCount = 180 + random.nextInt(80) // 4x more trees (180-260 base)
     val treeCount = params?.treeCount ?: baseTreeCount
-    val sizeMultiplier = (params?.sizeMultiplier ?: 1f) * 0.55f // Smaller trees to fit more
+    val sizeMultiplier = (params?.sizeMultiplier ?: 1f) * 0.45f // Smaller trees to fit more
 
     // Simplex noise parameters for natural tree clustering
     val noiseScale = 0.06f
@@ -4043,7 +4349,16 @@ private fun DrawScope.drawWaterTerrain(center: Offset, terrainSize: Float, seed:
 }
 
 // Draw lake terrain - body of water with natural shoreline and depth gradient
-private fun DrawScope.drawLakeTerrain(center: Offset, terrainSize: Float, seed: Int, params: LakeParamsDto? = null) {
+// Lakes shrink away from elevated terrain (hills, mountains, foothills) - both local and from neighbors
+private fun DrawScope.drawLakeTerrain(
+    center: Offset,
+    terrainSize: Float,
+    seed: Int,
+    params: LakeParamsDto? = null,
+    hasHills: Boolean = false,
+    hasMountain: Boolean = false,
+    neighborElevations: NeighborElevations? = null
+) {
     val random = kotlin.random.Random(seed)
     val deepWater = Color(0xFF1A4A6A) // Deep center blue
     val midWater = Color(0xFF3A6A8A) // Mid-depth blue
@@ -4065,6 +4380,13 @@ private fun DrawScope.drawLakeTerrain(center: Offset, terrainSize: Float, seed: 
     val seedOffsetX = (seed % 1000) * 7.3f
     val seedOffsetY = ((seed / 1000) % 1000) * 11.7f
 
+    // Check for high-elevation neighbors (mountains/hills in adjacent tiles)
+    // Elevation >= 0.3 indicates hills, >= 0.5 indicates mountains
+    val northIsElevated = (neighborElevations?.north ?: 0f) >= 0.3f
+    val southIsElevated = (neighborElevations?.south ?: 0f) >= 0.3f
+    val eastIsElevated = (neighborElevations?.east ?: 0f) >= 0.3f
+    val westIsElevated = (neighborElevations?.west ?: 0f) >= 0.3f
+
     // Generate irregular radii using multiple octaves of Simplex noise for amoeba shape
     // Now returns pairs of (radiusX, radiusY) for elliptical shapes
     val radiiPairs = (0 until points).map { i ->
@@ -4082,7 +4404,39 @@ private fun DrawScope.drawLakeTerrain(center: Offset, terrainSize: Float, seed: 
         val lobe = if (lobeNoise > 0.4f) (lobeNoise - 0.4f) * 0.3f else 0f
 
         val totalNoise = (noise1 + noise2 + noise3 + lobe) * noiseScale
-        val noiseMultiplier = 0.75f + totalNoise * 0.5f + 0.1f
+        var noiseMultiplier = 0.75f + totalNoise * 0.5f + 0.1f
+
+        // Shrink lake away from elevated terrain (local)
+        if (hasMountain || hasHills) {
+            val elevationShrink = if (ny < -0.2f) {
+                val shrinkFactor = if (hasMountain) 0.5f else 0.7f
+                shrinkFactor + (1f - shrinkFactor) * ((ny + 1f) / 0.8f).coerceIn(0f, 1f)
+            } else 1f
+            noiseMultiplier *= elevationShrink
+        }
+
+        // Shrink lake away from elevated neighbors (adjacent tiles with mountains/hills)
+        // North neighbor is in negative Y direction
+        if (northIsElevated && ny < -0.3f) {
+            val shrink = 0.5f + 0.5f * ((ny + 1f) / 0.7f).coerceIn(0f, 1f)
+            noiseMultiplier *= shrink
+        }
+        // South neighbor is in positive Y direction
+        if (southIsElevated && ny > 0.3f) {
+            val shrink = 0.5f + 0.5f * ((1f - ny) / 0.7f).coerceIn(0f, 1f)
+            noiseMultiplier *= shrink
+        }
+        // East neighbor is in positive X direction
+        if (eastIsElevated && nx > 0.3f) {
+            val shrink = 0.5f + 0.5f * ((1f - nx) / 0.7f).coerceIn(0f, 1f)
+            noiseMultiplier *= shrink
+        }
+        // West neighbor is in negative X direction
+        if (westIsElevated && nx < -0.3f) {
+            val shrink = 0.5f + 0.5f * ((nx + 1f) / 0.7f).coerceIn(0f, 1f)
+            noiseMultiplier *= shrink
+        }
+
         Pair(baseRadiusX * noiseMultiplier, baseRadiusY * noiseMultiplier)
     }
 
@@ -6142,8 +6496,9 @@ private fun DrawScope.drawLocationTerrain(
     val hasLake = TerrainType.LAKE in terrains || passThrough.hasPassThroughLake()
 
     // 1. Rivers/streams at the very bottom (like carved into terrain)
-    // Pass hasLake and neighbor elevations so they can flow correctly
-    // Skip rivers/streams if swamp is present (swamp has its own murky water)
+    // Skip rivers/streams if:
+    // - swamp is present (swamp has its own murky water)
+    // - lake is present (rivers terminate AT lakes, not drawn over them)
     val hasSwamp = TerrainType.SWAMP in terrains
     val hasRiver = TerrainType.RIVER in terrains
     val hasStream = TerrainType.STREAM in terrains
@@ -6153,8 +6508,8 @@ private fun DrawScope.drawLocationTerrain(
     // if (!hasRiver && !hasStream && !hasSwamp && passThrough.hasPassThroughRiver()) {
     //     drawPassThroughRiver(center, terrainSize, seed + 16, passThrough.riverDirections, neighborElevations, elevation)
     // }
-    if (hasRiver && !hasSwamp) drawRiverTerrain(center, terrainSize, seed + 16, overrides?.river, hasLake, neighborElevations, elevation, neighborRivers)
-    if (hasStream && !hasSwamp) drawStreamTerrain(center, terrainSize, seed + 14, overrides?.stream, hasLake, neighborElevations, elevation, neighborRivers)
+    if (hasRiver && !hasSwamp && !hasLake) drawRiverTerrain(center, terrainSize, seed + 16, overrides?.river, false, neighborElevations, elevation, neighborRivers)
+    if (hasStream && !hasSwamp && !hasLake) drawStreamTerrain(center, terrainSize, seed + 14, overrides?.stream, false, neighborElevations, elevation, neighborRivers)
 
     // 2. Base terrain (ground cover)
     if (TerrainType.DESERT in terrains) drawDesertTerrain(center, terrainSize, seed, overrides?.desert)
@@ -6166,8 +6521,12 @@ private fun DrawScope.drawLocationTerrain(
     // }
 
     // 3. Water bodies (lakes, coast, pools - on top of base but below terrain features)
+    // Pre-check elevated terrain for lake shore positioning
+    val hasHills = TerrainType.HILLS in terrains
+    val hasMountain = TerrainType.MOUNTAIN in terrains
+
     if (TerrainType.COAST in terrains) drawCoastTerrain(center, terrainSize, seed + 7)
-    if (TerrainType.LAKE in terrains) drawLakeTerrain(center, terrainSize, seed + 15, overrides?.lake)
+    if (TerrainType.LAKE in terrains) drawLakeTerrain(center, terrainSize, seed + 15, overrides?.lake, hasHills, hasMountain, neighborElevations)
     // Pass-through lake disabled
     // if (TerrainType.LAKE !in terrains && passThrough.hasPassThroughLake()) {
     //     drawPassThroughLake(center, terrainSize, seed + 15, passThrough.lakeDirections)
@@ -6176,9 +6535,7 @@ private fun DrawScope.drawLocationTerrain(
     if (TerrainType.WATER in terrains && TerrainType.SWAMP !in terrains) drawWaterTerrain(center, terrainSize, seed + 1)
     if (TerrainType.PORT in terrains) drawPortTerrain(center, terrainSize, seed + 11)
 
-    // 4. Elevated terrain
-    val hasHills = TerrainType.HILLS in terrains
-    val hasMountain = TerrainType.MOUNTAIN in terrains
+    // 4. Elevated terrain (hasHills and hasMountain already defined above for lake positioning)
     // Pass-through hills disabled
     // if (!hasHills && passThrough.hasPassThroughHills()) {
     //     drawPassThroughHills(center, terrainSize, seed + 8, passThrough.hillsDirections)
@@ -6190,8 +6547,9 @@ private fun DrawScope.drawLocationTerrain(
     // }
     if (hasMountain) drawMountainTerrain(center, terrainSize, seed + 2, overrides?.mountain)
 
-    // 5. Infrastructure
-    if (TerrainType.ROAD in terrains) drawRoadTerrain(center, terrainSize, seed + 4)
+    // 5. Infrastructure - skip roads if there's a lake (roads don't go through lakes)
+    val hasRoad = TerrainType.ROAD in terrains
+    if (hasRoad && !hasLake) drawRoadTerrain(center, terrainSize, seed + 4, hasRiver, hasStream)
 
     // 6. Vegetation (trees on top of roads)
     val hasForest = TerrainType.FOREST in terrains
@@ -6209,8 +6567,8 @@ private fun DrawScope.drawLocationTerrain(
     if (TerrainType.CHURCH in terrains && !hasSwamp) drawChurchTerrain(center, terrainSize, seed + 9)
     // if (TerrainType.CASTLE in terrains && !hasSwamp) drawCastleTerrain(center, terrainSize, seed + 13)
 
-    // 8. Elevation shading overlay with directional gradient
-    drawElevationShading(center, terrainSize, elevation, neighborElevations, seed)
+    // 8. Elevation shading overlay - disabled for now
+    // drawElevationShading(center, terrainSize, elevation, neighborElevations, seed)
 }
 
 // Calculate flow direction from neighbor elevations (returns normalized direction vector)
@@ -6267,7 +6625,8 @@ private fun calculateFlowDirection(elevation: Float, neighbors: NeighborElevatio
     }
 }
 
-// Draw elevation shading with organic amoeba-like shape and directional gradient
+// Draw elevation shading with organic shape and directional gradient
+// Extended to tile edges for seamless blending with neighbors
 private fun DrawScope.drawElevationShading(
     center: Offset,
     terrainSize: Float,
@@ -6276,63 +6635,75 @@ private fun DrawScope.drawElevationShading(
     seed: Int = center.hashCode()
 ) {
     val random = kotlin.random.Random(seed)
-    val baseRadius = terrainSize * 0.46f
+    // Extend radius to fully cover tile for seamless blending
+    val baseRadius = terrainSize * 0.52f
 
     // Calculate flow direction
     val (flowX, flowY) = calculateFlowDirection(elevation, neighbors)
     val hasFlow = neighbors != null && (neighbors.north != null || neighbors.south != null ||
                                          neighbors.east != null || neighbors.west != null)
 
-    // Generate organic amoeba-like shape with 10 control points using Simplex noise
-    // Combined with Voronoi for biome-like terrain cell variation
-    val numPoints = 10
-    val noiseScale = 0.8f
-    val noiseSeed = seed * 0.01f
+    // Generate organic shape with more points for smoother edges
+    // Use world-space continuous noise so adjacent tiles blend at edges
+    val numPoints = 16
+    val noiseScale = 0.6f
+    // Use center position for noise seed to ensure continuity across tiles
+    val worldX = center.x * 0.01f
+    val worldY = center.y * 0.01f
+
     val points = (0 until numPoints).map { i ->
         val angle = (i.toFloat() / numPoints) * 2 * PI.toFloat()
-        // Use Simplex noise for smoother, more natural variation
-        val noiseX = kotlin.math.cos(angle) * noiseScale + noiseSeed
-        val noiseY = kotlin.math.sin(angle) * noiseScale + noiseSeed
-        val simplexNoise = SimplexNoise.noise2D(noiseX, noiseY) * 0.14f
+        val nx = kotlin.math.cos(angle)
+        val ny = kotlin.math.sin(angle)
 
-        // Add Voronoi-based edge proximity for biome transition effects
-        val localX = terrainSize * 0.5f + kotlin.math.cos(angle) * baseRadius * 0.8f
-        val localY = terrainSize * 0.5f + kotlin.math.sin(angle) * baseRadius * 0.8f
-        val voronoiEdge = BiomeBlending.getEdgeProximity(localX, localY, terrainSize, seed + 500)
-        val voronoiNoise = voronoiEdge * 0.08f
+        // Use world-space noise for continuous blending at tile edges
+        val edgeX = worldX + nx * noiseScale
+        val edgeY = worldY + ny * noiseScale
+        val simplexNoise = SimplexNoise.noise2D(edgeX, edgeY) * 0.08f
 
-        val noise = simplexNoise + voronoiNoise
-        val r = baseRadius * (0.86f + noise + random.nextFloat() * 0.08f)
-        Offset(center.x + kotlin.math.cos(angle) * r, center.y + kotlin.math.sin(angle) * r)
+        // Smaller local variation for organic feel
+        val localNoise = SimplexNoise.noise2D(nx * 2f + seed * 0.01f, ny * 2f + seed * 0.01f) * 0.06f
+
+        val noise = simplexNoise + localNoise
+        val r = baseRadius * (0.94f + noise)
+        Offset(center.x + nx * r, center.y + ny * r)
     }
 
-    // Create organic path
+    // Create smooth organic path
     val organicPath = Path().apply {
         moveTo(points[0].x, points[0].y)
         for (i in points.indices) {
-            val curr = points[i]
-            val next = points[(i + 1) % points.size]
-            val midX = (curr.x + next.x) / 2 + (random.nextFloat() - 0.5f) * terrainSize * 0.03f
-            val midY = (curr.y + next.y) / 2 + (random.nextFloat() - 0.5f) * terrainSize * 0.03f
-            quadraticTo(curr.x, curr.y, midX, midY)
+            val p0 = points[(i - 1 + numPoints) % numPoints]
+            val p1 = points[i]
+            val p2 = points[(i + 1) % numPoints]
+            val p3 = points[(i + 2) % numPoints]
+
+            // Catmull-Rom to Bezier for smooth curves
+            val tension = 0.35f
+            val ctrl1X = p1.x + (p2.x - p0.x) * tension
+            val ctrl1Y = p1.y + (p2.y - p0.y) * tension
+            val ctrl2X = p2.x - (p3.x - p1.x) * tension
+            val ctrl2Y = p2.y - (p3.y - p1.y) * tension
+
+            cubicTo(ctrl1X, ctrl1Y, ctrl2X, ctrl2Y, p2.x, p2.y)
         }
         close()
     }
 
     if (hasFlow) {
         // Directional gradient in flow direction (high to low)
-        val gradientExtent = baseRadius * 1.2f
+        val gradientExtent = baseRadius * 1.3f
         val highSide = Offset(center.x - flowX * gradientExtent, center.y - flowY * gradientExtent)
         val lowSide = Offset(center.x + flowX * gradientExtent, center.y + flowY * gradientExtent)
 
         // Multi-stop gradient for smoother transition
         val gradientBrush = androidx.compose.ui.graphics.Brush.linearGradient(
             colorStops = arrayOf(
-                0.0f to Color(0xFFFFFAE8).copy(alpha = 0.22f),   // Warm light at high
-                0.25f to Color(0xFFFFF8E0).copy(alpha = 0.12f),
+                0.0f to Color(0xFFFFFAE8).copy(alpha = 0.18f),   // Warm light at high
+                0.3f to Color(0xFFFFF8E0).copy(alpha = 0.08f),
                 0.5f to Color.Transparent,
-                0.75f to Color(0xFF2A3A4A).copy(alpha = 0.12f),
-                1.0f to Color(0xFF1A2A3A).copy(alpha = 0.28f)    // Cool dark at low
+                0.7f to Color(0xFF2A3A4A).copy(alpha = 0.08f),
+                1.0f to Color(0xFF1A2A3A).copy(alpha = 0.22f)    // Cool dark at low
             ),
             start = highSide,
             end = lowSide
@@ -6341,7 +6712,7 @@ private fun DrawScope.drawElevationShading(
         drawPath(organicPath, brush = gradientBrush)
     } else {
         // No flow direction - use elevation-based flat shading with organic shape
-        val shadingAlpha = (-elevation * 0.18f).coerceIn(-0.12f, 0.22f)
+        val shadingAlpha = (-elevation * 0.15f).coerceIn(-0.10f, 0.18f)
 
         if (shadingAlpha > 0.02f) {
             drawPath(organicPath, color = Color(0xFF1A2A3A).copy(alpha = shadingAlpha))
@@ -6990,10 +7361,11 @@ fun LocationForm(
         }
 
         if (isEditMode) {
-            // Display image at top when editing
+            // Display image at top when editing (only if image exists or is generating)
             EntityImage(
                 imageUrl = imageUrl,
-                contentDescription = "Image of ${editLocation?.name ?: "location"}"
+                contentDescription = "Image of ${editLocation?.name ?: "location"}",
+                isGenerating = isImageGenerating
             )
 
             if (isAdmin) {
@@ -7594,10 +7966,11 @@ fun CreatureForm(
         }
 
         if (isEditMode) {
-            // Display image at top when editing
+            // Display image at top when editing (only if image exists or is generating)
             EntityImage(
                 imageUrl = imageUrl,
-                contentDescription = "Image of ${editCreature?.name ?: "creature"}"
+                contentDescription = "Image of ${editCreature?.name ?: "creature"}",
+                isGenerating = isImageGenerating
             )
 
             if (isAdmin) {
@@ -8112,10 +8485,11 @@ fun ItemForm(
         }
 
         if (isEditMode) {
-            // Display image at top when editing
+            // Display image at top when editing (only if image exists or is generating)
             EntityImage(
                 imageUrl = imageUrl,
-                contentDescription = "Image of ${editItem?.name ?: "item"}"
+                contentDescription = "Image of ${editItem?.name ?: "item"}",
+                isGenerating = isImageGenerating
             )
 
             if (isAdmin) {

@@ -17,6 +17,15 @@ enum class ExitDirection {
     NORTH, NORTHEAST, EAST, SOUTHEAST, SOUTH, SOUTHWEST, WEST, NORTHWEST, UNKNOWN
 }
 
+// Location types for determining behavior
+enum class LocationType {
+    OUTDOOR_GROUND,  // Ground level outdoor - generates wilderness around it
+    INDOOR,          // Indoor locations - no wilderness generation
+    UNDERGROUND,     // Underground/cave locations
+    UNDERWATER,      // Underwater locations
+    AERIAL           // Sky/aerial locations
+}
+
 @Serializable
 data class Exit(
     val locationId: String,
@@ -37,7 +46,13 @@ data class Location(
     // Grid coordinates - null means not yet placed in a coordinate system
     val gridX: Int? = null,
     val gridY: Int? = null,
-    val gridZ: Int? = null
+    val gridZ: Int? = null,
+    // Last edited tracking - null means never edited by a user (e.g., auto-generated wilderness)
+    val lastEditedBy: String? = null,
+    // Stored as LocalDateTime internally but serialized as ISO string
+    val lastEditedAt: String? = null,
+    // Location type for determining behavior
+    val locationType: LocationType? = null
 )
 
 object LocationRepository {
@@ -89,7 +104,12 @@ object LocationRepository {
         lockedBy = this[LocationTable.lockedBy],
         gridX = this[LocationTable.gridX],
         gridY = this[LocationTable.gridY],
-        gridZ = this[LocationTable.gridZ]
+        gridZ = this[LocationTable.gridZ],
+        lastEditedBy = this[LocationTable.lastEditedBy],
+        lastEditedAt = this[LocationTable.lastEditedAt],
+        locationType = this[LocationTable.locationType]?.let {
+            try { LocationType.valueOf(it) } catch (e: Exception) { null }
+        }
     )
 
     fun create(location: Location): Location = transaction {
@@ -106,6 +126,9 @@ object LocationRepository {
             it[gridX] = location.gridX
             it[gridY] = location.gridY
             it[gridZ] = location.gridZ
+            it[lastEditedBy] = location.lastEditedBy
+            it[lastEditedAt] = location.lastEditedAt
+            it[locationType] = location.locationType?.name
         }
         location
     }
@@ -134,6 +157,9 @@ object LocationRepository {
             it[gridX] = location.gridX
             it[gridY] = location.gridY
             it[gridZ] = location.gridZ
+            it[lastEditedBy] = location.lastEditedBy
+            it[lastEditedAt] = location.lastEditedAt
+            it[locationType] = location.locationType?.name
         } > 0
     }
 

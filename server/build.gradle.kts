@@ -32,6 +32,7 @@ dependencies {
     implementation(libs.exposed.core)
     implementation(libs.exposed.dao)
     implementation(libs.exposed.jdbc)
+    implementation(libs.exposed.javaTime)
     implementation(libs.sqlite.jdbc)
 
     // Password hashing

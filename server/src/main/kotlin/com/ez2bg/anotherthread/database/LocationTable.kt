@@ -16,6 +16,11 @@ object LocationTable : Table("location") {
     val gridX = integer("grid_x").nullable()
     val gridY = integer("grid_y").nullable()
     val gridZ = integer("grid_z").nullable()
+    // Last edited tracking - null means never edited by a user (e.g., auto-generated wilderness)
+    val lastEditedBy = varchar("last_edited_by", 36).nullable()
+    val lastEditedAt = text("last_edited_at").nullable() // ISO datetime string
+    // Location type for determining behavior (e.g., wilderness generation)
+    val locationType = varchar("location_type", 50).nullable()
 
     override val primaryKey = PrimaryKey(id)
 }
