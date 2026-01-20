@@ -5,6 +5,7 @@ import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
 import org.jetbrains.exposed.sql.ResultRow
 import org.jetbrains.exposed.sql.SqlExpressionBuilder.eq
+import org.jetbrains.exposed.sql.and
 import org.jetbrains.exposed.sql.deleteWhere
 import org.jetbrains.exposed.sql.insert
 import org.jetbrains.exposed.sql.selectAll
@@ -32,7 +33,11 @@ data class Location(
     val exits: List<Exit>,
     val featureIds: List<String>,
     val imageUrl: String? = null,
-    val lockedBy: String? = null
+    val lockedBy: String? = null,
+    // Grid coordinates - null means not yet placed in a coordinate system
+    val gridX: Int? = null,
+    val gridY: Int? = null,
+    val gridZ: Int? = null
 )
 
 object LocationRepository {
@@ -81,7 +86,10 @@ object LocationRepository {
         exits = jsonToExits(this[LocationTable.exitIds]),
         featureIds = jsonToList(this[LocationTable.featureIds]),
         imageUrl = this[LocationTable.imageUrl],
-        lockedBy = this[LocationTable.lockedBy]
+        lockedBy = this[LocationTable.lockedBy],
+        gridX = this[LocationTable.gridX],
+        gridY = this[LocationTable.gridY],
+        gridZ = this[LocationTable.gridZ]
     )
 
     fun create(location: Location): Location = transaction {
@@ -95,6 +103,9 @@ object LocationRepository {
             it[featureIds] = listToJson(location.featureIds)
             it[imageUrl] = location.imageUrl
             it[lockedBy] = location.lockedBy
+            it[gridX] = location.gridX
+            it[gridY] = location.gridY
+            it[gridZ] = location.gridZ
         }
         location
     }
@@ -120,7 +131,33 @@ object LocationRepository {
             it[featureIds] = listToJson(location.featureIds)
             it[imageUrl] = location.imageUrl
             it[lockedBy] = location.lockedBy
+            it[gridX] = location.gridX
+            it[gridY] = location.gridY
+            it[gridZ] = location.gridZ
         } > 0
+    }
+
+    /**
+     * Find a location at the specified grid coordinates.
+     */
+    fun findByCoordinates(x: Int, y: Int, z: Int): Location? = transaction {
+        LocationTable.selectAll()
+            .where {
+                (LocationTable.gridX eq x) and
+                (LocationTable.gridY eq y) and
+                (LocationTable.gridZ eq z)
+            }
+            .map { it.toLocation() }
+            .singleOrNull()
+    }
+
+    /**
+     * Find all locations that have an exit pointing to the given location ID.
+     */
+    fun findLocationsWithExitTo(locationId: String): List<Location> = transaction {
+        LocationTable.selectAll()
+            .map { it.toLocation() }
+            .filter { loc -> loc.exits.any { it.locationId == locationId } }
     }
 
     fun updateLockedBy(id: String, lockedBy: String?): Boolean = transaction {

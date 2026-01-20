@@ -12,6 +12,10 @@ object LocationTable : Table("location") {
     val featureIds = text("feature_ids")
     val imageUrl = text("image_url").nullable()
     val lockedBy = varchar("locked_by", 36).nullable()
+    // Grid coordinates - null means not yet placed in a coordinate system
+    val gridX = integer("grid_x").nullable()
+    val gridY = integer("grid_y").nullable()
+    val gridZ = integer("grid_z").nullable()
 
     override val primaryKey = PrimaryKey(id)
 }

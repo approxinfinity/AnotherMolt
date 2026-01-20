@@ -33,7 +33,11 @@ data class LocationDto(
     val exits: List<ExitDto> = emptyList(),
     val featureIds: List<String> = emptyList(),
     val imageUrl: String? = null,
-    val lockedBy: String? = null
+    val lockedBy: String? = null,
+    // Grid coordinates - null means not yet placed in a coordinate system
+    val gridX: Int? = null,
+    val gridY: Int? = null,
+    val gridZ: Int? = null
 )
 
 @Serializable
@@ -644,4 +648,41 @@ object ApiClient {
         client.delete("$baseUrl/locations/$locationId/terrain-overrides")
         Unit
     }
+
+    // Exit validation
+    suspend fun validateExit(fromLocationId: String, toLocationId: String): Result<ValidateExitResponse> = runCatching {
+        client.post("$baseUrl/locations/validate-exit") {
+            contentType(ContentType.Application.Json)
+            setBody(ValidateExitRequest(fromLocationId, toLocationId))
+        }.body()
+    }
 }
+
+@Serializable
+data class ValidateExitRequest(
+    val fromLocationId: String,
+    val toLocationId: String
+)
+
+@Serializable
+data class ValidDirectionInfo(
+    val direction: ExitDirection,
+    val isFixed: Boolean,
+    val targetCoordinates: CoordinateInfo?
+)
+
+@Serializable
+data class CoordinateInfo(
+    val x: Int,
+    val y: Int,
+    val z: Int
+)
+
+@Serializable
+data class ValidateExitResponse(
+    val canCreateExit: Boolean,
+    val validDirections: List<ValidDirectionInfo>,
+    val errorMessage: String? = null,
+    val targetHasCoordinates: Boolean,
+    val targetIsConnected: Boolean
+)

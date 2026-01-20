@@ -23,6 +23,44 @@ data class ExitRequest(
     val direction: ExitDirection = ExitDirection.UNKNOWN
 )
 
+/**
+ * Request to validate an exit between two locations.
+ */
+@Serializable
+data class ValidateExitRequest(
+    val fromLocationId: String,
+    val toLocationId: String
+)
+
+/**
+ * Information about a valid direction for creating an exit.
+ */
+@Serializable
+data class ValidDirectionInfo(
+    val direction: ExitDirection,
+    val isFixed: Boolean,  // True if this is the only valid direction (target has coordinates)
+    val targetCoordinates: CoordinateInfo?  // Where target would be placed
+)
+
+@Serializable
+data class CoordinateInfo(
+    val x: Int,
+    val y: Int,
+    val z: Int
+)
+
+/**
+ * Response for exit validation endpoint.
+ */
+@Serializable
+data class ValidateExitResponse(
+    val canCreateExit: Boolean,
+    val validDirections: List<ValidDirectionInfo>,
+    val errorMessage: String? = null,
+    val targetHasCoordinates: Boolean,
+    val targetIsConnected: Boolean  // True if target has exits connecting it to a coordinate system
+)
+
 @Serializable
 data class CreateLocationRequest(
     val name: String,
@@ -156,6 +194,540 @@ data class FileUploadResponse(
 
 // Admin feature ID constant
 const val ADMIN_FEATURE_ID = "1"
+
+/**
+ * Get the opposite direction for bidirectional exit creation.
+ */
+fun getOppositeDirection(direction: ExitDirection): ExitDirection = when (direction) {
+    ExitDirection.NORTH -> ExitDirection.SOUTH
+    ExitDirection.SOUTH -> ExitDirection.NORTH
+    ExitDirection.EAST -> ExitDirection.WEST
+    ExitDirection.WEST -> ExitDirection.EAST
+    ExitDirection.NORTHEAST -> ExitDirection.SOUTHWEST
+    ExitDirection.SOUTHWEST -> ExitDirection.NORTHEAST
+    ExitDirection.NORTHWEST -> ExitDirection.SOUTHEAST
+    ExitDirection.SOUTHEAST -> ExitDirection.NORTHWEST
+    ExitDirection.UNKNOWN -> ExitDirection.UNKNOWN
+}
+
+/**
+ * All 8 cardinal and intercardinal directions (excluding UNKNOWN).
+ */
+val ALL_DIRECTIONS = listOf(
+    ExitDirection.NORTH,
+    ExitDirection.NORTHEAST,
+    ExitDirection.EAST,
+    ExitDirection.SOUTHEAST,
+    ExitDirection.SOUTH,
+    ExitDirection.SOUTHWEST,
+    ExitDirection.WEST,
+    ExitDirection.NORTHWEST
+)
+
+/**
+ * Get the grid offset (dx, dy) for a direction.
+ * Note: NORTH is -Y (up on screen), SOUTH is +Y (down on screen)
+ */
+fun getDirectionOffset(direction: ExitDirection): Pair<Int, Int> = when (direction) {
+    ExitDirection.NORTH -> Pair(0, -1)
+    ExitDirection.NORTHEAST -> Pair(1, -1)
+    ExitDirection.EAST -> Pair(1, 0)
+    ExitDirection.SOUTHEAST -> Pair(1, 1)
+    ExitDirection.SOUTH -> Pair(0, 1)
+    ExitDirection.SOUTHWEST -> Pair(-1, 1)
+    ExitDirection.WEST -> Pair(-1, 0)
+    ExitDirection.NORTHWEST -> Pair(-1, -1)
+    ExitDirection.UNKNOWN -> Pair(0, 0)
+}
+
+/**
+ * Generate a wilderness description based on the parent location's features.
+ */
+fun generateWildernessDescription(parentFeatureIds: List<String>, parentDescription: String): String {
+    val features = parentFeatureIds.mapNotNull { FeatureRepository.findById(it) }
+    val featureNames = features.map { it.name.lowercase() }
+
+    val elements = mutableListOf<String>()
+
+    // Check for terrain-related features
+    if (featureNames.any { it.contains("forest") || it.contains("tree") }) {
+        elements.add("sparse trees dot the landscape")
+    }
+    if (featureNames.any { it.contains("river") || it.contains("stream") || it.contains("water") }) {
+        elements.add("the sound of water can be heard in the distance")
+    }
+    if (featureNames.any { it.contains("road") || it.contains("path") || it.contains("trail") }) {
+        elements.add("a faint path leads onward")
+    }
+    if (featureNames.any { it.contains("mountain") || it.contains("hill") }) {
+        elements.add("rocky terrain rises in the distance")
+    }
+    if (featureNames.any { it.contains("grass") || it.contains("meadow") || it.contains("plain") }) {
+        elements.add("tall grasses sway in the breeze")
+    }
+    if (featureNames.any { it.contains("desert") || it.contains("sand") }) {
+        elements.add("sand stretches toward the horizon")
+    }
+    if (featureNames.any { it.contains("swamp") || it.contains("marsh") || it.contains("bog") }) {
+        elements.add("murky ground squelches underfoot")
+    }
+    if (featureNames.any { it.contains("lake") || it.contains("pond") }) {
+        elements.add("still waters glimmer nearby")
+    }
+
+    return if (elements.isNotEmpty()) {
+        "An untamed stretch of wilderness. ${elements.joinToString(". ")}."
+    } else {
+        "An untamed stretch of wilderness stretches before you."
+    }
+}
+
+/**
+ * Create wilderness locations for directions around a parent location where no location exists.
+ * Only creates wilderness in directions where the grid cell is empty.
+ * Returns a map of direction to created wilderness location.
+ */
+fun createWildernessLocationsForParent(
+    parentLocation: Location,
+    userId: String,
+    userName: String
+): Map<ExitDirection, Location> {
+    val createdLocations = mutableMapOf<ExitDirection, Location>()
+    val wildernessDesc = generateWildernessDescription(parentLocation.featureIds, parentLocation.desc)
+
+    val parentX = parentLocation.gridX ?: return emptyMap()
+    val parentY = parentLocation.gridY ?: return emptyMap()
+    val parentZ = parentLocation.gridZ ?: 0
+
+    for (direction in ALL_DIRECTIONS) {
+        val (dx, dy) = getDirectionOffset(direction)
+        val targetX = parentX + dx
+        val targetY = parentY + dy
+
+        // Check if there's already a location at this coordinate
+        val existingLocation = LocationRepository.findByCoordinates(targetX, targetY, parentZ)
+        if (existingLocation != null) {
+            // Location already exists at this coordinate - don't create wilderness
+            continue
+        }
+
+        val oppositeDir = getOppositeDirection(direction)
+
+        // Create the wilderness location with an exit back to the parent
+        val wilderness = Location(
+            name = "Wilderness",
+            desc = wildernessDesc,
+            itemIds = emptyList(),
+            creatureIds = emptyList(),
+            exits = listOf(Exit(locationId = parentLocation.id, direction = oppositeDir)),
+            featureIds = parentLocation.featureIds, // Inherit parent's terrain features
+            gridX = targetX,
+            gridY = targetY,
+            gridZ = parentZ
+        )
+
+        val createdWilderness = LocationRepository.create(wilderness)
+        createdLocations[direction] = createdWilderness
+
+        // Audit log for wilderness creation
+        AuditLogRepository.log(
+            recordId = createdWilderness.id,
+            recordType = "Location",
+            recordName = "Wilderness (auto-created)",
+            action = AuditAction.CREATE,
+            userId = userId,
+            userName = userName
+        )
+    }
+
+    return createdLocations
+}
+
+/**
+ * Update the parent location to have exits to the wilderness locations.
+ * Only adds exits for directions that have wilderness created.
+ */
+fun addWildernessExitsToParent(
+    parentLocation: Location,
+    wildernessLocations: Map<ExitDirection, Location>
+): Location {
+    val newExits = parentLocation.exits.toMutableList()
+    for ((direction, wilderness) in wildernessLocations) {
+        // Only add if we don't already have an exit in this direction
+        if (newExits.none { it.direction == direction }) {
+            newExits.add(Exit(locationId = wilderness.id, direction = direction))
+        }
+    }
+
+    val updatedParent = parentLocation.copy(exits = newExits)
+    LocationRepository.update(updatedParent)
+    return updatedParent
+}
+
+/**
+ * Get the direction from source to target based on their coordinates.
+ * Returns null if not exactly 1 cell apart in a valid direction.
+ */
+fun getDirectionBetweenCoordinates(
+    fromX: Int, fromY: Int, fromZ: Int,
+    toX: Int, toY: Int, toZ: Int
+): ExitDirection? {
+    // Must be on same Z level for horizontal directions
+    if (fromZ != toZ) return null
+
+    val dx = toX - fromX
+    val dy = toY - fromY
+
+    // Must be exactly 1 step away
+    if (kotlin.math.abs(dx) > 1 || kotlin.math.abs(dy) > 1) return null
+    if (dx == 0 && dy == 0) return null
+
+    return when {
+        dx == 0 && dy == -1 -> ExitDirection.NORTH
+        dx == 1 && dy == -1 -> ExitDirection.NORTHEAST
+        dx == 1 && dy == 0 -> ExitDirection.EAST
+        dx == 1 && dy == 1 -> ExitDirection.SOUTHEAST
+        dx == 0 && dy == 1 -> ExitDirection.SOUTH
+        dx == -1 && dy == 1 -> ExitDirection.SOUTHWEST
+        dx == -1 && dy == 0 -> ExitDirection.WEST
+        dx == -1 && dy == -1 -> ExitDirection.NORTHWEST
+        else -> null
+    }
+}
+
+/**
+ * Check if a location is connected to the coordinate system (has coordinates or is reachable from one that does).
+ */
+fun isLocationConnected(location: Location, allLocations: List<Location>): Boolean {
+    // If it has coordinates, it's connected
+    if (location.gridX != null && location.gridY != null) return true
+
+    // If it has exits to locations with coordinates, it's connected
+    val locationById = allLocations.associateBy { it.id }
+    for (exit in location.exits) {
+        val targetLoc = locationById[exit.locationId] ?: continue
+        if (targetLoc.gridX != null && targetLoc.gridY != null) return true
+    }
+
+    // Also check if any location has an exit TO this location
+    for (loc in allLocations) {
+        if (loc.gridX != null && loc.gridY != null) {
+            if (loc.exits.any { it.locationId == location.id }) return true
+        }
+    }
+
+    return false
+}
+
+/**
+ * Get all locations in the same connected subgraph as the given location.
+ * A subgraph includes all locations reachable through exits (bidirectional).
+ */
+fun getConnectedSubgraph(startLocation: Location, allLocations: List<Location>): Set<String> {
+    val locationById = allLocations.associateBy { it.id }
+    val visited = mutableSetOf<String>()
+    val queue = ArrayDeque<String>()
+    queue.add(startLocation.id)
+
+    while (queue.isNotEmpty()) {
+        val currentId = queue.removeFirst()
+        if (currentId in visited) continue
+        visited.add(currentId)
+
+        val current = locationById[currentId] ?: continue
+
+        // Add all locations this one has exits to
+        for (exit in current.exits) {
+            if (exit.locationId !in visited) {
+                queue.add(exit.locationId)
+            }
+        }
+
+        // Add all locations that have exits to this one
+        for (loc in allLocations) {
+            if (loc.id !in visited && loc.exits.any { it.locationId == currentId }) {
+                queue.add(loc.id)
+            }
+        }
+    }
+
+    return visited
+}
+
+/**
+ * Calculate relative positions within a subgraph using BFS from exit directions.
+ * Returns a map of location ID to relative (x, y) offset from the anchor location.
+ * The anchor location is at (0, 0).
+ */
+fun calculateSubgraphRelativePositions(
+    anchorLocation: Location,
+    subgraphIds: Set<String>,
+    allLocations: List<Location>
+): Map<String, Pair<Int, Int>> {
+    val locationById = allLocations.associateBy { it.id }
+    val positions = mutableMapOf<String, Pair<Int, Int>>()
+    val visited = mutableSetOf<String>()
+    val queue = ArrayDeque<String>()
+
+    // Start with anchor at (0, 0)
+    positions[anchorLocation.id] = Pair(0, 0)
+    visited.add(anchorLocation.id)
+    queue.add(anchorLocation.id)
+
+    while (queue.isNotEmpty()) {
+        val currentId = queue.removeFirst()
+        val currentPos = positions[currentId] ?: continue
+        val currentLoc = locationById[currentId] ?: continue
+
+        // Process outgoing exits - these define where neighbors are relative to current
+        for (exit in currentLoc.exits) {
+            val neighborId = exit.locationId
+            if (neighborId !in subgraphIds || neighborId in visited) continue
+
+            val (dx, dy) = getDirectionOffset(exit.direction)
+            val neighborPos = Pair(currentPos.first + dx, currentPos.second + dy)
+
+            // Only set position if not already set (first path wins)
+            if (neighborId !in positions) {
+                positions[neighborId] = neighborPos
+            }
+            visited.add(neighborId)
+            queue.add(neighborId)
+        }
+
+        // Process incoming exits - reverse the direction to find where the neighbor is
+        for (loc in allLocations) {
+            if (loc.id !in subgraphIds || loc.id in visited) continue
+            val exitToHere = loc.exits.find { it.locationId == currentId }
+            if (exitToHere != null) {
+                // Neighbor has exit TO current, so neighbor is in the opposite direction
+                val oppositeDir = getOppositeDirection(exitToHere.direction)
+                val (dx, dy) = getDirectionOffset(oppositeDir)
+                val neighborPos = Pair(currentPos.first + dx, currentPos.second + dy)
+
+                if (loc.id !in positions) {
+                    positions[loc.id] = neighborPos
+                }
+                visited.add(loc.id)
+                queue.add(loc.id)
+            }
+        }
+    }
+
+    return positions
+}
+
+/**
+ * Check if a subgraph can be placed at a given anchor position without coordinate conflicts.
+ * Returns true if all positions are available (or occupied by locations within the subgraph itself).
+ */
+fun canPlaceSubgraphAt(
+    anchorX: Int,
+    anchorY: Int,
+    anchorZ: Int,
+    relativePositions: Map<String, Pair<Int, Int>>,
+    subgraphIds: Set<String>,
+    allLocations: List<Location>
+): Boolean {
+    for ((locId, relPos) in relativePositions) {
+        val absoluteX = anchorX + relPos.first
+        val absoluteY = anchorY + relPos.second
+
+        val existingAtCoord = LocationRepository.findByCoordinates(absoluteX, absoluteY, anchorZ)
+        if (existingAtCoord != null && existingAtCoord.id !in subgraphIds) {
+            // Coordinate occupied by a location outside the subgraph
+            return false
+        }
+    }
+    return true
+}
+
+/**
+ * Calculate valid directions for creating an exit from one location to another.
+ */
+fun validateExitDirections(
+    fromLocation: Location,
+    toLocation: Location,
+    allLocations: List<Location>
+): ValidateExitResponse {
+    val fromX = fromLocation.gridX
+    val fromY = fromLocation.gridY
+    val fromZ = fromLocation.gridZ ?: 0
+
+    // Source must have coordinates
+    if (fromX == null || fromY == null) {
+        return ValidateExitResponse(
+            canCreateExit = false,
+            validDirections = emptyList(),
+            errorMessage = "Source location has no coordinates",
+            targetHasCoordinates = toLocation.gridX != null,
+            targetIsConnected = isLocationConnected(toLocation, allLocations)
+        )
+    }
+
+    val toX = toLocation.gridX
+    val toY = toLocation.gridY
+    val toZ = toLocation.gridZ ?: 0
+
+    // If target has coordinates
+    if (toX != null && toY != null) {
+        // Check if they're exactly 1 cell apart
+        val direction = getDirectionBetweenCoordinates(fromX, fromY, fromZ, toX, toY, toZ)
+        if (direction != null) {
+            return ValidateExitResponse(
+                canCreateExit = true,
+                validDirections = listOf(
+                    ValidDirectionInfo(
+                        direction = direction,
+                        isFixed = true,
+                        targetCoordinates = CoordinateInfo(toX, toY, toZ)
+                    )
+                ),
+                targetHasCoordinates = true,
+                targetIsConnected = true
+            )
+        } else {
+            return ValidateExitResponse(
+                canCreateExit = false,
+                validDirections = emptyList(),
+                errorMessage = "Target location is not adjacent (must be exactly 1 cell away)",
+                targetHasCoordinates = true,
+                targetIsConnected = true
+            )
+        }
+    }
+
+    // Target has no coordinates - check which directions are available
+    val validDirections = mutableListOf<ValidDirectionInfo>()
+    val targetIsConnected = isLocationConnected(toLocation, allLocations)
+
+    // Get the target's subgraph (all locations connected to it via exits)
+    val subgraphIds = getConnectedSubgraph(toLocation, allLocations)
+
+    // Calculate relative positions within the subgraph (using exit directions)
+    // This handles one-way exits by traversing both outgoing and incoming exits
+    val relativePositions = calculateSubgraphRelativePositions(toLocation, subgraphIds, allLocations)
+
+    for (direction in ALL_DIRECTIONS) {
+        val (dx, dy) = getDirectionOffset(direction)
+        val targetX = fromX + dx
+        val targetY = fromY + dy
+
+        // Check if the entire subgraph can be placed with target at this position
+        if (!canPlaceSubgraphAt(targetX, targetY, fromZ, relativePositions, subgraphIds, allLocations)) {
+            // Subgraph would conflict with existing locations
+            continue
+        }
+
+        validDirections.add(
+            ValidDirectionInfo(
+                direction = direction,
+                isFixed = false,
+                targetCoordinates = CoordinateInfo(targetX, targetY, fromZ)
+            )
+        )
+    }
+
+    return ValidateExitResponse(
+        canCreateExit = validDirections.isNotEmpty(),
+        validDirections = validDirections,
+        errorMessage = if (validDirections.isEmpty()) "No valid directions available (subgraph conflicts)" else null,
+        targetHasCoordinates = false,
+        targetIsConnected = targetIsConnected
+    )
+}
+
+/**
+ * Assign coordinates to a location and its entire connected subgraph.
+ * This is called when an exit is created from a coordinated location to an uncoordinated one.
+ *
+ * @param anchorLocation The location being assigned coordinates (the target of the new exit)
+ * @param anchorX The X coordinate to assign to the anchor
+ * @param anchorY The Y coordinate to assign to the anchor
+ * @param anchorZ The Z coordinate to assign to the anchor
+ * @param allLocations All locations in the database
+ * @param userId User ID for audit logging
+ * @param userName User name for audit logging
+ * @return List of location IDs that were assigned coordinates
+ */
+fun assignCoordinatesToSubgraph(
+    anchorLocation: Location,
+    anchorX: Int,
+    anchorY: Int,
+    anchorZ: Int,
+    allLocations: List<Location>,
+    userId: String,
+    userName: String
+): List<String> {
+    val assignedIds = mutableListOf<String>()
+
+    // Get the subgraph and calculate relative positions
+    val subgraphIds = getConnectedSubgraph(anchorLocation, allLocations)
+    val relativePositions = calculateSubgraphRelativePositions(anchorLocation, subgraphIds, allLocations)
+
+    // Assign coordinates to each location in the subgraph
+    val locationById = allLocations.associateBy { it.id }
+    for ((locId, relPos) in relativePositions) {
+        val loc = locationById[locId] ?: continue
+
+        // Skip if already has coordinates
+        if (loc.gridX != null && loc.gridY != null) continue
+
+        val newX = anchorX + relPos.first
+        val newY = anchorY + relPos.second
+
+        val updatedLoc = loc.copy(gridX = newX, gridY = newY, gridZ = anchorZ)
+        LocationRepository.update(updatedLoc)
+        assignedIds.add(locId)
+
+        // Create wilderness locations around this newly coordinated location
+        val wildernesses = createWildernessLocationsForParent(updatedLoc, userId, userName)
+        if (wildernesses.isNotEmpty()) {
+            addWildernessExitsToParent(updatedLoc, wildernesses)
+        }
+    }
+
+    return assignedIds
+}
+
+/**
+ * Process exit changes and assign coordinates to target locations if needed.
+ * Called when a location is updated with new exits.
+ */
+fun processExitCoordinates(
+    sourceLocation: Location,
+    newExits: List<Exit>,
+    oldExits: List<Exit>,
+    allLocations: List<Location>,
+    userId: String,
+    userName: String
+) {
+    // Find exits that were added (not in old exits)
+    val oldExitIds = oldExits.map { it.locationId }.toSet()
+    val addedExits = newExits.filter { it.locationId !in oldExitIds }
+
+    // Source must have coordinates to assign them to targets
+    val srcX = sourceLocation.gridX ?: return
+    val srcY = sourceLocation.gridY ?: return
+    val srcZ = sourceLocation.gridZ ?: 0
+
+    val locationById = allLocations.associateBy { it.id }
+
+    for (exit in addedExits) {
+        val targetLoc = locationById[exit.locationId] ?: continue
+
+        // Skip if target already has coordinates
+        if (targetLoc.gridX != null && targetLoc.gridY != null) continue
+
+        // Calculate target coordinates from exit direction
+        val (dx, dy) = getDirectionOffset(exit.direction)
+        val targetX = srcX + dx
+        val targetY = srcY + dy
+
+        // Assign coordinates to the target and its subgraph
+        assignCoordinatesToSubgraph(targetLoc, targetX, targetY, srcZ, allLocations, userId, userName)
+    }
+}
 
 fun main(args: Array<String>) {
     EngineMain.main(args)
@@ -404,13 +976,21 @@ fun Application.module() {
                 val userId = call.request.header("X-User-Id") ?: "unknown"
                 val userName = call.request.header("X-User-Name") ?: "unknown"
 
+                // Check if this is the first location (assign 0,0,0 coordinates)
+                val existingLocations = LocationRepository.findAll()
+                val isFirstLocation = existingLocations.isEmpty()
+
                 val location = Location(
                     name = request.name,
                     desc = request.desc,
                     itemIds = request.itemIds,
                     creatureIds = request.creatureIds,
                     exits = request.exits.map { Exit(it.locationId, it.direction) },
-                    featureIds = request.featureIds
+                    featureIds = request.featureIds,
+                    // First location gets (0,0,0), others start without coordinates until connected
+                    gridX = if (isFirstLocation) 0 else null,
+                    gridY = if (isFirstLocation) 0 else null,
+                    gridZ = if (isFirstLocation) 0 else null
                 )
                 val createdLocation = LocationRepository.create(location)
 
@@ -424,24 +1004,34 @@ fun Application.module() {
                     userName = userName
                 )
 
+                // Auto-create wilderness locations for all 8 directions (only if this location has coordinates)
+                val wildernessLocations = createWildernessLocationsForParent(createdLocation, userId, userName)
+
+                // Update parent location with exits to the wilderness locations
+                val updatedLocation = if (wildernessLocations.isNotEmpty()) {
+                    addWildernessExitsToParent(createdLocation, wildernessLocations)
+                } else {
+                    createdLocation
+                }
+
                 // Trigger image generation in background if description is provided
                 if (request.desc.isNotBlank()) {
                     application.launch {
                         ImageGenerationService.generateImage(
                             entityType = "location",
-                            entityId = createdLocation.id,
+                            entityId = updatedLocation.id,
                             description = request.desc,
                             entityName = request.name
                         ).onSuccess { imageUrl ->
-                            LocationRepository.updateImageUrl(createdLocation.id, imageUrl)
-                            log.info("Generated image for location ${createdLocation.id}: $imageUrl")
+                            LocationRepository.updateImageUrl(updatedLocation.id, imageUrl)
+                            log.info("Generated image for location ${updatedLocation.id}: $imageUrl")
                         }.onFailure { error ->
-                            log.warn("Failed to generate image for location ${createdLocation.id}: ${error.message}")
+                            log.warn("Failed to generate image for location ${updatedLocation.id}: ${error.message}")
                         }
                     }
                 }
 
-                call.respond(HttpStatusCode.Created, createdLocation)
+                call.respond(HttpStatusCode.Created, updatedLocation)
             }
             put("/{id}") {
                 val id = call.parameters["id"] ?: return@put call.respond(HttpStatusCode.BadRequest)
@@ -462,7 +1052,10 @@ fun Application.module() {
                     exits = request.exits.map { Exit(it.locationId, it.direction) },
                     featureIds = request.featureIds,
                     imageUrl = existingLocation?.imageUrl, // Preserve existing image
-                    lockedBy = existingLocation?.lockedBy // Preserve lock status
+                    lockedBy = existingLocation?.lockedBy, // Preserve lock status
+                    gridX = existingLocation?.gridX, // Preserve coordinates
+                    gridY = existingLocation?.gridY,
+                    gridZ = existingLocation?.gridZ
                 )
 
                 if (LocationRepository.update(location)) {
@@ -475,6 +1068,13 @@ fun Application.module() {
                         userId = userId,
                         userName = userName
                     )
+
+                    // Process exit changes - assign coordinates to target locations if needed
+                    val oldExits = existingLocation?.exits ?: emptyList()
+                    val newExits = location.exits
+                    val allLocations = LocationRepository.findAll()
+                    processExitCoordinates(location, newExits, oldExits, allLocations, userId, userName)
+
                     // Regenerate image if description changed
                     if (descChanged && request.desc.isNotBlank()) {
                         application.launch {
@@ -491,11 +1091,31 @@ fun Application.module() {
                             }
                         }
                     }
-                    call.respond(HttpStatusCode.OK, location)
+
+                    // Return updated location with any coordinate changes
+                    val updatedLocation = LocationRepository.findById(id) ?: location
+                    call.respond(HttpStatusCode.OK, updatedLocation)
                 } else {
                     call.respond(HttpStatusCode.NotFound)
                 }
             }
+
+            // Validate exit creation between two locations
+            post("/validate-exit") {
+                val request = call.receive<ValidateExitRequest>()
+
+                val fromLocation = LocationRepository.findById(request.fromLocationId)
+                    ?: return@post call.respond(HttpStatusCode.NotFound, "Source location not found")
+
+                val toLocation = LocationRepository.findById(request.toLocationId)
+                    ?: return@post call.respond(HttpStatusCode.NotFound, "Target location not found")
+
+                val allLocations = LocationRepository.findAll()
+                val response = validateExitDirections(fromLocation, toLocation, allLocations)
+
+                call.respond(HttpStatusCode.OK, response)
+            }
+
             put("/{id}/lock") {
                 val id = call.parameters["id"] ?: return@put call.respond(HttpStatusCode.BadRequest)
                 val request = call.receive<LockRequest>()

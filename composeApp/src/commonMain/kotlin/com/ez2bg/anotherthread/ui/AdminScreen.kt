@@ -1717,17 +1717,27 @@ fun ExitPillSection(
     onUpdateExit: (oldExit: ExitDto, newExit: ExitDto) -> Unit,
     onRemoveExit: (ExitDto) -> Unit,
     modifier: Modifier = Modifier,
-    enabled: Boolean = true
+    enabled: Boolean = true,
+    currentLocationId: String? = null,  // The source location for coordinate validation
+    allLocations: List<LocationDto> = emptyList()  // All locations for coordinate lookup
 ) {
     var showAddDialog by remember { mutableStateOf(false) }
     var selectedLocationId by remember { mutableStateOf<String?>(null) }
     var selectedDirection by remember { mutableStateOf(ExitDirection.UNKNOWN) }
     var directionDropdownExpanded by remember { mutableStateOf(false) }
 
+    // Validation state
+    var validationResult by remember { mutableStateOf<ValidateExitResponse?>(null) }
+    var isValidating by remember { mutableStateOf(false) }
+    val scope = rememberCoroutineScope()
+
     // State for edit dialog
     var exitToEdit by remember { mutableStateOf<ExitDto?>(null) }
     var editDirection by remember { mutableStateOf(ExitDirection.UNKNOWN) }
     var editDirectionDropdownExpanded by remember { mutableStateOf(false) }
+
+    // Get current location's coordinates for display
+    val currentLocation = allLocations.find { it.id == currentLocationId }
 
     val pillColor = MaterialTheme.colorScheme.primaryContainer
     val pillTextColor = MaterialTheme.colorScheme.onPrimaryContainer
@@ -1798,13 +1808,51 @@ fun ExitPillSection(
 
         // Filter out already used directions (max 1 exit per direction)
         val usedDirections = exits.map { it.direction }.toSet()
-        val availableDirections = ExitDirection.entries.filter { it !in usedDirections }
+
+        // When a location is selected, validate exit and get available directions
+        LaunchedEffect(selectedLocationId, currentLocationId) {
+            if (selectedLocationId != null && currentLocationId != null) {
+                isValidating = true
+                try {
+                    ApiClient.validateExit(currentLocationId, selectedLocationId!!)
+                        .onSuccess { result ->
+                            validationResult = result
+                            // Auto-select direction if fixed
+                            if (result.validDirections.isNotEmpty()) {
+                                val firstValid = result.validDirections.first()
+                                selectedDirection = firstValid.direction
+                            }
+                        }
+                        .onFailure {
+                            validationResult = null
+                        }
+                } finally {
+                    isValidating = false
+                }
+            } else {
+                validationResult = null
+            }
+        }
+
+        // Compute available directions based on validation result
+        val availableDirections = if (validationResult != null && validationResult!!.canCreateExit) {
+            validationResult!!.validDirections.map { it.direction }.filter { it !in usedDirections }
+        } else if (currentLocationId == null || currentLocation?.gridX == null) {
+            // Source doesn't have coordinates - use old behavior
+            ExitDirection.entries.filter { it !in usedDirections }
+        } else {
+            emptyList()
+        }
+
+        // Check if selected direction is fixed (target already has coordinates)
+        val isDirectionFixed = validationResult?.validDirections?.firstOrNull()?.isFixed == true
 
         AlertDialog(
             onDismissRequest = {
                 showAddDialog = false
                 selectedLocationId = null
-                selectedDirection = availableDirections.firstOrNull() ?: ExitDirection.UNKNOWN
+                selectedDirection = ExitDirection.UNKNOWN
+                validationResult = null
             },
             title = { Text("Add Exit") },
             text = {
@@ -1812,19 +1860,137 @@ fun ExitPillSection(
                     modifier = Modifier.fillMaxWidth(),
                     verticalArrangement = Arrangement.spacedBy(12.dp)
                 ) {
-                    // Direction dropdown - only show unused directions
+                    // Show current location coordinates if available
+                    if (currentLocation?.gridX != null) {
+                        Text(
+                            text = "From: (${currentLocation.gridX}, ${currentLocation.gridY}, ${currentLocation.gridZ ?: 0})",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+
+                    // Step 1: Show list of available locations FIRST
                     Text(
-                        text = "Direction:",
+                        text = "1. Select destination:",
                         style = MaterialTheme.typography.labelMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
-                    if (availableDirections.isEmpty()) {
+                    if (unselectedOptions.isNotEmpty()) {
+                        LazyColumn(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .heightIn(max = 150.dp),
+                            verticalArrangement = Arrangement.spacedBy(4.dp)
+                        ) {
+                            items(unselectedOptions) { option ->
+                                val isSelected = selectedLocationId == option.id
+                                val targetLoc = allLocations.find { it.id == option.id }
+                                val hasCoords = targetLoc?.gridX != null
+
+                                Surface(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .clickable {
+                                            selectedLocationId = option.id
+                                        },
+                                    shape = RoundedCornerShape(8.dp),
+                                    color = if (isSelected) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceVariant,
+                                    border = if (isSelected) androidx.compose.foundation.BorderStroke(2.dp, MaterialTheme.colorScheme.primary) else null
+                                ) {
+                                    Row(
+                                        modifier = Modifier.padding(12.dp),
+                                        horizontalArrangement = Arrangement.SpaceBetween,
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        Column(modifier = Modifier.weight(1f)) {
+                                            Text(
+                                                text = option.name.ifBlank { "(No name)" },
+                                                style = MaterialTheme.typography.bodyLarge,
+                                                color = if (isSelected) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSurfaceVariant,
+                                                maxLines = 1,
+                                                overflow = TextOverflow.Ellipsis
+                                            )
+                                            if (hasCoords && targetLoc != null) {
+                                                Text(
+                                                    text = "(${targetLoc.gridX}, ${targetLoc.gridY}, ${targetLoc.gridZ ?: 0})",
+                                                    style = MaterialTheme.typography.bodySmall,
+                                                    color = if (isSelected) MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.7f) else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f)
+                                                )
+                                            } else {
+                                                Text(
+                                                    text = "Floating (no coords)",
+                                                    style = MaterialTheme.typography.bodySmall,
+                                                    color = if (isSelected) MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.5f) else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f)
+                                                )
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    } else {
                         Text(
-                            text = "All directions are in use",
+                            text = "No more locations available",
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+
+                    HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp))
+
+                    // Step 2: Direction selection (only after location is selected)
+                    Text(
+                        text = "2. Direction:",
+                        style = MaterialTheme.typography.labelMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+
+                    if (selectedLocationId == null) {
+                        Text(
+                            text = "Select a destination first",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f)
+                        )
+                    } else if (isValidating) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            CircularProgressIndicator(modifier = Modifier.size(16.dp), strokeWidth = 2.dp)
+                            Text(
+                                text = "Validating...",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                    } else if (validationResult != null && !validationResult!!.canCreateExit) {
+                        Text(
+                            text = validationResult!!.errorMessage ?: "Cannot create exit to this location",
                             style = MaterialTheme.typography.bodyMedium,
                             color = MaterialTheme.colorScheme.error
                         )
+                    } else if (availableDirections.isEmpty()) {
+                        Text(
+                            text = "No valid directions available",
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.error
+                        )
+                    } else if (isDirectionFixed) {
+                        // Direction is fixed - show as read-only
+                        val targetCoords = validationResult?.validDirections?.firstOrNull()?.targetCoordinates
+                        OutlinedTextField(
+                            value = selectedDirection.toDisplayLabel(),
+                            onValueChange = {},
+                            readOnly = true,
+                            enabled = false,
+                            label = { Text("Direction (fixed by coordinates)") },
+                            supportingText = if (targetCoords != null) {
+                                { Text("Target at (${targetCoords.x}, ${targetCoords.y}, ${targetCoords.z})") }
+                            } else null,
+                            modifier = Modifier.fillMaxWidth()
+                        )
                     } else {
+                        // Direction is selectable
                         ExposedDropdownMenuBox(
                             expanded = directionDropdownExpanded,
                             onExpandedChange = { directionDropdownExpanded = it }
@@ -1843,8 +2009,20 @@ fun ExitPillSection(
                                 onDismissRequest = { directionDropdownExpanded = false }
                             ) {
                                 availableDirections.forEach { direction ->
+                                    val coordInfo = validationResult?.validDirections?.find { it.direction == direction }?.targetCoordinates
                                     DropdownMenuItem(
-                                        text = { Text(direction.toDisplayLabel()) },
+                                        text = {
+                                            Column {
+                                                Text(direction.toDisplayLabel())
+                                                if (coordInfo != null) {
+                                                    Text(
+                                                        text = "-> (${coordInfo.x}, ${coordInfo.y}, ${coordInfo.z})",
+                                                        style = MaterialTheme.typography.bodySmall,
+                                                        color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f)
+                                                    )
+                                                }
+                                            }
+                                        },
                                         onClick = {
                                             selectedDirection = direction
                                             directionDropdownExpanded = false
@@ -1855,68 +2033,13 @@ fun ExitPillSection(
                         }
                     }
 
-                    HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp))
-
-                    // Show list of available locations
-                    if (unselectedOptions.isNotEmpty()) {
-                        Text(
-                            text = "Select destination:",
-                            style = MaterialTheme.typography.labelMedium,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                        LazyColumn(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .heightIn(max = 200.dp),
-                            verticalArrangement = Arrangement.spacedBy(4.dp)
-                        ) {
-                            items(unselectedOptions) { option ->
-                                val isSelected = selectedLocationId == option.id
-                                Surface(
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .clickable {
-                                            selectedLocationId = option.id
-                                        },
-                                    shape = RoundedCornerShape(8.dp),
-                                    color = if (isSelected) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceVariant,
-                                    border = if (isSelected) androidx.compose.foundation.BorderStroke(2.dp, MaterialTheme.colorScheme.primary) else null
-                                ) {
-                                    Column(
-                                        modifier = Modifier.padding(12.dp)
-                                    ) {
-                                        Text(
-                                            text = option.name.ifBlank { "(No name)" },
-                                            style = MaterialTheme.typography.bodyLarge,
-                                            color = if (isSelected) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSurfaceVariant,
-                                            maxLines = 1,
-                                            overflow = TextOverflow.Ellipsis
-                                        )
-                                        Text(
-                                            text = option.id,
-                                            style = MaterialTheme.typography.bodySmall,
-                                            color = if (isSelected) MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.7f) else MaterialTheme.colorScheme.onSurfaceVariant,
-                                            maxLines = 1,
-                                            overflow = TextOverflow.Ellipsis
-                                        )
-                                    }
-                                }
-                            }
-                        }
-                    } else {
-                        Text(
-                            text = "No more locations available",
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                    }
-
-                    // Show selected location summary
-                    if (selectedLocationId != null) {
+                    // Show selected summary
+                    if (selectedLocationId != null && availableDirections.isNotEmpty() && !isValidating) {
                         val selectedName = availableOptions.find { it.id == selectedLocationId }?.name ?: selectedLocationId
                         HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp))
+                        val dirToShow = if (selectedDirection in availableDirections) selectedDirection else availableDirections.first()
                         Text(
-                            text = "Selected: $selectedName (${selectedDirection.toDisplayLabel()})",
+                            text = "Exit: ${dirToShow.toDisplayLabel()} -> $selectedName",
                             style = MaterialTheme.typography.bodyMedium,
                             color = MaterialTheme.colorScheme.primary
                         )
@@ -1932,9 +2055,10 @@ fun ExitPillSection(
                             showAddDialog = false
                             selectedLocationId = null
                             selectedDirection = ExitDirection.UNKNOWN
+                            validationResult = null
                         }
                     },
-                    enabled = selectedLocationId != null && availableDirections.isNotEmpty()
+                    enabled = selectedLocationId != null && availableDirections.isNotEmpty() && !isValidating
                 ) {
                     Text("Save Exit")
                 }
@@ -1944,6 +2068,7 @@ fun ExitPillSection(
                     showAddDialog = false
                     selectedLocationId = null
                     selectedDirection = ExitDirection.UNKNOWN
+                    validationResult = null
                 }) {
                     Text("Cancel")
                 }
@@ -2439,6 +2564,19 @@ fun ItemListView(
 
 data class LocationPosition(val location: LocationDto, val x: Float, val y: Float)
 
+// Result from grid position calculation including raw grid coordinates
+data class GridPositionResult(
+    val locationPositions: Map<String, LocationPosition>,
+    val gridPositions: Map<String, Pair<Int, Int>>,
+    val gridBounds: GridBounds
+)
+
+data class GridBounds(
+    val minX: Int, val maxX: Int,
+    val minY: Int, val maxY: Int,
+    val padding: Float = 0.15f
+)
+
 @Composable
 fun LocationGraph(
     locations: List<LocationDto>,
@@ -2448,9 +2586,10 @@ fun LocationGraph(
     terrainOverridesMap: Map<String, TerrainOverridesDto> = emptyMap(),
     onSettingsClick: (LocationDto) -> Unit = {}
 ) {
-    val locationPositions = remember(locations) {
+    val gridResult = remember(locations) {
         calculateForceDirectedPositions(locations)
     }
+    val locationPositions = gridResult.locationPositions
 
     // Track which location is expanded (null = none expanded)
     var expandedLocationId by remember { mutableStateOf<String?>(null) }
@@ -2665,6 +2804,7 @@ fun LocationGraph(
             }
 
             Canvas(modifier = Modifier.fillMaxSize()) {
+                // Render locations
                 locations.forEach { location ->
                     val pos = locationPositions[location.id] ?: return@forEach
                     val screenPos = getLocationScreenPos(pos)
@@ -6455,16 +6595,23 @@ private fun getDirectionVector(direction: ExitDirection): Pair<Float, Float> = w
 }
 
 /**
- * Calculate positions using a grid-based directional layout algorithm.
- * Locations are placed on a grid based on their exit directions.
+ * Calculate positions using stored database coordinates when available.
+ * Falls back to BFS-based placement for locations without stored coordinates.
  * If location A has a SOUTH exit to location B, then B is placed directly south of A.
  */
 private fun calculateForceDirectedPositions(
     locations: List<LocationDto>
-): Map<String, LocationPosition> {
-    if (locations.isEmpty()) return emptyMap()
+): GridPositionResult {
+    if (locations.isEmpty()) return GridPositionResult(emptyMap(), emptyMap(), GridBounds(0, 0, 0, 0))
     if (locations.size == 1) {
-        return mapOf(locations[0].id to LocationPosition(locations[0], 0.5f, 0.5f))
+        val loc = locations[0]
+        val x = loc.gridX ?: 0
+        val y = loc.gridY ?: 0
+        return GridPositionResult(
+            locationPositions = mapOf(loc.id to LocationPosition(loc, 0.5f, 0.5f)),
+            gridPositions = mapOf(loc.id to Pair(x, y)),
+            gridBounds = GridBounds(x, x, y, y)
+        )
     }
 
     val locationMap = locations.associateBy { it.id }
@@ -6473,14 +6620,24 @@ private fun calculateForceDirectedPositions(
     val gridPositions = mutableMapOf<String, Pair<Int, Int>>()
     val visited = mutableSetOf<String>()
 
-    // Start with the first location at origin
-    val startLocation = locations.first()
-    gridPositions[startLocation.id] = Pair(0, 0)
+    // First pass: Use stored database coordinates for locations that have them
+    locations.filter { it.gridX != null && it.gridY != null }.forEach { loc ->
+        gridPositions[loc.id] = Pair(loc.gridX!!, loc.gridY!!)
+        visited.add(loc.id)
+    }
 
-    // BFS to place all connected locations
+    // Second pass: BFS to place locations without stored coordinates
+    // Start from a location with coordinates, or the first location if none have coords
+    val startLocation = locations.find { it.gridX != null } ?: locations.first()
+    if (startLocation.id !in gridPositions) {
+        gridPositions[startLocation.id] = Pair(0, 0)
+        visited.add(startLocation.id)
+    }
+
+    // BFS to place remaining connected locations
     val queue = ArrayDeque<String>()
-    queue.add(startLocation.id)
-    visited.add(startLocation.id)
+    // Add all locations with coordinates to the queue to expand from
+    gridPositions.keys.forEach { queue.add(it) }
 
     while (queue.isNotEmpty()) {
         val currentId = queue.removeFirst()
@@ -6490,17 +6647,25 @@ private fun calculateForceDirectedPositions(
         // Place neighbors based on exit directions
         for (exit in currentLocation.exits) {
             val neighborId = exit.locationId
-            if (neighborId !in visited && locationMap.containsKey(neighborId)) {
-                val (dx, dy) = getGridOffset(exit.direction)
-                val newPos = Pair(currentPos.first + dx, currentPos.second + dy)
+            val neighbor = locationMap[neighborId] ?: continue
 
-                // Check if position is already occupied
-                val existingAtPos = gridPositions.entries.find { it.value == newPos }
-                if (existingAtPos == null) {
-                    gridPositions[neighborId] = newPos
+            if (neighborId !in visited) {
+                // Check if neighbor has stored coordinates
+                if (neighbor.gridX != null && neighbor.gridY != null) {
+                    gridPositions[neighborId] = Pair(neighbor.gridX, neighbor.gridY)
                 } else {
-                    // Position occupied, find nearby free spot
-                    gridPositions[neighborId] = findNearbyFreeSpot(newPos, gridPositions.values.toSet())
+                    // Calculate position from exit direction
+                    val (dx, dy) = getGridOffset(exit.direction)
+                    val newPos = Pair(currentPos.first + dx, currentPos.second + dy)
+
+                    // Check if position is already occupied
+                    val existingAtPos = gridPositions.entries.find { it.value == newPos }
+                    if (existingAtPos == null) {
+                        gridPositions[neighborId] = newPos
+                    } else {
+                        // Position occupied, find nearby free spot
+                        gridPositions[neighborId] = findNearbyFreeSpot(newPos, gridPositions.values.toSet())
+                    }
                 }
 
                 visited.add(neighborId)
@@ -6509,11 +6674,15 @@ private fun calculateForceDirectedPositions(
         }
     }
 
-    // Handle disconnected locations (not reachable from first location)
+    // Handle disconnected locations (not reachable from any placed location)
     locations.filter { it.id !in gridPositions }.forEachIndexed { index, loc ->
-        // Place disconnected locations below the main graph
-        val maxY = gridPositions.values.maxOfOrNull { it.second } ?: 0
-        gridPositions[loc.id] = findNearbyFreeSpot(Pair(index, maxY + 2), gridPositions.values.toSet())
+        // Use stored coords if available, otherwise place below the main graph
+        if (loc.gridX != null && loc.gridY != null) {
+            gridPositions[loc.id] = Pair(loc.gridX, loc.gridY)
+        } else {
+            val maxY = gridPositions.values.maxOfOrNull { it.second } ?: 0
+            gridPositions[loc.id] = findNearbyFreeSpot(Pair(index, maxY + 2), gridPositions.values.toSet())
+        }
     }
 
     // Normalize grid positions to 0.0-1.0 range
@@ -6530,7 +6699,7 @@ private fun calculateForceDirectedPositions(
     val padding = 0.15f
     val availableRange = 1f - 2 * padding
 
-    return gridPositions.mapValues { (id, gridPos) ->
+    val locationPositions = gridPositions.mapValues { (id, gridPos) ->
         val normalizedX = if (rangeX == 1) 0.5f else padding + availableRange * (gridPos.first - minX).toFloat() / rangeX
         val normalizedY = if (rangeY == 1) 0.5f else padding + availableRange * (gridPos.second - minY).toFloat() / rangeY
         LocationPosition(
@@ -6539,6 +6708,12 @@ private fun calculateForceDirectedPositions(
             y = normalizedY
         )
     }
+
+    return GridPositionResult(
+        locationPositions = locationPositions,
+        gridPositions = gridPositions,
+        gridBounds = GridBounds(minX, maxX, minY, maxY, padding)
+    )
 }
 
 /**
@@ -6575,6 +6750,21 @@ private fun findNearbyFreeSpot(target: Pair<Int, Int>, occupied: Set<Pair<Int, I
         }
     }
     return Pair(target.first + 10, target.second) // Fallback
+}
+
+/**
+ * Get direction from grid offset.
+ */
+private fun getDirectionFromOffset(dx: Int, dy: Int): ExitDirection = when {
+    dx == 0 && dy == -1 -> ExitDirection.NORTH
+    dx == 1 && dy == -1 -> ExitDirection.NORTHEAST
+    dx == 1 && dy == 0 -> ExitDirection.EAST
+    dx == 1 && dy == 1 -> ExitDirection.SOUTHEAST
+    dx == 0 && dy == 1 -> ExitDirection.SOUTH
+    dx == -1 && dy == 1 -> ExitDirection.SOUTHWEST
+    dx == -1 && dy == 0 -> ExitDirection.WEST
+    dx == -1 && dy == -1 -> ExitDirection.NORTHWEST
+    else -> ExitDirection.UNKNOWN
 }
 
 @Composable
@@ -6628,6 +6818,7 @@ fun LocationForm(
     var availableItems by remember { mutableStateOf<List<IdOption>>(emptyList()) }
     var availableCreatures by remember { mutableStateOf<List<IdOption>>(emptyList()) }
     var availableLocations by remember { mutableStateOf<List<IdOption>>(emptyList()) }
+    var allLocationsForCoords by remember { mutableStateOf<List<LocationDto>>(emptyList()) }
     var activeUsersAtLocation by remember(editLocation?.id) { mutableStateOf<List<UserDto>>(emptyList()) }
 
     // Fetch available options on mount and when location changes
@@ -6639,6 +6830,7 @@ fun LocationForm(
             availableCreatures = creatures.map { IdOption(it.id, it.name) }
         }
         ApiClient.getLocations().onSuccess { locs ->
+            allLocationsForCoords = locs  // Store full location data for coordinate validation
             availableLocations = locs
                 .filter { it.id != editLocation?.id } // Don't show current location as exit option
                 .map { IdOption(it.id, it.name) }
@@ -6950,7 +7142,9 @@ fun LocationForm(
                 exitToRemove = exit
                 showRemoveExitDialog = true
             },
-            enabled = !isDisabled
+            enabled = !isDisabled,
+            currentLocationId = editLocation?.id,
+            allLocations = allLocationsForCoords
         )
 
         // Exit removal confirmation dialog

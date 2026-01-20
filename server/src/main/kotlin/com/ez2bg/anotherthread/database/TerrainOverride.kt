@@ -19,7 +19,11 @@ data class ForestParams(
 
 @Serializable
 data class LakeParams(
-    val diameterMultiplier: Float? = null
+    val diameterMultiplier: Float? = null,
+    val diameterMultiplierX: Float? = null,
+    val diameterMultiplierY: Float? = null,
+    val shapePoints: Int? = null,
+    val noiseScale: Float? = null
 )
 
 @Serializable
@@ -56,7 +60,11 @@ data class DesertParams(
 
 @Serializable
 data class SwampParams(
-    val densityMultiplier: Float? = null
+    val densityMultiplier: Float? = null,
+    val diameterMultiplierX: Float? = null,
+    val diameterMultiplierY: Float? = null,
+    val shapePoints: Int? = null,
+    val noiseScale: Float? = null
 )
 
 @Serializable
