@@ -1834,8 +1834,8 @@ fun ExitPillSection(
             val dy = kotlin.math.abs((targetLoc.gridY ?: 0) - (currentLocation.gridY ?: 0))
             val dz = kotlin.math.abs((targetLoc.gridZ ?: 0) - (currentLocation.gridZ ?: 0))
 
-            // Adjacent means max 1 step in any direction, same Z level
-            dz == 0 && dx <= 1 && dy <= 1 && (dx + dy > 0)
+            // Adjacent means max 1 step in any direction (including diagonals), same Z level, not same cell
+            dz == 0 && dx <= 1 && dy <= 1 && !(dx == 0 && dy == 0)
         }
 
         // Filter out already used directions (max 1 exit per direction)
@@ -6730,8 +6730,7 @@ private fun calculateForceDirectedPositions(
     val rangeY = (maxY - minY).coerceAtLeast(1)
 
     // Add padding and convert to normalized coordinates
-    // Use a spacing multiplier to spread dots further apart (2.0 = double spacing)
-    val spacingMultiplier = 2.0f
+    val spacingMultiplier = 1.0f
     val padding = 0.15f
     val availableRange = 1f - 2 * padding
 
