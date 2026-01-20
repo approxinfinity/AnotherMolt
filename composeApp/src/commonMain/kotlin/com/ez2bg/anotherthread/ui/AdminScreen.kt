@@ -683,6 +683,13 @@ fun AdminScreen() {
     var viewState by remember { mutableStateOf<ViewState>(ViewState.LocationGraph()) }
     var currentUser by remember { mutableStateOf(savedUser) }
 
+    // Separate refresh key for forcing location graph refresh after CRUD operations
+    var locationGraphRefreshKey by remember { mutableStateOf(0L) }
+    fun refreshLocationGraph() {
+        locationGraphRefreshKey++
+        println("DEBUG: refreshLocationGraph() called, new key: $locationGraphRefreshKey")
+    }
+
     // Set user context for audit logging when user changes
     LaunchedEffect(currentUser) {
         if (currentUser != null) {
@@ -784,18 +791,20 @@ fun AdminScreen() {
                     viewState = ViewState.ItemDetail(id)
                 }
             )
-            is ViewState.LocationGraph -> LocationGraphView(
-                refreshKey = state.refreshKey,
-                onAddClick = { viewState = ViewState.LocationCreate },
-                onLocationClick = { location -> viewState = ViewState.LocationEdit(location) },
-                isAuthenticated = currentUser != null,
-                isAdmin = isAdmin,
-                currentUser = currentUser
-            )
+            is ViewState.LocationGraph -> key(locationGraphRefreshKey) {
+                LocationGraphView(
+                    refreshKey = locationGraphRefreshKey,
+                    onAddClick = { viewState = ViewState.LocationCreate },
+                    onLocationClick = { location -> viewState = ViewState.LocationEdit(location) },
+                    isAuthenticated = currentUser != null,
+                    isAdmin = isAdmin,
+                    currentUser = currentUser
+                )
+            }
             is ViewState.LocationCreate -> LocationForm(
                 editLocation = null,
                 onBack = { viewState = ViewState.LocationGraph() },
-                onSaved = { viewState = ViewState.LocationGraph() },
+                onSaved = { refreshLocationGraph(); viewState = ViewState.LocationGraph() },
                 onNavigateToItem = { id ->
                     selectedTab = AdminTab.ITEM
                     viewState = ViewState.ItemDetail(id)
@@ -810,12 +819,13 @@ fun AdminScreen() {
                     viewState = ViewState.UserDetail(userId)
                 },
                 currentUser = currentUser,
-                isAdmin = isAdmin
+                isAdmin = isAdmin,
+                onDeleted = { refreshLocationGraph(); viewState = ViewState.LocationGraph() }
             )
             is ViewState.LocationEdit -> LocationForm(
                 editLocation = state.location,
                 onBack = { viewState = ViewState.LocationGraph() },
-                onSaved = { viewState = ViewState.LocationGraph() },
+                onSaved = { refreshLocationGraph(); viewState = ViewState.LocationGraph() },
                 onNavigateToItem = { id ->
                     selectedTab = AdminTab.ITEM
                     viewState = ViewState.ItemDetail(id)
@@ -833,7 +843,8 @@ fun AdminScreen() {
                 isAdmin = isAdmin,
                 onLocationUpdated = { updatedLocation ->
                     viewState = ViewState.LocationEdit(updatedLocation)
-                }
+                },
+                onDeleted = { refreshLocationGraph(); viewState = ViewState.LocationGraph() }
             )
             is ViewState.CreatureList -> CreatureListView(
                 onCreatureClick = { creature ->
@@ -1804,7 +1815,28 @@ fun ExitPillSection(
     if (showAddDialog) {
         // Filter out already selected locations from available options
         val existingLocationIds = exits.map { it.locationId }.toSet()
-        val unselectedOptions = availableOptions.filter { it.id !in existingLocationIds }
+
+        // Filter locations: exclude non-adjacent locations that have coordinates
+        // A location with coordinates is only valid if it's exactly 1 cell away from current location
+        val unselectedOptions = availableOptions.filter { option ->
+            if (option.id in existingLocationIds) return@filter false
+
+            val targetLoc = allLocations.find { it.id == option.id }
+
+            // If target has no coordinates, it's a floating location - allow it
+            if (targetLoc?.gridX == null) return@filter true
+
+            // If source has no coordinates, allow all targets
+            if (currentLocation?.gridX == null) return@filter true
+
+            // Both have coordinates - check if adjacent (exactly 1 cell away)
+            val dx = kotlin.math.abs(targetLoc.gridX!! - currentLocation.gridX!!)
+            val dy = kotlin.math.abs((targetLoc.gridY ?: 0) - (currentLocation.gridY ?: 0))
+            val dz = kotlin.math.abs((targetLoc.gridZ ?: 0) - (currentLocation.gridZ ?: 0))
+
+            // Adjacent means max 1 step in any direction, same Z level
+            dz == 0 && dx <= 1 && dy <= 1 && (dx + dy > 0)
+        }
 
         // Filter out already used directions (max 1 exit per direction)
         val usedDirections = exits.map { it.direction }.toSet()
@@ -2199,24 +2231,26 @@ fun LocationGraphView(
     isAdmin: Boolean = false,
     currentUser: UserDto? = null
 ) {
-    var locations by remember { mutableStateOf<List<LocationDto>>(emptyList()) }
-    var isLoading by remember { mutableStateOf(true) }
-    var error by remember { mutableStateOf<String?>(null) }
+    var locations by remember(refreshKey) { mutableStateOf<List<LocationDto>>(emptyList()) }
+    var isLoading by remember(refreshKey) { mutableStateOf(true) }
+    var error by remember(refreshKey) { mutableStateOf<String?>(null) }
     val scope = rememberCoroutineScope()
 
     // Terrain override state
-    var terrainOverridesMap by remember { mutableStateOf<Map<String, TerrainOverridesDto>>(emptyMap()) }
+    var terrainOverridesMap by remember(refreshKey) { mutableStateOf<Map<String, TerrainOverridesDto>>(emptyMap()) }
     var selectedLocationForSettings by remember { mutableStateOf<LocationDto?>(null) }
 
     // Re-fetch locations when refreshKey changes (e.g., after saving a location)
+    // Use refreshKey as cache buster to bypass browser/CDN caching
     LaunchedEffect(refreshKey) {
-        scope.launch {
-            isLoading = true
-            val result = ApiClient.getLocations()
-            isLoading = false
-            result.onSuccess { locations = it }
-                .onFailure { error = it.message }
-        }
+        println("DEBUG: LocationGraphView LaunchedEffect triggered with refreshKey: $refreshKey")
+        isLoading = true
+        val result = ApiClient.getLocations(cacheBuster = refreshKey)
+        isLoading = false
+        result.onSuccess {
+            println("DEBUG: Loaded ${it.size} locations")
+            locations = it
+        }.onFailure { error = it.message }
     }
 
     // Fetch terrain overrides for all locations (lazy-loaded when locations change)
@@ -6696,12 +6730,14 @@ private fun calculateForceDirectedPositions(
     val rangeY = (maxY - minY).coerceAtLeast(1)
 
     // Add padding and convert to normalized coordinates
+    // Use a spacing multiplier to spread dots further apart (2.0 = double spacing)
+    val spacingMultiplier = 2.0f
     val padding = 0.15f
     val availableRange = 1f - 2 * padding
 
     val locationPositions = gridPositions.mapValues { (id, gridPos) ->
-        val normalizedX = if (rangeX == 1) 0.5f else padding + availableRange * (gridPos.first - minX).toFloat() / rangeX
-        val normalizedY = if (rangeY == 1) 0.5f else padding + availableRange * (gridPos.second - minY).toFloat() / rangeY
+        val normalizedX = if (rangeX == 1) 0.5f else padding + availableRange * (gridPos.first - minX).toFloat() / rangeX * spacingMultiplier
+        val normalizedY = if (rangeY == 1) 0.5f else padding + availableRange * (gridPos.second - minY).toFloat() / rangeY * spacingMultiplier
         LocationPosition(
             location = locationMap[id]!!,
             x = normalizedX,
@@ -6778,7 +6814,8 @@ fun LocationForm(
     onNavigateToUser: (String) -> Unit,
     currentUser: UserDto? = null,
     isAdmin: Boolean = false,
-    onLocationUpdated: (LocationDto) -> Unit = {}
+    onLocationUpdated: (LocationDto) -> Unit = {},
+    onDeleted: () -> Unit = {}
 ) {
     val isEditMode = editLocation != null
     var name by remember(editLocation?.id) { mutableStateOf(editLocation?.name ?: "") }
@@ -7228,12 +7265,16 @@ fun LocationForm(
                         onClick = {
                             scope.launch {
                                 isDeleting = true
+                                println("DEBUG: Starting delete for ${editLocation.id}")
                                 ApiClient.deleteLocation(editLocation.id)
                                     .onSuccess {
+                                        println("DEBUG: Delete successful, calling onDeleted()")
                                         showDeleteDialog = false
-                                        onBack()
+                                        onDeleted()
+                                        println("DEBUG: onDeleted() called")
                                     }
                                     .onFailure { error ->
+                                        println("DEBUG: Delete failed: ${error.message}")
                                         message = "Failed to delete: ${error.message}"
                                         showDeleteDialog = false
                                     }

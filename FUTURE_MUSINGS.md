@@ -36,3 +36,16 @@
   - When placing a subgraph, if a target coordinate has a wilderness location, that wilderness can be replaced/merged
   - Only non-wilderness locations should block coordinate placement
 - This would make the grid system more flexible - wilderness acts as "unoccupied but navigable" space
+
+## Cloudflare Caching Issues
+- Cloudflare aggressively caches responses, causing stale data in the UI
+- Current workaround: cache buster query param (`?_=<refreshKey>`) on `/locations` API calls
+- Problems observed:
+  - After deleting a location, the LocationGraph may not refresh due to cached JS or API responses
+  - Mobile Safari + Cloudflare is particularly problematic
+- Solutions to investigate:
+  - Set up Cloudflare Page Rule to bypass cache for `anotherthread.ez2bgood.com/*`
+  - Or use "Development Mode" in Cloudflare during active development
+  - Add cache-busting to ALL API calls that affect the graph (create, update, delete)
+  - Consider adding `Cache-Control: no-store` headers to API responses
+  - May need to bust cache on more than just getLocations - any CRUD operation should trigger a full refresh

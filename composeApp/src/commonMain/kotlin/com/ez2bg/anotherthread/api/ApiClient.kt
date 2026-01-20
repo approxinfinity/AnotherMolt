@@ -330,8 +330,9 @@ object ApiClient {
 
     private val baseUrl = AppConfig.api.baseUrl
 
-    suspend fun getLocations(): Result<List<LocationDto>> = runCatching {
-        client.get("$baseUrl/locations").body()
+    suspend fun getLocations(cacheBuster: Long? = null): Result<List<LocationDto>> = runCatching {
+        val url = if (cacheBuster != null) "$baseUrl/locations?_=$cacheBuster" else "$baseUrl/locations"
+        client.get(url).body()
     }
 
     suspend fun createLocation(request: CreateLocationRequest): Result<LocationDto> = runCatching {
