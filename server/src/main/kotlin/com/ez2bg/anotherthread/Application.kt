@@ -69,7 +69,7 @@ data class ValidateExitResponse(
  */
 @Serializable
 data class IntegrityIssue(
-    val type: String,           // EXIT_TOO_FAR, DIRECTION_MISMATCH, MISSING_TARGET, DUPLICATE_COORDS, ORPHANED
+    val type: String,           // EXIT_TOO_FAR, DIRECTION_MISMATCH, MISSING_TARGET, DUPLICATE_COORDS
     val severity: String,       // ERROR, WARNING
     val locationId: String,
     val locationName: String,
@@ -2378,22 +2378,8 @@ fun Application.module() {
                             }
                         }
 
-                        // Check for orphaned locations (has coords but no exits and no incoming)
-                        if (location.gridX != null) {
-                            val hasExits = location.exits.isNotEmpty()
-                            val hasIncoming = allLocations.any { other ->
-                                other.exits.any { it.locationId == location.id }
-                            }
-                            if (!hasExits && !hasIncoming) {
-                                issues.add(IntegrityIssue(
-                                    type = "ORPHANED",
-                                    severity = "WARNING",
-                                    locationId = location.id,
-                                    locationName = location.name,
-                                    message = "Location has coordinates but no exits to or from it"
-                                ))
-                            }
-                        }
+                        // Note: Orphaned locations (no exits to/from) are allowed - content creators
+                        // may create locations before connecting them with exits
                     }
 
                     call.respond(DataIntegrityResponse(
