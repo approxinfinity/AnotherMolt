@@ -1468,7 +1468,7 @@ fun UserProfileView(
                 attempts++
                 // Fetch user to check if class was assigned
                 ApiClient.getUser(user.id).onSuccess { updatedUser ->
-                    if (updatedUser.characterClassId != null) {
+                    if (updatedUser != null && updatedUser.characterClassId != null) {
                         characterClassId = updatedUser.characterClassId
                         onUserUpdated(updatedUser)
                         message = "Class generated!"
