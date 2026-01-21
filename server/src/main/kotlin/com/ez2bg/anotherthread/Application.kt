@@ -1853,43 +1853,68 @@ fun Application.module() {
             // Assign class to user (either autoassign from existing or generate new)
             post("/{id}/assign-class") {
                 val id = call.parameters["id"] ?: return@post call.respond(HttpStatusCode.BadRequest)
+                log.info("assign-class: Received request for user $id")
+
                 val request = call.receive<AssignClassRequest>()
+                log.info("assign-class: Request - generateClass=${request.generateClass}, descriptionLength=${request.characterDescription.length}")
+                log.debug("assign-class: Character description: '${request.characterDescription.take(200)}...'")
 
                 val existingUser = UserRepository.findById(id)
                 if (existingUser == null) {
+                    log.warn("assign-class: User $id not found")
                     call.respond(HttpStatusCode.NotFound)
                     return@post
                 }
+                log.info("assign-class: Found user '${existingUser.name}', currentClassId=${existingUser.characterClassId}")
 
                 if (request.generateClass) {
+                    log.info("assign-class: Starting class GENERATION mode for user $id")
                     // Mark that class generation has started
-                    UserRepository.startClassGeneration(id)
+                    val genStarted = UserRepository.startClassGeneration(id)
+                    log.info("assign-class: Class generation start marked: $genStarted")
+
                     val userWithGenStatus = UserRepository.findById(id)!!
+                    log.info("assign-class: User classGenerationStartedAt=${userWithGenStatus.classGenerationStartedAt}")
 
                     // For class generation, run async and return immediately
                     // The client will poll for the user's characterClassId
                     application.launch {
                         try {
-                            log.info("Starting async class generation for user $id")
+                            log.info("assign-class: [ASYNC] Starting class generation for user $id")
+                            log.info("assign-class: [ASYNC] Description: '${request.characterDescription.take(100)}...'")
+
                             val generateResult = ClassGenerationService.generateNewClass(
                                 characterDescription = request.characterDescription,
                                 createdByUserId = id,
                                 isPublic = false
                             )
 
+                            if (generateResult.isFailure) {
+                                val ex = generateResult.exceptionOrNull()
+                                log.error("assign-class: [ASYNC] Class generation failed for user $id - ${ex?.javaClass?.simpleName}: ${ex?.message}", ex)
+                                UserRepository.clearClassGeneration(id)
+                                return@launch
+                            }
+
                             val (newClass, abilities) = generateResult.getOrThrow()
-                            val (savedClass, _) = ClassGenerationService.saveGeneratedClass(newClass, abilities)
+                            log.info("assign-class: [ASYNC] Generated class '${newClass.name}' with ${abilities.size} abilities for user $id")
+
+                            val (savedClass, savedAbilities) = ClassGenerationService.saveGeneratedClass(newClass, abilities)
+                            log.info("assign-class: [ASYNC] Saved class to database with id=${savedClass.id}")
 
                             // updateCharacterClass also clears classGenerationStartedAt
-                            UserRepository.updateCharacterClass(id, savedClass.id)
-                            log.info("Class generation complete for user $id: ${savedClass.name}")
+                            val updateSuccess = UserRepository.updateCharacterClass(id, savedClass.id)
+                            log.info("assign-class: [ASYNC] Updated user with class assignment: $updateSuccess")
+                            log.info("assign-class: [ASYNC] Class generation COMPLETE for user $id: ${savedClass.name}")
                         } catch (e: Exception) {
-                            log.error("Failed to generate class for user $id: ${e.message}")
+                            log.error("assign-class: [ASYNC] Failed to generate class for user $id - ${e::class.simpleName}: ${e.message}", e)
                             // Clear generation status on failure
                             UserRepository.clearClassGeneration(id)
+                            log.info("assign-class: [ASYNC] Cleared generation status after failure")
                         }
                     }
 
+                    log.info("assign-class: Returning immediately with generation-in-progress response")
                     // Return immediately - class is being generated
                     call.respond(AssignClassResponse(
                         success = true,
@@ -1898,37 +1923,58 @@ fun Application.module() {
                         message = "Generating your custom class... This may take a few minutes. The page will update when complete."
                     ))
                 } else {
+                    log.info("assign-class: Starting class MATCHING mode for user $id")
                     // For matching, do it synchronously (it's fast)
                     try {
                         val assignedClass: CharacterClass
 
                         // First try LLM matching
+                        log.info("assign-class: Attempting LLM class matching...")
                         val matchResult = ClassGenerationService.matchToExistingClass(request.characterDescription)
                         if (matchResult.isSuccess) {
                             val match = matchResult.getOrThrow()
+                            log.info("assign-class: LLM matched to class '${match.matchedClassName}' (id=${match.matchedClassId}) with confidence ${match.confidence}")
+                            log.info("assign-class: Match reasoning: ${match.reasoning}")
+
                             val matchedClass = CharacterClassRepository.findById(match.matchedClassId)
                             assignedClass = matchedClass ?: run {
+                                log.warn("assign-class: Matched class id '${match.matchedClassId}' not found in database, using fallback")
                                 // Fallback: get any public class
                                 val publicClasses = CharacterClassRepository.findAll().filter { it.isPublic }
+                                log.info("assign-class: Found ${publicClasses.size} public classes for fallback")
                                 publicClasses.firstOrNull()
                                     ?: throw Exception("No classes available for assignment")
                             }
+                            log.info("assign-class: Using class '${assignedClass.name}' (id=${assignedClass.id})")
                         } else {
                             // LLM not available - just pick a class based on description keywords
-                            log.warn("LLM matching failed, using keyword fallback: ${matchResult.exceptionOrNull()?.message}")
+                            val ex = matchResult.exceptionOrNull()
+                            log.warn("assign-class: LLM matching failed - ${ex?.javaClass?.simpleName}: ${ex?.message}")
+                            log.info("assign-class: Falling back to keyword-based matching")
+
                             val publicClasses = CharacterClassRepository.findAll().filter { it.isPublic }
+                            log.info("assign-class: Found ${publicClasses.size} public classes for keyword matching")
+
                             val descLower = request.characterDescription.lowercase()
-                            assignedClass = if (descLower.contains("magic") || descLower.contains("spell") ||
+                            val hasSpellKeywords = descLower.contains("magic") || descLower.contains("spell") ||
                                 descLower.contains("wizard") || descLower.contains("mage") ||
-                                descLower.contains("sorcerer") || descLower.contains("witch")) {
+                                descLower.contains("sorcerer") || descLower.contains("witch")
+                            log.info("assign-class: Description has spell keywords: $hasSpellKeywords")
+
+                            assignedClass = if (hasSpellKeywords) {
                                 publicClasses.find { it.isSpellcaster } ?: publicClasses.firstOrNull()
                             } else {
                                 publicClasses.find { !it.isSpellcaster } ?: publicClasses.firstOrNull()
                             } ?: throw Exception("No classes available for assignment")
+
+                            log.info("assign-class: Keyword matching selected class '${assignedClass.name}'")
                         }
 
-                        UserRepository.updateCharacterClass(id, assignedClass.id)
+                        val updateSuccess = UserRepository.updateCharacterClass(id, assignedClass.id)
+                        log.info("assign-class: Updated user class assignment: $updateSuccess")
+
                         val updatedUser = UserRepository.findById(id)!!
+                        log.info("assign-class: Class matching COMPLETE for user $id: assigned '${assignedClass.name}'")
 
                         call.respond(AssignClassResponse(
                             success = true,
@@ -1937,7 +1983,7 @@ fun Application.module() {
                             message = "Class '${assignedClass.name}' assigned based on your description"
                         ))
                     } catch (e: Exception) {
-                        log.warn("Failed to assign class for user $id: ${e.message}")
+                        log.error("assign-class: Failed to assign class for user $id - ${e::class.simpleName}: ${e.message}", e)
                         call.respond(HttpStatusCode.InternalServerError, AssignClassResponse(
                             success = false,
                             user = existingUser.toResponse(),

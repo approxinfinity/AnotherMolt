@@ -17,8 +17,44 @@ import io.ktor.http.*
 import io.ktor.serialization.kotlinx.json.*
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import kotlinx.serialization.KSerializer
 import kotlinx.serialization.Serializable
+import kotlinx.serialization.descriptors.PrimitiveKind
+import kotlinx.serialization.descriptors.PrimitiveSerialDescriptor
+import kotlinx.serialization.descriptors.SerialDescriptor
+import kotlinx.serialization.encoding.Decoder
+import kotlinx.serialization.encoding.Encoder
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonArray
+import kotlinx.serialization.json.JsonDecoder
+import kotlinx.serialization.json.JsonElement
+import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.jsonPrimitive
+import org.slf4j.LoggerFactory
+
+/**
+ * Custom serializer that accepts either a string or a JSON array and converts to a string.
+ * This handles LLM responses that sometimes return "effects": "[]" (string)
+ * and sometimes "effects": [] (actual array).
+ */
+object FlexibleEffectsSerializer : KSerializer<String> {
+    override val descriptor: SerialDescriptor = PrimitiveSerialDescriptor("FlexibleEffects", PrimitiveKind.STRING)
+
+    override fun serialize(encoder: Encoder, value: String) {
+        encoder.encodeString(value)
+    }
+
+    override fun deserialize(decoder: Decoder): String {
+        val jsonDecoder = decoder as? JsonDecoder
+            ?: return decoder.decodeString()
+
+        return when (val element = jsonDecoder.decodeJsonElement()) {
+            is JsonPrimitive -> element.content
+            is JsonArray -> element.toString()
+            else -> element.toString()
+        }
+    }
+}
 
 @Serializable
 data class GeneratedClass(
@@ -40,6 +76,7 @@ data class GeneratedAbility(
     val cooldownRounds: Int = 0,
     val baseDamage: Int = 0,
     val durationRounds: Int = 0,
+    @Serializable(with = FlexibleEffectsSerializer::class)
     val effects: String = "[]"
 )
 
@@ -58,6 +95,8 @@ data class ClassMatchResult(
 )
 
 object ClassGenerationService {
+    private val log = LoggerFactory.getLogger(ClassGenerationService::class.java)
+
     private val client = HttpClient(CIO) {
         install(ContentNegotiation) {
             json(Json {
@@ -91,16 +130,20 @@ object ClassGenerationService {
         characterDescription: String,
         availableClasses: List<CharacterClass>? = null
     ): Result<ClassMatchResult> = withContext(Dispatchers.IO) {
+        log.info("matchToExistingClass: Starting class matching for description: '${characterDescription.take(100)}...'")
         runCatching {
             val classes = availableClasses ?: CharacterClassRepository.findPublic()
+            log.info("matchToExistingClass: Found ${classes.size} public classes to match against")
 
             if (classes.isEmpty()) {
+                log.error("matchToExistingClass: No classes available to match against")
                 throw IllegalStateException("No classes available to match against")
             }
 
             val classesInfo = classes.joinToString("\n") { cls ->
                 "- ID: ${cls.id}, Name: ${cls.name}, Type: ${if (cls.isSpellcaster) "Spellcaster" else "Martial"}, Description: ${cls.description.take(100)}"
             }
+            log.debug("matchToExistingClass: Available classes:\n$classesInfo")
 
             val prompt = """
 You are a fantasy RPG class matching system. Given a character description, match it to the most appropriate class from the available options.
@@ -121,8 +164,15 @@ Respond with valid JSON only in this exact format:
 {"matchedClassId": "the-class-id", "matchedClassName": "Class Name", "confidence": 0.85, "reasoning": "Brief explanation of why this class fits"}
             """.trimIndent()
 
+            log.info("matchToExistingClass: Calling LLM for class matching...")
             val response = callLlm(prompt)
-            json.decodeFromString<ClassMatchResult>(response)
+            log.info("matchToExistingClass: LLM response received (${response.length} chars): ${response.take(200)}")
+
+            val result = json.decodeFromString<ClassMatchResult>(response)
+            log.info("matchToExistingClass: Successfully matched to class '${result.matchedClassName}' (id=${result.matchedClassId}) with confidence ${result.confidence}")
+            result
+        }.onFailure { e ->
+            log.error("matchToExistingClass: Failed to match class - ${e::class.simpleName}: ${e.message}", e)
         }
     }
 
@@ -134,8 +184,13 @@ Respond with valid JSON only in this exact format:
         createdByUserId: String? = null,
         isPublic: Boolean = false
     ): Result<Pair<CharacterClass, List<Ability>>> = withContext(Dispatchers.IO) {
+        log.info("generateNewClass: Starting class generation for user $createdByUserId")
+        log.info("generateNewClass: Character description: '${characterDescription.take(150)}...'")
+        log.info("generateNewClass: isPublic=$isPublic")
+
         runCatching {
             // Step 1: Generate the base class
+            log.info("generateNewClass: Step 1 - Generating base class definition...")
             val classPrompt = """
 You are a fantasy RPG class designer. Create a unique character class based on this description:
 
@@ -155,13 +210,23 @@ Valid primaryAttribute values: strength, dexterity, constitution, intelligence, 
 Valid hitDie values: 6, 8, 10, 12
             """.trimIndent()
 
+            log.info("generateNewClass: Calling LLM for class definition...")
             val classResponse = callLlm(classPrompt)
+            log.info("generateNewClass: LLM class response received (${classResponse.length} chars)")
+            log.debug("generateNewClass: Raw class response: $classResponse")
+
             val classJson = extractJsonObject(classResponse)
+            log.info("generateNewClass: Extracted JSON object (${classJson.length} chars): ${classJson.take(300)}")
+
             val generatedClass = try {
                 json.decodeFromString<GeneratedClass>(classJson)
             } catch (e: Exception) {
+                log.error("generateNewClass: Failed to parse class JSON - ${e::class.simpleName}: ${e.message}")
+                log.error("generateNewClass: Attempted to parse: $classJson")
                 throw IllegalArgumentException("Failed to parse class from LLM response: ${classJson.take(200)}. Error: ${e.message}")
             }
+
+            log.info("generateNewClass: Successfully parsed class '${generatedClass.name}' - isSpellcaster=${generatedClass.isSpellcaster}, hitDie=${generatedClass.hitDie}, primaryAttribute=${generatedClass.primaryAttribute}")
 
             // Create the CharacterClass
             val characterClass = CharacterClass(
@@ -174,20 +239,32 @@ Valid hitDie values: 6, 8, 10, 12
                 isPublic = isPublic,
                 createdByUserId = createdByUserId
             )
+            log.info("generateNewClass: Created CharacterClass object with id=${characterClass.id}")
 
             // Step 2: Generate abilities for this class
+            log.info("generateNewClass: Step 2 - Generating abilities for class '${characterClass.name}'...")
             val abilities = generateAbilitiesForClass(characterClass, characterDescription)
+            log.info("generateNewClass: Generated ${abilities.size} abilities")
 
             // Step 3: Validate and rebalance if needed
             val totalCost = abilities.sumOf { it.powerCost }
+            log.info("generateNewClass: Step 3 - Validating power budget. Total cost: $totalCost, Budget: $STANDARD_POWER_BUDGET")
+
             val balancedAbilities = if (totalCost > STANDARD_POWER_BUDGET * 1.2) {
-                // Over budget - request rebalancing
+                log.info("generateNewClass: Over budget by ${totalCost - STANDARD_POWER_BUDGET} points, rebalancing...")
                 rebalanceAbilities(abilities, STANDARD_POWER_BUDGET)
             } else {
+                log.info("generateNewClass: Within budget, no rebalancing needed")
                 abilities
             }
 
+            val finalCost = balancedAbilities.sumOf { it.powerCost }
+            log.info("generateNewClass: Final power cost: $finalCost")
+            log.info("generateNewClass: Class generation complete - '${characterClass.name}' with ${balancedAbilities.size} abilities")
+
             characterClass to balancedAbilities
+        }.onFailure { e ->
+            log.error("generateNewClass: Failed to generate class for user $createdByUserId - ${e::class.simpleName}: ${e.message}", e)
         }
     }
 
@@ -198,7 +275,9 @@ Valid hitDie values: 6, 8, 10, 12
         characterClass: CharacterClass,
         originalDescription: String
     ): List<Ability> {
+        log.info("generateAbilitiesForClass: Generating abilities for class '${characterClass.name}' (id=${characterClass.id})")
         val abilityType = if (characterClass.isSpellcaster) "spell" else "combat"
+        log.debug("generateAbilitiesForClass: Default ability type will be '$abilityType'")
 
         val prompt = """
 You are a fantasy RPG ability designer. Create 10 unique, balanced abilities for this class:
@@ -235,24 +314,35 @@ Valid targetType: self, single_enemy, single_ally, area, all_enemies, all_allies
 Valid cooldownType: none, short, medium, long
         """.trimIndent()
 
+        log.info("generateAbilitiesForClass: Calling LLM for ability generation...")
         val response = callLlm(prompt)
+        log.info("generateAbilitiesForClass: LLM ability response received (${response.length} chars)")
+        log.debug("generateAbilitiesForClass: Raw abilities response: ${response.take(1000)}")
 
         // Parse abilities
         val generatedAbilities = try {
+            log.debug("generateAbilitiesForClass: Attempting direct JSON array parse...")
             json.decodeFromString<List<GeneratedAbility>>(response)
         } catch (e: Exception) {
+            log.warn("generateAbilitiesForClass: Direct parse failed (${e::class.simpleName}: ${e.message}), trying regex extraction...")
             // Try to extract JSON array from response
             val arrayMatch = Regex("""\[[\s\S]*\]""").find(response)
             if (arrayMatch != null) {
+                log.info("generateAbilitiesForClass: Found JSON array via regex, attempting parse...")
+                log.debug("generateAbilitiesForClass: Extracted array: ${arrayMatch.value.take(500)}")
                 json.decodeFromString<List<GeneratedAbility>>(arrayMatch.value)
             } else {
+                log.error("generateAbilitiesForClass: Could not find JSON array in response")
+                log.error("generateAbilitiesForClass: Response was: ${response.take(500)}")
                 throw IllegalArgumentException("Could not parse abilities from LLM response: ${response.take(500)}")
             }
         }
 
+        log.info("generateAbilitiesForClass: Successfully parsed ${generatedAbilities.size} abilities")
+
         // Convert to Ability objects with calculated power cost
-        return generatedAbilities.take(10).map { gen ->
-            Ability(
+        val abilities = generatedAbilities.take(10).map { gen ->
+            val ability = Ability(
                 name = gen.name,
                 description = gen.description,
                 classId = characterClass.id,
@@ -265,7 +355,12 @@ Valid cooldownType: none, short, medium, long
                 durationRounds = gen.durationRounds,
                 effects = gen.effects
             ).withCalculatedCost()
+            log.debug("generateAbilitiesForClass: Created ability '${ability.name}' with powerCost=${ability.powerCost}")
+            ability
         }
+
+        log.info("generateAbilitiesForClass: Returning ${abilities.size} abilities with total power cost ${abilities.sumOf { it.powerCost }}")
+        return abilities
     }
 
     /**
@@ -302,42 +397,54 @@ Valid cooldownType: none, short, medium, long
         characterClass: CharacterClass,
         abilities: List<Ability>
     ): Pair<CharacterClass, List<Ability>> = withContext(Dispatchers.IO) {
-        transaction {
-            // Insert class
-            CharacterClassTable.insert {
-                it[id] = characterClass.id
-                it[name] = characterClass.name
-                it[description] = characterClass.description
-                it[isSpellcaster] = characterClass.isSpellcaster
-                it[hitDie] = characterClass.hitDie
-                it[primaryAttribute] = characterClass.primaryAttribute
-                it[powerBudget] = characterClass.powerBudget
-                it[isPublic] = characterClass.isPublic
-                it[createdByUserId] = characterClass.createdByUserId
-            }
-
-            // Insert all abilities
-            val savedAbilities = abilities.map { ability ->
-                val abilityWithClassId = ability.copy(classId = characterClass.id)
-                AbilityTable.insert {
-                    it[id] = abilityWithClassId.id
-                    it[name] = abilityWithClassId.name
-                    it[description] = abilityWithClassId.description
-                    it[classId] = abilityWithClassId.classId
-                    it[abilityType] = abilityWithClassId.abilityType
-                    it[targetType] = abilityWithClassId.targetType
-                    it[range] = abilityWithClassId.range
-                    it[cooldownType] = abilityWithClassId.cooldownType
-                    it[cooldownRounds] = abilityWithClassId.cooldownRounds
-                    it[baseDamage] = abilityWithClassId.baseDamage
-                    it[durationRounds] = abilityWithClassId.durationRounds
-                    it[effects] = abilityWithClassId.effects
-                    it[powerCost] = abilityWithClassId.powerCost
+        log.info("saveGeneratedClass: Saving class '${characterClass.name}' (id=${characterClass.id}) with ${abilities.size} abilities")
+        try {
+            val result = transaction {
+                // Insert class
+                log.debug("saveGeneratedClass: Inserting class into database...")
+                CharacterClassTable.insert {
+                    it[id] = characterClass.id
+                    it[name] = characterClass.name
+                    it[description] = characterClass.description
+                    it[isSpellcaster] = characterClass.isSpellcaster
+                    it[hitDie] = characterClass.hitDie
+                    it[primaryAttribute] = characterClass.primaryAttribute
+                    it[powerBudget] = characterClass.powerBudget
+                    it[isPublic] = characterClass.isPublic
+                    it[createdByUserId] = characterClass.createdByUserId
                 }
-                abilityWithClassId
-            }
+                log.debug("saveGeneratedClass: Class inserted successfully")
 
-            characterClass to savedAbilities
+                // Insert all abilities
+                log.debug("saveGeneratedClass: Inserting ${abilities.size} abilities...")
+                val savedAbilities = abilities.mapIndexed { index, ability ->
+                    val abilityWithClassId = ability.copy(classId = characterClass.id)
+                    AbilityTable.insert {
+                        it[id] = abilityWithClassId.id
+                        it[name] = abilityWithClassId.name
+                        it[description] = abilityWithClassId.description
+                        it[classId] = abilityWithClassId.classId
+                        it[abilityType] = abilityWithClassId.abilityType
+                        it[targetType] = abilityWithClassId.targetType
+                        it[range] = abilityWithClassId.range
+                        it[cooldownType] = abilityWithClassId.cooldownType
+                        it[cooldownRounds] = abilityWithClassId.cooldownRounds
+                        it[baseDamage] = abilityWithClassId.baseDamage
+                        it[durationRounds] = abilityWithClassId.durationRounds
+                        it[effects] = abilityWithClassId.effects
+                        it[powerCost] = abilityWithClassId.powerCost
+                    }
+                    log.debug("saveGeneratedClass: Inserted ability ${index + 1}/${abilities.size}: '${abilityWithClassId.name}'")
+                    abilityWithClassId
+                }
+
+                characterClass to savedAbilities
+            }
+            log.info("saveGeneratedClass: Successfully saved class '${characterClass.name}' with ${abilities.size} abilities to database")
+            result
+        } catch (e: Exception) {
+            log.error("saveGeneratedClass: Failed to save class '${characterClass.name}' - ${e::class.simpleName}: ${e.message}", e)
+            throw e
         }
     }
 
@@ -417,6 +524,10 @@ Respond with valid JSON only in this exact format:
      * Call the LLM API and return raw response text
      */
     private suspend fun callLlm(prompt: String): String {
+        val url = "$llmApiUrl/api/generate"
+        log.info("callLlm: Sending request to $url using model '$llmModel'")
+        log.debug("callLlm: Prompt length: ${prompt.length} chars")
+
         val request = OllamaRequest(
             model = llmModel,
             prompt = prompt,
@@ -424,35 +535,67 @@ Respond with valid JSON only in this exact format:
             format = "json"
         )
 
-        val responseBody: String = client.post("$llmApiUrl/api/generate") {
-            contentType(ContentType.Application.Json)
-            setBody(request)
-        }.bodyAsText()
+        val startTime = System.currentTimeMillis()
+        val responseBody: String = try {
+            client.post(url) {
+                contentType(ContentType.Application.Json)
+                setBody(request)
+            }.bodyAsText()
+        } catch (e: Exception) {
+            val elapsed = System.currentTimeMillis() - startTime
+            log.error("callLlm: HTTP request failed after ${elapsed}ms - ${e::class.simpleName}: ${e.message}", e)
+            throw e
+        }
+
+        val elapsed = System.currentTimeMillis() - startTime
+        log.info("callLlm: Received response in ${elapsed}ms (${responseBody.length} chars)")
+        log.debug("callLlm: Raw response body: ${responseBody.take(500)}")
 
         // Parse NDJSON - concatenate all response fields
         val lines = responseBody.trim().split("\n")
+        log.debug("callLlm: Response has ${lines.size} NDJSON lines")
+
         val fullResponse = StringBuilder()
+        var linesParsed = 0
+        var linesSkipped = 0
         for (line in lines) {
             if (line.isNotBlank()) {
                 try {
                     val partialResponse: OllamaResponse = json.decodeFromString(line)
                     fullResponse.append(partialResponse.response)
+                    linesParsed++
                 } catch (e: Exception) {
-                    // Skip malformed lines
+                    log.warn("callLlm: Failed to parse NDJSON line: ${line.take(100)} - ${e.message}")
+                    linesSkipped++
                 }
             }
         }
 
-        return fullResponse.toString().trim()
+        log.info("callLlm: Parsed $linesParsed NDJSON lines, skipped $linesSkipped")
+        val result = fullResponse.toString().trim()
+        log.info("callLlm: Final response length: ${result.length} chars")
+        log.debug("callLlm: Final response content: ${result.take(300)}")
+
+        if (result.isEmpty()) {
+            log.error("callLlm: LLM returned empty response!")
+            log.error("callLlm: Raw body was: ${responseBody.take(500)}")
+        }
+
+        return result
     }
 
     /**
      * Check if the LLM service is available
      */
     suspend fun isAvailable(): Boolean = withContext(Dispatchers.IO) {
+        log.debug("isAvailable: Checking LLM availability at $llmApiUrl/api/tags")
         runCatching {
             val response = client.get("$llmApiUrl/api/tags")
-            response.status == HttpStatusCode.OK
+            val available = response.status == HttpStatusCode.OK
+            log.info("isAvailable: LLM service at $llmApiUrl is ${if (available) "AVAILABLE" else "NOT AVAILABLE"} (status=${response.status})")
+            available
+        }.onFailure { e ->
+            log.warn("isAvailable: Failed to check LLM availability - ${e::class.simpleName}: ${e.message}")
         }.getOrDefault(false)
     }
 }
