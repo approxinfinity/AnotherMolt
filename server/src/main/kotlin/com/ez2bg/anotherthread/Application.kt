@@ -1862,6 +1862,10 @@ fun Application.module() {
                 }
 
                 if (request.generateClass) {
+                    // Mark that class generation has started
+                    UserRepository.startClassGeneration(id)
+                    val userWithGenStatus = UserRepository.findById(id)!!
+
                     // For class generation, run async and return immediately
                     // The client will poll for the user's characterClassId
                     application.launch {
@@ -1876,17 +1880,20 @@ fun Application.module() {
                             val (newClass, abilities) = generateResult.getOrThrow()
                             val (savedClass, _) = ClassGenerationService.saveGeneratedClass(newClass, abilities)
 
+                            // updateCharacterClass also clears classGenerationStartedAt
                             UserRepository.updateCharacterClass(id, savedClass.id)
                             log.info("Class generation complete for user $id: ${savedClass.name}")
                         } catch (e: Exception) {
                             log.error("Failed to generate class for user $id: ${e.message}")
+                            // Clear generation status on failure
+                            UserRepository.clearClassGeneration(id)
                         }
                     }
 
                     // Return immediately - class is being generated
                     call.respond(AssignClassResponse(
                         success = true,
-                        user = existingUser.toResponse(),
+                        user = userWithGenStatus.toResponse(),
                         assignedClass = null,
                         message = "Generating your custom class... This may take a few minutes. The page will update when complete."
                     ))

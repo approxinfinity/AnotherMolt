@@ -1440,6 +1440,22 @@ fun UserProfileView(
     var assignedClass by remember { mutableStateOf<CharacterClassDto?>(null) }
     var characterClassId by remember(user.id) { mutableStateOf(user.characterClassId) }
 
+    // Class generation timeout (10 minutes in milliseconds)
+    val classGenerationTimeoutMs = 10 * 60 * 1000L
+
+    // Check on load if class generation is in progress (survives page reload)
+    LaunchedEffect(user.id) {
+        val startedAt = user.classGenerationStartedAt
+        if (startedAt != null && user.characterClassId == null) {
+            val elapsed = com.ez2bg.anotherthread.platform.currentTimeMillis() - startedAt
+            if (elapsed < classGenerationTimeoutMs) {
+                // Generation was in progress and hasn't timed out - resume polling
+                isClassGenerating = true
+                message = "Class generation in progress..."
+            }
+        }
+    }
+
     // Track if image generation is in progress
     val generatingEntities by BackgroundImageGenerationManager.generatingEntities.collectAsState()
     val isImageGenerating = user.id in generatingEntities
@@ -1460,23 +1476,31 @@ fun UserProfileView(
     // Poll for async class generation completion
     LaunchedEffect(isClassGenerating) {
         if (isClassGenerating && characterClassId == null) {
-            // Poll every 5 seconds until class is assigned or 10 minutes elapsed
+            // Poll every 5 seconds until class is assigned or generation status is cleared
             var attempts = 0
             val maxAttempts = 120 // 10 minutes at 5 second intervals
             while (isClassGenerating && characterClassId == null && attempts < maxAttempts) {
                 delay(5000) // 5 seconds
                 attempts++
-                // Fetch user to check if class was assigned
+                // Fetch user to check if class was assigned or generation failed
                 ApiClient.getUser(user.id).onSuccess { updatedUser ->
-                    if (updatedUser != null && updatedUser.characterClassId != null) {
-                        characterClassId = updatedUser.characterClassId
-                        onUserUpdated(updatedUser)
-                        message = "Class generated!"
+                    if (updatedUser != null) {
+                        if (updatedUser.characterClassId != null) {
+                            // Class generated successfully
+                            characterClassId = updatedUser.characterClassId
+                            onUserUpdated(updatedUser)
+                            message = "Class generated!"
+                            isClassGenerating = false
+                        } else if (updatedUser.classGenerationStartedAt == null) {
+                            // Generation was cleared (failed) without assigning a class
+                            message = "Class generation failed. Please try again."
+                            isClassGenerating = false
+                        }
                     }
                 }
             }
             if (attempts >= maxAttempts && characterClassId == null) {
-                message = "Class generation timed out. Please refresh the page."
+                message = "Class generation timed out. Please try again."
                 isClassGenerating = false
             }
         }

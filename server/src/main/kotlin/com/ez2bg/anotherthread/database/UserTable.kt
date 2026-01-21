@@ -12,6 +12,7 @@ object UserTable : Table("user") {
     val imageUrl = text("image_url").nullable()
     val currentLocationId = varchar("current_location_id", 36).nullable()
     val characterClassId = varchar("character_class_id", 36).nullable()
+    val classGenerationStartedAt = long("class_generation_started_at").nullable()
     val createdAt = long("created_at")
     val lastActiveAt = long("last_active_at")
 

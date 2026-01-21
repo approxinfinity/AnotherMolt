@@ -22,6 +22,7 @@ data class User(
     val imageUrl: String? = null,
     val currentLocationId: String? = null,
     val characterClassId: String? = null,
+    val classGenerationStartedAt: Long? = null,
     val createdAt: Long = System.currentTimeMillis(),
     val lastActiveAt: Long = System.currentTimeMillis()
 )
@@ -39,6 +40,7 @@ data class UserResponse(
     val imageUrl: String?,
     val currentLocationId: String?,
     val characterClassId: String?,
+    val classGenerationStartedAt: Long?,
     val createdAt: Long,
     val lastActiveAt: Long
 )
@@ -52,6 +54,7 @@ fun User.toResponse(): UserResponse = UserResponse(
     imageUrl = imageUrl,
     currentLocationId = currentLocationId,
     characterClassId = characterClassId,
+    classGenerationStartedAt = classGenerationStartedAt,
     createdAt = createdAt,
     lastActiveAt = lastActiveAt
 )
@@ -81,6 +84,7 @@ object UserRepository {
         imageUrl = this[UserTable.imageUrl],
         currentLocationId = this[UserTable.currentLocationId],
         characterClassId = this[UserTable.characterClassId],
+        classGenerationStartedAt = this[UserTable.classGenerationStartedAt],
         createdAt = this[UserTable.createdAt],
         lastActiveAt = this[UserTable.lastActiveAt]
     )
@@ -96,6 +100,7 @@ object UserRepository {
             it[imageUrl] = user.imageUrl
             it[currentLocationId] = user.currentLocationId
             it[characterClassId] = user.characterClassId
+            it[classGenerationStartedAt] = user.classGenerationStartedAt
             it[createdAt] = user.createdAt
             it[lastActiveAt] = user.lastActiveAt
         }
@@ -154,6 +159,21 @@ object UserRepository {
     fun updateCharacterClass(id: String, classId: String?): Boolean = transaction {
         UserTable.update({ UserTable.id eq id }) {
             it[characterClassId] = classId
+            it[classGenerationStartedAt] = null // Clear generation status when class is assigned
+            it[lastActiveAt] = System.currentTimeMillis()
+        } > 0
+    }
+
+    fun startClassGeneration(id: String): Boolean = transaction {
+        UserTable.update({ UserTable.id eq id }) {
+            it[classGenerationStartedAt] = System.currentTimeMillis()
+            it[lastActiveAt] = System.currentTimeMillis()
+        } > 0
+    }
+
+    fun clearClassGeneration(id: String): Boolean = transaction {
+        UserTable.update({ UserTable.id eq id }) {
+            it[classGenerationStartedAt] = null
             it[lastActiveAt] = System.currentTimeMillis()
         } > 0
     }
