@@ -2424,7 +2424,8 @@ fun LocationGraphView(
                     terrainOverridesMap = terrainOverridesMap,
                     onSettingsClick = { location ->
                         selectedLocationForSettings = location
-                    }
+                    },
+                    currentUser = currentUser
                 )
             }
         }
@@ -2698,7 +2699,8 @@ fun LocationGraph(
     modifier: Modifier = Modifier,
     isAdmin: Boolean = false,
     terrainOverridesMap: Map<String, TerrainOverridesDto> = emptyMap(),
-    onSettingsClick: (LocationDto) -> Unit = {}
+    onSettingsClick: (LocationDto) -> Unit = {},
+    currentUser: UserDto? = null
 ) {
     val gridResult = remember(locations) {
         calculateForceDirectedPositions(locations)
@@ -2712,6 +2714,13 @@ fun LocationGraph(
     LaunchedEffect(expandedLocationId) {
         val locationSuffix = expandedLocationId?.let { "&loc=$it" } ?: ""
         updateUrlWithCacheBuster("map$locationSuffix")
+    }
+
+    // Update user presence when viewing a location on the graph
+    LaunchedEffect(expandedLocationId, currentUser?.id) {
+        if (currentUser != null && expandedLocationId != null) {
+            ApiClient.updateUserLocation(currentUser.id, expandedLocationId)
+        }
     }
 
     // Pan offset state with animation support
