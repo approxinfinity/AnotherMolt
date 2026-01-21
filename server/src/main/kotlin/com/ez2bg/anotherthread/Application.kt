@@ -64,6 +64,31 @@ data class ValidateExitResponse(
     val targetIsConnected: Boolean  // True if target has exits connecting it to a coordinate system
 )
 
+/**
+ * Data integrity validation issue.
+ */
+@Serializable
+data class IntegrityIssue(
+    val type: String,           // EXIT_TOO_FAR, DIRECTION_MISMATCH, MISSING_TARGET, DUPLICATE_COORDS, ORPHANED
+    val severity: String,       // ERROR, WARNING
+    val locationId: String,
+    val locationName: String,
+    val message: String,
+    val relatedLocationId: String? = null,
+    val relatedLocationName: String? = null
+)
+
+/**
+ * Response for data integrity check endpoint.
+ */
+@Serializable
+data class DataIntegrityResponse(
+    val success: Boolean,
+    val totalLocations: Int,
+    val issuesFound: Int,
+    val issues: List<IntegrityIssue>
+)
+
 @Serializable
 data class CreateLocationRequest(
     val name: String,
@@ -2247,6 +2272,145 @@ fun Application.module() {
                         """{"success":false,"message":"Delete failed: ${e.message?.replace("\"", "\\\"")}"}""",
                         ContentType.Application.Json,
                         HttpStatusCode.InternalServerError
+                    )
+                }
+            }
+
+            // Data integrity check
+            get("/data-integrity") {
+                try {
+                    val allLocations = LocationRepository.findAll()
+                    val issues = mutableListOf<IntegrityIssue>()
+                    val locationMap = allLocations.associateBy { it.id }
+
+                    // Check for duplicate coordinates
+                    val coordMap = mutableMapOf<Triple<Int, Int, Int>, MutableList<Location>>()
+                    allLocations.forEach { loc ->
+                        if (loc.gridX != null && loc.gridY != null) {
+                            val coord = Triple(loc.gridX, loc.gridY, loc.gridZ ?: 0)
+                            coordMap.getOrPut(coord) { mutableListOf() }.add(loc)
+                        }
+                    }
+                    coordMap.filter { it.value.size > 1 }.forEach { (coord, locs) ->
+                        locs.forEach { loc ->
+                            val otherNames = locs.filter { it.id != loc.id }.map { it.name }
+                            issues.add(IntegrityIssue(
+                                type = "DUPLICATE_COORDS",
+                                severity = "ERROR",
+                                locationId = loc.id,
+                                locationName = loc.name,
+                                message = "Shares coordinates (${coord.first}, ${coord.second}, ${coord.third}) with: ${otherNames.joinToString(", ")}"
+                            ))
+                        }
+                    }
+
+                    // Check each location's exits
+                    for (location in allLocations) {
+                        for (exit in location.exits) {
+                            val target = locationMap[exit.locationId]
+
+                            // Missing target
+                            if (target == null) {
+                                issues.add(IntegrityIssue(
+                                    type = "MISSING_TARGET",
+                                    severity = "ERROR",
+                                    locationId = location.id,
+                                    locationName = location.name,
+                                    message = "Exit ${exit.direction} points to non-existent location ID: ${exit.locationId.take(8)}..."
+                                ))
+                                continue
+                            }
+
+                            // Both have coordinates - validate distance and direction
+                            if (location.gridX != null && location.gridY != null &&
+                                target.gridX != null && target.gridY != null) {
+
+                                val dx = target.gridX - location.gridX
+                                val dy = target.gridY - location.gridY
+                                val (expectedDx, expectedDy) = getDirectionOffset(exit.direction)
+
+                                if (dx != expectedDx || dy != expectedDy) {
+                                    val distance = maxOf(kotlin.math.abs(dx), kotlin.math.abs(dy))
+                                    if (distance > 1) {
+                                        issues.add(IntegrityIssue(
+                                            type = "EXIT_TOO_FAR",
+                                            severity = "ERROR",
+                                            locationId = location.id,
+                                            locationName = location.name,
+                                            message = "Exit ${exit.direction} to '${target.name}' is $distance tiles away (should be 1)",
+                                            relatedLocationId = target.id,
+                                            relatedLocationName = target.name
+                                        ))
+                                    } else if (exit.direction != ExitDirection.UNKNOWN) {
+                                        issues.add(IntegrityIssue(
+                                            type = "DIRECTION_MISMATCH",
+                                            severity = "WARNING",
+                                            locationId = location.id,
+                                            locationName = location.name,
+                                            message = "Exit marked ${exit.direction} but target '${target.name}' is at offset ($dx, $dy)",
+                                            relatedLocationId = target.id,
+                                            relatedLocationName = target.name
+                                        ))
+                                    }
+                                }
+
+                                // Check bidirectional direction consistency (only for two-way exits)
+                                val reverseExit = target.exits.find { it.locationId == location.id }
+                                if (reverseExit != null &&
+                                    exit.direction != ExitDirection.UNKNOWN &&
+                                    reverseExit.direction != ExitDirection.UNKNOWN) {
+                                    val expectedOpposite = getOppositeDirection(exit.direction)
+                                    if (reverseExit.direction != expectedOpposite) {
+                                        // Only report once (from the alphabetically first location)
+                                        if (location.name < target.name) {
+                                            issues.add(IntegrityIssue(
+                                                type = "BIDIRECTIONAL_MISMATCH",
+                                                severity = "WARNING",
+                                                locationId = location.id,
+                                                locationName = location.name,
+                                                message = "Exit ${exit.direction} to '${target.name}', but return is ${reverseExit.direction} (expected $expectedOpposite)",
+                                                relatedLocationId = target.id,
+                                                relatedLocationName = target.name
+                                            ))
+                                        }
+                                    }
+                                }
+                            }
+                        }
+
+                        // Check for orphaned locations (has coords but no exits and no incoming)
+                        if (location.gridX != null) {
+                            val hasExits = location.exits.isNotEmpty()
+                            val hasIncoming = allLocations.any { other ->
+                                other.exits.any { it.locationId == location.id }
+                            }
+                            if (!hasExits && !hasIncoming) {
+                                issues.add(IntegrityIssue(
+                                    type = "ORPHANED",
+                                    severity = "WARNING",
+                                    locationId = location.id,
+                                    locationName = location.name,
+                                    message = "Location has coordinates but no exits to or from it"
+                                ))
+                            }
+                        }
+                    }
+
+                    call.respond(DataIntegrityResponse(
+                        success = true,
+                        totalLocations = allLocations.size,
+                        issuesFound = issues.size,
+                        issues = issues.sortedWith(compareBy({ it.severity }, { it.type }, { it.locationName }))
+                    ))
+                } catch (e: Exception) {
+                    call.respond(
+                        HttpStatusCode.InternalServerError,
+                        DataIntegrityResponse(
+                            success = false,
+                            totalLocations = 0,
+                            issuesFound = 0,
+                            issues = emptyList()
+                        )
                     )
                 }
             }

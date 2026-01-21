@@ -248,6 +248,26 @@ data class AuditLogDto(
     val timestamp: Long
 )
 
+// Data integrity DTOs
+@Serializable
+data class IntegrityIssueDto(
+    val type: String,
+    val severity: String,
+    val locationId: String,
+    val locationName: String,
+    val message: String,
+    val relatedLocationId: String? = null,
+    val relatedLocationName: String? = null
+)
+
+@Serializable
+data class DataIntegrityResponseDto(
+    val success: Boolean,
+    val totalLocations: Int,
+    val issuesFound: Int,
+    val issues: List<IntegrityIssueDto>
+)
+
 // Terrain override DTOs
 @Serializable
 data class ForestParamsDto(
@@ -664,6 +684,11 @@ object ApiClient {
         client.get("$baseUrl/audit-logs/by-user/$userId") {
             parameter("limit", limit)
         }.body()
+    }
+
+    // Data integrity check
+    suspend fun getDataIntegrity(): Result<DataIntegrityResponseDto> = runCatching {
+        client.get("$baseUrl/admin/database/data-integrity").body()
     }
 
     // Terrain override methods
