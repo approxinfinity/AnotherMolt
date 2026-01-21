@@ -2,9 +2,13 @@ package com.ez2bg.anotherthread
 
 import com.ez2bg.anotherthread.database.Ability
 import com.ez2bg.anotherthread.database.AbilityRepository
+import com.ez2bg.anotherthread.database.AbilityTable
 import com.ez2bg.anotherthread.database.CharacterClass
 import com.ez2bg.anotherthread.database.CharacterClassRepository
+import com.ez2bg.anotherthread.database.CharacterClassTable
 import io.ktor.client.*
+import org.jetbrains.exposed.sql.insert
+import org.jetbrains.exposed.sql.transactions.transaction
 import io.ktor.client.engine.cio.*
 import io.ktor.client.plugins.contentnegotiation.*
 import io.ktor.client.request.*
@@ -291,17 +295,50 @@ Valid cooldownType: none, short, medium, long
     }
 
     /**
-     * Save a generated class and its abilities to the database
+     * Save a generated class and its abilities to the database atomically.
+     * If any part fails, the entire operation is rolled back.
      */
     suspend fun saveGeneratedClass(
         characterClass: CharacterClass,
         abilities: List<Ability>
     ): Pair<CharacterClass, List<Ability>> = withContext(Dispatchers.IO) {
-        val savedClass = CharacterClassRepository.create(characterClass)
-        val savedAbilities = abilities.map { ability ->
-            AbilityRepository.create(ability.copy(classId = savedClass.id))
+        transaction {
+            // Insert class
+            CharacterClassTable.insert {
+                it[id] = characterClass.id
+                it[name] = characterClass.name
+                it[description] = characterClass.description
+                it[isSpellcaster] = characterClass.isSpellcaster
+                it[hitDie] = characterClass.hitDie
+                it[primaryAttribute] = characterClass.primaryAttribute
+                it[powerBudget] = characterClass.powerBudget
+                it[isPublic] = characterClass.isPublic
+                it[createdByUserId] = characterClass.createdByUserId
+            }
+
+            // Insert all abilities
+            val savedAbilities = abilities.map { ability ->
+                val abilityWithClassId = ability.copy(classId = characterClass.id)
+                AbilityTable.insert {
+                    it[id] = abilityWithClassId.id
+                    it[name] = abilityWithClassId.name
+                    it[description] = abilityWithClassId.description
+                    it[classId] = abilityWithClassId.classId
+                    it[abilityType] = abilityWithClassId.abilityType
+                    it[targetType] = abilityWithClassId.targetType
+                    it[range] = abilityWithClassId.range
+                    it[cooldownType] = abilityWithClassId.cooldownType
+                    it[cooldownRounds] = abilityWithClassId.cooldownRounds
+                    it[baseDamage] = abilityWithClassId.baseDamage
+                    it[durationRounds] = abilityWithClassId.durationRounds
+                    it[effects] = abilityWithClassId.effects
+                    it[powerCost] = abilityWithClassId.powerCost
+                }
+                abilityWithClassId
+            }
+
+            characterClass to savedAbilities
         }
-        savedClass to savedAbilities
     }
 
     /**
