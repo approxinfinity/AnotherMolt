@@ -75,6 +75,7 @@ import androidx.compose.ui.graphics.StrokeJoin
 import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.graphics.TransformOrigin
 import androidx.compose.ui.input.pointer.PointerEventType
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
@@ -218,6 +219,97 @@ val SwordIcon: ImageVector by lazy {
             lineTo(5.5f, 19.5f)
             lineTo(8.5f, 16.5f)
             lineTo(7.5f, 15.5f)
+            close()
+        }
+    }.build()
+}
+
+// Custom walking wizard icon for Exploration Mode
+val ExplorerIcon: ImageVector by lazy {
+    ImageVector.Builder(
+        name = "Explorer",
+        defaultWidth = 24.dp,
+        defaultHeight = 24.dp,
+        viewportWidth = 24f,
+        viewportHeight = 24f
+    ).apply {
+        // Wizard hat (pointed)
+        path(
+            fill = SolidColor(Color.Black),
+            pathFillType = PathFillType.NonZero
+        ) {
+            moveTo(12f, 1f)
+            lineTo(8f, 7f)
+            lineTo(16f, 7f)
+            close()
+        }
+        // Head (diamond approximating circle)
+        path(
+            fill = SolidColor(Color.Black),
+            pathFillType = PathFillType.NonZero
+        ) {
+            moveTo(12f, 7f)
+            lineTo(10f, 9f)
+            lineTo(12f, 11f)
+            lineTo(14f, 9f)
+            close()
+        }
+        // Body/robe
+        path(
+            fill = SolidColor(Color.Black),
+            pathFillType = PathFillType.NonZero
+        ) {
+            moveTo(12f, 11f)
+            lineTo(8f, 20f)
+            lineTo(10.5f, 20f)
+            lineTo(11.5f, 16f)
+            lineTo(12.5f, 16f)
+            lineTo(13.5f, 20f)
+            lineTo(16f, 20f)
+            close()
+        }
+        // Staff
+        path(
+            fill = SolidColor(Color.Black),
+            pathFillType = PathFillType.NonZero
+        ) {
+            moveTo(17.5f, 4f)
+            lineTo(18.5f, 4f)
+            lineTo(18.5f, 22f)
+            lineTo(17.5f, 22f)
+            close()
+        }
+        // Staff orb (diamond approximating circle)
+        path(
+            fill = SolidColor(Color.Black),
+            pathFillType = PathFillType.NonZero
+        ) {
+            moveTo(18f, 2f)
+            lineTo(16.5f, 4f)
+            lineTo(18f, 6f)
+            lineTo(19.5f, 4f)
+            close()
+        }
+        // Walking leg forward
+        path(
+            fill = SolidColor(Color.Black),
+            pathFillType = PathFillType.NonZero
+        ) {
+            moveTo(9.5f, 20f)
+            lineTo(10.5f, 20f)
+            lineTo(7.5f, 23f)
+            lineTo(6.5f, 23f)
+            close()
+        }
+        // Walking leg back
+        path(
+            fill = SolidColor(Color.Black),
+            pathFillType = PathFillType.NonZero
+        ) {
+            moveTo(13.5f, 20f)
+            lineTo(14.5f, 20f)
+            lineTo(17.5f, 23f)
+            lineTo(16.5f, 23f)
             close()
         }
     }.build()
@@ -509,15 +601,15 @@ sealed class ViewState {
     data class UserDetail(val userId: String) : ViewState()  // View other user's profile (read-only for non-admins)
     data class LocationGraph(val refreshKey: Long = nextRefreshKey()) : ViewState()
     data object LocationCreate : ViewState()
-    data class LocationEdit(val location: LocationDto) : ViewState()
+    data class LocationEdit(val location: LocationDto, val isExplorationMode: Boolean = false) : ViewState()
     data object CreatureList : ViewState()
     data object CreatureCreate : ViewState()
     data class CreatureEdit(val creature: CreatureDto) : ViewState()
-    data class CreatureDetail(val id: String) : ViewState()
+    data class CreatureDetail(val id: String, val isExplorationMode: Boolean = false) : ViewState()
     data object ItemList : ViewState()
     data object ItemCreate : ViewState()
     data class ItemEdit(val item: ItemDto) : ViewState()
-    data class ItemDetail(val id: String) : ViewState()
+    data class ItemDetail(val id: String, val isExplorationMode: Boolean = false) : ViewState()
     data object AdminPanel : ViewState()
     data object AuditLogs : ViewState()
 }
@@ -741,6 +833,9 @@ fun AdminScreen() {
         println("DEBUG: refreshLocationGraph() called, new key: $locationGraphRefreshKey")
     }
 
+    // Exploration mode state - when ON, map is hidden and navigation is non-dismissable
+    var isExplorationMode by remember { mutableStateOf(false) }
+
     // Set user context for audit logging when user changes
     LaunchedEffect(currentUser) {
         if (currentUser != null) {
@@ -869,14 +964,16 @@ fun AdminScreen() {
                 LocationGraphView(
                     refreshKey = locationGraphRefreshKey,
                     onAddClick = { viewState = ViewState.LocationCreate },
-                    onLocationClick = { location -> viewState = ViewState.LocationEdit(location) },
+                    onLocationClick = { location -> viewState = ViewState.LocationEdit(location, isExplorationMode) },
                     isAuthenticated = currentUser != null,
                     isAdmin = isAdmin,
                     currentUser = currentUser,
                     onLoginClick = {
                         selectedTab = AdminTab.USER
                         viewState = ViewState.UserAuth
-                    }
+                    },
+                    isExplorationMode = isExplorationMode,
+                    onExplorationModeChange = { isExplorationMode = it }
                 )
             }
             is ViewState.LocationCreate -> LocationForm(
@@ -906,13 +1003,13 @@ fun AdminScreen() {
                 onSaved = { refreshLocationGraph(); viewState = ViewState.LocationGraph() },
                 onNavigateToItem = { id ->
                     selectedTab = AdminTab.ITEM
-                    viewState = ViewState.ItemDetail(id)
+                    viewState = ViewState.ItemDetail(id, state.isExplorationMode)
                 },
                 onNavigateToCreature = { id ->
                     selectedTab = AdminTab.CREATURE
-                    viewState = ViewState.CreatureDetail(id)
+                    viewState = ViewState.CreatureDetail(id, state.isExplorationMode)
                 },
-                onNavigateToLocation = { location -> viewState = ViewState.LocationEdit(location) },
+                onNavigateToLocation = { location -> viewState = ViewState.LocationEdit(location, state.isExplorationMode) },
                 onNavigateToUser = { userId ->
                     selectedTab = AdminTab.USER
                     viewState = ViewState.UserDetail(userId)
@@ -920,9 +1017,10 @@ fun AdminScreen() {
                 currentUser = currentUser,
                 isAdmin = isAdmin,
                 onLocationUpdated = { updatedLocation ->
-                    viewState = ViewState.LocationEdit(updatedLocation)
+                    viewState = ViewState.LocationEdit(updatedLocation, state.isExplorationMode)
                 },
-                onDeleted = { refreshLocationGraph(); viewState = ViewState.LocationGraph() }
+                onDeleted = { refreshLocationGraph(); viewState = ViewState.LocationGraph() },
+                isExplorationMode = state.isExplorationMode
             )
             is ViewState.CreatureList -> CreatureListView(
                 onCreatureClick = { creature ->
@@ -974,9 +1072,10 @@ fun AdminScreen() {
                 },
                 onNavigateToItem = { id ->
                     selectedTab = AdminTab.ITEM
-                    viewState = ViewState.ItemDetail(id)
+                    viewState = ViewState.ItemDetail(id, state.isExplorationMode)
                 },
-                isAdmin = isAdmin
+                isAdmin = isAdmin,
+                isExplorationMode = state.isExplorationMode
             )
             is ViewState.ItemList -> ItemListView(
                 onItemClick = { item ->
@@ -1018,7 +1117,8 @@ fun AdminScreen() {
                     selectedTab = AdminTab.ITEM
                     viewState = ViewState.ItemCreate
                 },
-                isAdmin = isAdmin
+                isAdmin = isAdmin,
+                isExplorationMode = state.isExplorationMode
             )
             is ViewState.AdminPanel -> AdminPanelView(
                 onViewAuditLogs = { viewState = ViewState.AuditLogs }
@@ -2308,7 +2408,9 @@ fun LocationGraphView(
     isAuthenticated: Boolean,
     isAdmin: Boolean = false,
     currentUser: UserDto? = null,
-    onLoginClick: () -> Unit = {}
+    onLoginClick: () -> Unit = {},
+    isExplorationMode: Boolean = false,
+    onExplorationModeChange: (Boolean) -> Unit = {}
 ) {
     var locations by remember(refreshKey) { mutableStateOf<List<LocationDto>>(emptyList()) }
     var isLoading by remember(refreshKey) { mutableStateOf(true) }
@@ -2425,39 +2527,44 @@ fun LocationGraphView(
                     onSettingsClick = { location ->
                         selectedLocationForSettings = location
                     },
-                    currentUser = currentUser
+                    currentUser = currentUser,
+                    isExplorationMode = isExplorationMode,
+                    onExplorationModeChange = onExplorationModeChange
                 )
             }
         }
 
-        if (isAuthenticated) {
-            FloatingActionButton(
-                onClick = onAddClick,
-                modifier = Modifier
-                    .align(Alignment.BottomEnd)
-                    .padding(16.dp),
-                shape = CircleShape
-            ) {
-                Icon(Icons.Filled.Add, contentDescription = "Add Location")
-            }
-        } else {
-            // "Login to Create" message for unauthenticated users - clickable to navigate to auth
-            Box(
-                modifier = Modifier
-                    .align(Alignment.BottomCenter)
-                    .padding(bottom = 24.dp)
-                    .background(
-                        color = MaterialTheme.colorScheme.surface.copy(alpha = 0.85f),
-                        shape = RoundedCornerShape(8.dp)
+        // Hide FAB and login prompt in exploration mode
+        if (!isExplorationMode) {
+            if (isAuthenticated) {
+                FloatingActionButton(
+                    onClick = onAddClick,
+                    modifier = Modifier
+                        .align(Alignment.BottomEnd)
+                        .padding(16.dp),
+                    shape = CircleShape
+                ) {
+                    Icon(Icons.Filled.Add, contentDescription = "Add Location")
+                }
+            } else {
+                // "Adventure awaits!" message for unauthenticated users - clickable to navigate to auth
+                Box(
+                    modifier = Modifier
+                        .align(Alignment.BottomCenter)
+                        .padding(bottom = 24.dp)
+                        .background(
+                            color = MaterialTheme.colorScheme.surface.copy(alpha = 0.85f),
+                            shape = RoundedCornerShape(8.dp)
+                        )
+                        .clickable(onClick = onLoginClick)
+                        .padding(horizontal = 16.dp, vertical = 8.dp)
+                ) {
+                    Text(
+                        text = "Adventure awaits!",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.primary
                     )
-                    .clickable(onClick = onLoginClick)
-                    .padding(horizontal = 16.dp, vertical = 8.dp)
-            ) {
-                Text(
-                    text = "Login to Create",
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.primary
-                )
+                }
             }
         }
     }
@@ -2700,7 +2807,9 @@ fun LocationGraph(
     isAdmin: Boolean = false,
     terrainOverridesMap: Map<String, TerrainOverridesDto> = emptyMap(),
     onSettingsClick: (LocationDto) -> Unit = {},
-    currentUser: UserDto? = null
+    currentUser: UserDto? = null,
+    isExplorationMode: Boolean = false,
+    onExplorationModeChange: (Boolean) -> Unit = {}
 ) {
     val gridResult = remember(locations) {
         calculateForceDirectedPositions(locations)
@@ -2709,6 +2818,36 @@ fun LocationGraph(
 
     // Track which location is expanded (null = none expanded)
     var expandedLocationId by remember { mutableStateOf<String?>(null) }
+
+    // Auto-select location when entering exploration mode based on user's presence
+    LaunchedEffect(isExplorationMode, currentUser?.id, locations) {
+        if (isExplorationMode && expandedLocationId == null && locations.isNotEmpty()) {
+            // Try to use user's current location from presence data
+            val userLocationId = currentUser?.currentLocationId
+            val targetLocation = if (userLocationId != null) {
+                locations.find { it.id == userLocationId }
+            } else {
+                null
+            }
+
+            if (targetLocation != null) {
+                expandedLocationId = targetLocation.id
+            } else {
+                // Fall back to location at 0,0,0 or first location with coordinates
+                val fallbackLocation = locations.find { it.gridX == 0 && it.gridY == 0 && (it.gridZ ?: 0) == 0 }
+                    ?: locations.firstOrNull { it.gridX != null && it.gridY != null }
+                    ?: locations.firstOrNull()
+
+                if (fallbackLocation != null) {
+                    expandedLocationId = fallbackLocation.id
+                    // Update user presence to this fallback location
+                    currentUser?.let { user ->
+                        ApiClient.updateUserLocation(user.id, fallbackLocation.id)
+                    }
+                }
+            }
+        }
+    }
 
     // Update URL with cache buster when a location is selected/deselected on the graph
     LaunchedEffect(expandedLocationId) {
@@ -2735,10 +2874,10 @@ fun LocationGraph(
     BoxWithConstraints(
         modifier = modifier
             .clipToBounds()
-            .pointerInput(expandedLocationId) {
+            .pointerInput(expandedLocationId, isExplorationMode) {
                 detectTransformGestures { centroid, pan, zoom, _ ->
-                    // Collapse any expanded thumbnail when panning/zooming
-                    if (expandedLocationId != null) {
+                    // Collapse any expanded thumbnail when panning/zooming (unless in exploration mode)
+                    if (expandedLocationId != null && !isExplorationMode) {
                         expandedLocationId = null
                     }
 
@@ -2836,6 +2975,13 @@ fun LocationGraph(
         // LAYER 1: Parchment background (fixed, doesn't pan)
         Canvas(modifier = Modifier.fillMaxSize()) {
             drawParchmentBackground(seed = locations.size)
+        }
+
+        // LAYER 1.5: Dark overlay when in exploration mode (obscures map features)
+        if (isExplorationMode) {
+            Canvas(modifier = Modifier.fillMaxSize()) {
+                drawRect(Color.Black.copy(alpha = 0.85f))
+            }
         }
 
         Box(
@@ -2985,17 +3131,19 @@ fun LocationGraph(
                 )
             }
 
-            Canvas(modifier = Modifier.fillMaxSize()) {
-                // Render locations
-                locations.forEach { location ->
-                    val pos = locationPositions[location.id] ?: return@forEach
-                    val screenPos = getLocationScreenPos(pos)
+            // Only render terrain tiles when NOT in exploration mode
+            if (!isExplorationMode) {
+                Canvas(modifier = Modifier.fillMaxSize()) {
+                    // Render locations
+                    locations.forEach { location ->
+                        val pos = locationPositions[location.id] ?: return@forEach
+                        val screenPos = getLocationScreenPos(pos)
 
-                    // Helper to get neighbor location ID by direction
-                    fun getNeighborId(vararg directions: ExitDirection): String? {
-                        for (dir in directions) {
-                            location.exits.find { it.direction == dir }?.let { return it.locationId }
-                        }
+                        // Helper to get neighbor location ID by direction
+                        fun getNeighborId(vararg directions: ExitDirection): String? {
+                            for (dir in directions) {
+                                location.exits.find { it.direction == dir }?.let { return it.locationId }
+                            }
                         return null
                     }
 
@@ -3035,7 +3183,12 @@ fun LocationGraph(
                     )
                 }
             }
+            } // End of terrain rendering conditional
 
+            // LAYER 2.5: Connection lines between exits
+            // In exploration mode: lines are shown in the minimap instead
+            // In normal mode: thin dotted lines
+            if (!isExplorationMode) {
             // LAYER 2.5: Connection lines between exits (thin, meandering, dotted orange lines)
             // The dots use: Modifier.offset(x = (pos.x * (width - boxSizePx) / 2.5f).dp, ...)
             // The value inside .dp is a raw number that becomes dp units.
@@ -3210,12 +3363,23 @@ fun LocationGraph(
             }
 
             Canvas(modifier = Modifier.fillMaxSize()) {
-                // Orange connection lines - match dot outline thickness (1.5dp) or slightly thinner
-                val connectionColor = Color(0xFFFF9800).copy(alpha = 0.25f)
-                val oneWayColor = Color(0xFFFF9800).copy(alpha = 0.35f)  // Slightly more visible for one-way
-                val strokeWidth = 1.2.dp.toPx()  // Slightly thinner than dot outline (1.5dp)
-                val dashLength = 4f
-                val gapLength = 6f
+                // Orange connection lines
+                // In exploration mode: thicker solid lines like the highlight circle
+                // In normal mode: thin dotted lines
+                val connectionColor = if (isExplorationMode) {
+                    Color(0xFFFF9800).copy(alpha = 0.6f)  // More visible in exploration mode
+                } else {
+                    Color(0xFFFF9800).copy(alpha = 0.25f)
+                }
+                val oneWayColor = if (isExplorationMode) {
+                    Color(0xFFFF9800).copy(alpha = 0.7f)
+                } else {
+                    Color(0xFFFF9800).copy(alpha = 0.35f)
+                }
+                // Exploration mode: thick like highlight circle (about 3dp), normal: thin (1.2dp)
+                val strokeWidth = if (isExplorationMode) 3.dp.toPx() else 1.2.dp.toPx()
+                val dashLength = if (isExplorationMode) 8f else 4f  // Longer dashes in exploration
+                val gapLength = if (isExplorationMode) 4f else 6f   // Smaller gaps in exploration
 
                 filteredConnectionLines.forEach { line ->
                     drawTerrainAwarePath(
@@ -3230,130 +3394,440 @@ fun LocationGraph(
                     )
                 }
             }
+            } // End of connection lines conditional (not shown in exploration mode)
 
             // LAYER 3: Location dots/thumbnails
-            locations.forEach { location ->
-                val pos = locationPositions[location.id] ?: return@forEach
-                val isExpanded = expandedLocationId == location.id
-                LocationNodeThumbnail(
-                    location = location,
-                    isExpanded = isExpanded,
-                    modifier = Modifier.offset(
-                        x = (pos.x * (width - boxSizePx) / 2.5f).dp,
-                        y = (pos.y * (height - boxSizePx) / 2.5f).dp
-                    ),
-                    isAdmin = isAdmin,
-                    onClick = {
-                        if (isExpanded) {
-                            // Already expanded, go to detail
-                            onLocationClick(location)
-                        } else {
-                            // Expand this thumbnail and collapse others
-                            expandedLocationId = location.id
-                            centerOnLocation(location)
-                        }
-                    },
-                    onSettingsClick = { onSettingsClick(location) },
-                    onExitClick = { targetLocation ->
-                        // Navigate to the target location: expand it and center the map
-                        expandedLocationId = targetLocation.id
-                        centerOnLocation(targetLocation)
-                    },
-                    onDotClick = {
-                        // Tapping the orange dot collapses the expanded view
-                        expandedLocationId = null
-                    },
-                    allLocations = locations
-                )
+            // In exploration mode: only render the expanded thumbnail (no collapsed dots)
+            // and the dots are not clickable
+            if (!isExplorationMode) {
+                // Normal mode: render all locations with their dots
+                locations.forEach { location ->
+                    val pos = locationPositions[location.id] ?: return@forEach
+                    val isExpanded = expandedLocationId == location.id
+                    LocationNodeThumbnail(
+                        location = location,
+                        isExpanded = isExpanded,
+                        modifier = Modifier.offset(
+                            x = (pos.x * (width - boxSizePx) / 2.5f).dp,
+                            y = (pos.y * (height - boxSizePx) / 2.5f).dp
+                        ),
+                        isAdmin = isAdmin,
+                        onClick = {
+                            if (isExpanded) {
+                                // Already expanded, go to detail
+                                onLocationClick(location)
+                            } else {
+                                // Expand this thumbnail and collapse others
+                                expandedLocationId = location.id
+                                centerOnLocation(location)
+                            }
+                        },
+                        onSettingsClick = { onSettingsClick(location) },
+                        onExitClick = { targetLocation ->
+                            // Navigate to the target location: expand it and center the map
+                            expandedLocationId = targetLocation.id
+                            centerOnLocation(targetLocation)
+                        },
+                        onDotClick = {
+                            // Tapping the orange dot collapses the expanded view
+                            expandedLocationId = null
+                        },
+                        allLocations = locations,
+                        isExplorationMode = false
+                    )
+                }
             }
 
             // Labels are only shown when location is expanded (tap to reveal)
         }
 
-        // Zoom controls overlay (top-right corner)
-        Column(
-            modifier = Modifier
-                .align(Alignment.TopEnd)
-                .padding(8.dp),
-            verticalArrangement = Arrangement.spacedBy(4.dp)
-        ) {
-            // Zoom in button
-            Box(
-                modifier = Modifier
-                    .size(36.dp)
-                    .background(Color.Black.copy(alpha = 0.6f), RoundedCornerShape(8.dp))
-                    .clickable {
-                        val newScale = (scale * 1.25f).coerceIn(minScale, maxScale)
-                        if (newScale != scale) {
-                            // Zoom toward center
-                            val centerX = width / 2
-                            val centerY = height / 2
-                            val scaleFactor = newScale / scale
-                            val newOffsetX = centerX - (centerX - offset.value.x) * scaleFactor
-                            val newOffsetY = centerY - (centerY - offset.value.y) * scaleFactor
-                            scale = newScale
-                            scope.launch { offset.snapTo(Offset(newOffsetX, newOffsetY)) }
-                        }
-                    },
-                contentAlignment = Alignment.Center
-            ) {
-                Text("+", color = Color.White, style = MaterialTheme.typography.titleMedium)
-            }
+        // Exploration mode view
+        if (isExplorationMode && expandedLocationId != null) {
+            val currentLocation = locations.find { it.id == expandedLocationId }
+            val currentPos = locationPositions[expandedLocationId]
 
-            // Zoom out button
-            Box(
-                modifier = Modifier
-                    .size(36.dp)
-                    .background(Color.Black.copy(alpha = 0.6f), RoundedCornerShape(8.dp))
-                    .clickable {
-                        val newScale = (scale * 0.8f).coerceIn(minScale, maxScale)
-                        if (newScale != scale) {
-                            // Zoom toward center
-                            val centerX = width / 2
-                            val centerY = height / 2
-                            val scaleFactor = newScale / scale
-                            val newOffsetX = centerX - (centerX - offset.value.x) * scaleFactor
-                            val newOffsetY = centerY - (centerY - offset.value.y) * scaleFactor
-                            scale = newScale
-                            scope.launch { offset.snapTo(Offset(newOffsetX, newOffsetY)) }
+            if (currentLocation != null) {
+                // 1. Centered 100x100 thumbnail - simple image at absolute center
+                Box(
+                    modifier = Modifier.fillMaxSize(),
+                    contentAlignment = Alignment.Center
+                ) {
+                    // Simple 100x100 box with location image or fallback
+                    Box(
+                        modifier = Modifier
+                            .size(100.dp)
+                            .clip(RoundedCornerShape(8.dp))
+                            .background(Color.Black.copy(alpha = 0.8f))
+                            .clickable { onLocationClick(currentLocation) }
+                    ) {
+                        if (currentLocation.imageUrl != null) {
+                            AsyncImage(
+                                model = "${AppConfig.api.baseUrl}${currentLocation.imageUrl}",
+                                contentDescription = currentLocation.name,
+                                modifier = Modifier.fillMaxSize(),
+                                contentScale = ContentScale.Crop
+                            )
+                        } else {
+                            // Fallback: show location name
+                            Box(
+                                modifier = Modifier.fillMaxSize(),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Text(
+                                    text = currentLocation.name,
+                                    color = Color.White,
+                                    fontSize = 12.sp,
+                                    textAlign = TextAlign.Center,
+                                    modifier = Modifier.padding(8.dp)
+                                )
+                            }
                         }
-                    },
-                contentAlignment = Alignment.Center
-            ) {
-                Text("-", color = Color.White, style = MaterialTheme.typography.titleMedium)
-            }
 
-            // Reset zoom/pan button
-            Box(
-                modifier = Modifier
-                    .size(36.dp)
-                    .background(Color.Black.copy(alpha = 0.6f), RoundedCornerShape(8.dp))
-                    .clickable {
-                        scale = 1f
-                        scope.launch { offset.animateTo(Offset.Zero, tween(300)) }
-                    },
-                contentAlignment = Alignment.Center
-            ) {
-                Icon(
-                    imageVector = Icons.Default.CenterFocusWeak,
-                    contentDescription = "Reset view",
-                    tint = Color.White,
-                    modifier = Modifier.size(20.dp)
-                )
+                        // Explorer icon overlay in top-right corner
+                        Box(
+                            modifier = Modifier
+                                .align(Alignment.TopEnd)
+                                .padding(4.dp)
+                                .size(24.dp)
+                                .background(Color(0xFF9C27B0).copy(alpha = 0.9f), CircleShape)
+                                .padding(4.dp)
+                        ) {
+                            Icon(
+                                imageVector = ExplorerIcon,
+                                contentDescription = "Explore",
+                                modifier = Modifier.fillMaxSize(),
+                                tint = Color.White
+                            )
+                        }
+                    }
+
+                    // Navigation arrows around the thumbnail (pushed farther out)
+                    // Check which exits exist and show arrows for them
+                    currentLocation.exits.forEach { exit ->
+                        val targetLocation = locations.find { it.id == exit.locationId }
+                        if (targetLocation != null) {
+                            val (offsetX, offsetY, icon) = when (exit.direction) {
+                                ExitDirection.NORTH -> Triple(0.dp, (-90).dp, Icons.Filled.ArrowUpward)
+                                ExitDirection.SOUTH -> Triple(0.dp, 90.dp, Icons.Filled.ArrowDownward)
+                                ExitDirection.EAST -> Triple(90.dp, 0.dp, Icons.AutoMirrored.Filled.ArrowForward)
+                                ExitDirection.WEST -> Triple((-90).dp, 0.dp, Icons.AutoMirrored.Filled.ArrowBack)
+                                ExitDirection.NORTHEAST -> Triple(65.dp, (-65).dp, Icons.Filled.NorthEast)
+                                ExitDirection.NORTHWEST -> Triple((-65).dp, (-65).dp, Icons.Filled.NorthWest)
+                                ExitDirection.SOUTHEAST -> Triple(65.dp, 65.dp, Icons.Filled.SouthEast)
+                                ExitDirection.SOUTHWEST -> Triple((-65).dp, 65.dp, Icons.Filled.SouthWest)
+                                else -> Triple(0.dp, 0.dp, Icons.Filled.ArrowUpward)
+                            }
+
+                            if (exit.direction != ExitDirection.UNKNOWN) {
+                                Box(
+                                    modifier = Modifier
+                                        .offset(x = offsetX, y = offsetY)
+                                        .size(32.dp)
+                                        .background(Color(0xFF1976D2), CircleShape)
+                                        .clickable {
+                                            expandedLocationId = targetLocation.id
+                                        },
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    Icon(
+                                        imageVector = icon,
+                                        contentDescription = "Go ${exit.direction.name}",
+                                        tint = Color.White,
+                                        modifier = Modifier.size(20.dp)
+                                    )
+                                }
+                            }
+                        }
+                    }
+
+                    // Location info below the thumbnail and arrows
+                    Column(
+                        modifier = Modifier
+                            .align(Alignment.BottomCenter)
+                            .offset(y = 140.dp)
+                            .width(280.dp)
+                            .background(Color.Black.copy(alpha = 0.7f), RoundedCornerShape(8.dp))
+                            .padding(12.dp),
+                        horizontalAlignment = Alignment.Start
+                    ) {
+                        // Location name
+                        Text(
+                            text = "Location",
+                            color = Color.Gray,
+                            fontSize = 10.sp
+                        )
+                        Text(
+                            text = currentLocation.name,
+                            color = Color.White,
+                            fontSize = 16.sp,
+                            fontWeight = FontWeight.Medium
+                        )
+
+                        Spacer(modifier = Modifier.height(8.dp))
+
+                        // Others (creatures)
+                        Text(
+                            text = "Others",
+                            color = Color.Gray,
+                            fontSize = 10.sp
+                        )
+                        Text(
+                            text = if (currentLocation.creatureIds.isEmpty()) "None" else "${currentLocation.creatureIds.size} present",
+                            color = Color.White,
+                            fontSize = 14.sp
+                        )
+
+                        Spacer(modifier = Modifier.height(8.dp))
+
+                        // Items
+                        Text(
+                            text = "Items",
+                            color = Color.Gray,
+                            fontSize = 10.sp
+                        )
+                        Text(
+                            text = if (currentLocation.itemIds.isEmpty()) "None" else "${currentLocation.itemIds.size} here",
+                            color = Color.White,
+                            fontSize = 14.sp
+                        )
+                    }
+                }
+
+                // 2. Minimap in top-left - just dots and connection lines, no terrain
+                if (currentPos != null) {
+                    val minimapSize = 140.dp
+                    // Grid spacing - how many dp per grid unit in the minimap
+                    val gridSpacing = 35.dp  // Each dot is 35dp apart in the minimap
+
+                    Box(
+                        modifier = Modifier
+                            .align(Alignment.TopStart)
+                            .padding(8.dp)
+                            .size(minimapSize)
+                            .clip(RoundedCornerShape(8.dp))
+                            .background(Color.Black.copy(alpha = 0.7f))
+                    ) {
+                        // Draw on a Canvas - dots and lines only
+                        Canvas(modifier = Modifier.fillMaxSize()) {
+                            val centerX = size.width / 2
+                            val centerY = size.height / 2
+                            val gridSpacingPx = gridSpacing.toPx()
+                            val dotRadius = 8.dp.toPx()
+                            val highlightRadius = 12.dp.toPx()
+                            val lineColor = Color(0xFFFF9800).copy(alpha = 0.7f)
+                            val lineWidth = 3.dp.toPx()
+
+                            // Current location grid coords
+                            val currentGridX = currentLocation.gridX ?: 0
+                            val currentGridY = currentLocation.gridY ?: 0
+
+                            // Draw connections first (so dots are on top)
+                            locations.forEach { location ->
+                                val locGridX = location.gridX ?: return@forEach
+                                val locGridY = location.gridY ?: return@forEach
+
+                                // Position relative to current location
+                                val relX = locGridX - currentGridX
+                                val relY = locGridY - currentGridY
+
+                                // Only draw if within ~2 grid units (visible in 3x3 area)
+                                if (kotlin.math.abs(relX) <= 2 && kotlin.math.abs(relY) <= 2) {
+                                    val fromX = centerX + relX * gridSpacingPx
+                                    val fromY = centerY + relY * gridSpacingPx
+
+                                    location.exits.forEach { exit ->
+                                        val targetLoc = locations.find { it.id == exit.locationId }
+                                        if (targetLoc != null) {
+                                            val targetGridX = targetLoc.gridX ?: return@forEach
+                                            val targetGridY = targetLoc.gridY ?: return@forEach
+                                            val targetRelX = targetGridX - currentGridX
+                                            val targetRelY = targetGridY - currentGridY
+
+                                            // Only draw if target is also visible
+                                            if (kotlin.math.abs(targetRelX) <= 2 && kotlin.math.abs(targetRelY) <= 2) {
+                                                val toX = centerX + targetRelX * gridSpacingPx
+                                                val toY = centerY + targetRelY * gridSpacingPx
+
+                                                drawLine(
+                                                    color = lineColor,
+                                                    start = Offset(fromX, fromY),
+                                                    end = Offset(toX, toY),
+                                                    strokeWidth = lineWidth
+                                                )
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+
+                            // Draw dots
+                            locations.forEach { location ->
+                                val locGridX = location.gridX ?: return@forEach
+                                val locGridY = location.gridY ?: return@forEach
+
+                                // Position relative to current location
+                                val relX = locGridX - currentGridX
+                                val relY = locGridY - currentGridY
+
+                                // Only draw if within ~2 grid units
+                                if (kotlin.math.abs(relX) <= 2 && kotlin.math.abs(relY) <= 2) {
+                                    val dotX = centerX + relX * gridSpacingPx
+                                    val dotY = centerY + relY * gridSpacingPx
+                                    val isCurrentLoc = location.id == expandedLocationId
+
+                                    // Highlight for current location
+                                    if (isCurrentLoc) {
+                                        drawCircle(
+                                            color = Color(0xFFFF9800),
+                                            radius = highlightRadius,
+                                            center = Offset(dotX, dotY),
+                                            style = Stroke(width = 3.dp.toPx())
+                                        )
+                                    }
+
+                                    // Dot fill
+                                    val terrainColor = getTerrainColor(location.desc, location.name)
+                                    drawCircle(
+                                        color = terrainColor,
+                                        radius = dotRadius,
+                                        center = Offset(dotX, dotY)
+                                    )
+
+                                    // Dot outline
+                                    drawCircle(
+                                        color = Color(0xFFFF9800).copy(alpha = 0.6f),
+                                        radius = dotRadius,
+                                        center = Offset(dotX, dotY),
+                                        style = Stroke(width = 1.5.dp.toPx())
+                                    )
+                                }
+                            }
+                        }
+                    }
+                }
             }
         }
 
-        // Zoom level indicator (bottom-right corner)
-        Text(
-            text = "${(scale * 100).toInt()}%",
-            modifier = Modifier
-                .align(Alignment.BottomEnd)
-                .padding(8.dp)
-                .background(Color.Black.copy(alpha = 0.5f), RoundedCornerShape(4.dp))
-                .padding(horizontal = 8.dp, vertical = 4.dp),
-            color = Color.White,
-            style = MaterialTheme.typography.labelSmall
-        )
+        // Exploration mode toggle (top-right corner) - only visible when signed in
+        if (currentUser != null) {
+            Row(
+                modifier = Modifier
+                    .align(Alignment.TopEnd)
+                    .padding(8.dp)
+                    .background(Color.Black.copy(alpha = 0.7f), RoundedCornerShape(8.dp))
+                    .padding(horizontal = 12.dp, vertical = 6.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                Text("map", color = Color.White, fontSize = 14.sp)
+                // Custom thin toggle switch
+                val isMapOn = !isExplorationMode
+                val trackColor = if (isMapOn) Color(0xFF2E7D32).copy(alpha = 0.6f) else Color.Gray.copy(alpha = 0.4f)
+                val thumbColor = if (isMapOn) Color(0xFF4CAF50) else Color.DarkGray
+                Box(
+                    modifier = Modifier
+                        .width(32.dp)
+                        .height(14.dp)
+                        .background(trackColor, RoundedCornerShape(7.dp))
+                        .clickable { onExplorationModeChange(!isExplorationMode) },
+                    contentAlignment = if (isMapOn) Alignment.CenterEnd else Alignment.CenterStart
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .padding(horizontal = 2.dp)
+                            .size(10.dp)
+                            .background(thumbColor, CircleShape)
+                    )
+                }
+            }
+        }
+
+        // Zoom controls overlay (top-right corner, below toggle) - hidden in exploration mode
+        if (!isExplorationMode) {
+            Column(
+                modifier = Modifier
+                    .align(Alignment.TopEnd)
+                    .padding(top = 48.dp, end = 8.dp),
+                verticalArrangement = Arrangement.spacedBy(4.dp)
+            ) {
+                // Zoom in button
+                Box(
+                    modifier = Modifier
+                        .size(36.dp)
+                        .background(Color.Black.copy(alpha = 0.6f), RoundedCornerShape(8.dp))
+                        .clickable {
+                            val newScale = (scale * 1.25f).coerceIn(minScale, maxScale)
+                            if (newScale != scale) {
+                                // Zoom toward center
+                                val centerX = width / 2
+                                val centerY = height / 2
+                                val scaleFactor = newScale / scale
+                                val newOffsetX = centerX - (centerX - offset.value.x) * scaleFactor
+                                val newOffsetY = centerY - (centerY - offset.value.y) * scaleFactor
+                                scale = newScale
+                                scope.launch { offset.snapTo(Offset(newOffsetX, newOffsetY)) }
+                            }
+                        },
+                    contentAlignment = Alignment.Center
+                ) {
+                    Text("+", color = Color.White, style = MaterialTheme.typography.titleMedium)
+                }
+
+                // Zoom out button
+                Box(
+                    modifier = Modifier
+                        .size(36.dp)
+                        .background(Color.Black.copy(alpha = 0.6f), RoundedCornerShape(8.dp))
+                        .clickable {
+                            val newScale = (scale * 0.8f).coerceIn(minScale, maxScale)
+                            if (newScale != scale) {
+                                // Zoom toward center
+                                val centerX = width / 2
+                                val centerY = height / 2
+                                val scaleFactor = newScale / scale
+                                val newOffsetX = centerX - (centerX - offset.value.x) * scaleFactor
+                                val newOffsetY = centerY - (centerY - offset.value.y) * scaleFactor
+                                scale = newScale
+                                scope.launch { offset.snapTo(Offset(newOffsetX, newOffsetY)) }
+                            }
+                        },
+                    contentAlignment = Alignment.Center
+                ) {
+                    Text("-", color = Color.White, style = MaterialTheme.typography.titleMedium)
+                }
+
+                // Reset zoom/pan button
+                Box(
+                    modifier = Modifier
+                        .size(36.dp)
+                        .background(Color.Black.copy(alpha = 0.6f), RoundedCornerShape(8.dp))
+                        .clickable {
+                            scale = 1f
+                            scope.launch { offset.animateTo(Offset.Zero, tween(300)) }
+                        },
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.CenterFocusWeak,
+                        contentDescription = "Reset view",
+                        tint = Color.White,
+                        modifier = Modifier.size(20.dp)
+                    )
+                }
+            }
+
+            // Zoom level indicator (bottom-right corner) - hidden in exploration mode
+            Text(
+                text = "${(scale * 100).toInt()}%",
+                modifier = Modifier
+                    .align(Alignment.BottomEnd)
+                    .padding(8.dp)
+                    .background(Color.Black.copy(alpha = 0.5f), RoundedCornerShape(4.dp))
+                    .padding(horizontal = 8.dp, vertical = 4.dp),
+                color = Color.White,
+                style = MaterialTheme.typography.labelSmall
+            )
+        }
     }
 }
 
@@ -3375,7 +3849,8 @@ private fun LocationNodeThumbnail(
     onSettingsClick: () -> Unit = {},
     onExitClick: (LocationDto) -> Unit = {},
     onDotClick: () -> Unit = {},  // Called when the orange dot is tapped (to collapse)
-    allLocations: List<LocationDto> = emptyList()
+    allLocations: List<LocationDto> = emptyList(),
+    isExplorationMode: Boolean = false
 ) {
     val collapsedSize = 20.dp
     val expandedSize = 100.dp
@@ -3628,36 +4103,41 @@ private fun LocationNodeThumbnail(
                         .padding(4.dp),
                     verticalArrangement = Arrangement.spacedBy(4.dp)
                 ) {
-                    // Edit/Detail icon (pencil on top)
+                    // Edit/Detail icon (pencil, or explorer wizard in exploration mode)
                     Box(
                         modifier = Modifier
                             .size(28.dp)
-                            .background(Color.Black.copy(alpha = 0.7f), CircleShape)
+                            .background(
+                                if (isExplorationMode) Color(0xFF9C27B0).copy(alpha = 0.9f) else Color.Black.copy(alpha = 0.7f),
+                                CircleShape
+                            )
                             .clickable(onClick = onClick)
                             .padding(5.dp)
                     ) {
                         Icon(
-                            imageVector = Icons.Default.Edit,
-                            contentDescription = "Edit Location",
+                            imageVector = if (isExplorationMode) ExplorerIcon else Icons.Default.Edit,
+                            contentDescription = if (isExplorationMode) "Explore Location" else "Edit Location",
                             modifier = Modifier.fillMaxSize(),
                             tint = Color.White
                         )
                     }
 
-                    // Settings/Terrain icon (gear below)
-                    Box(
-                        modifier = Modifier
-                            .size(28.dp)
-                            .background(Color.Black.copy(alpha = 0.7f), CircleShape)
-                            .clickable(onClick = onSettingsClick)
-                            .padding(5.dp)
-                    ) {
-                        Icon(
-                            imageVector = Icons.Default.Settings,
-                            contentDescription = "Terrain Settings",
-                            modifier = Modifier.fillMaxSize(),
-                            tint = Color.White
-                        )
+                    // Settings/Terrain icon (gear below) - hidden in exploration mode
+                    if (!isExplorationMode) {
+                        Box(
+                            modifier = Modifier
+                                .size(28.dp)
+                                .background(Color.Black.copy(alpha = 0.7f), CircleShape)
+                                .clickable(onClick = onSettingsClick)
+                                .padding(5.dp)
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Settings,
+                                contentDescription = "Terrain Settings",
+                                modifier = Modifier.fillMaxSize(),
+                                tint = Color.White
+                            )
+                        }
                     }
                 }
             }
@@ -7742,7 +8222,8 @@ fun LocationForm(
     currentUser: UserDto? = null,
     isAdmin: Boolean = false,
     onLocationUpdated: (LocationDto) -> Unit = {},
-    onDeleted: () -> Unit = {}
+    onDeleted: () -> Unit = {},
+    isExplorationMode: Boolean = false
 ) {
     val isEditMode = editLocation != null
     var name by remember(editLocation?.id) { mutableStateOf(editLocation?.name ?: "") }
@@ -7766,9 +8247,9 @@ fun LocationForm(
     var lockerName by remember(editLocation?.id) { mutableStateOf<String?>(null) }
     val isLocked = lockedBy != null
 
-    // Combined disabled state: not authenticated OR locked OR image generating
+    // Combined disabled state: not authenticated OR locked OR image generating OR exploration mode
     val isNotAuthenticated = currentUser == null
-    val isDisabled = isNotAuthenticated || isLocked || isImageGenerating
+    val isDisabled = isNotAuthenticated || isLocked || isImageGenerating || isExplorationMode
 
     // State for exit removal confirmation dialog
     var exitToRemove by remember { mutableStateOf<ExitDto?>(null) }
@@ -7861,15 +8342,30 @@ fun LocationForm(
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(4.dp)
                 ) {
-                    if (isLocked && lockerName != null) {
+                    // Show status text
+                    if (isExplorationMode) {
+                        Text(
+                            text = "Exploration Mode",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = Color(0xFF9C27B0)
+                        )
+                    } else if (isLocked && lockerName != null) {
                         Text(
                             text = "Locked by $lockerName",
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
                     }
-                    // Only admins can toggle the lock and delete
-                    if (isAdmin) {
+                    // In exploration mode, just show explorer icon (no lock toggle)
+                    if (isExplorationMode) {
+                        Icon(
+                            imageVector = ExplorerIcon,
+                            contentDescription = "Exploration Mode",
+                            tint = Color(0xFF9C27B0),
+                            modifier = Modifier.padding(12.dp)
+                        )
+                    } else if (isAdmin) {
+                        // Only admins can toggle the lock and delete
                         IconButton(
                             onClick = {
                                 currentUser?.let { user ->
@@ -7906,10 +8402,23 @@ fun LocationForm(
                         }
                     } else {
                         // Non-admins see the lock icon but can't click it
+                        // In exploration mode, show explorer icon instead
                         Icon(
-                            imageVector = if (isLocked) Icons.Filled.Lock else Icons.Filled.LockOpen,
-                            contentDescription = if (isLocked) "Location is locked" else "Location is unlocked",
-                            tint = if (isLocked) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
+                            imageVector = when {
+                                isExplorationMode -> ExplorerIcon
+                                isLocked -> Icons.Filled.Lock
+                                else -> Icons.Filled.LockOpen
+                            },
+                            contentDescription = when {
+                                isExplorationMode -> "Exploration Mode"
+                                isLocked -> "Location is locked"
+                                else -> "Location is unlocked"
+                            },
+                            tint = when {
+                                isExplorationMode -> Color(0xFF9C27B0)
+                                isLocked -> MaterialTheme.colorScheme.primary
+                                else -> MaterialTheme.colorScheme.onSurfaceVariant
+                            },
                             modifier = Modifier.padding(12.dp)
                         )
                     }
@@ -8819,7 +9328,8 @@ fun CreatureDetailView(
     onEdit: (CreatureDto) -> Unit,
     onCreateNew: () -> Unit,
     onNavigateToItem: (String) -> Unit,
-    isAdmin: Boolean = false
+    isAdmin: Boolean = false,
+    isExplorationMode: Boolean = false
 ) {
     var creature by remember { mutableStateOf<CreatureDto?>(null) }
     var isLoading by remember { mutableStateOf(true) }
@@ -8935,11 +9445,31 @@ fun CreatureDetailView(
                     }
                 }
 
-                Button(
-                    onClick = { onEdit(creature!!) },
-                    modifier = Modifier.align(Alignment.End)
-                ) {
-                    Text("Edit Creature")
+                // Show exploration mode indicator or edit button
+                if (isExplorationMode) {
+                    Row(
+                        modifier = Modifier.align(Alignment.End),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        Text(
+                            text = "Exploration Mode",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = Color(0xFF9C27B0)
+                        )
+                        Icon(
+                            imageVector = ExplorerIcon,
+                            contentDescription = "Exploration Mode",
+                            tint = Color(0xFF9C27B0)
+                        )
+                    }
+                } else {
+                    Button(
+                        onClick = { onEdit(creature!!) },
+                        modifier = Modifier.align(Alignment.End)
+                    ) {
+                        Text("Edit Creature")
+                    }
                 }
             }
         }
@@ -9324,7 +9854,8 @@ fun ItemDetailView(
     onBack: () -> Unit,
     onEdit: (ItemDto) -> Unit,
     onCreateNew: () -> Unit,
-    isAdmin: Boolean = false
+    isAdmin: Boolean = false,
+    isExplorationMode: Boolean = false
 ) {
     var item by remember { mutableStateOf<ItemDto?>(null) }
     var isLoading by remember { mutableStateOf(true) }
@@ -9428,11 +9959,31 @@ fun ItemDetailView(
                     }
                 }
 
-                Button(
-                    onClick = { onEdit(item!!) },
-                    modifier = Modifier.align(Alignment.End)
-                ) {
-                    Text("Edit Item")
+                // Show exploration mode indicator or edit button
+                if (isExplorationMode) {
+                    Row(
+                        modifier = Modifier.align(Alignment.End),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        Text(
+                            text = "Exploration Mode",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = Color(0xFF9C27B0)
+                        )
+                        Icon(
+                            imageVector = ExplorerIcon,
+                            contentDescription = "Exploration Mode",
+                            tint = Color(0xFF9C27B0)
+                        )
+                    }
+                } else {
+                    Button(
+                        onClick = { onEdit(item!!) },
+                        modifier = Modifier.align(Alignment.End)
+                    ) {
+                        Text("Edit Item")
+                    }
                 }
             }
         }

@@ -96,3 +96,13 @@ Add an admin dashboard section that displays data integrity warnings. This shoul
 Note: One-way exits (A→B without B→A) are intentional - they support secret passages, trapdoors, slides, etc.
 
 This would be more useful than unit tests since it validates actual game data and helps content creators spot issues.
+
+### Exploration Mode 0,0,0 Fallback Risk (TODO - Investigate)
+When a user enters exploration mode and has no prior presence data (currentLocationId is null), the system falls back to location at coordinates (0,0,0) or the first location with coordinates.
+
+**Potential risks to investigate:**
+- What if no location exists at 0,0,0? Currently falls back to first location with coordinates, then first location overall
+- Should there be a designated "starting location" concept instead of hardcoded 0,0,0?
+- Does this create issues for new users who haven't explored yet?
+- Should we handle the case where the fallback location is in a restricted area?
+- Consider adding a server-side "default starting location" setting
