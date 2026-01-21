@@ -91,7 +91,8 @@ Add an admin dashboard section that displays data integrity warnings. This shoul
 - Orphaned locations (no exits to or from them)
 
 **Bidirectional consistency:**
-- A→B exists but B→A doesn't (when it should)
-- A→B via NORTH but B→A via EAST (directions don't match)
+- A→B via NORTH but B→A via EAST (directions don't match for two-way exits)
+
+Note: One-way exits (A→B without B→A) are intentional - they support secret passages, trapdoors, slides, etc.
 
 This would be more useful than unit tests since it validates actual game data and helps content creators spot issues.
