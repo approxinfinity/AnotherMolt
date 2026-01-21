@@ -15,7 +15,9 @@ import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.border
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.material3.ripple
 import androidx.compose.foundation.gestures.detectTransformGestures
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
@@ -880,43 +882,46 @@ fun AdminScreen() {
         updateUrlWithCacheBuster(viewName)
     }
 
+    // Check if current user has admin privilege
+    val isAdmin = currentUser?.featureIds?.contains(ADMIN_FEATURE_ID) == true
+
     Column(
         modifier = Modifier
             .fillMaxSize()
-            .padding(16.dp)
+            .padding(if (isExplorationMode) 0.dp else 16.dp)
     ) {
-        DragonHeader(modifier = Modifier.padding(bottom = 4.dp))
+        // Hide header and tabs in exploration mode (full screen)
+        if (!isExplorationMode) {
+            DragonHeader(modifier = Modifier.padding(bottom = 4.dp))
 
-        // Check if current user has admin privilege
-        val isAdmin = currentUser?.featureIds?.contains(ADMIN_FEATURE_ID) == true
+            // All tabs are visible
+            val visibleTabs = AdminTab.entries
 
-        // All tabs are visible
-        val visibleTabs = AdminTab.entries
-
-        TabRow(selectedTabIndex = visibleTabs.indexOf(selectedTab).coerceAtLeast(0)) {
-            visibleTabs.forEach { tab ->
-                Tab(
-                    selected = selectedTab == tab,
-                    onClick = {
-                        selectedTab = tab
-                        viewState = when (tab) {
-                            AdminTab.USER -> if (currentUser != null) ViewState.UserProfile(currentUser!!) else ViewState.UserAuth
-                            AdminTab.LOCATION -> ViewState.LocationGraph()
-                            AdminTab.CREATURE -> ViewState.CreatureList
-                            AdminTab.ITEM -> ViewState.ItemList
+            TabRow(selectedTabIndex = visibleTabs.indexOf(selectedTab).coerceAtLeast(0)) {
+                visibleTabs.forEach { tab ->
+                    Tab(
+                        selected = selectedTab == tab,
+                        onClick = {
+                            selectedTab = tab
+                            viewState = when (tab) {
+                                AdminTab.USER -> if (currentUser != null) ViewState.UserProfile(currentUser!!) else ViewState.UserAuth
+                                AdminTab.LOCATION -> ViewState.LocationGraph()
+                                AdminTab.CREATURE -> ViewState.CreatureList
+                                AdminTab.ITEM -> ViewState.ItemList
+                            }
+                        },
+                        icon = {
+                            Icon(
+                                imageVector = tab.icon,
+                                contentDescription = tab.title
+                            )
                         }
-                    },
-                    icon = {
-                        Icon(
-                            imageVector = tab.icon,
-                            contentDescription = tab.title
-                        )
-                    }
-                )
+                    )
+                }
             }
-        }
 
-        Spacer(modifier = Modifier.height(8.dp))
+            Spacer(modifier = Modifier.height(8.dp))
+        }
 
         when (val state = viewState) {
             is ViewState.UserAuth -> UserAuthView(
@@ -2819,6 +2824,18 @@ fun LocationGraph(
     // Track which location is expanded (null = none expanded)
     var expandedLocationId by remember { mutableStateOf<String?>(null) }
 
+    // Creatures and items for exploration mode display
+    var allCreatures by remember { mutableStateOf<List<CreatureDto>>(emptyList()) }
+    var allItems by remember { mutableStateOf<List<ItemDto>>(emptyList()) }
+
+    // Load creatures and items when entering exploration mode
+    LaunchedEffect(isExplorationMode) {
+        if (isExplorationMode) {
+            ApiClient.getCreatures().onSuccess { allCreatures = it }
+            ApiClient.getItems().onSuccess { allItems = it }
+        }
+    }
+
     // Auto-select location when entering exploration mode based on user's presence
     LaunchedEffect(isExplorationMode, currentUser?.id, locations) {
         if (isExplorationMode && expandedLocationId == null && locations.isNotEmpty()) {
@@ -3452,6 +3469,20 @@ fun LocationGraph(
                     modifier = Modifier.fillMaxSize(),
                     contentAlignment = Alignment.Center
                 ) {
+                    // Location name above the thumbnail (moved higher to clear diagonal arrows)
+                    Text(
+                        text = currentLocation.name,
+                        color = Color.White,
+                        fontSize = 18.sp,
+                        fontWeight = FontWeight.Medium,
+                        textAlign = TextAlign.Center,
+                        modifier = Modifier
+                            .align(Alignment.Center)
+                            .offset(y = (-120).dp)
+                            .background(Color.Black.copy(alpha = 0.7f), RoundedCornerShape(4.dp))
+                            .padding(horizontal = 12.dp, vertical = 4.dp)
+                    )
+
                     // Simple 100x100 box with location image or fallback
                     Box(
                         modifier = Modifier
@@ -3519,77 +3550,121 @@ fun LocationGraph(
                             }
 
                             if (exit.direction != ExitDirection.UNKNOWN) {
+                                // Custom press animation for navigation arrows
+                                var isPressed by remember { mutableStateOf(false) }
+                                val scale by animateFloatAsState(
+                                    targetValue = if (isPressed) 1.3f else 1f,
+                                    animationSpec = tween(durationMillis = 150),
+                                    label = "navScale"
+                                )
+                                val glowAlpha by animateFloatAsState(
+                                    targetValue = if (isPressed) 0.8f else 0f,
+                                    animationSpec = tween(durationMillis = 150),
+                                    label = "navGlow"
+                                )
+
                                 Box(
                                     modifier = Modifier
                                         .offset(x = offsetX, y = offsetY)
-                                        .size(32.dp)
-                                        .background(Color(0xFF1976D2), CircleShape)
-                                        .clickable {
-                                            expandedLocationId = targetLocation.id
-                                        },
+                                        .size(44.dp),
                                     contentAlignment = Alignment.Center
                                 ) {
-                                    Icon(
-                                        imageVector = icon,
-                                        contentDescription = "Go ${exit.direction.name}",
-                                        tint = Color.White,
-                                        modifier = Modifier.size(20.dp)
+                                    // Orange glow ring (behind the button)
+                                    Box(
+                                        modifier = Modifier
+                                            .size((32 * scale).dp)
+                                            .background(
+                                                Color(0xFFFF9800).copy(alpha = glowAlpha),
+                                                CircleShape
+                                            )
                                     )
+                                    // Main button
+                                    Box(
+                                        modifier = Modifier
+                                            .size(32.dp)
+                                            .clip(CircleShape)
+                                            .background(Color(0xFF1976D2), CircleShape)
+                                            .pointerInput(targetLocation.id) {
+                                                detectTapGestures(
+                                                    onPress = {
+                                                        isPressed = true
+                                                        tryAwaitRelease()
+                                                        isPressed = false
+                                                        expandedLocationId = targetLocation.id
+                                                    }
+                                                )
+                                            },
+                                        contentAlignment = Alignment.Center
+                                    ) {
+                                        Icon(
+                                            imageVector = icon,
+                                            contentDescription = "Go ${exit.direction.name}",
+                                            tint = Color.White,
+                                            modifier = Modifier.size(20.dp)
+                                        )
+                                    }
                                 }
                             }
                         }
                     }
 
-                    // Location info below the thumbnail and arrows
-                    Column(
-                        modifier = Modifier
-                            .align(Alignment.BottomCenter)
-                            .offset(y = 140.dp)
-                            .width(280.dp)
-                            .background(Color.Black.copy(alpha = 0.7f), RoundedCornerShape(8.dp))
-                            .padding(12.dp),
-                        horizontalAlignment = Alignment.Start
-                    ) {
-                        // Location name
-                        Text(
-                            text = "Location",
-                            color = Color.Gray,
-                            fontSize = 10.sp
-                        )
-                        Text(
-                            text = currentLocation.name,
-                            color = Color.White,
-                            fontSize = 16.sp,
-                            fontWeight = FontWeight.Medium
-                        )
+                }
 
-                        Spacer(modifier = Modifier.height(8.dp))
-
-                        // Others (creatures)
+                // Location info fixed at bottom of viewport
+                Column(
+                    modifier = Modifier
+                        .align(Alignment.BottomCenter)
+                        .fillMaxWidth()
+                        .background(Color.Black.copy(alpha = 0.85f))
+                        .padding(16.dp),
+                    horizontalAlignment = Alignment.Start
+                ) {
+                    // Others (creatures) - show actual names
+                    Text(
+                        text = "Others",
+                        color = Color.Gray,
+                        fontSize = 10.sp
+                    )
+                    val creaturesHere = allCreatures.filter { it.id in currentLocation.creatureIds }
+                    if (creaturesHere.isEmpty()) {
                         Text(
-                            text = "Others",
-                            color = Color.Gray,
-                            fontSize = 10.sp
-                        )
-                        Text(
-                            text = if (currentLocation.creatureIds.isEmpty()) "None" else "${currentLocation.creatureIds.size} present",
+                            text = "None",
                             color = Color.White,
                             fontSize = 14.sp
                         )
+                    } else {
+                        creaturesHere.forEach { creature ->
+                            Text(
+                                text = creature.name,
+                                color = Color.White,
+                                fontSize = 14.sp
+                            )
+                        }
+                    }
 
-                        Spacer(modifier = Modifier.height(8.dp))
+                    Spacer(modifier = Modifier.height(8.dp))
 
-                        // Items
+                    // Items - show actual names
+                    Text(
+                        text = "Items",
+                        color = Color.Gray,
+                        fontSize = 10.sp
+                    )
+                    val itemsHere = allItems.filter { it.id in currentLocation.itemIds }
+                    if (itemsHere.isEmpty()) {
                         Text(
-                            text = "Items",
-                            color = Color.Gray,
-                            fontSize = 10.sp
-                        )
-                        Text(
-                            text = if (currentLocation.itemIds.isEmpty()) "None" else "${currentLocation.itemIds.size} here",
+                            text = "None",
                             color = Color.White,
                             fontSize = 14.sp
                         )
+                    } else {
+                        itemsHere.forEach { item ->
+                            Text(
+                                text = item.name,
+                                color = Color.White,
+                                fontSize = 14.sp
+                            )
+                        }
                     }
                 }
 
@@ -3598,6 +3673,20 @@ fun LocationGraph(
                     val minimapSize = 140.dp
                     // Grid spacing - how many dp per grid unit in the minimap
                     val gridSpacing = 35.dp  // Each dot is 35dp apart in the minimap
+
+                    // Animated offset for smooth sliding when changing locations
+                    val currentGridX = currentLocation.gridX ?: 0
+                    val currentGridY = currentLocation.gridY ?: 0
+                    val animatedGridX by animateFloatAsState(
+                        targetValue = currentGridX.toFloat(),
+                        animationSpec = tween(durationMillis = 300),
+                        label = "minimapX"
+                    )
+                    val animatedGridY by animateFloatAsState(
+                        targetValue = currentGridY.toFloat(),
+                        animationSpec = tween(durationMillis = 300),
+                        label = "minimapY"
+                    )
 
                     Box(
                         modifier = Modifier
@@ -3617,45 +3706,70 @@ fun LocationGraph(
                             val lineColor = Color(0xFFFF9800).copy(alpha = 0.7f)
                             val lineWidth = 3.dp.toPx()
 
-                            // Current location grid coords
-                            val currentGridX = currentLocation.gridX ?: 0
-                            val currentGridY = currentLocation.gridY ?: 0
+                            // Build location lookup map
+                            val locationById = locations.associateBy { it.id }
 
-                            // Draw connections first (so dots are on top)
-                            locations.forEach { location ->
-                                val locGridX = location.gridX ?: return@forEach
-                                val locGridY = location.gridY ?: return@forEach
+                            // Draw connections up to 3 hops from current location using BFS
+                            // Track visited connections to avoid drawing duplicates
+                            val drawnConnections = mutableSetOf<Pair<String, String>>()
+                            val visited = mutableSetOf<String>()
+                            val queue = ArrayDeque<Pair<String, Int>>() // locationId, depth
 
-                                // Position relative to current location
-                                val relX = locGridX - currentGridX
-                                val relY = locGridY - currentGridY
+                            queue.add(currentLocation.id to 0)
+                            visited.add(currentLocation.id)
 
-                                // Only draw if within ~2 grid units (visible in 3x3 area)
-                                if (kotlin.math.abs(relX) <= 2 && kotlin.math.abs(relY) <= 2) {
-                                    val fromX = centerX + relX * gridSpacingPx
-                                    val fromY = centerY + relY * gridSpacingPx
+                            while (queue.isNotEmpty()) {
+                                val (locId, depth) = queue.removeFirst()
+                                if (depth >= 3) continue // Stop at 3 hops
 
-                                    location.exits.forEach { exit ->
-                                        val targetLoc = locations.find { it.id == exit.locationId }
-                                        if (targetLoc != null) {
-                                            val targetGridX = targetLoc.gridX ?: return@forEach
-                                            val targetGridY = targetLoc.gridY ?: return@forEach
-                                            val targetRelX = targetGridX - currentGridX
-                                            val targetRelY = targetGridY - currentGridY
+                                val loc = locationById[locId] ?: continue
+                                val locGridX = loc.gridX ?: continue
+                                val locGridY = loc.gridY ?: continue
+                                val locRelX = locGridX - animatedGridX
+                                val locRelY = locGridY - animatedGridY
 
-                                            // Only draw if target is also visible
-                                            if (kotlin.math.abs(targetRelX) <= 2 && kotlin.math.abs(targetRelY) <= 2) {
-                                                val toX = centerX + targetRelX * gridSpacingPx
-                                                val toY = centerY + targetRelY * gridSpacingPx
+                                // Draw exits from this location
+                                loc.exits.forEach { exit ->
+                                    val targetLoc = locationById[exit.locationId] ?: return@forEach
+                                    val targetGridX = targetLoc.gridX ?: return@forEach
+                                    val targetGridY = targetLoc.gridY ?: return@forEach
+                                    val targetRelX = targetGridX - animatedGridX
+                                    val targetRelY = targetGridY - animatedGridY
 
-                                                drawLine(
-                                                    color = lineColor,
-                                                    start = Offset(fromX, fromY),
-                                                    end = Offset(toX, toY),
-                                                    strokeWidth = lineWidth
-                                                )
-                                            }
+                                    // Create a canonical connection key to avoid drawing same line twice
+                                    val connKey = if (locId < exit.locationId) locId to exit.locationId else exit.locationId to locId
+
+                                    // Only draw if both are visible and not already drawn (use wider bounds during animation)
+                                    if (kotlin.math.abs(locRelX) <= 3 && kotlin.math.abs(locRelY) <= 3 &&
+                                        kotlin.math.abs(targetRelX) <= 3 && kotlin.math.abs(targetRelY) <= 3 &&
+                                        !drawnConnections.contains(connKey)) {
+
+                                        drawnConnections.add(connKey)
+
+                                        val fromX = centerX + locRelX * gridSpacingPx
+                                        val fromY = centerY + locRelY * gridSpacingPx
+                                        val toX = centerX + targetRelX * gridSpacingPx
+                                        val toY = centerY + targetRelY * gridSpacingPx
+
+                                        // Fade color based on depth
+                                        val alpha = when (depth) {
+                                            0 -> 0.9f
+                                            1 -> 0.6f
+                                            else -> 0.4f
                                         }
+
+                                        drawLine(
+                                            color = lineColor.copy(alpha = alpha),
+                                            start = Offset(fromX, fromY),
+                                            end = Offset(toX, toY),
+                                            strokeWidth = lineWidth
+                                        )
+                                    }
+
+                                    // Add target to queue if not visited
+                                    if (!visited.contains(exit.locationId)) {
+                                        visited.add(exit.locationId)
+                                        queue.add(exit.locationId to depth + 1)
                                     }
                                 }
                             }
@@ -3665,12 +3779,12 @@ fun LocationGraph(
                                 val locGridX = location.gridX ?: return@forEach
                                 val locGridY = location.gridY ?: return@forEach
 
-                                // Position relative to current location
-                                val relX = locGridX - currentGridX
-                                val relY = locGridY - currentGridY
+                                // Position relative to animated current location
+                                val relX = locGridX - animatedGridX
+                                val relY = locGridY - animatedGridY
 
-                                // Only draw if within ~2 grid units
-                                if (kotlin.math.abs(relX) <= 2 && kotlin.math.abs(relY) <= 2) {
+                                // Only draw if within ~3 grid units (wider during animation)
+                                if (kotlin.math.abs(relX) <= 3 && kotlin.math.abs(relY) <= 3) {
                                     val dotX = centerX + relX * gridSpacingPx
                                     val dotY = centerY + relY * gridSpacingPx
                                     val isCurrentLoc = location.id == expandedLocationId
@@ -3814,19 +3928,17 @@ fun LocationGraph(
                         modifier = Modifier.size(20.dp)
                     )
                 }
-            }
 
-            // Zoom level indicator (bottom-right corner) - hidden in exploration mode
-            Text(
-                text = "${(scale * 100).toInt()}%",
-                modifier = Modifier
-                    .align(Alignment.BottomEnd)
-                    .padding(8.dp)
-                    .background(Color.Black.copy(alpha = 0.5f), RoundedCornerShape(4.dp))
-                    .padding(horizontal = 8.dp, vertical = 4.dp),
-                color = Color.White,
-                style = MaterialTheme.typography.labelSmall
-            )
+                // Zoom level indicator (right below zoom controls)
+                Text(
+                    text = "${(scale * 100).toInt()}%",
+                    modifier = Modifier
+                        .background(Color.Black.copy(alpha = 0.5f), RoundedCornerShape(4.dp))
+                        .padding(horizontal = 8.dp, vertical = 4.dp),
+                    color = Color.White,
+                    style = MaterialTheme.typography.labelSmall
+                )
+            }
         }
     }
 }
@@ -8332,7 +8444,7 @@ fun LocationForm(
                 Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
             }
             Text(
-                text = if (isEditMode) "Edit Location" else "Create Location",
+                text = if (isEditMode) "Location Details" else "Create Location",
                 style = MaterialTheme.typography.titleLarge,
                 modifier = Modifier.weight(1f)
             )
