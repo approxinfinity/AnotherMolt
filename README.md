@@ -17,8 +17,18 @@ A Kotlin Multiplatform MUD-style game engine with AI-powered content generation.
 
 ### Admin UI
 - **Location Graph** - Visual map showing location connections with pan and center-on-tap
+  - Dotted connection lines show paths between locations
+  - Two-way paths always visible; one-way paths shown only when relevant
+  - Lines avoid drawing through location dots
 - **Entity Management** - Create, edit, and link locations, creatures, items, and features
 - **Bidirectional Exits** - Adding an exit automatically creates the reverse connection; removal prompts for one-way or two-way
+- **Database Backup/Restore** - Create and restore database backups from the admin interface
+
+### Grid Coordinate System
+Locations can be placed on a 3D grid (X, Y, Z coordinates) for spatial organization:
+- **Exit directions** (N, NE, E, SE, S, SW, W, NW) determine relative positioning
+- **Visual map** displays locations based on their grid coordinates
+- **Data integrity** - Exit directions should correspond to coordinate offsets (e.g., NORTH exit → location at Y-1)
 
 ### Multi-Platform Support
 - Android, iOS, Web (Wasm/JS), Desktop (JVM)
@@ -76,6 +86,11 @@ A Kotlin Multiplatform MUD-style game engine with AI-powered content generation.
 - `POST /generate/location` - Generate location name/description
 - `POST /generate/creature` - Generate creature name/description
 - `POST /generate/item` - Generate item name/description
+
+### Database Administration
+- `POST /admin/database/backup` - Create a timestamped database backup
+- `GET /admin/database/backups` - List available backup files
+- `POST /admin/database/restore/{filename}` - Restore from a backup (auto-creates safety backup first)
 
 ## Ports Configuration
 
