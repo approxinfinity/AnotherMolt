@@ -20,6 +20,7 @@ import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.material3.ripple
 import androidx.compose.foundation.gestures.detectTransformGestures
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
@@ -59,6 +60,7 @@ import androidx.compose.material.icons.filled.CenterFocusWeak
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Stop
 import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material.icons.filled.Star
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.material3.*
 import androidx.compose.ui.window.Dialog
@@ -112,6 +114,51 @@ import kotlin.math.abs
 import kotlin.math.cos
 import kotlin.math.sin
 import kotlin.math.sqrt
+
+/**
+ * Extension function to check if user has a complete profile (class assigned).
+ */
+fun UserDto.hasCompleteProfile(): Boolean = characterClassId != null
+
+/**
+ * Component shown when user tries to access creation/adventure tabs without completing their profile.
+ */
+@Composable
+fun IncompleteProfileBlocker(
+    onNavigateToProfile: () -> Unit
+) {
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .padding(32.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.Center
+    ) {
+        Icon(
+            imageVector = Icons.Filled.Person,
+            contentDescription = null,
+            modifier = Modifier.size(64.dp),
+            tint = MaterialTheme.colorScheme.primary.copy(alpha = 0.6f)
+        )
+        Spacer(modifier = Modifier.height(16.dp))
+        Text(
+            text = "Profile Incomplete",
+            style = MaterialTheme.typography.headlineSmall,
+            textAlign = TextAlign.Center
+        )
+        Spacer(modifier = Modifier.height(8.dp))
+        Text(
+            text = "You must complete your character profile to create or adventure.",
+            style = MaterialTheme.typography.bodyMedium,
+            textAlign = TextAlign.Center,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
+        Spacer(modifier = Modifier.height(24.dp))
+        Button(onClick = onNavigateToProfile) {
+            Text("Go to Profile")
+        }
+    }
+}
 
 /**
  * Data class representing a completed image generation
@@ -323,7 +370,8 @@ enum class AdminTab(val title: String, val icon: ImageVector) {
     LOCATION("Location", Icons.Filled.Place),
     CREATURE("Creature", Icons.Filled.Pets),
     ITEM("Item", SwordIcon),
-    USER("User", Icons.Filled.Person)
+    USER("User", Icons.Filled.Person),
+    CLASS("Class", Icons.Filled.Star)
 }
 
 enum class EntityType {
@@ -616,6 +664,12 @@ sealed class ViewState {
     data class ItemDetail(val id: String, val isExplorationMode: Boolean = false) : ViewState()
     data object AdminPanel : ViewState()
     data object AuditLogs : ViewState()
+    data object ClassList : ViewState()
+    data object ClassCreate : ViewState()
+    data class ClassEdit(val characterClass: CharacterClassDto) : ViewState()
+    data class ClassDetail(val classId: String) : ViewState()
+    data class AbilityCreate(val classId: String) : ViewState()
+    data class AbilityEdit(val ability: AbilityDto) : ViewState()
 }
 
 /**
@@ -880,6 +934,12 @@ fun AdminScreen() {
             is ViewState.ItemDetail -> "item"
             is ViewState.AdminPanel -> "admin"
             is ViewState.AuditLogs -> "logs"
+            is ViewState.ClassList -> "classes"
+            is ViewState.ClassCreate -> "class-create"
+            is ViewState.ClassEdit -> "class-edit"
+            is ViewState.ClassDetail -> "class-${(viewState as ViewState.ClassDetail).classId}"
+            is ViewState.AbilityCreate -> "ability-create"
+            is ViewState.AbilityEdit -> "ability-edit"
         }
         updateUrlWithCacheBuster(viewName)
     }
@@ -910,6 +970,7 @@ fun AdminScreen() {
                                 AdminTab.LOCATION -> ViewState.LocationGraph()
                                 AdminTab.CREATURE -> ViewState.CreatureList
                                 AdminTab.ITEM -> ViewState.ItemList
+                                AdminTab.CLASS -> ViewState.ClassList
                             }
                         },
                         icon = {
@@ -968,20 +1029,31 @@ fun AdminScreen() {
                 }
             )
             is ViewState.LocationGraph -> key(locationGraphRefreshKey) {
-                LocationGraphView(
-                    refreshKey = locationGraphRefreshKey,
-                    onAddClick = { viewState = ViewState.LocationCreate },
-                    onLocationClick = { location -> viewState = ViewState.LocationEdit(location, isExplorationMode) },
-                    isAuthenticated = currentUser != null,
-                    isAdmin = isAdmin,
-                    currentUser = currentUser,
-                    onLoginClick = {
-                        selectedTab = AdminTab.USER
-                        viewState = ViewState.UserAuth
-                    },
-                    isExplorationMode = isExplorationMode,
-                    onExplorationModeChange = { isExplorationMode = it }
-                )
+                // Block if user is authenticated but profile incomplete
+                val user = currentUser
+                if (user != null && !user.hasCompleteProfile()) {
+                    IncompleteProfileBlocker(
+                        onNavigateToProfile = {
+                            selectedTab = AdminTab.USER
+                            viewState = ViewState.UserProfile(user)
+                        }
+                    )
+                } else {
+                    LocationGraphView(
+                        refreshKey = locationGraphRefreshKey,
+                        onAddClick = { viewState = ViewState.LocationCreate },
+                        onLocationClick = { location -> viewState = ViewState.LocationEdit(location, isExplorationMode) },
+                        isAuthenticated = currentUser != null,
+                        isAdmin = isAdmin,
+                        currentUser = currentUser,
+                        onLoginClick = {
+                            selectedTab = AdminTab.USER
+                            viewState = ViewState.UserAuth
+                        },
+                        isExplorationMode = isExplorationMode,
+                        onExplorationModeChange = { isExplorationMode = it }
+                    )
+                }
             }
             is ViewState.LocationCreate -> LocationForm(
                 editLocation = null,
@@ -1029,15 +1101,28 @@ fun AdminScreen() {
                 onDeleted = { refreshLocationGraph(); viewState = ViewState.LocationGraph() },
                 isExplorationMode = state.isExplorationMode
             )
-            is ViewState.CreatureList -> CreatureListView(
-                onCreatureClick = { creature ->
-                    viewState = ViewState.CreatureEdit(creature)
-                },
-                onAddClick = {
-                    viewState = ViewState.CreatureCreate
-                },
-                isAuthenticated = currentUser != null
-            )
+            is ViewState.CreatureList -> {
+                // Block if user is authenticated but profile incomplete
+                val user = currentUser
+                if (user != null && !user.hasCompleteProfile()) {
+                    IncompleteProfileBlocker(
+                        onNavigateToProfile = {
+                            selectedTab = AdminTab.USER
+                            viewState = ViewState.UserProfile(user)
+                        }
+                    )
+                } else {
+                    CreatureListView(
+                        onCreatureClick = { creature ->
+                            viewState = ViewState.CreatureEdit(creature)
+                        },
+                        onAddClick = {
+                            viewState = ViewState.CreatureCreate
+                        },
+                        isAuthenticated = currentUser != null
+                    )
+                }
+            }
             is ViewState.CreatureCreate -> CreatureForm(
                 editCreature = null,
                 onBack = { viewState = ViewState.CreatureList },
@@ -1084,15 +1169,28 @@ fun AdminScreen() {
                 isAdmin = isAdmin,
                 isExplorationMode = state.isExplorationMode
             )
-            is ViewState.ItemList -> ItemListView(
-                onItemClick = { item ->
-                    viewState = ViewState.ItemEdit(item)
-                },
-                onAddClick = {
-                    viewState = ViewState.ItemCreate
-                },
-                isAuthenticated = currentUser != null
-            )
+            is ViewState.ItemList -> {
+                // Block if user is authenticated but profile incomplete
+                val user = currentUser
+                if (user != null && !user.hasCompleteProfile()) {
+                    IncompleteProfileBlocker(
+                        onNavigateToProfile = {
+                            selectedTab = AdminTab.USER
+                            viewState = ViewState.UserProfile(user)
+                        }
+                    )
+                } else {
+                    ItemListView(
+                        onItemClick = { item ->
+                            viewState = ViewState.ItemEdit(item)
+                        },
+                        onAddClick = {
+                            viewState = ViewState.ItemCreate
+                        },
+                        isAuthenticated = currentUser != null
+                    )
+                }
+            }
             is ViewState.ItemCreate -> ItemForm(
                 editItem = null,
                 onBack = { viewState = ViewState.ItemList },
@@ -1128,10 +1226,60 @@ fun AdminScreen() {
                 isExplorationMode = state.isExplorationMode
             )
             is ViewState.AdminPanel -> AdminPanelView(
-                onViewAuditLogs = { viewState = ViewState.AuditLogs }
+                onViewAuditLogs = { viewState = ViewState.AuditLogs },
+                onUserClick = { userId -> viewState = ViewState.UserDetail(userId) }
             )
             is ViewState.AuditLogs -> AuditLogsView(
                 onBack = { viewState = ViewState.AdminPanel }
+            )
+            is ViewState.ClassList -> ClassListView(
+                onClassClick = { characterClass -> viewState = ViewState.ClassDetail(characterClass.id) },
+                onAddClick = { viewState = ViewState.ClassCreate },
+                isAdmin = isAdmin
+            )
+            is ViewState.ClassCreate -> ClassForm(
+                editClass = null,
+                onBack = { viewState = ViewState.ClassList },
+                onSaved = { viewState = ViewState.ClassList }
+            )
+            is ViewState.ClassEdit -> ClassForm(
+                editClass = state.characterClass,
+                onBack = { viewState = ViewState.ClassDetail(state.characterClass.id) },
+                onSaved = { viewState = ViewState.ClassList }
+            )
+            is ViewState.ClassDetail -> ClassDetailView(
+                classId = state.classId,
+                onBack = { viewState = ViewState.ClassList },
+                onEdit = { characterClass -> viewState = ViewState.ClassEdit(characterClass) },
+                onAddAbility = { classId -> viewState = ViewState.AbilityCreate(classId) },
+                onEditAbility = { ability -> viewState = ViewState.AbilityEdit(ability) },
+                isAdmin = isAdmin
+            )
+            is ViewState.AbilityCreate -> AbilityForm(
+                editAbility = null,
+                classId = state.classId,
+                onBack = { viewState = ViewState.ClassDetail(state.classId) },
+                onSaved = { viewState = ViewState.ClassDetail(state.classId) }
+            )
+            is ViewState.AbilityEdit -> AbilityForm(
+                editAbility = state.ability,
+                classId = state.ability.classId,
+                onBack = {
+                    val classId = state.ability.classId
+                    if (classId != null) {
+                        viewState = ViewState.ClassDetail(classId)
+                    } else {
+                        viewState = ViewState.ClassList
+                    }
+                },
+                onSaved = {
+                    val classId = state.ability.classId
+                    if (classId != null) {
+                        viewState = ViewState.ClassDetail(classId)
+                    } else {
+                        viewState = ViewState.ClassList
+                    }
+                }
             )
         }
     }
@@ -1274,25 +1422,41 @@ fun UserProfileView(
     // Can edit if: own profile, or is admin
     val canEdit = isOwnProfile || isAdmin
 
-    var isEditing by remember { mutableStateOf(false) }
-    var desc by remember { mutableStateOf(user.desc) }
-    var features by remember { mutableStateOf(user.featureIds.joinToString(", ")) }
-    var itemIds by remember { mutableStateOf(user.itemIds) }
-    var imageUrl by remember { mutableStateOf(user.imageUrl) }
+    // Always-editable state (no separate edit mode)
+    var desc by remember(user.id) { mutableStateOf(user.desc) }
+    var imageUrl by remember(user.id) { mutableStateOf(user.imageUrl) }
     var isLoading by remember { mutableStateOf(false) }
     var message by remember { mutableStateOf<String?>(null) }
     var imageGenError by remember { mutableStateOf<String?>(null) }
     val scope = rememberCoroutineScope()
 
-    // Available options for dropdown
-    var availableItems by remember { mutableStateOf<List<IdOption>>(emptyList()) }
+    // Checkboxes for generation options
+    var genClassChecked by remember { mutableStateOf(false) }
+    var genImageChecked by remember { mutableStateOf(false) }
 
-    // Fetch available items on mount
-    LaunchedEffect(Unit) {
-        ApiClient.getItems().onSuccess { items ->
-            availableItems = items.map { IdOption(it.id, it.name) }
+    // Class assignment state
+    var isAssigningClass by remember { mutableStateOf(false) }
+    var assignedClass by remember { mutableStateOf<CharacterClassDto?>(null) }
+    var characterClassId by remember(user.id) { mutableStateOf(user.characterClassId) }
+
+    // Track if image generation is in progress
+    val generatingEntities by BackgroundImageGenerationManager.generatingEntities.collectAsState()
+    val isImageGenerating = user.id in generatingEntities
+
+    // Fetch assigned class details if user has one
+    LaunchedEffect(characterClassId) {
+        val classId = characterClassId
+        if (classId != null) {
+            ApiClient.getCharacterClass(classId).onSuccess { fetchedClass ->
+                assignedClass = fetchedClass
+            }
+        } else {
+            assignedClass = null
         }
     }
+
+    // Profile incomplete warning - only show for own profile when no class assigned
+    val showIncompleteWarning = isOwnProfile && characterClassId == null
 
     Column(
         modifier = Modifier
@@ -1318,15 +1482,53 @@ fun UserProfileView(
                         )
                     }
                 }
-                // Admin panel icon for admins on their own profile
-                if (isOwnProfile && onNavigateToAdmin != null) {
-                    IconButton(onClick = onNavigateToAdmin) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    // Lock icon when viewing someone else's profile and not admin
+                    if (!isOwnProfile && !canEdit) {
                         Icon(
-                            imageVector = Icons.Default.AdminPanelSettings,
-                            contentDescription = "Admin Panel",
-                            tint = MaterialTheme.colorScheme.primary
+                            imageVector = Icons.Filled.Lock,
+                            contentDescription = "Read-only profile",
+                            tint = MaterialTheme.colorScheme.primary,
+                            modifier = Modifier.padding(12.dp)
                         )
                     }
+                    // Admin panel icon for admins on their own profile
+                    if (isOwnProfile && onNavigateToAdmin != null) {
+                        IconButton(onClick = onNavigateToAdmin) {
+                            Icon(
+                                imageVector = Icons.Default.AdminPanelSettings,
+                                contentDescription = "Admin Panel",
+                                tint = MaterialTheme.colorScheme.primary
+                            )
+                        }
+                    }
+                }
+            }
+        }
+
+        // Profile incomplete warning banner
+        if (showIncompleteWarning) {
+            Card(
+                modifier = Modifier.fillMaxWidth(),
+                colors = CardDefaults.cardColors(
+                    containerColor = MaterialTheme.colorScheme.errorContainer
+                )
+            ) {
+                Row(
+                    modifier = Modifier.padding(16.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(12.dp)
+                ) {
+                    Icon(
+                        imageVector = Icons.Filled.Person,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.onErrorContainer
+                    )
+                    Text(
+                        text = "You must complete your character profile to create or adventure.",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onErrorContainer
+                    )
                 }
             }
         }
@@ -1334,66 +1536,163 @@ fun UserProfileView(
         // Display image at top
         EntityImage(
             imageUrl = imageUrl,
-            contentDescription = "Image of ${user.name}"
+            contentDescription = "Image of ${user.name}",
+            isGenerating = isImageGenerating
         )
 
+        // Name card (read-only)
         Card(modifier = Modifier.fillMaxWidth()) {
             Column(modifier = Modifier.padding(16.dp)) {
                 Text(
                     text = user.name,
                     style = MaterialTheme.typography.headlineSmall
                 )
-                Text(
-                    text = "ID: ${user.id}",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
+                if (isAdmin) {
+                    Text(
+                        text = "ID: ${user.id}",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
             }
         }
 
-        if (isEditing && canEdit) {
+        // Description field - always editable for canEdit users
+        if (canEdit) {
             OutlinedTextField(
                 value = desc,
                 onValueChange = { desc = it },
                 label = { Text("Description") },
                 modifier = Modifier.fillMaxWidth(),
-                minLines = 3
+                minLines = 3,
+                enabled = !isLoading && !isAssigningClass
             )
+        } else {
+            // Read-only view for non-editors
+            if (user.desc.isNotBlank()) {
+                Text(
+                    text = user.desc,
+                    style = MaterialTheme.typography.bodyMedium
+                )
+            }
+        }
 
-            IdPillSection(
-                label = "Items",
-                ids = itemIds,
-                entityType = EntityType.ITEM,
-                availableOptions = availableItems,
-                onPillClick = onNavigateToItem,
-                onAddId = { id -> itemIds = itemIds + id },
-                onRemoveId = { id -> itemIds = itemIds - id }
-            )
-
-            OutlinedTextField(
-                value = features,
-                onValueChange = { features = it },
-                label = { Text("Features (comma-separated)") },
-                modifier = Modifier.fillMaxWidth(),
-                singleLine = true
-            )
-
-            // Generate Image button row
+        // Generation checkboxes and save button - only show for editable users
+        if (canEdit) {
+            // Checkboxes row
             Row(
                 modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.End
+                horizontalArrangement = Arrangement.spacedBy(16.dp)
             ) {
-                GenerateImageButton(
-                    entityType = GenEntityType.USER,
-                    entityId = user.id,
-                    name = user.name,
-                    description = desc,
-                    featureIds = features.split(",").map { it.trim() }.filter { it.isNotEmpty() },
-                    onImageGenerated = { newImageUrl ->
-                        imageUrl = newImageUrl
-                    },
-                    onError = { imageGenError = it }
-                )
+                Row(
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Checkbox(
+                        checked = genClassChecked,
+                        onCheckedChange = { genClassChecked = it },
+                        enabled = !isLoading && !isAssigningClass
+                    )
+                    Text(
+                        text = "Generate Class",
+                        style = MaterialTheme.typography.bodyMedium,
+                        modifier = Modifier.clickable(enabled = !isLoading && !isAssigningClass) {
+                            genClassChecked = !genClassChecked
+                        }
+                    )
+                }
+                Row(
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Checkbox(
+                        checked = genImageChecked,
+                        onCheckedChange = { genImageChecked = it },
+                        enabled = !isLoading && !isAssigningClass && !isImageGenerating
+                    )
+                    Text(
+                        text = "Generate Image",
+                        style = MaterialTheme.typography.bodyMedium,
+                        modifier = Modifier.clickable(enabled = !isLoading && !isAssigningClass && !isImageGenerating) {
+                            genImageChecked = !genImageChecked
+                        }
+                    )
+                }
+            }
+
+            // Save button
+            Button(
+                onClick = {
+                    scope.launch {
+                        isLoading = true
+                        message = null
+
+                        // 1. Save profile description
+                        val request = UpdateUserRequest(
+                            desc = desc,
+                            itemIds = user.itemIds,
+                            featureIds = user.featureIds
+                        )
+                        ApiClient.updateUser(user.id, request).onSuccess { updatedUser ->
+                            onUserUpdated(updatedUser)
+
+                            // 2. Trigger image generation if checked
+                            if (genImageChecked && desc.isNotBlank()) {
+                                BackgroundImageGenerationManager.startGeneration(
+                                    entityType = "user",
+                                    entityId = user.id,
+                                    name = user.name,
+                                    description = desc,
+                                    featureIds = user.featureIds
+                                )
+                                genImageChecked = false
+                            }
+
+                            // 3. Assign class if needed (checked or no class yet)
+                            if (genClassChecked || characterClassId == null) {
+                                if (desc.isNotBlank()) {
+                                    isAssigningClass = true
+                                    message = "Assigning class, this may take a moment..."
+
+                                    ApiClient.assignClass(
+                                        userId = user.id,
+                                        request = AssignClassRequest(
+                                            generateClass = genClassChecked,
+                                            characterDescription = desc
+                                        )
+                                    ).onSuccess { response ->
+                                        characterClassId = response.user.characterClassId
+                                        assignedClass = response.assignedClass
+                                        onUserUpdated(response.user)
+                                        message = response.message ?: "Class assigned!"
+                                        genClassChecked = false
+                                    }.onFailure { error ->
+                                        message = "Error assigning class: ${error.message}"
+                                    }
+                                    isAssigningClass = false
+                                } else {
+                                    message = "Please provide a description to assign a class"
+                                }
+                            } else {
+                                message = "Profile saved!"
+                            }
+                        }.onFailure { error ->
+                            message = "Error: ${error.message}"
+                        }
+                        isLoading = false
+                    }
+                },
+                enabled = !isLoading && !isAssigningClass,
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                if (isLoading || isAssigningClass) {
+                    CircularProgressIndicator(
+                        modifier = Modifier.size(16.dp),
+                        strokeWidth = 2.dp
+                    )
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text(if (isAssigningClass) "Assigning Class..." else "Saving...")
+                } else {
+                    Text("Save Character")
+                }
             }
 
             imageGenError?.let {
@@ -1406,115 +1705,73 @@ fun UserProfileView(
                     )
                 }
             }
-
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(8.dp)
-            ) {
-                OutlinedButton(
-                    onClick = {
-                        isEditing = false
-                        desc = user.desc
-                        features = user.featureIds.joinToString(", ")
-                        itemIds = user.itemIds
-                    },
-                    modifier = Modifier.weight(1f)
-                ) {
-                    Text("Cancel")
-                }
-
-                Button(
-                    onClick = {
-                        scope.launch {
-                            isLoading = true
-                            message = null
-                            val request = UpdateUserRequest(
-                                desc = desc,
-                                itemIds = itemIds,
-                                featureIds = features.split(",").map { it.trim() }.filter { it.isNotEmpty() }
-                            )
-                            ApiClient.updateUser(user.id, request).onSuccess { updatedUser ->
-                                onUserUpdated(updatedUser)
-                                isEditing = false
-                                message = "Profile updated successfully!"
-                            }.onFailure { error ->
-                                message = "Error: ${error.message}"
-                            }
-                            isLoading = false
-                        }
-                    },
-                    enabled = !isLoading,
-                    modifier = Modifier.weight(1f)
-                ) {
-                    if (isLoading) {
-                        CircularProgressIndicator(
-                            modifier = Modifier.size(16.dp),
-                            strokeWidth = 2.dp
-                        )
-                    } else {
-                        Text("Save")
-                    }
-                }
-            }
-        } else {
-            if (user.desc.isNotBlank()) {
-                Text(
-                    text = user.desc,
-                    style = MaterialTheme.typography.bodyMedium
-                )
-            }
-
-            if (user.itemIds.isNotEmpty()) {
-                IdPillSection(
-                    label = "Items",
-                    ids = user.itemIds,
-                    entityType = EntityType.ITEM,
-                    availableOptions = availableItems,
-                    onPillClick = onNavigateToItem,
-                    onAddId = {},
-                    onRemoveId = {}
-                )
-            }
-
-            if (user.featureIds.isNotEmpty()) {
-                Text(
-                    text = "Features: ${user.featureIds.joinToString(", ")}",
-                    style = MaterialTheme.typography.bodySmall
-                )
-            }
-
-            // Only show Edit/Logout buttons if canEdit and it's own profile (or admin viewing)
-            if (canEdit) {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
-                    Button(
-                        onClick = { isEditing = true },
-                        modifier = Modifier.weight(1f)
-                    ) {
-                        Text("Edit Profile")
-                    }
-
-                    // Only show logout for own profile
-                    if (isOwnProfile) {
-                        OutlinedButton(
-                            onClick = onLogout,
-                            modifier = Modifier.weight(1f)
-                        ) {
-                            Text("Logout")
-                        }
-                    }
-                }
-            }
         }
 
+        // Message display
         message?.let {
             Text(
                 text = it,
                 color = if (it.startsWith("Error")) MaterialTheme.colorScheme.error
                 else MaterialTheme.colorScheme.primary
             )
+        }
+
+        // Assigned class section - show if class is assigned
+        assignedClass?.let { charClass ->
+            Spacer(modifier = Modifier.height(8.dp))
+            Card(
+                modifier = Modifier.fillMaxWidth(),
+                colors = CardDefaults.cardColors(
+                    containerColor = MaterialTheme.colorScheme.secondaryContainer
+                )
+            ) {
+                Column(
+                    modifier = Modifier.padding(16.dp),
+                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Filled.Star,
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.onSecondaryContainer
+                        )
+                        Text(
+                            text = "Character Class",
+                            style = MaterialTheme.typography.titleMedium,
+                            color = MaterialTheme.colorScheme.onSecondaryContainer
+                        )
+                    }
+                    Text(
+                        text = charClass.name,
+                        style = MaterialTheme.typography.headlineSmall,
+                        color = MaterialTheme.colorScheme.onSecondaryContainer
+                    )
+                    Text(
+                        text = if (charClass.isSpellcaster) "Spellcaster" else "Martial",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSecondaryContainer.copy(alpha = 0.7f)
+                    )
+                    Text(
+                        text = charClass.description,
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSecondaryContainer
+                    )
+                }
+            }
+        }
+
+        // Logout button at the very bottom - only for own profile
+        if (isOwnProfile) {
+            Spacer(modifier = Modifier.height(16.dp))
+            OutlinedButton(
+                onClick = onLogout,
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Text("Logout")
+            }
         }
     }
 }
@@ -11075,7 +11332,9 @@ private fun IntegrityIssueItem(issue: IntegrityIssueDto) {
 }
 
 @Composable
-fun UsersPanel() {
+fun UsersPanel(
+    onUserClick: (String) -> Unit
+) {
     var response by remember { mutableStateOf<AdminUsersResponseDto?>(null) }
     var isLoading by remember { mutableStateOf(false) }
     var error by remember { mutableStateOf<String?>(null) }
@@ -11152,7 +11411,10 @@ fun UsersPanel() {
                 if (resp.users.isNotEmpty()) {
                     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                         resp.users.forEach { user ->
-                            UserInfoItem(user)
+                            UserInfoItem(
+                                user = user,
+                                onClick = { onUserClick(user.id) }
+                            )
                         }
                     }
                 }
@@ -11162,60 +11424,106 @@ fun UsersPanel() {
 }
 
 @Composable
-private fun UserInfoItem(user: AdminUserInfoDto) {
+private fun UserInfoItem(
+    user: AdminUserInfoDto,
+    onClick: () -> Unit
+) {
     val now = com.ez2bg.anotherthread.platform.currentTimeMillis()
     val lastActiveAgo = now - user.lastActiveAt
     val isOnline = lastActiveAgo < 60_000 // Active in last minute
 
     Card(
-        modifier = Modifier.fillMaxWidth(),
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable { onClick() },
         colors = CardDefaults.cardColors(
             containerColor = if (isOnline) Color(0xFF4CAF50).copy(alpha = 0.1f)
                            else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
         )
     ) {
-        Column(
+        Row(
             modifier = Modifier.padding(12.dp),
-            verticalArrangement = Arrangement.spacedBy(4.dp)
+            horizontalArrangement = Arrangement.spacedBy(12.dp),
+            verticalAlignment = Alignment.CenterVertically
         ) {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
+            // User thumbnail
+            if (!user.imageUrl.isNullOrBlank()) {
+                AsyncImage(
+                    model = "${AppConfig.api.baseUrl}${user.imageUrl}",
+                    contentDescription = user.name,
+                    modifier = Modifier
+                        .size(48.dp)
+                        .clip(CircleShape),
+                    contentScale = ContentScale.Crop
+                )
+            } else {
+                // Default avatar placeholder
+                Box(
+                    modifier = Modifier
+                        .size(48.dp)
+                        .clip(CircleShape)
+                        .background(MaterialTheme.colorScheme.primaryContainer),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Text(
+                        text = user.name.take(1).uppercase(),
+                        style = MaterialTheme.typography.titleMedium,
+                        color = MaterialTheme.colorScheme.onPrimaryContainer
+                    )
+                }
+            }
+
+            // User info
+            Column(
+                modifier = Modifier.weight(1f),
+                verticalArrangement = Arrangement.spacedBy(4.dp)
             ) {
                 Row(
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    if (isOnline) {
-                        Surface(
-                            color = Color(0xFF4CAF50),
-                            shape = MaterialTheme.shapes.small,
-                            modifier = Modifier.size(8.dp)
-                        ) {}
+                    Row(
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        if (isOnline) {
+                            Surface(
+                                color = Color(0xFF4CAF50),
+                                shape = MaterialTheme.shapes.small,
+                                modifier = Modifier.size(8.dp)
+                            ) {}
+                        }
+                        Text(
+                            text = user.name,
+                            style = MaterialTheme.typography.titleSmall
+                        )
                     }
                     Text(
-                        text = user.name,
-                        style = MaterialTheme.typography.titleSmall
+                        text = formatTimeAgo(lastActiveAgo),
+                        style = MaterialTheme.typography.labelSmall,
+                        color = if (isOnline) Color(0xFF4CAF50) else MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+                user.currentLocationName?.let { locationName ->
+                    Text(
+                        text = "At: $locationName",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                 }
                 Text(
-                    text = formatTimeAgo(lastActiveAgo),
+                    text = user.id,
                     style = MaterialTheme.typography.labelSmall,
-                    color = if (isOnline) Color(0xFF4CAF50) else MaterialTheme.colorScheme.onSurfaceVariant
+                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f)
                 )
             }
-            user.currentLocationName?.let { locationName ->
-                Text(
-                    text = "At: $locationName",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-            }
-            Text(
-                text = user.id,
-                style = MaterialTheme.typography.labelSmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f)
+
+            // Chevron to indicate tappable
+            Icon(
+                imageVector = Icons.Default.ChevronRight,
+                contentDescription = "View profile",
+                tint = MaterialTheme.colorScheme.onSurfaceVariant
             )
         }
     }
@@ -11236,7 +11544,8 @@ private fun formatTimeAgo(millisAgo: Long): String {
  */
 @Composable
 fun AdminPanelView(
-    onViewAuditLogs: () -> Unit
+    onViewAuditLogs: () -> Unit,
+    onUserClick: (String) -> Unit
 ) {
     var uploadedFiles by remember { mutableStateOf<List<UploadedFileDto>>(emptyList()) }
     var isLoading by remember { mutableStateOf(true) }
@@ -11321,7 +11630,7 @@ fun AdminPanelView(
         DataIntegrityPanel()
 
         // Users Panel
-        UsersPanel()
+        UsersPanel(onUserClick = onUserClick)
 
         // File Upload Section
         Card(modifier = Modifier.fillMaxWidth()) {
@@ -12221,6 +12530,1139 @@ private fun TerrainSettingsDialog(
                         Text("Save")
                     }
                 }
+            }
+        }
+    }
+}
+
+// ================== Character Class & Ability UI ==================
+
+@Composable
+fun ClassListView(
+    onClassClick: (CharacterClassDto) -> Unit,
+    onAddClick: () -> Unit,
+    isAdmin: Boolean
+) {
+    var classes by remember { mutableStateOf<List<CharacterClassDto>>(emptyList()) }
+    var isLoading by remember { mutableStateOf(true) }
+    var error by remember { mutableStateOf<String?>(null) }
+    val scope = rememberCoroutineScope()
+
+    LaunchedEffect(Unit) {
+        scope.launch {
+            isLoading = true
+            val result = ApiClient.getCharacterClasses()
+            isLoading = false
+            result.onSuccess { classes = it.sortedBy { c -> c.name.lowercase() } }
+                .onFailure { error = it.message }
+        }
+    }
+
+    Box(modifier = Modifier.fillMaxSize()) {
+        when {
+            isLoading -> {
+                CircularProgressIndicator(
+                    modifier = Modifier.align(Alignment.Center)
+                )
+            }
+            error != null -> {
+                Column(
+                    modifier = Modifier.align(Alignment.Center),
+                    horizontalAlignment = Alignment.CenterHorizontally
+                ) {
+                    SelectionContainer {
+                        Text(
+                            text = "Error: $error",
+                            color = MaterialTheme.colorScheme.error
+                        )
+                    }
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Button(onClick = {
+                        scope.launch {
+                            isLoading = true
+                            error = null
+                            val result = ApiClient.getCharacterClasses()
+                            isLoading = false
+                            result.onSuccess { classes = it.sortedBy { c -> c.name.lowercase() } }
+                                .onFailure { error = it.message }
+                        }
+                    }) {
+                        Text("Retry")
+                    }
+                }
+            }
+            classes.isEmpty() -> {
+                Text(
+                    text = "No character classes yet. Tap + to create one.",
+                    modifier = Modifier.align(Alignment.Center),
+                    style = MaterialTheme.typography.bodyLarge,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+            else -> {
+                LazyColumn(
+                    modifier = Modifier.fillMaxSize(),
+                    contentPadding = PaddingValues(bottom = 80.dp)
+                ) {
+                    items(classes) { characterClass ->
+                        ListItem(
+                            headlineContent = {
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                                ) {
+                                    Text(characterClass.name)
+                                    if (!characterClass.isPublic) {
+                                        Icon(
+                                            imageVector = Icons.Filled.Lock,
+                                            contentDescription = "Locked",
+                                            modifier = Modifier.size(16.dp),
+                                            tint = MaterialTheme.colorScheme.primary
+                                        )
+                                    }
+                                }
+                            },
+                            supportingContent = {
+                                Column {
+                                    Text(
+                                        text = characterClass.description.take(80) + if (characterClass.description.length > 80) "..." else "",
+                                        style = MaterialTheme.typography.bodySmall
+                                    )
+                                    Row(
+                                        modifier = Modifier.padding(top = 4.dp),
+                                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                                    ) {
+                                        AssistChip(
+                                            onClick = {},
+                                            label = { Text(if (characterClass.isSpellcaster) "Spellcaster" else "Martial") },
+                                            colors = AssistChipDefaults.assistChipColors(
+                                                containerColor = if (characterClass.isSpellcaster)
+                                                    MaterialTheme.colorScheme.primaryContainer
+                                                else
+                                                    MaterialTheme.colorScheme.secondaryContainer
+                                            )
+                                        )
+                                        AssistChip(
+                                            onClick = {},
+                                            label = { Text("d${characterClass.hitDie}") }
+                                        )
+                                    }
+                                }
+                            },
+                            leadingContent = if (!characterClass.imageUrl.isNullOrBlank()) {
+                                {
+                                    AsyncImage(
+                                        model = "${AppConfig.api.baseUrl}${characterClass.imageUrl}",
+                                        contentDescription = characterClass.name,
+                                        modifier = Modifier
+                                            .size(56.dp)
+                                            .clip(RoundedCornerShape(8.dp)),
+                                        contentScale = ContentScale.Crop
+                                    )
+                                }
+                            } else {
+                                {
+                                    Box(
+                                        modifier = Modifier
+                                            .size(56.dp)
+                                            .clip(RoundedCornerShape(8.dp))
+                                            .background(
+                                                if (characterClass.isSpellcaster)
+                                                    MaterialTheme.colorScheme.primaryContainer
+                                                else
+                                                    MaterialTheme.colorScheme.secondaryContainer
+                                            ),
+                                        contentAlignment = Alignment.Center
+                                    ) {
+                                        Icon(
+                                            imageVector = Icons.Filled.Star,
+                                            contentDescription = null,
+                                            modifier = Modifier.size(32.dp),
+                                            tint = if (characterClass.isSpellcaster)
+                                                MaterialTheme.colorScheme.onPrimaryContainer
+                                            else
+                                                MaterialTheme.colorScheme.onSecondaryContainer
+                                        )
+                                    }
+                                }
+                            },
+                            modifier = Modifier.clickable { onClassClick(characterClass) }
+                        )
+                        HorizontalDivider()
+                    }
+                }
+            }
+        }
+
+        if (isAdmin) {
+            FloatingActionButton(
+                onClick = onAddClick,
+                modifier = Modifier
+                    .align(Alignment.BottomEnd)
+                    .padding(16.dp),
+                shape = CircleShape
+            ) {
+                Icon(Icons.Filled.Add, contentDescription = "Add Class")
+            }
+        }
+    }
+}
+
+@Composable
+fun ClassDetailView(
+    classId: String,
+    onBack: () -> Unit,
+    onEdit: (CharacterClassDto) -> Unit,
+    onAddAbility: (String) -> Unit,
+    onEditAbility: (AbilityDto) -> Unit,
+    isAdmin: Boolean
+) {
+    var characterClass by remember { mutableStateOf<CharacterClassDto?>(null) }
+    var abilities by remember { mutableStateOf<List<AbilityDto>>(emptyList()) }
+    var isLoading by remember { mutableStateOf(true) }
+    var error by remember { mutableStateOf<String?>(null) }
+    var showUnlockDialog by remember { mutableStateOf(false) }
+    var isTogglingLock by remember { mutableStateOf(false) }
+    val scope = rememberCoroutineScope()
+
+    val isLocked = characterClass?.isPublic == false
+
+    LaunchedEffect(classId) {
+        scope.launch {
+            isLoading = true
+            val classResult = ApiClient.getCharacterClass(classId)
+            val abilitiesResult = ApiClient.getAbilitiesByClass(classId)
+            isLoading = false
+            classResult.onSuccess { characterClass = it }
+                .onFailure { error = it.message }
+            abilitiesResult.onSuccess { abilities = it.sortedBy { a -> a.name.lowercase() } }
+        }
+    }
+
+    // Unlock confirmation dialog
+    if (showUnlockDialog) {
+        AlertDialog(
+            onDismissRequest = { showUnlockDialog = false },
+            title = { Text("Unlock Class?") },
+            text = {
+                Text("Are you sure you want to unlock this class? This will make it editable by admins.")
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        showUnlockDialog = false
+                        characterClass?.let { cls ->
+                            scope.launch {
+                                isTogglingLock = true
+                                val request = CreateCharacterClassRequest(
+                                    name = cls.name,
+                                    description = cls.description,
+                                    isSpellcaster = cls.isSpellcaster,
+                                    hitDie = cls.hitDie,
+                                    primaryAttribute = cls.primaryAttribute,
+                                    imageUrl = cls.imageUrl,
+                                    powerBudget = cls.powerBudget,
+                                    isPublic = true,
+                                    createdByUserId = cls.createdByUserId
+                                )
+                                ApiClient.updateCharacterClass(cls.id, request)
+                                    .onSuccess { updated -> characterClass = updated }
+                                    .onFailure { err -> error = "Failed to unlock: ${err.message}" }
+                                isTogglingLock = false
+                            }
+                        }
+                    }
+                ) {
+                    Text("Unlock")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showUnlockDialog = false }) {
+                    Text("Cancel")
+                }
+            }
+        )
+    }
+
+    Column(modifier = Modifier.fillMaxSize()) {
+        // Back button header
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(bottom = 8.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            IconButton(onClick = onBack) {
+                Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
+            }
+            Text(
+                text = characterClass?.name ?: "Class Details",
+                style = MaterialTheme.typography.headlineSmall,
+                modifier = Modifier.weight(1f)
+            )
+            // Lock status indicator and toggle
+            if (characterClass != null) {
+                if (isAdmin) {
+                    IconButton(
+                        onClick = {
+                            if (isLocked) {
+                                showUnlockDialog = true
+                            } else {
+                                // Lock the class (no confirmation needed)
+                                characterClass?.let { cls ->
+                                    scope.launch {
+                                        isTogglingLock = true
+                                        val request = CreateCharacterClassRequest(
+                                            name = cls.name,
+                                            description = cls.description,
+                                            isSpellcaster = cls.isSpellcaster,
+                                            hitDie = cls.hitDie,
+                                            primaryAttribute = cls.primaryAttribute,
+                                            imageUrl = cls.imageUrl,
+                                            powerBudget = cls.powerBudget,
+                                            isPublic = false,
+                                            createdByUserId = cls.createdByUserId
+                                        )
+                                        ApiClient.updateCharacterClass(cls.id, request)
+                                            .onSuccess { updated -> characterClass = updated }
+                                            .onFailure { err -> error = "Failed to lock: ${err.message}" }
+                                        isTogglingLock = false
+                                    }
+                                }
+                            }
+                        },
+                        enabled = !isTogglingLock
+                    ) {
+                        if (isTogglingLock) {
+                            CircularProgressIndicator(
+                                modifier = Modifier.size(24.dp),
+                                strokeWidth = 2.dp
+                            )
+                        } else {
+                            Icon(
+                                imageVector = if (isLocked) Icons.Filled.Lock else Icons.Filled.LockOpen,
+                                contentDescription = if (isLocked) "Unlock class" else "Lock class",
+                                tint = if (isLocked) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                    }
+                } else {
+                    // Non-admins see the lock icon but can't interact
+                    Icon(
+                        imageVector = if (isLocked) Icons.Filled.Lock else Icons.Filled.LockOpen,
+                        contentDescription = if (isLocked) "Class is locked" else "Class is unlocked",
+                        tint = if (isLocked) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.padding(12.dp)
+                    )
+                }
+                // Edit button (only show when unlocked and admin)
+                if (isAdmin && !isLocked) {
+                    IconButton(onClick = { characterClass?.let { onEdit(it) } }) {
+                        Icon(Icons.Filled.Edit, contentDescription = "Edit Class")
+                    }
+                }
+            }
+        }
+
+        when {
+            isLoading -> {
+                Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                    CircularProgressIndicator()
+                }
+            }
+            error != null -> {
+                Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                        Text("Error: $error", color = MaterialTheme.colorScheme.error)
+                        Spacer(modifier = Modifier.height(8.dp))
+                        Button(onClick = {
+                            scope.launch {
+                                isLoading = true
+                                error = null
+                                val classResult = ApiClient.getCharacterClass(classId)
+                                isLoading = false
+                                classResult.onSuccess { characterClass = it }
+                                    .onFailure { error = it.message }
+                            }
+                        }) {
+                            Text("Retry")
+                        }
+                    }
+                }
+            }
+            characterClass != null -> {
+                LazyColumn(
+                    modifier = Modifier.fillMaxSize(),
+                    contentPadding = PaddingValues(bottom = 80.dp)
+                ) {
+                    // Class details card
+                    item {
+                        Card(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(bottom = 16.dp)
+                        ) {
+                            Column(modifier = Modifier.padding(16.dp)) {
+                                // Image if available
+                                characterClass?.imageUrl?.let { url ->
+                                    if (url.isNotBlank()) {
+                                        AsyncImage(
+                                            model = "${AppConfig.api.baseUrl}$url",
+                                            contentDescription = characterClass?.name,
+                                            modifier = Modifier
+                                                .fillMaxWidth()
+                                                .height(200.dp)
+                                                .clip(RoundedCornerShape(8.dp)),
+                                            contentScale = ContentScale.Crop
+                                        )
+                                        Spacer(modifier = Modifier.height(16.dp))
+                                    }
+                                }
+
+                                Text(
+                                    text = characterClass!!.description,
+                                    style = MaterialTheme.typography.bodyMedium
+                                )
+
+                                Spacer(modifier = Modifier.height(12.dp))
+
+                                Row(
+                                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                    modifier = Modifier.padding(top = 8.dp)
+                                ) {
+                                    AssistChip(
+                                        onClick = {},
+                                        label = { Text(if (characterClass!!.isSpellcaster) "Spellcaster" else "Martial") },
+                                        colors = AssistChipDefaults.assistChipColors(
+                                            containerColor = if (characterClass!!.isSpellcaster)
+                                                MaterialTheme.colorScheme.primaryContainer
+                                            else
+                                                MaterialTheme.colorScheme.secondaryContainer
+                                        )
+                                    )
+                                    AssistChip(
+                                        onClick = {},
+                                        label = { Text("Hit Die: d${characterClass!!.hitDie}") }
+                                    )
+                                    AssistChip(
+                                        onClick = {},
+                                        label = { Text("Primary: ${characterClass!!.primaryAttribute.replaceFirstChar { it.uppercase() }}") }
+                                    )
+                                }
+                            }
+                        }
+                    }
+
+                    // Abilities section header
+                    item {
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(vertical = 8.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text(
+                                text = if (characterClass!!.isSpellcaster) "Spells" else "Abilities",
+                                style = MaterialTheme.typography.titleMedium,
+                                modifier = Modifier.weight(1f)
+                            )
+                            Text(
+                                text = "${abilities.size} total",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                        HorizontalDivider()
+                    }
+
+                    // Abilities list
+                    if (abilities.isEmpty()) {
+                        item {
+                            Text(
+                                text = "No ${if (characterClass!!.isSpellcaster) "spells" else "abilities"} yet.",
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                modifier = Modifier.padding(vertical = 16.dp)
+                            )
+                        }
+                    } else {
+                        items(abilities) { ability ->
+                            AbilityListItem(
+                                ability = ability,
+                                onClick = if (!isLocked && isAdmin) {
+                                    { onEditAbility(ability) }
+                                } else null
+                            )
+                        }
+                    }
+                }
+
+                // FAB to add ability (only show when unlocked and admin)
+                if (isAdmin && !isLocked) {
+                    Box(modifier = Modifier.fillMaxSize()) {
+                        FloatingActionButton(
+                            onClick = { onAddAbility(classId) },
+                            modifier = Modifier
+                                .align(Alignment.BottomEnd)
+                                .padding(16.dp),
+                            shape = CircleShape
+                        ) {
+                            Icon(Icons.Filled.Add, contentDescription = "Add Ability")
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun AbilityListItem(
+    ability: AbilityDto,
+    onClick: (() -> Unit)? = null
+) {
+    ListItem(
+        headlineContent = {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                Text(ability.name)
+                // Power cost badge
+                Surface(
+                    shape = RoundedCornerShape(4.dp),
+                    color = when {
+                        ability.powerCost > 15 -> MaterialTheme.colorScheme.errorContainer
+                        ability.powerCost > 10 -> MaterialTheme.colorScheme.tertiaryContainer
+                        else -> MaterialTheme.colorScheme.primaryContainer
+                    }
+                ) {
+                    Text(
+                        text = "${ability.powerCost}",
+                        style = MaterialTheme.typography.labelSmall,
+                        modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
+                        color = when {
+                            ability.powerCost > 15 -> MaterialTheme.colorScheme.onErrorContainer
+                            ability.powerCost > 10 -> MaterialTheme.colorScheme.onTertiaryContainer
+                            else -> MaterialTheme.colorScheme.onPrimaryContainer
+                        }
+                    )
+                }
+            }
+        },
+        supportingContent = {
+            Column {
+                Text(
+                    text = ability.description.take(100) + if (ability.description.length > 100) "..." else "",
+                    style = MaterialTheme.typography.bodySmall
+                )
+                Row(
+                    modifier = Modifier.padding(top = 4.dp),
+                    horizontalArrangement = Arrangement.spacedBy(4.dp)
+                ) {
+                    AssistChip(
+                        onClick = {},
+                        label = { Text(ability.abilityType.replaceFirstChar { it.uppercase() }) }
+                    )
+                    if (ability.range > 0) {
+                        AssistChip(
+                            onClick = {},
+                            label = { Text("${ability.range}ft") }
+                        )
+                    }
+                    if (ability.cooldownType != "none") {
+                        AssistChip(
+                            onClick = {},
+                            label = { Text(ability.cooldownType.replaceFirstChar { it.uppercase() }) }
+                        )
+                    }
+                    if (ability.baseDamage > 0) {
+                        AssistChip(
+                            onClick = {},
+                            label = { Text("${ability.baseDamage} dmg") }
+                        )
+                    }
+                }
+            }
+        },
+        leadingContent = if (!ability.imageUrl.isNullOrBlank()) {
+            {
+                AsyncImage(
+                    model = "${AppConfig.api.baseUrl}${ability.imageUrl}",
+                    contentDescription = ability.name,
+                    modifier = Modifier
+                        .size(48.dp)
+                        .clip(RoundedCornerShape(4.dp)),
+                    contentScale = ContentScale.Crop
+                )
+            }
+        } else null,
+        modifier = if (onClick != null) Modifier.clickable { onClick() } else Modifier
+    )
+    HorizontalDivider()
+}
+
+@Composable
+fun ClassForm(
+    editClass: CharacterClassDto?,
+    onBack: () -> Unit,
+    onSaved: () -> Unit
+) {
+    var name by remember { mutableStateOf(editClass?.name ?: "") }
+    var description by remember { mutableStateOf(editClass?.description ?: "") }
+    var isSpellcaster by remember { mutableStateOf(editClass?.isSpellcaster ?: true) }
+    var hitDie by remember { mutableStateOf(editClass?.hitDie?.toString() ?: "6") }
+    var primaryAttribute by remember { mutableStateOf(editClass?.primaryAttribute ?: "intelligence") }
+    var imageUrl by remember { mutableStateOf(editClass?.imageUrl ?: "") }
+    var isLoading by remember { mutableStateOf(false) }
+    var error by remember { mutableStateOf<String?>(null) }
+    val scope = rememberCoroutineScope()
+
+    val isEditing = editClass != null
+    val hitDieOptions = listOf("6", "8", "10", "12")
+    val attributeOptions = listOf("strength", "dexterity", "constitution", "intelligence", "wisdom", "charisma")
+
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .verticalScroll(rememberScrollState())
+            .padding(16.dp)
+    ) {
+        // Header
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            IconButton(onClick = onBack) {
+                Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
+            }
+            Text(
+                text = if (isEditing) "Edit Class" else "Create Class",
+                style = MaterialTheme.typography.headlineSmall,
+                modifier = Modifier.weight(1f)
+            )
+        }
+
+        Spacer(modifier = Modifier.height(16.dp))
+
+        // Error message
+        error?.let {
+            Card(
+                colors = CardDefaults.cardColors(
+                    containerColor = MaterialTheme.colorScheme.errorContainer
+                ),
+                modifier = Modifier.fillMaxWidth().padding(bottom = 16.dp)
+            ) {
+                Text(
+                    text = it,
+                    color = MaterialTheme.colorScheme.onErrorContainer,
+                    modifier = Modifier.padding(16.dp)
+                )
+            }
+        }
+
+        // Name field
+        OutlinedTextField(
+            value = name,
+            onValueChange = { name = it },
+            label = { Text("Name") },
+            modifier = Modifier.fillMaxWidth(),
+            singleLine = true
+        )
+
+        Spacer(modifier = Modifier.height(16.dp))
+
+        // Description field
+        OutlinedTextField(
+            value = description,
+            onValueChange = { description = it },
+            label = { Text("Description") },
+            modifier = Modifier.fillMaxWidth(),
+            minLines = 3,
+            maxLines = 6
+        )
+
+        Spacer(modifier = Modifier.height(16.dp))
+
+        // Spellcaster toggle
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Text(
+                text = "Class Type",
+                style = MaterialTheme.typography.bodyMedium,
+                modifier = Modifier.weight(1f)
+            )
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(
+                    text = "Martial",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = if (!isSpellcaster) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                Switch(
+                    checked = isSpellcaster,
+                    onCheckedChange = { isSpellcaster = it },
+                    modifier = Modifier.padding(horizontal = 8.dp)
+                )
+                Text(
+                    text = "Spellcaster",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = if (isSpellcaster) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+        }
+
+        Spacer(modifier = Modifier.height(16.dp))
+
+        // Hit Die selector
+        Text(
+            text = "Hit Die",
+            style = MaterialTheme.typography.bodyMedium,
+            modifier = Modifier.padding(bottom = 8.dp)
+        )
+        Row(
+            horizontalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            hitDieOptions.forEach { die ->
+                FilterChip(
+                    selected = hitDie == die,
+                    onClick = { hitDie = die },
+                    label = { Text("d$die") }
+                )
+            }
+        }
+
+        Spacer(modifier = Modifier.height(16.dp))
+
+        // Primary Attribute selector
+        Text(
+            text = "Primary Attribute",
+            style = MaterialTheme.typography.bodyMedium,
+            modifier = Modifier.padding(bottom = 8.dp)
+        )
+        FlowRow(
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            attributeOptions.forEach { attr ->
+                FilterChip(
+                    selected = primaryAttribute == attr,
+                    onClick = { primaryAttribute = attr },
+                    label = { Text(attr.replaceFirstChar { it.uppercase() }) }
+                )
+            }
+        }
+
+        Spacer(modifier = Modifier.height(16.dp))
+
+        // Image URL field
+        OutlinedTextField(
+            value = imageUrl,
+            onValueChange = { imageUrl = it },
+            label = { Text("Image URL (optional)") },
+            modifier = Modifier.fillMaxWidth(),
+            singleLine = true
+        )
+
+        Spacer(modifier = Modifier.height(24.dp))
+
+        // Save button
+        Button(
+            onClick = {
+                if (name.isBlank()) {
+                    error = "Name is required"
+                    return@Button
+                }
+                if (description.isBlank()) {
+                    error = "Description is required"
+                    return@Button
+                }
+
+                scope.launch {
+                    isLoading = true
+                    error = null
+
+                    val request = CreateCharacterClassRequest(
+                        name = name.trim(),
+                        description = description.trim(),
+                        isSpellcaster = isSpellcaster,
+                        hitDie = hitDie.toIntOrNull() ?: 6,
+                        primaryAttribute = primaryAttribute,
+                        imageUrl = imageUrl.ifBlank { null }
+                    )
+
+                    val result = if (isEditing) {
+                        ApiClient.updateCharacterClass(editClass!!.id, request)
+                    } else {
+                        ApiClient.createCharacterClass(request)
+                    }
+
+                    isLoading = false
+                    result.onSuccess { onSaved() }
+                        .onFailure { error = it.message ?: "Failed to save class" }
+                }
+            },
+            modifier = Modifier.fillMaxWidth(),
+            enabled = !isLoading
+        ) {
+            if (isLoading) {
+                CircularProgressIndicator(
+                    modifier = Modifier.size(20.dp),
+                    strokeWidth = 2.dp
+                )
+            } else {
+                Text(if (isEditing) "Save Changes" else "Create Class")
+            }
+        }
+    }
+}
+
+@Composable
+fun AbilityForm(
+    editAbility: AbilityDto?,
+    classId: String?,
+    onBack: () -> Unit,
+    onSaved: () -> Unit
+) {
+    var name by remember { mutableStateOf(editAbility?.name ?: "") }
+    var description by remember { mutableStateOf(editAbility?.description ?: "") }
+    var abilityType by remember { mutableStateOf(editAbility?.abilityType ?: "spell") }
+    var targetType by remember { mutableStateOf(editAbility?.targetType ?: "single_enemy") }
+    var range by remember { mutableStateOf(editAbility?.range?.toString() ?: "60") }
+    var cooldownType by remember { mutableStateOf(editAbility?.cooldownType ?: "medium") }
+    var cooldownRounds by remember { mutableStateOf(editAbility?.cooldownRounds?.toString() ?: "3") }
+    var baseDamage by remember { mutableStateOf(editAbility?.baseDamage?.toString() ?: "0") }
+    var durationRounds by remember { mutableStateOf(editAbility?.durationRounds?.toString() ?: "0") }
+    var effects by remember { mutableStateOf(editAbility?.effects ?: "[]") }
+    var imageUrl by remember { mutableStateOf(editAbility?.imageUrl ?: "") }
+    var isLoading by remember { mutableStateOf(false) }
+    var error by remember { mutableStateOf<String?>(null) }
+    val scope = rememberCoroutineScope()
+
+    val isEditing = editAbility != null
+    val abilityTypes = listOf("spell", "combat", "utility", "passive")
+    val targetTypes = listOf("self", "single_enemy", "single_ally", "area", "all_enemies", "all_allies")
+    val cooldownTypes = listOf("none", "short", "medium", "long")
+
+    // Calculate estimated power cost for preview
+    val estimatedPowerCost = remember(baseDamage, range, targetType, cooldownType, durationRounds, effects) {
+        var cost = 0
+        cost += (baseDamage.toIntOrNull() ?: 0) / 5
+        val rangeVal = range.toIntOrNull() ?: 0
+        cost += when {
+            rangeVal <= 0 -> 0
+            rangeVal <= 5 -> 1
+            rangeVal <= 30 -> 2
+            rangeVal <= 60 -> 3
+            rangeVal <= 120 -> 4
+            else -> 5
+        }
+        cost += when (targetType) {
+            "self" -> 0
+            "single_enemy", "single_ally" -> 1
+            "area" -> 3
+            "all_enemies", "all_allies" -> 5
+            else -> 1
+        }
+        cost += when (cooldownType) {
+            "none" -> 5
+            "short" -> 2
+            "medium" -> 0
+            "long" -> -2
+            else -> 0
+        }
+        val durVal = durationRounds.toIntOrNull() ?: 0
+        cost += when {
+            durVal <= 0 -> 0
+            durVal <= 2 -> 2
+            else -> 4
+        }
+        if (effects.contains("heal")) cost += 3
+        if (effects.contains("stun")) cost += 4
+        if (effects.contains("immobilize") || effects.contains("root")) cost += 5
+        if (effects.contains("buff")) cost += 2
+        if (effects.contains("debuff")) cost += 3
+        cost.coerceAtLeast(1)
+    }
+
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .verticalScroll(rememberScrollState())
+            .padding(16.dp)
+    ) {
+        // Header
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            IconButton(onClick = onBack) {
+                Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
+            }
+            Text(
+                text = if (isEditing) "Edit Ability" else "Create Ability",
+                style = MaterialTheme.typography.headlineSmall,
+                modifier = Modifier.weight(1f)
+            )
+        }
+
+        Spacer(modifier = Modifier.height(16.dp))
+
+        // Error message
+        error?.let {
+            Card(
+                colors = CardDefaults.cardColors(
+                    containerColor = MaterialTheme.colorScheme.errorContainer
+                ),
+                modifier = Modifier.fillMaxWidth().padding(bottom = 16.dp)
+            ) {
+                Text(
+                    text = it,
+                    color = MaterialTheme.colorScheme.onErrorContainer,
+                    modifier = Modifier.padding(16.dp)
+                )
+            }
+        }
+
+        // Name field
+        OutlinedTextField(
+            value = name,
+            onValueChange = { name = it },
+            label = { Text("Name") },
+            modifier = Modifier.fillMaxWidth(),
+            singleLine = true
+        )
+
+        Spacer(modifier = Modifier.height(16.dp))
+
+        // Description field
+        OutlinedTextField(
+            value = description,
+            onValueChange = { description = it },
+            label = { Text("Description") },
+            modifier = Modifier.fillMaxWidth(),
+            minLines = 3,
+            maxLines = 6
+        )
+
+        Spacer(modifier = Modifier.height(16.dp))
+
+        // Ability Type selector
+        Text(
+            text = "Ability Type",
+            style = MaterialTheme.typography.bodyMedium,
+            modifier = Modifier.padding(bottom = 8.dp)
+        )
+        Row(
+            horizontalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            abilityTypes.forEach { type ->
+                FilterChip(
+                    selected = abilityType == type,
+                    onClick = { abilityType = type },
+                    label = { Text(type.replaceFirstChar { it.uppercase() }) }
+                )
+            }
+        }
+
+        Spacer(modifier = Modifier.height(16.dp))
+
+        // Target Type selector
+        Text(
+            text = "Target Type",
+            style = MaterialTheme.typography.bodyMedium,
+            modifier = Modifier.padding(bottom = 8.dp)
+        )
+        FlowRow(
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            targetTypes.forEach { type ->
+                FilterChip(
+                    selected = targetType == type,
+                    onClick = { targetType = type },
+                    label = { Text(type.replace("_", " ").split(" ").joinToString(" ") { it.replaceFirstChar { c -> c.uppercase() } }) }
+                )
+            }
+        }
+
+        Spacer(modifier = Modifier.height(16.dp))
+
+        // Power cost preview card
+        Card(
+            colors = CardDefaults.cardColors(
+                containerColor = when {
+                    estimatedPowerCost > 15 -> MaterialTheme.colorScheme.errorContainer
+                    estimatedPowerCost > 10 -> MaterialTheme.colorScheme.tertiaryContainer
+                    else -> MaterialTheme.colorScheme.primaryContainer
+                }
+            ),
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            Row(
+                modifier = Modifier.padding(12.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween
+            ) {
+                Text(
+                    text = "Estimated Power Cost",
+                    style = MaterialTheme.typography.bodyMedium
+                )
+                Text(
+                    text = "$estimatedPowerCost",
+                    style = MaterialTheme.typography.titleLarge,
+                    fontWeight = FontWeight.Bold
+                )
+            }
+        }
+
+        Spacer(modifier = Modifier.height(16.dp))
+
+        // Damage and Duration in a row
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(16.dp)
+        ) {
+            OutlinedTextField(
+                value = baseDamage,
+                onValueChange = { baseDamage = it.filter { c -> c.isDigit() } },
+                label = { Text("Base Damage") },
+                modifier = Modifier.weight(1f),
+                singleLine = true,
+                supportingText = { Text("+${(baseDamage.toIntOrNull() ?: 0) / 5} cost") }
+            )
+            OutlinedTextField(
+                value = durationRounds,
+                onValueChange = { durationRounds = it.filter { c -> c.isDigit() } },
+                label = { Text("Duration (rounds)") },
+                modifier = Modifier.weight(1f),
+                singleLine = true,
+                supportingText = { Text("0 = instant") }
+            )
+        }
+
+        Spacer(modifier = Modifier.height(16.dp))
+
+        // Range field
+        OutlinedTextField(
+            value = range,
+            onValueChange = { range = it.filter { c -> c.isDigit() } },
+            label = { Text("Range (feet)") },
+            modifier = Modifier.fillMaxWidth(),
+            singleLine = true,
+            supportingText = { Text("0 for self/touch, 5 for melee") }
+        )
+
+        Spacer(modifier = Modifier.height(16.dp))
+
+        // Cooldown Type selector
+        Text(
+            text = "Cooldown Type",
+            style = MaterialTheme.typography.bodyMedium,
+            modifier = Modifier.padding(bottom = 8.dp)
+        )
+        Row(
+            horizontalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            cooldownTypes.forEach { type ->
+                FilterChip(
+                    selected = cooldownType == type,
+                    onClick = { cooldownType = type },
+                    label = { Text(type.replaceFirstChar { it.uppercase() }) }
+                )
+            }
+        }
+
+        if (cooldownType == "short" || cooldownType == "medium") {
+            Spacer(modifier = Modifier.height(8.dp))
+            OutlinedTextField(
+                value = cooldownRounds,
+                onValueChange = { cooldownRounds = it.filter { c -> c.isDigit() } },
+                label = { Text("Cooldown Rounds") },
+                modifier = Modifier.fillMaxWidth(),
+                singleLine = true
+            )
+        }
+
+        Spacer(modifier = Modifier.height(16.dp))
+
+        // Effects JSON field
+        OutlinedTextField(
+            value = effects,
+            onValueChange = { effects = it },
+            label = { Text("Effects (JSON)") },
+            modifier = Modifier.fillMaxWidth(),
+            minLines = 2,
+            maxLines = 4,
+            supportingText = { Text("JSON array of effect objects") }
+        )
+
+        Spacer(modifier = Modifier.height(16.dp))
+
+        // Image URL field
+        OutlinedTextField(
+            value = imageUrl,
+            onValueChange = { imageUrl = it },
+            label = { Text("Image URL (optional)") },
+            modifier = Modifier.fillMaxWidth(),
+            singleLine = true
+        )
+
+        Spacer(modifier = Modifier.height(24.dp))
+
+        // Save button
+        Button(
+            onClick = {
+                if (name.isBlank()) {
+                    error = "Name is required"
+                    return@Button
+                }
+                if (description.isBlank()) {
+                    error = "Description is required"
+                    return@Button
+                }
+
+                scope.launch {
+                    isLoading = true
+                    error = null
+
+                    val request = CreateAbilityRequest(
+                        name = name.trim(),
+                        description = description.trim(),
+                        classId = classId,
+                        abilityType = abilityType,
+                        targetType = targetType,
+                        range = range.toIntOrNull() ?: 0,
+                        cooldownType = cooldownType,
+                        cooldownRounds = if (cooldownType == "short" || cooldownType == "medium") cooldownRounds.toIntOrNull() ?: 0 else 0,
+                        baseDamage = baseDamage.toIntOrNull() ?: 0,
+                        durationRounds = durationRounds.toIntOrNull() ?: 0,
+                        effects = effects,
+                        imageUrl = imageUrl.ifBlank { null }
+                    )
+
+                    val result = if (isEditing) {
+                        ApiClient.updateAbility(editAbility!!.id, request)
+                    } else {
+                        ApiClient.createAbility(request)
+                    }
+
+                    isLoading = false
+                    result.onSuccess { onSaved() }
+                        .onFailure { error = it.message ?: "Failed to save ability" }
+                }
+            },
+            modifier = Modifier.fillMaxWidth(),
+            enabled = !isLoading
+        ) {
+            if (isLoading) {
+                CircularProgressIndicator(
+                    modifier = Modifier.size(20.dp),
+                    strokeWidth = 2.dp
+                )
+            } else {
+                Text(if (isEditing) "Save Changes" else "Create Ability")
             }
         }
     }

@@ -113,6 +113,7 @@ data class UserDto(
     val featureIds: List<String> = emptyList(),
     val imageUrl: String? = null,
     val currentLocationId: String? = null,
+    val characterClassId: String? = null,
     val createdAt: Long = 0,
     val lastActiveAt: Long = 0
 )
@@ -139,6 +140,20 @@ data class UpdateUserRequest(
 @Serializable
 data class UpdateUserLocationRequest(
     val locationId: String?
+)
+
+@Serializable
+data class AssignClassRequest(
+    val generateClass: Boolean,
+    val characterDescription: String
+)
+
+@Serializable
+data class AssignClassResponse(
+    val success: Boolean,
+    val user: UserDto,
+    val assignedClass: CharacterClassDto? = null,
+    val message: String? = null
 )
 
 @Serializable
@@ -276,7 +291,8 @@ data class AdminUserInfoDto(
     val createdAt: Long,
     val lastActiveAt: Long,
     val currentLocationId: String?,
-    val currentLocationName: String?
+    val currentLocationName: String?,
+    val imageUrl: String? = null
 )
 
 @Serializable
@@ -284,6 +300,165 @@ data class AdminUsersResponseDto(
     val success: Boolean,
     val totalUsers: Int,
     val users: List<AdminUserInfoDto>
+)
+
+// Character Class and Ability DTOs
+@Serializable
+data class CharacterClassDto(
+    val id: String,
+    val name: String,
+    val description: String,
+    val isSpellcaster: Boolean,
+    val hitDie: Int,
+    val primaryAttribute: String,
+    val imageUrl: String? = null,
+    val powerBudget: Int = 100,
+    val isPublic: Boolean = true,
+    val createdByUserId: String? = null
+)
+
+@Serializable
+data class CreateCharacterClassRequest(
+    val name: String,
+    val description: String,
+    val isSpellcaster: Boolean,
+    val hitDie: Int,
+    val primaryAttribute: String,
+    val imageUrl: String? = null,
+    val powerBudget: Int = 100,
+    val isPublic: Boolean = true,
+    val createdByUserId: String? = null
+)
+
+@Serializable
+data class AbilityDto(
+    val id: String,
+    val name: String,
+    val description: String,
+    val classId: String? = null,
+    val abilityType: String,    // "spell", "combat", "utility", "passive"
+    val targetType: String,     // "self", "single_enemy", "single_ally", "area", "all_enemies", "all_allies"
+    val range: Int,
+    val cooldownType: String,   // "none", "short", "medium", "long"
+    val cooldownRounds: Int = 0,
+    val effects: String = "[]",
+    val imageUrl: String? = null,
+    val baseDamage: Int = 0,
+    val durationRounds: Int = 0,
+    val powerCost: Int = 10
+)
+
+@Serializable
+data class CreateAbilityRequest(
+    val name: String,
+    val description: String,
+    val classId: String? = null,
+    val abilityType: String,
+    val targetType: String,
+    val range: Int,
+    val cooldownType: String,
+    val cooldownRounds: Int = 0,
+    val effects: String = "[]",
+    val imageUrl: String? = null,
+    val baseDamage: Int = 0,
+    val durationRounds: Int = 0
+)
+
+@Serializable
+data class PdfAnalysisRequest(
+    val analysisType: String  // "classes" or "abilities"
+)
+
+@Serializable
+data class ExtractedClassDto(
+    val name: String,
+    val description: String,
+    val isSpellcaster: Boolean,
+    val hitDie: Int,
+    val primaryAttribute: String
+)
+
+@Serializable
+data class ExtractedAbilityDto(
+    val name: String,
+    val description: String,
+    val abilityType: String,
+    val targetType: String,
+    val range: Int
+)
+
+@Serializable
+data class PdfAnalysisResponse(
+    val success: Boolean,
+    val classes: List<ExtractedClassDto> = emptyList(),
+    val abilities: List<ExtractedAbilityDto> = emptyList(),
+    val error: String? = null
+)
+
+// Class generation and matching DTOs
+@Serializable
+data class MatchClassRequest(
+    val characterDescription: String
+)
+
+@Serializable
+data class ClassMatchResult(
+    val matchedClassId: String,
+    val matchedClassName: String,
+    val confidence: Float,
+    val reasoning: String
+)
+
+@Serializable
+data class GenerateClassRequest(
+    val characterDescription: String,
+    val isPublic: Boolean = false
+)
+
+@Serializable
+data class GeneratedClassResponse(
+    val characterClass: CharacterClassDto,
+    val abilities: List<AbilityDto>,
+    val totalPowerCost: Int
+)
+
+@Serializable
+data class LlmStatusResponse(
+    val available: Boolean
+)
+
+// Nerf request DTOs
+@Serializable
+data class NerfRequestDto(
+    val id: String,
+    val abilityId: String,
+    val requestedByUserId: String,
+    val requestedByUserName: String,
+    val reason: String,
+    val status: String,
+    val suggestedChanges: String? = null,
+    val adminNotes: String? = null,
+    val createdAt: Long,
+    val resolvedAt: Long? = null,
+    val resolvedByUserId: String? = null
+)
+
+@Serializable
+data class CreateNerfRequestRequest(
+    val abilityId: String,
+    val reason: String
+)
+
+@Serializable
+data class ResolveNerfRequestRequest(
+    val status: String,
+    val adminNotes: String? = null,
+    val applyChanges: Boolean = false
+)
+
+@Serializable
+data class PendingCountResponse(
+    val count: Long
 )
 
 // Terrain override DTOs
@@ -548,6 +723,13 @@ object ApiClient {
         client.get("$baseUrl/users/at-location/$locationId").body()
     }
 
+    suspend fun assignClass(userId: String, request: AssignClassRequest): Result<AssignClassResponse> = runCatching {
+        client.post("$baseUrl/users/$userId/assign-class") {
+            contentType(ContentType.Application.Json)
+            setBody(request)
+        }.body()
+    }
+
     @Serializable
     private data class ErrorResponse(val error: String)
 
@@ -777,6 +959,163 @@ object ApiClient {
 
     suspend fun deleteBackup(filename: String): Result<BackupResponse> = runCatching {
         client.delete("$baseUrl/admin/database/backup/$filename").body()
+    }
+
+    // Character Class methods
+    suspend fun getCharacterClasses(): Result<List<CharacterClassDto>> = runCatching {
+        client.get("$baseUrl/classes").body()
+    }
+
+    suspend fun getCharacterClass(id: String): Result<CharacterClassDto?> = runCatching {
+        val response = client.get("$baseUrl/classes/$id")
+        if (response.status.isSuccess()) {
+            response.body()
+        } else {
+            null
+        }
+    }
+
+    suspend fun createCharacterClass(request: CreateCharacterClassRequest): Result<CharacterClassDto> = runCatching {
+        client.post("$baseUrl/classes") {
+            contentType(ContentType.Application.Json)
+            setBody(request)
+        }.body()
+    }
+
+    suspend fun updateCharacterClass(id: String, request: CreateCharacterClassRequest): Result<CharacterClassDto> = runCatching {
+        client.put("$baseUrl/classes/$id") {
+            contentType(ContentType.Application.Json)
+            setBody(request)
+        }.body()
+    }
+
+    suspend fun deleteCharacterClass(id: String): Result<Unit> = runCatching {
+        client.delete("$baseUrl/classes/$id")
+        Unit
+    }
+
+    // Ability methods
+    suspend fun getAbilities(): Result<List<AbilityDto>> = runCatching {
+        client.get("$baseUrl/abilities").body()
+    }
+
+    suspend fun getAbility(id: String): Result<AbilityDto?> = runCatching {
+        val response = client.get("$baseUrl/abilities/$id")
+        if (response.status.isSuccess()) {
+            response.body()
+        } else {
+            null
+        }
+    }
+
+    suspend fun getAbilitiesByClass(classId: String): Result<List<AbilityDto>> = runCatching {
+        client.get("$baseUrl/abilities/class/$classId").body()
+    }
+
+    suspend fun createAbility(request: CreateAbilityRequest): Result<AbilityDto> = runCatching {
+        client.post("$baseUrl/abilities") {
+            contentType(ContentType.Application.Json)
+            setBody(request)
+        }.body()
+    }
+
+    suspend fun updateAbility(id: String, request: CreateAbilityRequest): Result<AbilityDto> = runCatching {
+        client.put("$baseUrl/abilities/$id") {
+            contentType(ContentType.Application.Json)
+            setBody(request)
+        }.body()
+    }
+
+    suspend fun deleteAbility(id: String): Result<Unit> = runCatching {
+        client.delete("$baseUrl/abilities/$id")
+        Unit
+    }
+
+    // Class Generation and Matching methods
+    suspend fun matchCharacterToClass(description: String): Result<ClassMatchResult> = runCatching {
+        client.post("$baseUrl/class-generation/match") {
+            contentType(ContentType.Application.Json)
+            setBody(MatchClassRequest(description))
+        }.body()
+    }
+
+    suspend fun generateClass(description: String, isPublic: Boolean = false): Result<GeneratedClassResponse> = runCatching {
+        client.post("$baseUrl/class-generation/generate") {
+            contentType(ContentType.Application.Json)
+            setBody(GenerateClassRequest(description, isPublic))
+        }.body()
+    }
+
+    suspend fun getLlmStatus(): Result<LlmStatusResponse> = runCatching {
+        client.get("$baseUrl/class-generation/status").body()
+    }
+
+    // Nerf Request methods
+    suspend fun getNerfRequests(): Result<List<NerfRequestDto>> = runCatching {
+        client.get("$baseUrl/nerf-requests").body()
+    }
+
+    suspend fun getPendingNerfRequests(): Result<List<NerfRequestDto>> = runCatching {
+        client.get("$baseUrl/nerf-requests/pending").body()
+    }
+
+    suspend fun getPendingNerfCount(): Result<PendingCountResponse> = runCatching {
+        client.get("$baseUrl/nerf-requests/pending/count").body()
+    }
+
+    suspend fun getNerfRequest(id: String): Result<NerfRequestDto?> = runCatching {
+        val response = client.get("$baseUrl/nerf-requests/$id")
+        if (response.status.isSuccess()) response.body() else null
+    }
+
+    suspend fun getNerfRequestsForAbility(abilityId: String): Result<List<NerfRequestDto>> = runCatching {
+        client.get("$baseUrl/nerf-requests/ability/$abilityId").body()
+    }
+
+    suspend fun createNerfRequest(abilityId: String, reason: String): Result<NerfRequestDto> = runCatching {
+        client.post("$baseUrl/nerf-requests") {
+            contentType(ContentType.Application.Json)
+            setBody(CreateNerfRequestRequest(abilityId, reason))
+        }.body()
+    }
+
+    suspend fun resolveNerfRequest(
+        id: String,
+        status: String,
+        adminNotes: String? = null,
+        applyChanges: Boolean = false
+    ): Result<NerfRequestDto> = runCatching {
+        client.put("$baseUrl/nerf-requests/$id/resolve") {
+            contentType(ContentType.Application.Json)
+            setBody(ResolveNerfRequestRequest(status, adminNotes, applyChanges))
+        }.body()
+    }
+
+    suspend fun deleteNerfRequest(id: String): Result<Unit> = runCatching {
+        client.delete("$baseUrl/nerf-requests/$id")
+        Unit
+    }
+
+    // PDF Analysis methods
+    suspend fun analyzePdf(filename: String, fileBytes: ByteArray, analysisType: String): Result<PdfAnalysisResponse> = runCatching {
+        val response = client.post("$baseUrl/pdf/analyze") {
+            setBody(
+                MultiPartFormDataContent(
+                    formData {
+                        append("file", fileBytes, Headers.build {
+                            append(HttpHeaders.ContentDisposition, "filename=\"$filename\"")
+                            append(HttpHeaders.ContentType, "application/pdf")
+                        })
+                        append("analysisType", analysisType)
+                    }
+                )
+            )
+        }
+        if (response.status.isSuccess()) {
+            response.body()
+        } else {
+            PdfAnalysisResponse(success = false, error = "Analysis failed with status ${response.status}")
+        }
     }
 }
 

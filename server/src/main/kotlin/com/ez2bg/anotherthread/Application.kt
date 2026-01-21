@@ -99,7 +99,8 @@ data class AdminUserInfo(
     val createdAt: Long,
     val lastActiveAt: Long,
     val currentLocationId: String?,
-    val currentLocationName: String?
+    val currentLocationName: String?,
+    val imageUrl: String?
 )
 
 /**
@@ -138,9 +139,63 @@ data class CreateItemRequest(
 )
 
 @Serializable
+data class CreateCharacterClassRequest(
+    val name: String,
+    val description: String,
+    val isSpellcaster: Boolean,
+    val hitDie: Int,
+    val primaryAttribute: String,
+    val imageUrl: String? = null,
+    val powerBudget: Int = 100,
+    val isPublic: Boolean = true,
+    val createdByUserId: String? = null
+)
+
+@Serializable
+data class CreateAbilityRequest(
+    val name: String,
+    val description: String,
+    val classId: String? = null,
+    val abilityType: String,
+    val targetType: String,
+    val range: Int,
+    val cooldownType: String,
+    val cooldownRounds: Int = 0,
+    val effects: String = "[]",
+    val imageUrl: String? = null,
+    val baseDamage: Int = 0,
+    val durationRounds: Int = 0
+)
+
+@Serializable
 data class CreateFeatureCategoryRequest(
     val name: String,
     val description: String
+)
+
+// Class generation and matching
+@Serializable
+data class MatchClassRequest(
+    val characterDescription: String
+)
+
+@Serializable
+data class GenerateClassRequest(
+    val characterDescription: String,
+    val isPublic: Boolean = false
+)
+
+@Serializable
+data class CreateNerfRequestRequest(
+    val abilityId: String,
+    val reason: String
+)
+
+@Serializable
+data class ResolveNerfRequestRequest(
+    val status: String,  // approved, rejected, applied
+    val adminNotes: String? = null,
+    val applyChanges: Boolean = false  // If true and status is approved, apply suggested changes
 )
 
 @Serializable
@@ -174,6 +229,20 @@ data class UpdateUserRequest(
 @Serializable
 data class UpdateLocationRequest(
     val locationId: String?
+)
+
+@Serializable
+data class AssignClassRequest(
+    val generateClass: Boolean,
+    val characterDescription: String
+)
+
+@Serializable
+data class AssignClassResponse(
+    val success: Boolean,
+    val user: UserResponse,
+    val assignedClass: CharacterClass? = null,
+    val message: String? = null
 )
 
 @Serializable
@@ -872,6 +941,9 @@ fun Application.module() {
         ?: "data/anotherthread.db"
     DatabaseConfig.init(dbPath)
     log.info("Database initialized at $dbPath")
+
+    // Seed character classes and abilities if empty
+    ClassAbilitySeed.seedIfEmpty()
 
     // Initialize file directories
     val fileDir = File(System.getenv("FILE_DIR") ?: "data/files").also { it.mkdirs() }
@@ -1777,6 +1849,71 @@ fun Application.module() {
                 val activeUsers = UserRepository.findActiveUsersAtLocation(locationId)
                 call.respond(activeUsers.map { it.toResponse() })
             }
+
+            // Assign class to user (either autoassign from existing or generate new)
+            post("/{id}/assign-class") {
+                val id = call.parameters["id"] ?: return@post call.respond(HttpStatusCode.BadRequest)
+                val request = call.receive<AssignClassRequest>()
+
+                val existingUser = UserRepository.findById(id)
+                if (existingUser == null) {
+                    call.respond(HttpStatusCode.NotFound)
+                    return@post
+                }
+
+                try {
+                    val assignedClass: CharacterClass
+
+                    if (request.generateClass) {
+                        // Generate a new custom class via LLM
+                        val generateResult = ClassGenerationService.generateNewClass(
+                            characterDescription = request.characterDescription,
+                            createdByUserId = id,
+                            isPublic = false
+                        )
+
+                        val (newClass, abilities) = generateResult.getOrThrow()
+                        // Save the class and its abilities
+                        val (savedClass, _) = ClassGenerationService.saveGeneratedClass(newClass, abilities)
+                        assignedClass = savedClass
+                    } else {
+                        // Match to an existing public class
+                        val matchResult = ClassGenerationService.matchToExistingClass(request.characterDescription)
+                        val match = matchResult.getOrThrow()
+
+                        val matchedClass = CharacterClassRepository.findById(match.matchedClassId)
+                        if (matchedClass == null) {
+                            // Fallback: get any public class
+                            val publicClasses = CharacterClassRepository.findAll().filter { it.isPublic }
+                            assignedClass = publicClasses.firstOrNull()
+                                ?: throw Exception("No classes available for assignment")
+                        } else {
+                            assignedClass = matchedClass
+                        }
+                    }
+
+                    // Update user with assigned class
+                    UserRepository.updateCharacterClass(id, assignedClass.id)
+                    val updatedUser = UserRepository.findById(id)!!
+
+                    call.respond(AssignClassResponse(
+                        success = true,
+                        user = updatedUser.toResponse(),
+                        assignedClass = assignedClass,
+                        message = if (request.generateClass)
+                            "Custom class '${assignedClass.name}' created and assigned!"
+                        else
+                            "Class '${assignedClass.name}' assigned based on your description"
+                    ))
+                } catch (e: Exception) {
+                    log.warn("Failed to assign class for user $id: ${e.message}")
+                    call.respond(HttpStatusCode.InternalServerError, AssignClassResponse(
+                        success = false,
+                        user = existingUser.toResponse(),
+                        message = "Failed to assign class: ${e.message}"
+                    ))
+                }
+            }
         }
 
         // Item routes
@@ -2441,7 +2578,8 @@ fun Application.module() {
                             createdAt = user.createdAt,
                             lastActiveAt = user.lastActiveAt,
                             currentLocationId = user.currentLocationId,
-                            currentLocationName = user.currentLocationId?.let { locationMap[it]?.name }
+                            currentLocationName = user.currentLocationId?.let { locationMap[it]?.name },
+                            imageUrl = user.imageUrl
                         )
                     }.sortedByDescending { it.lastActiveAt }
 
@@ -2492,6 +2630,452 @@ fun Application.module() {
                         HttpStatusCode.InternalServerError
                     )
                 }
+            }
+        }
+
+        // Character Class routes
+        route("/classes") {
+            get {
+                call.respond(CharacterClassRepository.findAll())
+            }
+
+            get("/{id}") {
+                val id = call.parameters["id"] ?: return@get call.respond(HttpStatusCode.BadRequest)
+                val characterClass = CharacterClassRepository.findById(id)
+                if (characterClass != null) {
+                    call.respond(characterClass)
+                } else {
+                    call.respond(HttpStatusCode.NotFound)
+                }
+            }
+
+            post {
+                val request = call.receive<CreateCharacterClassRequest>()
+                val userId = call.request.header("X-User-Id") ?: "unknown"
+                val userName = call.request.header("X-User-Name") ?: "unknown"
+
+                val characterClass = CharacterClass(
+                    name = request.name,
+                    description = request.description,
+                    isSpellcaster = request.isSpellcaster,
+                    hitDie = request.hitDie,
+                    primaryAttribute = request.primaryAttribute,
+                    imageUrl = request.imageUrl,
+                    powerBudget = request.powerBudget,
+                    isPublic = request.isPublic,
+                    createdByUserId = request.createdByUserId
+                )
+                val created = CharacterClassRepository.create(characterClass)
+
+                AuditLogRepository.log(
+                    recordId = created.id,
+                    recordType = "CharacterClass",
+                    recordName = created.name,
+                    action = AuditAction.CREATE,
+                    userId = userId,
+                    userName = userName
+                )
+
+                call.respond(HttpStatusCode.Created, created)
+            }
+
+            put("/{id}") {
+                val id = call.parameters["id"] ?: return@put call.respond(HttpStatusCode.BadRequest)
+                val request = call.receive<CreateCharacterClassRequest>()
+                val userId = call.request.header("X-User-Id") ?: "unknown"
+                val userName = call.request.header("X-User-Name") ?: "unknown"
+
+                val existing = CharacterClassRepository.findById(id)
+                if (existing == null) {
+                    call.respond(HttpStatusCode.NotFound)
+                    return@put
+                }
+
+                val updated = existing.copy(
+                    name = request.name,
+                    description = request.description,
+                    isSpellcaster = request.isSpellcaster,
+                    hitDie = request.hitDie,
+                    primaryAttribute = request.primaryAttribute,
+                    imageUrl = request.imageUrl,
+                    powerBudget = request.powerBudget,
+                    isPublic = request.isPublic,
+                    createdByUserId = request.createdByUserId
+                )
+                CharacterClassRepository.update(updated)
+
+                AuditLogRepository.log(
+                    recordId = updated.id,
+                    recordType = "CharacterClass",
+                    recordName = updated.name,
+                    action = AuditAction.UPDATE,
+                    userId = userId,
+                    userName = userName
+                )
+
+                call.respond(updated)
+            }
+
+            delete("/{id}") {
+                val id = call.parameters["id"] ?: return@delete call.respond(HttpStatusCode.BadRequest)
+                val userId = call.request.header("X-User-Id") ?: "unknown"
+                val userName = call.request.header("X-User-Name") ?: "unknown"
+
+                val existing = CharacterClassRepository.findById(id)
+                if (existing == null) {
+                    call.respond(HttpStatusCode.NotFound)
+                    return@delete
+                }
+
+                CharacterClassRepository.delete(id)
+
+                AuditLogRepository.log(
+                    recordId = id,
+                    recordType = "CharacterClass",
+                    recordName = existing.name,
+                    action = AuditAction.DELETE,
+                    userId = userId,
+                    userName = userName
+                )
+
+                call.respond(HttpStatusCode.NoContent)
+            }
+        }
+
+        // Ability routes
+        route("/abilities") {
+            get {
+                call.respond(AbilityRepository.findAll())
+            }
+
+            get("/{id}") {
+                val id = call.parameters["id"] ?: return@get call.respond(HttpStatusCode.BadRequest)
+                val ability = AbilityRepository.findById(id)
+                if (ability != null) {
+                    call.respond(ability)
+                } else {
+                    call.respond(HttpStatusCode.NotFound)
+                }
+            }
+
+            get("/class/{classId}") {
+                val classId = call.parameters["classId"] ?: return@get call.respond(HttpStatusCode.BadRequest)
+                call.respond(AbilityRepository.findByClassId(classId))
+            }
+
+            post {
+                val request = call.receive<CreateAbilityRequest>()
+                val userId = call.request.header("X-User-Id") ?: "unknown"
+                val userName = call.request.header("X-User-Name") ?: "unknown"
+
+                val ability = Ability(
+                    name = request.name,
+                    description = request.description,
+                    classId = request.classId,
+                    abilityType = request.abilityType,
+                    targetType = request.targetType,
+                    range = request.range,
+                    cooldownType = request.cooldownType,
+                    cooldownRounds = request.cooldownRounds,
+                    effects = request.effects,
+                    imageUrl = request.imageUrl,
+                    baseDamage = request.baseDamage,
+                    durationRounds = request.durationRounds
+                )
+                val created = AbilityRepository.create(ability)
+
+                AuditLogRepository.log(
+                    recordId = created.id,
+                    recordType = "Ability",
+                    recordName = created.name,
+                    action = AuditAction.CREATE,
+                    userId = userId,
+                    userName = userName
+                )
+
+                call.respond(HttpStatusCode.Created, created)
+            }
+
+            put("/{id}") {
+                val id = call.parameters["id"] ?: return@put call.respond(HttpStatusCode.BadRequest)
+                val request = call.receive<CreateAbilityRequest>()
+                val userId = call.request.header("X-User-Id") ?: "unknown"
+                val userName = call.request.header("X-User-Name") ?: "unknown"
+
+                val existing = AbilityRepository.findById(id)
+                if (existing == null) {
+                    call.respond(HttpStatusCode.NotFound)
+                    return@put
+                }
+
+                val updated = existing.copy(
+                    name = request.name,
+                    description = request.description,
+                    classId = request.classId,
+                    abilityType = request.abilityType,
+                    targetType = request.targetType,
+                    range = request.range,
+                    cooldownType = request.cooldownType,
+                    cooldownRounds = request.cooldownRounds,
+                    effects = request.effects,
+                    imageUrl = request.imageUrl,
+                    baseDamage = request.baseDamage,
+                    durationRounds = request.durationRounds
+                )
+                AbilityRepository.update(updated)
+
+                AuditLogRepository.log(
+                    recordId = updated.id,
+                    recordType = "Ability",
+                    recordName = updated.name,
+                    action = AuditAction.UPDATE,
+                    userId = userId,
+                    userName = userName
+                )
+
+                call.respond(updated)
+            }
+
+            delete("/{id}") {
+                val id = call.parameters["id"] ?: return@delete call.respond(HttpStatusCode.BadRequest)
+                val userId = call.request.header("X-User-Id") ?: "unknown"
+                val userName = call.request.header("X-User-Name") ?: "unknown"
+
+                val existing = AbilityRepository.findById(id)
+                if (existing == null) {
+                    call.respond(HttpStatusCode.NotFound)
+                    return@delete
+                }
+
+                AbilityRepository.delete(id)
+
+                AuditLogRepository.log(
+                    recordId = id,
+                    recordType = "Ability",
+                    recordName = existing.name,
+                    action = AuditAction.DELETE,
+                    userId = userId,
+                    userName = userName
+                )
+
+                call.respond(HttpStatusCode.NoContent)
+            }
+        }
+
+        // Class generation and matching endpoints
+        route("/class-generation") {
+            // Match character description to existing class
+            post("/match") {
+                val request = call.receive<MatchClassRequest>()
+
+                val result = ClassGenerationService.matchToExistingClass(request.characterDescription)
+                result.onSuccess { matchResult ->
+                    call.respond(matchResult)
+                }.onFailure { error ->
+                    call.respond(HttpStatusCode.InternalServerError, mapOf("error" to (error.message ?: "Matching failed")))
+                }
+            }
+
+            // Generate new class from description
+            post("/generate") {
+                val request = call.receive<GenerateClassRequest>()
+                val userId = call.request.header("X-User-Id")
+                val userName = call.request.header("X-User-Name") ?: "unknown"
+
+                val result = ClassGenerationService.generateNewClass(
+                    characterDescription = request.characterDescription,
+                    createdByUserId = userId,
+                    isPublic = request.isPublic
+                )
+
+                result.onSuccess { (characterClass, abilities) ->
+                    // Save to database
+                    val (savedClass, savedAbilities) = ClassGenerationService.saveGeneratedClass(characterClass, abilities)
+
+                    AuditLogRepository.log(
+                        recordId = savedClass.id,
+                        recordType = "CharacterClass",
+                        recordName = savedClass.name,
+                        action = AuditAction.CREATE,
+                        userId = userId ?: "unknown",
+                        userName = userName
+                    )
+
+                    call.respond(HttpStatusCode.Created, mapOf(
+                        "characterClass" to savedClass,
+                        "abilities" to savedAbilities,
+                        "totalPowerCost" to savedAbilities.sumOf { it.powerCost }
+                    ))
+                }.onFailure { error ->
+                    call.respond(HttpStatusCode.InternalServerError, mapOf("error" to (error.message ?: "Generation failed")))
+                }
+            }
+
+            // Get LLM availability status
+            get("/status") {
+                val available = ClassGenerationService.isAvailable()
+                call.respond(mapOf("available" to available))
+            }
+        }
+
+        // Nerf request endpoints
+        route("/nerf-requests") {
+            get {
+                call.respond(NerfRequestRepository.findAll())
+            }
+
+            get("/pending") {
+                call.respond(NerfRequestRepository.findPending())
+            }
+
+            get("/pending/count") {
+                call.respond(mapOf("count" to NerfRequestRepository.countPending()))
+            }
+
+            get("/{id}") {
+                val id = call.parameters["id"] ?: return@get call.respond(HttpStatusCode.BadRequest)
+                val nerfRequest = NerfRequestRepository.findById(id)
+                if (nerfRequest != null) {
+                    call.respond(nerfRequest)
+                } else {
+                    call.respond(HttpStatusCode.NotFound)
+                }
+            }
+
+            get("/ability/{abilityId}") {
+                val abilityId = call.parameters["abilityId"] ?: return@get call.respond(HttpStatusCode.BadRequest)
+                call.respond(NerfRequestRepository.findByAbilityId(abilityId))
+            }
+
+            // Create a new nerf request
+            post {
+                val request = call.receive<CreateNerfRequestRequest>()
+                val userId = call.request.header("X-User-Id") ?: return@post call.respond(HttpStatusCode.Unauthorized)
+                val userName = call.request.header("X-User-Name") ?: "unknown"
+
+                // Get the ability and generate suggested changes
+                val ability = AbilityRepository.findById(request.abilityId)
+                if (ability == null) {
+                    call.respond(HttpStatusCode.NotFound, mapOf("error" to "Ability not found"))
+                    return@post
+                }
+
+                // Generate suggested rebalance using LLM
+                val suggestedChanges = ClassGenerationService.suggestRebalance(ability).getOrNull()
+
+                val nerfRequest = NerfRequest(
+                    abilityId = request.abilityId,
+                    requestedByUserId = userId,
+                    requestedByUserName = userName,
+                    reason = request.reason,
+                    suggestedChanges = suggestedChanges?.let {
+                        kotlinx.serialization.json.Json.encodeToString(
+                            kotlinx.serialization.serializer(),
+                            it
+                        )
+                    }
+                )
+
+                val created = NerfRequestRepository.create(nerfRequest)
+
+                AuditLogRepository.log(
+                    recordId = created.id,
+                    recordType = "NerfRequest",
+                    recordName = "Nerf: ${ability.name}",
+                    action = AuditAction.CREATE,
+                    userId = userId,
+                    userName = userName
+                )
+
+                call.respond(HttpStatusCode.Created, created)
+            }
+
+            // Resolve a nerf request (admin only)
+            put("/{id}/resolve") {
+                val id = call.parameters["id"] ?: return@put call.respond(HttpStatusCode.BadRequest)
+                val request = call.receive<ResolveNerfRequestRequest>()
+                val userId = call.request.header("X-User-Id") ?: return@put call.respond(HttpStatusCode.Unauthorized)
+                val userName = call.request.header("X-User-Name") ?: "unknown"
+
+                val nerfRequest = NerfRequestRepository.findById(id)
+                if (nerfRequest == null) {
+                    call.respond(HttpStatusCode.NotFound)
+                    return@put
+                }
+
+                // If applying changes
+                if (request.applyChanges && request.status == "approved" && nerfRequest.suggestedChanges != null) {
+                    val suggestedAbility = kotlinx.serialization.json.Json.decodeFromString<Ability>(nerfRequest.suggestedChanges)
+                    val existingAbility = AbilityRepository.findById(nerfRequest.abilityId)
+                    if (existingAbility != null) {
+                        val updatedAbility = existingAbility.copy(
+                            description = suggestedAbility.description,
+                            targetType = suggestedAbility.targetType,
+                            range = suggestedAbility.range,
+                            cooldownType = suggestedAbility.cooldownType,
+                            cooldownRounds = suggestedAbility.cooldownRounds,
+                            baseDamage = suggestedAbility.baseDamage,
+                            durationRounds = suggestedAbility.durationRounds,
+                            effects = suggestedAbility.effects
+                        ).withCalculatedCost()
+                        AbilityRepository.update(updatedAbility)
+
+                        AuditLogRepository.log(
+                            recordId = existingAbility.id,
+                            recordType = "Ability",
+                            recordName = existingAbility.name,
+                            action = AuditAction.UPDATE,
+                            userId = userId,
+                            userName = userName
+                        )
+                    }
+                }
+
+                val finalStatus = if (request.applyChanges && request.status == "approved") "applied" else request.status
+
+                NerfRequestRepository.resolve(
+                    id = id,
+                    status = finalStatus,
+                    resolvedByUserId = userId,
+                    adminNotes = request.adminNotes
+                )
+
+                AuditLogRepository.log(
+                    recordId = id,
+                    recordType = "NerfRequest",
+                    recordName = "Resolved: $finalStatus",
+                    action = AuditAction.UPDATE,
+                    userId = userId,
+                    userName = userName
+                )
+
+                val updated = NerfRequestRepository.findById(id)
+                call.respond(updated ?: HttpStatusCode.NotFound)
+            }
+
+            delete("/{id}") {
+                val id = call.parameters["id"] ?: return@delete call.respond(HttpStatusCode.BadRequest)
+                val userId = call.request.header("X-User-Id") ?: "unknown"
+                val userName = call.request.header("X-User-Name") ?: "unknown"
+
+                val existing = NerfRequestRepository.findById(id)
+                if (existing == null) {
+                    call.respond(HttpStatusCode.NotFound)
+                    return@delete
+                }
+
+                NerfRequestRepository.delete(id)
+
+                AuditLogRepository.log(
+                    recordId = id,
+                    recordType = "NerfRequest",
+                    recordName = "Deleted nerf request",
+                    action = AuditAction.DELETE,
+                    userId = userId,
+                    userName = userName
+                )
+
+                call.respond(HttpStatusCode.NoContent)
             }
         }
     }

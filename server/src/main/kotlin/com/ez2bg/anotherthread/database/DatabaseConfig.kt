@@ -25,7 +25,10 @@ object DatabaseConfig {
                 FeatureCategoryTable,
                 FeatureTable,
                 AuditLogTable,
-                TerrainOverrideTable
+                TerrainOverrideTable,
+                CharacterClassTable,
+                AbilityTable,
+                NerfRequestTable
             )
         }
     }

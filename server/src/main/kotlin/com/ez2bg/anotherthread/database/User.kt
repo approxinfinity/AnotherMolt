@@ -21,6 +21,7 @@ data class User(
     val featureIds: List<String> = emptyList(),
     val imageUrl: String? = null,
     val currentLocationId: String? = null,
+    val characterClassId: String? = null,
     val createdAt: Long = System.currentTimeMillis(),
     val lastActiveAt: Long = System.currentTimeMillis()
 )
@@ -37,6 +38,7 @@ data class UserResponse(
     val featureIds: List<String>,
     val imageUrl: String?,
     val currentLocationId: String?,
+    val characterClassId: String?,
     val createdAt: Long,
     val lastActiveAt: Long
 )
@@ -49,6 +51,7 @@ fun User.toResponse(): UserResponse = UserResponse(
     featureIds = featureIds,
     imageUrl = imageUrl,
     currentLocationId = currentLocationId,
+    characterClassId = characterClassId,
     createdAt = createdAt,
     lastActiveAt = lastActiveAt
 )
@@ -77,6 +80,7 @@ object UserRepository {
         featureIds = jsonToList(this[UserTable.featureIds]),
         imageUrl = this[UserTable.imageUrl],
         currentLocationId = this[UserTable.currentLocationId],
+        characterClassId = this[UserTable.characterClassId],
         createdAt = this[UserTable.createdAt],
         lastActiveAt = this[UserTable.lastActiveAt]
     )
@@ -91,6 +95,7 @@ object UserRepository {
             it[featureIds] = listToJson(user.featureIds)
             it[imageUrl] = user.imageUrl
             it[currentLocationId] = user.currentLocationId
+            it[characterClassId] = user.characterClassId
             it[createdAt] = user.createdAt
             it[lastActiveAt] = user.lastActiveAt
         }
@@ -122,6 +127,7 @@ object UserRepository {
             it[featureIds] = listToJson(user.featureIds)
             it[imageUrl] = user.imageUrl
             it[currentLocationId] = user.currentLocationId
+            it[characterClassId] = user.characterClassId
             it[lastActiveAt] = user.lastActiveAt
         } > 0
     }
@@ -141,6 +147,13 @@ object UserRepository {
     fun updateCurrentLocation(id: String, locationId: String?): Boolean = transaction {
         UserTable.update({ UserTable.id eq id }) {
             it[currentLocationId] = locationId
+            it[lastActiveAt] = System.currentTimeMillis()
+        } > 0
+    }
+
+    fun updateCharacterClass(id: String, classId: String?): Boolean = transaction {
+        UserTable.update({ UserTable.id eq id }) {
+            it[characterClassId] = classId
             it[lastActiveAt] = System.currentTimeMillis()
         } > 0
     }
