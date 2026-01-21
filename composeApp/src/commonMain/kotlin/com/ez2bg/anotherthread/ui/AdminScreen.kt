@@ -82,6 +82,7 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -2994,19 +2995,75 @@ fun LocationGraph(
             }
 
             // LAYER 2.5: Connection lines between exits (thin, meandering, dotted orange lines)
-            // Pre-compute connection data outside Canvas to avoid scope issues
-            // Dot radius in pixels for offsetting line endpoints to edge of dots
-            val dotRadiusPx = 5.dp.value * 2.5f  // 5dp radius, scaled like boxSizePx
+            // The dots use: Modifier.offset(x = (pos.x * (width - boxSizePx) / 2.5f).dp, ...)
+            // The value inside .dp is a raw number that becomes dp units.
+            // The Canvas draws at (0,0) of the Box, and the dots are offset from there.
+            //
+            // To convert the dot's dp offset to Canvas pixels, we need to multiply by density.
+            // The dot center is at: offset + collapsedSize/2 = offset + 10dp
+            val densityValue = LocalDensity.current.density
+            val dotRadiusPx = 5f * densityValue  // 5dp in pixels
+            val dotCenterOffsetPx = 10f * densityValue  // 10dp (collapsedSize/2) in pixels
 
-            val connectionLines = remember(locations, locationPositions, width, height, boxSizePx, dotRadiusPx) {
-                val lines = mutableListOf<Triple<Offset, Offset, Long>>()
+            // Data class for connection line with metadata
+            data class ConnectionLineData(
+                val from: Offset,
+                val to: Offset,
+                val seed: Long,
+                val fromId: String,
+                val toId: String,
+                val isTwoWay: Boolean,
+                val nearbyObstacles: List<Pair<Offset, TerrainType>> = emptyList()  // Positions of obstacles to avoid
+            )
+
+            // Build a lookup of which locations have exits to which other locations
+            val exitLookup = remember(locations) {
+                val lookup = mutableMapOf<String, Set<String>>()
+                locations.forEach { loc ->
+                    lookup[loc.id] = loc.exits.map { it.locationId }.toSet()
+                }
+                lookup
+            }
+
+            // Pre-compute terrain types and screen positions for all locations
+            // Used for terrain-aware path routing
+            val locationTerrainData = remember(locations, locationPositions, width, height, boxSizePx, densityValue) {
+                val data = locations.mapNotNull { loc ->
+                    val pos = locationPositions[loc.id] ?: return@mapNotNull null
+                    val dpX = pos.x * (width - boxSizePx) / 2.5f
+                    val dpY = pos.y * (height - boxSizePx) / 2.5f
+                    val screenPos = Offset(
+                        dpX * densityValue + dotCenterOffsetPx,
+                        dpY * densityValue + dotCenterOffsetPx
+                    )
+                    val terrains = parseTerrainFromDescription(loc.desc, loc.name)
+                    Triple(loc.id, screenPos, terrains)
+                }
+                // Debug: show which locations have obstacle terrain
+                val obstacleTypes = setOf(TerrainType.LAKE, TerrainType.MOUNTAIN, TerrainType.SWAMP, TerrainType.WATER)
+                val obstacleLocations = data.filter { (_, _, terrains) -> terrains.any { it in obstacleTypes } }
+                println("DEBUG: Found ${obstacleLocations.size} locations with obstacle terrain")
+                obstacleLocations.forEach { (id, _, terrains) ->
+                    val loc = locations.find { it.id == id }
+                    println("DEBUG:   ${loc?.name}: ${terrains.filter { it in obstacleTypes }}")
+                }
+                data
+            }
+
+            // Obstacle terrain types that paths should avoid
+            val obstacleTerrains = setOf(TerrainType.LAKE, TerrainType.MOUNTAIN, TerrainType.SWAMP, TerrainType.WATER)
+
+            val connectionLines = remember(locations, locationPositions, width, height, boxSizePx, densityValue, exitLookup, locationTerrainData) {
+                val lines = mutableListOf<ConnectionLineData>()
                 val drawnConnections = mutableSetOf<Pair<String, String>>()
 
                 locations.forEach { location ->
                     val fromPos = locationPositions[location.id] ?: return@forEach
+                    val fromDpX = fromPos.x * (width - boxSizePx) / 2.5f
+                    val fromDpY = fromPos.y * (height - boxSizePx) / 2.5f
                     val fromCenter = Offset(
-                        fromPos.x * (width - boxSizePx) + boxSizePx / 2,
-                        fromPos.y * (height - boxSizePx) + boxSizePx / 2
+                        fromDpX * densityValue + dotCenterOffsetPx,
+                        fromDpY * densityValue + dotCenterOffsetPx
                     )
 
                     location.exits.forEach exitLoop@{ exit ->
@@ -3021,18 +3078,18 @@ fun LocationGraph(
                         drawnConnections.add(connectionKey)
 
                         val toPos = locationPositions[toId] ?: return@exitLoop
+                        val toDpX = toPos.x * (width - boxSizePx) / 2.5f
+                        val toDpY = toPos.y * (height - boxSizePx) / 2.5f
                         val toCenter = Offset(
-                            toPos.x * (width - boxSizePx) + boxSizePx / 2,
-                            toPos.y * (height - boxSizePx) + boxSizePx / 2
+                            toDpX * densityValue + dotCenterOffsetPx,
+                            toDpY * densityValue + dotCenterOffsetPx
                         )
 
-                        // Calculate direction vector and offset start/end to edge of dots
                         val dx = toCenter.x - fromCenter.x
                         val dy = toCenter.y - fromCenter.y
                         val distance = kotlin.math.sqrt(dx * dx + dy * dy)
 
                         if (distance > dotRadiusPx * 2) {
-                            // Normalize and offset by dot radius
                             val nx = dx / distance
                             val ny = dy / distance
 
@@ -3045,30 +3102,89 @@ fun LocationGraph(
                                 toCenter.y - ny * dotRadiusPx
                             )
 
+                            // Find nearby obstacles that the path should avoid
+                            // Check locations within a certain distance of the path midpoint
+                            val midpoint = Offset((fromCenter.x + toCenter.x) / 2, (fromCenter.y + toCenter.y) / 2)
+                            val searchRadius = distance * 0.8f  // Look within 80% of the path length
+
+                            val nearbyObstacles = locationTerrainData
+                                .filter { (locId, screenPos, terrains) ->
+                                    // Don't include the endpoints themselves
+                                    locId != location.id && locId != toId &&
+                                    // Check if location is near the path
+                                    run {
+                                        val distToMid = kotlin.math.sqrt(
+                                            (screenPos.x - midpoint.x).let { it * it } +
+                                            (screenPos.y - midpoint.y).let { it * it }
+                                        )
+                                        distToMid < searchRadius
+                                    } &&
+                                    // Check if it has obstacle terrain
+                                    terrains.any { it in obstacleTerrains }
+                                }
+                                .map { (_, screenPos, terrains) ->
+                                    // Return the position and the most significant obstacle type
+                                    val obstacleType = terrains.firstOrNull { it in obstacleTerrains } ?: TerrainType.WATER
+                                    Pair(screenPos, obstacleType)
+                                }
+
+                            val reverseExists = exitLookup[toId]?.contains(location.id) == true
+                            val isTwoWay = reverseExists
+
+                            // Debug: log when obstacles are found
+                            if (nearbyObstacles.isNotEmpty()) {
+                                println("DEBUG: Path ${location.name} -> found ${nearbyObstacles.size} obstacles: ${nearbyObstacles.map { it.second }}")
+                            }
+
                             val seed = (location.id.hashCode() xor toId.hashCode()).toLong()
-                            lines.add(Triple(fromEdge, toEdge, seed))
+                            lines.add(ConnectionLineData(
+                                from = fromEdge,
+                                to = toEdge,
+                                seed = seed,
+                                fromId = location.id,
+                                toId = toId,
+                                isTwoWay = isTwoWay,
+                                nearbyObstacles = nearbyObstacles
+                            ))
                         }
                     }
                 }
                 lines
             }
 
+            // Filter connection lines based on selected location
+            // - Two-way: always show
+            // - One-way: only show if involves the selected location
+            val filteredConnectionLines = remember(connectionLines, expandedLocationId) {
+                connectionLines.filter { line ->
+                    if (line.isTwoWay) {
+                        true  // Always show two-way connections
+                    } else {
+                        // One-way: only show if selected location is involved
+                        expandedLocationId != null &&
+                            (line.fromId == expandedLocationId || line.toId == expandedLocationId)
+                    }
+                }
+            }
+
             Canvas(modifier = Modifier.fillMaxSize()) {
                 // Orange connection lines - match dot outline thickness (1.5dp) or slightly thinner
                 val connectionColor = Color(0xFFFF9800).copy(alpha = 0.25f)
+                val oneWayColor = Color(0xFFFF9800).copy(alpha = 0.35f)  // Slightly more visible for one-way
                 val strokeWidth = 1.2.dp.toPx()  // Slightly thinner than dot outline (1.5dp)
                 val dashLength = 4f
                 val gapLength = 6f
 
-                connectionLines.forEach { (from, to, seed) ->
-                    drawMeanderingDottedLine(
-                        from = from,
-                        to = to,
-                        color = connectionColor,
+                filteredConnectionLines.forEach { line ->
+                    drawTerrainAwarePath(
+                        from = line.from,
+                        to = line.to,
+                        color = if (line.isTwoWay) connectionColor else oneWayColor,
                         strokeWidth = strokeWidth,
                         dashLength = dashLength,
                         gapLength = gapLength,
-                        seed = seed
+                        seed = line.seed,
+                        obstacles = line.nearbyObstacles
                     )
                 }
             }
@@ -4013,14 +4129,16 @@ private fun DrawScope.drawParchmentBackground(seed: Int) {
 }
 
 // Draw a slightly meandering dotted line between two points
-private fun DrawScope.drawMeanderingDottedLine(
+// Draw a terrain-aware meandering path that avoids obstacles
+private fun DrawScope.drawTerrainAwarePath(
     from: Offset,
     to: Offset,
     color: Color,
     strokeWidth: Float,
     dashLength: Float,
     gapLength: Float,
-    seed: Long
+    seed: Long,
+    obstacles: List<Pair<Offset, TerrainType>> = emptyList()
 ) {
     val random = kotlin.random.Random(seed)
     val dx = to.x - from.x
@@ -4033,36 +4151,91 @@ private fun DrawScope.drawMeanderingDottedLine(
     val perpX = -dy / distance
     val perpY = dx / distance
 
-    // Generate control points for subtle meandering
-    val numControlPoints = 3
+    // More control points for natural-looking curves
+    val numControlPoints = (distance / 30f).toInt().coerceIn(4, 12)
     val controlPoints = mutableListOf<Offset>()
     controlPoints.add(from)
+
+    // Track cumulative offset to create flowing curves
+    var cumulativeOffset = 0f
+    val maxDeviation = distance * 0.12f  // 12% max deviation (increased for obstacle avoidance)
+    val momentum = 0.5f  // Reduced momentum to allow more response to obstacles
 
     for (i in 1..numControlPoints) {
         val t = i.toFloat() / (numControlPoints + 1)
         val baseX = from.x + dx * t
         val baseY = from.y + dy * t
-        // Very subtle perpendicular offset (barely meandering)
-        val maxOffset = distance * 0.02f // 2% of distance max deviation
-        val meanderOffset = (random.nextFloat() - 0.5f) * 2 * maxOffset
-        controlPoints.add(Offset(baseX + perpX * meanderOffset, baseY + perpY * meanderOffset))
+        val basePoint = Offset(baseX, baseY)
+
+        // Calculate obstacle avoidance force
+        var avoidanceForce = 0f
+        obstacles.forEach { (obstaclePos, terrainType) ->
+            val toObstacle = Offset(obstaclePos.x - baseX, obstaclePos.y - baseY)
+            val distToObstacle = kotlin.math.sqrt(toObstacle.x * toObstacle.x + toObstacle.y * toObstacle.y)
+
+            // Only affect if obstacle is relatively close
+            val influenceRadius = distance * 0.6f
+            if (distToObstacle < influenceRadius && distToObstacle > 1f) {
+                // Calculate which side of the path the obstacle is on (using dot product with perpendicular)
+                val side = toObstacle.x * perpX + toObstacle.y * perpY
+
+                // Strength based on distance (closer = stronger avoidance)
+                val strength = (1f - distToObstacle / influenceRadius) * maxDeviation * 0.8f
+
+                // Push away from obstacle (opposite side)
+                avoidanceForce -= if (side > 0) strength else -strength
+            }
+        }
+
+        // Add some randomness but with momentum for smooth curves
+        val randomChange = (random.nextFloat() - 0.5f) * 2 * maxDeviation * 0.3f
+        cumulativeOffset = cumulativeOffset * momentum + (randomChange + avoidanceForce) * (1 - momentum)
+
+        // Clamp to max deviation
+        cumulativeOffset = cumulativeOffset.coerceIn(-maxDeviation, maxDeviation)
+
+        // Taper the offset near endpoints for smooth connection
+        val taperFactor = minOf(t, 1f - t) * 4f
+        val taperAmount = taperFactor.coerceIn(0f, 1f)
+        val finalOffset = cumulativeOffset * taperAmount
+
+        controlPoints.add(Offset(
+            baseX + perpX * finalOffset,
+            baseY + perpY * finalOffset
+        ))
     }
     controlPoints.add(to)
 
-    // Draw dotted segments along the path
+    // Draw smooth curve through control points using quadratic bezier segments
     val pathEffect = PathEffect.dashPathEffect(floatArrayOf(dashLength, gapLength), 0f)
 
-    // Draw line segments between control points
+    val path = Path()
+    path.moveTo(controlPoints[0].x, controlPoints[0].y)
+
     for (i in 0 until controlPoints.size - 1) {
-        drawLine(
-            color = color,
-            start = controlPoints[i],
-            end = controlPoints[i + 1],
-            strokeWidth = strokeWidth,
+        val p0 = controlPoints[i]
+        val p1 = controlPoints[i + 1]
+
+        if (i < controlPoints.size - 2) {
+            val p2 = controlPoints[i + 2]
+            val midX = (p1.x + p2.x) / 2
+            val midY = (p1.y + p2.y) / 2
+            path.quadraticTo(p1.x, p1.y, midX, midY)
+        } else {
+            path.lineTo(p1.x, p1.y)
+        }
+    }
+
+    drawPath(
+        path = path,
+        color = color,
+        style = Stroke(
+            width = strokeWidth,
             cap = StrokeCap.Round,
+            join = StrokeJoin.Round,
             pathEffect = pathEffect
         )
-    }
+    )
 }
 
 // Draw decorative double-line border like vintage maps

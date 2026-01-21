@@ -53,3 +53,25 @@ When the user asks to restart or check servers, ALWAYS:
 - Compose Multiplatform UI
 - Ktor backend with SQLite
 - Terrain rendering uses SimplexNoise and VoronoiNoise for procedural generation
+
+## Future Musings / Known Issues
+
+### Connection Line Terrain Awareness (TODO)
+The dotted connection lines between location exits have terrain-aware pathfinding code, but it doesn't seem to be working correctly. The paths should:
+- Curve around lakes, mountains, swamps
+- Follow roads when nearby
+- Hug elevation contours
+
+Debug logging was added to `AdminScreen.kt` to diagnose:
+- Check browser console for "DEBUG: Found X locations with obstacle terrain"
+- Check for "DEBUG: Path ... found Y obstacles"
+
+The code is in:
+- `locationTerrainData` - pre-computes terrain for all locations
+- `nearbyObstacles` - finds obstacles near each path
+- `drawTerrainAwarePath()` - applies avoidance force to path control points
+
+Possible issues to investigate:
+1. Obstacle detection radius may be too small
+2. Avoidance force calculation may not be strong enough
+3. Screen coordinate transformation may be mismatched between obstacle positions and path positions
