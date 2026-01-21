@@ -2461,6 +2461,38 @@ fun Application.module() {
                     )
                 }
             }
+
+            // Delete a user by ID
+            delete("/{id}") {
+                val userId = call.parameters["id"]
+                    ?: return@delete call.respondText(
+                        """{"success":false,"message":"Missing user ID"}""",
+                        ContentType.Application.Json,
+                        HttpStatusCode.BadRequest
+                    )
+
+                try {
+                    val deleted = UserRepository.delete(userId)
+                    if (deleted) {
+                        call.respondText(
+                            """{"success":true,"message":"User deleted"}""",
+                            ContentType.Application.Json
+                        )
+                    } else {
+                        call.respondText(
+                            """{"success":false,"message":"User not found"}""",
+                            ContentType.Application.Json,
+                            HttpStatusCode.NotFound
+                        )
+                    }
+                } catch (e: Exception) {
+                    call.respondText(
+                        """{"success":false,"message":"Delete failed: ${e.message?.replace("\"", "\\\"")}"}""",
+                        ContentType.Application.Json,
+                        HttpStatusCode.InternalServerError
+                    )
+                }
+            }
         }
     }
 }

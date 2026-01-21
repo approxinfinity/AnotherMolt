@@ -3,6 +3,8 @@ package com.ez2bg.anotherthread.database
 import at.favre.lib.crypto.bcrypt.BCrypt
 import kotlinx.serialization.Serializable
 import org.jetbrains.exposed.sql.ResultRow
+import org.jetbrains.exposed.sql.SqlExpressionBuilder.eq
+import org.jetbrains.exposed.sql.deleteWhere
 import org.jetbrains.exposed.sql.insert
 import org.jetbrains.exposed.sql.selectAll
 import org.jetbrains.exposed.sql.transactions.transaction
@@ -108,9 +110,8 @@ object UserRepository {
 
     fun findByName(name: String): User? = transaction {
         UserTable.selectAll()
-            .where { UserTable.name eq name }
             .map { it.toUser() }
-            .singleOrNull()
+            .find { it.name.equals(name, ignoreCase = true) }
     }
 
     fun update(user: User): Boolean = transaction {
@@ -153,6 +154,10 @@ object UserRepository {
             .where { (UserTable.currentLocationId eq locationId) }
             .map { it.toUser() }
             .filter { it.lastActiveAt >= cutoff }
+    }
+
+    fun delete(id: String): Boolean = transaction {
+        UserTable.deleteWhere { UserTable.id eq id } > 0
     }
 
     // Password hashing utilities
