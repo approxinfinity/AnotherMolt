@@ -7,3 +7,6 @@ class JVMPlatform: Platform {
 actual fun getPlatform(): Platform = JVMPlatform()
 
 actual fun developmentBaseUrl(): String = "http://localhost:8080"
+
+// No-op on JVM Desktop - URL cache busting is web-only
+actual fun updateUrlWithCacheBuster(view: String) {}

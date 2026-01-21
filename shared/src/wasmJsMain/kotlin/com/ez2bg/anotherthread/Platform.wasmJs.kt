@@ -1,6 +1,7 @@
 package com.ez2bg.anotherthread
 
 import kotlin.js.JsAny
+import kotlin.random.Random
 
 @JsFun("() => window.location.hostname")
 private external fun getHostname(): JsAny
@@ -10,6 +11,9 @@ private external fun getTunnelBackendUrl(): JsAny?
 
 @JsFun("() => window.APP_CONFIG?.localBackendPort || 8081")
 private external fun getLocalBackendPort(): Int
+
+@JsFun("(url) => window.history.replaceState(null, '', url)")
+private external fun replaceUrl(url: String)
 
 class WasmPlatform: Platform {
     override val name: String = "Web with Kotlin/Wasm"
@@ -30,4 +34,19 @@ actual fun developmentBaseUrl(): String {
     } else {
         "http://$hostname:$localPort"
     }
+}
+
+private fun generateCacheBusterId(): String {
+    val chars = "abcdefghijklmnopqrstuvwxyz0123456789"
+    return (1..8).map { chars[Random.nextInt(chars.length)] }.joinToString("")
+}
+
+actual fun updateUrlWithCacheBuster(view: String) {
+    val cacheBuster = generateCacheBusterId()
+    val newUrl = if (view.isNotEmpty()) {
+        "?v=$view&_=$cacheBuster"
+    } else {
+        "?_=$cacheBuster"
+    }
+    replaceUrl(newUrl)
 }

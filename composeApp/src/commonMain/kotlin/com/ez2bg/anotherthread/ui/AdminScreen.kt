@@ -1,5 +1,6 @@
 package com.ez2bg.anotherthread.ui
 
+import com.ez2bg.anotherthread.updateUrlWithCacheBuster
 import com.ez2bg.anotherthread.util.SimplexNoise
 import com.ez2bg.anotherthread.util.VoronoiNoise
 import com.ez2bg.anotherthread.util.BiomeBlender
@@ -24,6 +25,13 @@ import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.automirrored.filled.ArrowForward
+import androidx.compose.material.icons.filled.ArrowUpward
+import androidx.compose.material.icons.filled.ArrowDownward
+import androidx.compose.material.icons.filled.NorthEast
+import androidx.compose.material.icons.filled.NorthWest
+import androidx.compose.material.icons.filled.SouthEast
+import androidx.compose.material.icons.filled.SouthWest
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Delete
@@ -43,6 +51,9 @@ import androidx.compose.material.icons.filled.History
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Upload
 import androidx.compose.material.icons.filled.CenterFocusWeak
+import androidx.compose.material.icons.filled.PlayArrow
+import androidx.compose.material.icons.filled.Stop
+import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.material3.*
 import androidx.compose.ui.window.Dialog
@@ -67,6 +78,7 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.IntOffset
@@ -713,6 +725,29 @@ fun AdminScreen() {
                 }
             }
         }
+    }
+
+    // Update browser URL with cache buster on every view change (web only)
+    LaunchedEffect(viewState) {
+        val viewName = when (viewState) {
+            is ViewState.UserAuth -> "auth"
+            is ViewState.UserProfile -> "profile"
+            is ViewState.UserDetail -> "user"
+            is ViewState.LocationGraph -> "map"
+            is ViewState.LocationCreate -> "location-new"
+            is ViewState.LocationEdit -> "location"
+            is ViewState.CreatureList -> "creatures"
+            is ViewState.CreatureCreate -> "creature-new"
+            is ViewState.CreatureEdit -> "creature"
+            is ViewState.CreatureDetail -> "creature"
+            is ViewState.ItemList -> "items"
+            is ViewState.ItemCreate -> "item-new"
+            is ViewState.ItemEdit -> "item"
+            is ViewState.ItemDetail -> "item"
+            is ViewState.AdminPanel -> "admin"
+            is ViewState.AuditLogs -> "logs"
+        }
+        updateUrlWithCacheBuster(viewName)
     }
 
     Column(
@@ -2638,11 +2673,18 @@ fun LocationGraph(
     // Track which location is expanded (null = none expanded)
     var expandedLocationId by remember { mutableStateOf<String?>(null) }
 
+    // Update URL with cache buster when a location is selected/deselected on the graph
+    LaunchedEffect(expandedLocationId) {
+        val locationSuffix = expandedLocationId?.let { "&loc=$it" } ?: ""
+        updateUrlWithCacheBuster("map$locationSuffix")
+    }
+
     // Pan offset state with animation support
     val offset = remember { Animatable(Offset.Zero, Offset.VectorConverter) }
-    // Zoom scale state (1.0 = 100%, min 0.5 = 50%, max 3.0 = 300%)
-    var scale by remember { mutableStateOf(1f) }
-    val minScale = 0.3f
+    // Zoom scale state (1.0 = 100%, min 0.2 = 20%, max 3.0 = 300%)
+    // Start at 0.7 so the 100x100 thumbnail fits comfortably on screen
+    var scale by remember { mutableStateOf(0.7f) }
+    val minScale = 0.2f
     val maxScale = 3f
     val scope = rememberCoroutineScope()
 
@@ -2671,14 +2713,8 @@ fun LocationGraph(
                     }
                 }
             }
-            .pointerInput(expandedLocationId) {
-                detectTapGestures { _ ->
-                    // Collapse expanded thumbnail when tapping on empty space
-                    if (expandedLocationId != null) {
-                        expandedLocationId = null
-                    }
-                }
-            }
+            // Removed: detectTapGestures that collapsed thumbnail on empty space tap
+            // User must tap the currently selected dot to deselect it
             // Scroll wheel zoom support for desktop/web
             .pointerInput(Unit) {
                 awaitPointerEventScope {
@@ -2722,13 +2758,25 @@ fun LocationGraph(
             )
         }
 
-        // Function to center on a location
+        // Function to center on a location's 100x100 thumbnail (not the dot)
+        // The thumbnail is positioned to the right of the dot
         fun centerOnLocation(location: LocationDto) {
             val pos = locationPositions[location.id] ?: return
             val screenPos = getLocationScreenPos(pos)
+
+            // Account for the thumbnail being to the right of the dot
+            // Dot is at screenPos, thumbnail center is offset by:
+            // dotToThumbnailGap (35dp) + highlightedDotSize/2 (8dp) + thumbnailContainerSize/2 (~78dp)
+            // Total horizontal offset ≈ 121dp to the right
+            val thumbnailOffsetX = 121f // Approximate offset in dp-ish units
+
             val centerX = width / 2
             val centerY = height / 2
-            val targetOffset = Offset(centerX - screenPos.x, centerY - screenPos.y)
+            // Shift target to center on thumbnail instead of dot
+            val targetOffset = Offset(
+                centerX - screenPos.x - thumbnailOffsetX,
+                centerY - screenPos.y
+            )
 
             scope.launch {
                 offset.animateTo(
@@ -2738,8 +2786,8 @@ fun LocationGraph(
             }
         }
 
-        // Terrain size extends beyond the thumbnail
-        val terrainSize = boxSizePx * 2.0f
+        // Terrain size
+        val terrainSize = boxSizePx * 1.0f
 
         // LAYER 1: Parchment background (fixed, doesn't pan)
         Canvas(modifier = Modifier.fillMaxSize()) {
@@ -2966,7 +3014,17 @@ fun LocationGraph(
                             centerOnLocation(location)
                         }
                     },
-                    onSettingsClick = { onSettingsClick(location) }
+                    onSettingsClick = { onSettingsClick(location) },
+                    onExitClick = { targetLocation ->
+                        // Navigate to the target location: expand it and center the map
+                        expandedLocationId = targetLocation.id
+                        centerOnLocation(targetLocation)
+                    },
+                    onDotClick = {
+                        // Tapping the orange dot collapses the expanded view
+                        expandedLocationId = null
+                    },
+                    allLocations = locations
                 )
             }
 
@@ -3075,10 +3133,15 @@ private fun LocationNodeThumbnail(
     modifier: Modifier = Modifier,
     isAdmin: Boolean = false,
     onClick: () -> Unit,
-    onSettingsClick: () -> Unit = {}
+    onSettingsClick: () -> Unit = {},
+    onExitClick: (LocationDto) -> Unit = {},
+    onDotClick: () -> Unit = {},  // Called when the orange dot is tapped (to collapse)
+    allLocations: List<LocationDto> = emptyList()
 ) {
     val collapsedSize = 20.dp
     val expandedSize = 100.dp
+    val exitButtonSize = 28.dp
+    val exitButtonOffset = 58.dp // Distance from center to exit button center
 
     val hasImage = location.imageUrl != null
 
@@ -3087,26 +3150,161 @@ private fun LocationNodeThumbnail(
         getTerrainColor(location.desc, location.name)
     }
 
+    // Create a map of location ID to LocationDto for quick lookup
+    val locationById = remember(allLocations) { allLocations.associateBy { it.id } }
+
     if (isExpanded) {
-        // Expanded state: 100x100 thumbnail with action icons to the right
+        // Expanded state: Orange highlighted dot on the left, 100x100 thumbnail to the right
+        // with action icons overlaid on top-right and exit buttons around the thumbnail
         // The modifier positions us at the dot's top-left corner
-        // Dot center is at (10dp, 10dp) from that position
-        // We want the 100x100 box center (50dp, 50dp) to align with dot center
-        // So offset by: 10 - 50 = -40dp in both directions
+        // Collapsed dot center is at (collapsedSize/2, collapsedSize/2) = (10dp, 10dp) from modifier origin
+        val highlightedDotSize = 16.dp
+        val dotToThumbnailGap = 35.dp // Gap to clear west exit button but not too far
+        val exitButtonDistanceFromCenter = 72.dp // Distance from thumbnail center to cardinal exit buttons
+        val diagonalExitButtonDistance = 85.dp // Larger distance for diagonal exits to clear corners
+
+        // Calculate the total width: dot + gap + thumbnail container
+        val thumbnailContainerSize = expandedSize + exitButtonSize * 2 // Extra space on all sides for exit buttons
+
+        // The collapsed dot center is at (collapsedSize/2, collapsedSize/2) from the modifier origin
+        // We want the highlighted dot to be at that exact position
+        // The highlighted dot is the first item in the Row, so we offset the Row such that
+        // the center of the highlighted dot aligns with the collapsed dot center
+
+        // Collapsed dot center offset from modifier origin
+        val collapsedDotCenterX = collapsedSize / 2  // 10dp
+        val collapsedDotCenterY = collapsedSize / 2  // 10dp
+
+        // Highlighted dot center will be at (highlightedDotSize/2, Row's vertical center)
+        // We need to offset so highlighted dot center = collapsed dot center
+        val highlightedDotCenterInRow = highlightedDotSize / 2  // 8dp from Row's left edge
+
+        // Row should start at: collapsedDotCenterX - highlightedDotCenterInRow
+        val rowOffsetX = collapsedDotCenterX - highlightedDotCenterInRow  // 10 - 8 = 2dp
+
+        // For Y: Row is vertically centered on the thumbnail, which is expandedSize tall
+        // Row's vertical center = expandedSize/2 from Row's top
+        // We want the dot (which is vertically centered in the Row) to be at collapsedDotCenterY
+        val rowOffsetY = collapsedDotCenterY - (expandedSize / 2 + exitButtonSize)  // Center on thumbnail container
+
         Row(
             modifier = modifier
-                .offset(x = (-40).dp, y = (-40).dp)
+                .offset(x = rowOffsetX, y = rowOffsetY)
                 .wrapContentSize(),
-            horizontalArrangement = Arrangement.spacedBy(4.dp),
+            horizontalArrangement = Arrangement.spacedBy(dotToThumbnailGap),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            // Thumbnail box
+            // Highlighted dot on the left - tap to collapse
+            // Same translucent tan as collapsed dots, but with orange border
             Box(
                 modifier = Modifier
-                    .size(expandedSize)
-                    .clip(RoundedCornerShape(8.dp)),
+                    .size(highlightedDotSize)
+                    .clickable { onDotClick() },
                 contentAlignment = Alignment.Center
             ) {
+                Canvas(modifier = Modifier.fillMaxSize()) {
+                    val radius = size.minDimension / 2
+                    val center = Offset(size.width / 2, size.height / 2)
+
+                    // Draw translucent tan fill (same as collapsed dots)
+                    val tanColor = Color(0xFFD4B896)
+                    val fillAlpha = 0.15f
+                    drawCircle(
+                        color = tanColor.copy(alpha = fillAlpha),
+                        radius = radius,
+                        center = center
+                    )
+
+                    // Draw orange border to indicate selection
+                    drawCircle(
+                        color = Color(0xFFFF9800),
+                        radius = radius,
+                        center = center,
+                        style = Stroke(width = 2.dp.toPx())
+                    )
+                }
+            }
+
+            // Container for thumbnail and exit buttons
+            // No clickable here - let clicks pass through to adjacent dots
+            // Individual elements (thumbnail, exit buttons) handle their own clicks
+            Box(
+                modifier = Modifier.size(thumbnailContainerSize)
+            ) {
+                // Exit direction buttons around the thumbnail
+                location.exits.forEach { exit ->
+                    val targetLocation = locationById[exit.locationId]
+                    if (targetLocation != null) {
+                        // Check if this is a diagonal direction
+                        val isDiagonal = exit.direction in listOf(
+                            ExitDirection.NORTHEAST, ExitDirection.NORTHWEST,
+                            ExitDirection.SOUTHEAST, ExitDirection.SOUTHWEST
+                        )
+
+                        // Use larger distance for diagonals to clear the corners
+                        val buttonDistance = if (isDiagonal) diagonalExitButtonDistance else exitButtonDistanceFromCenter
+
+                        // Calculate position based on direction (normalized vectors)
+                        val (offsetX, offsetY) = when (exit.direction) {
+                            ExitDirection.NORTH -> Pair(0f, -1f)
+                            ExitDirection.SOUTH -> Pair(0f, 1f)
+                            ExitDirection.EAST -> Pair(1f, 0f)
+                            ExitDirection.WEST -> Pair(-1f, 0f)
+                            ExitDirection.NORTHEAST -> Pair(0.707f, -0.707f)
+                            ExitDirection.NORTHWEST -> Pair(-0.707f, -0.707f)
+                            ExitDirection.SOUTHEAST -> Pair(0.707f, 0.707f)
+                            ExitDirection.SOUTHWEST -> Pair(-0.707f, 0.707f)
+                            ExitDirection.UNKNOWN -> Pair(0f, 0f)
+                        }
+
+                        // Skip UNKNOWN direction
+                        if (exit.direction != ExitDirection.UNKNOWN) {
+                            // Center of container
+                            val centerOffset = thumbnailContainerSize / 2
+                            Box(
+                                modifier = Modifier
+                                    .offset(
+                                        x = centerOffset - exitButtonSize / 2 + (buttonDistance * offsetX),
+                                        y = centerOffset - exitButtonSize / 2 + (buttonDistance * offsetY)
+                                    )
+                                    .size(exitButtonSize)
+                                    .background(Color(0xFF2196F3).copy(alpha = 0.9f), CircleShape)
+                                    .clickable { onExitClick(targetLocation) }
+                                    .padding(4.dp),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                // Draw arrow icon pointing in the exit direction
+                                Icon(
+                                    imageVector = when (exit.direction) {
+                                        ExitDirection.NORTH -> Icons.Filled.ArrowUpward
+                                        ExitDirection.SOUTH -> Icons.Filled.ArrowDownward
+                                        ExitDirection.EAST -> Icons.AutoMirrored.Filled.ArrowForward
+                                        ExitDirection.WEST -> Icons.AutoMirrored.Filled.ArrowBack
+                                        ExitDirection.NORTHEAST -> Icons.Filled.NorthEast
+                                        ExitDirection.NORTHWEST -> Icons.Filled.NorthWest
+                                        ExitDirection.SOUTHEAST -> Icons.Filled.SouthEast
+                                        ExitDirection.SOUTHWEST -> Icons.Filled.SouthWest
+                                        ExitDirection.UNKNOWN -> Icons.Filled.ArrowUpward
+                                    },
+                                    contentDescription = exit.direction.name,
+                                    tint = Color.White,
+                                    modifier = Modifier.fillMaxSize()
+                                )
+                            }
+                        }
+                    }
+                }
+
+                // Thumbnail box - centered in the container
+                // clickable to consume clicks on the thumbnail itself
+                Box(
+                    modifier = Modifier
+                        .align(Alignment.Center)
+                        .size(expandedSize)
+                        .clip(RoundedCornerShape(8.dp))
+                        .clickable { /* consume click on thumbnail */ },
+                    contentAlignment = Alignment.Center
+                ) {
                 if (hasImage) {
                     val fullUrl = "${AppConfig.api.baseUrl}${location.imageUrl}"
                     var imageState by remember {
@@ -3174,12 +3372,14 @@ private fun LocationNodeThumbnail(
                 } else {
                     FallbackLocationBox(location)
                 }
-            }
 
-            // Action icons column - always visible for now to debug
-            Column(
-                verticalArrangement = Arrangement.spacedBy(4.dp)
-            ) {
+                // Action icons overlaid on top-right of thumbnail
+                Column(
+                    modifier = Modifier
+                        .align(Alignment.TopEnd)
+                        .padding(4.dp),
+                    verticalArrangement = Arrangement.spacedBy(4.dp)
+                ) {
                     // Edit/Detail icon (pencil on top)
                     Box(
                         modifier = Modifier
@@ -3212,19 +3412,18 @@ private fun LocationNodeThumbnail(
                         )
                     }
                 }
+            }
+            }
         }
     } else {
         // Collapsed state: just the dot (label is rendered separately in parent)
-        // Locations never edited by a user (lastEditedAt == null) are smaller
         val isUnedited = location.lastEditedAt == null
-        val editedSize = 14.dp  // Edited locations: 14dp
-        val wildernessSize = 10.dp  // Wilderness: 10dp
-        val dotSize = if (isUnedited) wildernessSize else editedSize
+        val dotSize = 10.dp  // Both are 10dp
 
         // Center dots within the space where a full-size dot would be
         val centeringOffset = (collapsedSize - dotSize) / 2
 
-        // Light tan color - 15% alpha for both
+        // Light tan color - 15% alpha for both fill and border
         val tanColor = Color(0xFFD4B896)
         val fillAlpha = 0.15f
 
@@ -3245,10 +3444,10 @@ private fun LocationNodeThumbnail(
                     center = center
                 )
 
-                // Draw red border only for edited locations (non-wilderness)
+                // Draw red border only for edited locations (non-wilderness), same alpha as fill
                 if (!isUnedited) {
                     drawCircle(
-                        color = DotBorderColor,
+                        color = DotBorderColor.copy(alpha = fillAlpha),
                         radius = radius,
                         center = center,
                         style = Stroke(width = 1.5.dp.toPx())
@@ -3715,10 +3914,10 @@ private fun DrawScope.drawParchmentBackground(seed: Int) {
     // Draw decorative border
     drawMapBorder()
 
-    // Draw compass rose in corner
+    // Draw compass rose in bottom-left corner
     val compassSize = minOf(size.width, size.height) * 0.12f
     drawCompassRose(
-        center = Offset(size.width - compassSize - 20f, size.height - compassSize - 20f),
+        center = Offset(compassSize + 20f, size.height - compassSize - 20f),
         size = compassSize
     )
 }
@@ -7476,6 +7675,35 @@ fun LocationForm(
             }
         }
 
+        // Display current location coordinates
+        if (editLocation != null && editLocation.gridX != null && editLocation.gridY != null) {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(vertical = 8.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                Text(
+                    text = "Coordinates:",
+                    style = MaterialTheme.typography.bodyMedium,
+                    fontWeight = FontWeight.Medium
+                )
+                Surface(
+                    shape = RoundedCornerShape(16.dp),
+                    color = MaterialTheme.colorScheme.secondaryContainer,
+                    modifier = Modifier.padding(2.dp)
+                ) {
+                    Text(
+                        text = "(${editLocation.gridX}, ${editLocation.gridY}, ${editLocation.gridZ ?: 0})",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSecondaryContainer,
+                        modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp)
+                    )
+                }
+            }
+        }
+
         ExitPillSection(
             label = "Exits",
             exits = exits,
@@ -8857,6 +9085,298 @@ private fun String.splitToList(): List<String> =
     split(",").map { it.trim() }.filter { it.isNotEmpty() }
 
 /**
+ * Service health indicator with start/restart controls.
+ * Services are only checked when user clicks refresh to avoid slow page loads.
+ * Backend API status is inferred from whether the local services check succeeds.
+ */
+@Composable
+fun ServiceHealthPanel() {
+    // Local services (checked via backend API)
+    var localServices by remember { mutableStateOf<List<ServiceStatusDto>>(emptyList()) }
+    // Cloudflare services (checked from browser - only on demand)
+    var cloudflareServices by remember { mutableStateOf<List<ServiceStatusDto>>(emptyList()) }
+    // Backend API status
+    var backendHealthy by remember { mutableStateOf<Boolean?>(null) }
+
+    var isLoading by remember { mutableStateOf(false) }
+    var hasChecked by remember { mutableStateOf(false) }
+    var actionMessage by remember { mutableStateOf<String?>(null) }
+    var actionInProgress by remember { mutableStateOf<String?>(null) }
+    val scope = rememberCoroutineScope()
+
+    fun refreshHealth() {
+        scope.launch {
+            isLoading = true
+            actionMessage = null
+
+            // Check local services via backend (this also tells us if backend is up)
+            ApiClient.getLocalServicesHealth().onSuccess { healthList ->
+                localServices = healthList
+                backendHealthy = true
+
+                // If backend is up, also check Cloudflare services via backend
+                ApiClient.getCloudflareServicesHealth().onSuccess { cfList ->
+                    cloudflareServices = cfList
+                }.onFailure {
+                    // Keep showing unknown state for cloudflare if check fails
+                    cloudflareServices = listOf(
+                        ServiceStatusDto("cloudflare_frontend", "Cloudflare Frontend", false, "https://anotherthread.ez2bgood.com"),
+                        ServiceStatusDto("cloudflare_backend", "Cloudflare Backend", false, "https://api.ez2bgood.com")
+                    )
+                }
+            }.onFailure {
+                backendHealthy = false
+                localServices = listOf(
+                    ServiceStatusDto("ollama", "Ollama LLM", false, "http://localhost:11434"),
+                    ServiceStatusDto("stable_diffusion", "Stable Diffusion", false, "http://localhost:7860")
+                )
+                cloudflareServices = listOf(
+                    ServiceStatusDto("cloudflare_frontend", "Cloudflare Frontend", false, "https://anotherthread.ez2bgood.com"),
+                    ServiceStatusDto("cloudflare_backend", "Cloudflare Backend", false, "https://api.ez2bgood.com")
+                )
+            }
+
+            hasChecked = true
+            isLoading = false
+        }
+    }
+
+    fun controlService(serviceName: String, action: String) {
+        scope.launch {
+            actionInProgress = serviceName
+            actionMessage = null
+            ApiClient.controlService(serviceName, action).onSuccess { response ->
+                actionMessage = response.message
+                // Wait a bit then refresh health
+                delay(3000)
+                refreshHealth()
+            }.onFailure { error ->
+                actionMessage = "Error: ${error.message}"
+            }
+            actionInProgress = null
+        }
+    }
+
+    var isPurgingCache by remember { mutableStateOf(false) }
+
+    fun purgeCloudflareCache() {
+        scope.launch {
+            isPurgingCache = true
+            actionMessage = null
+            ApiClient.purgeCloudflareCache().onSuccess { response ->
+                actionMessage = response.message
+            }.onFailure { error ->
+                actionMessage = "Error purging cache: ${error.message}"
+            }
+            isPurgingCache = false
+        }
+    }
+
+    // Build combined service list
+    val allServices = buildList {
+        // Backend API (always shown, health inferred from API call success)
+        add(ServiceStatusDto("backend", "Backend API", backendHealthy ?: false, "http://localhost:8081"))
+        // Local services
+        addAll(localServices)
+        // Cloudflare services
+        addAll(cloudflareServices)
+    }
+
+    Card(modifier = Modifier.fillMaxWidth()) {
+        Column(
+            modifier = Modifier.padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp)
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    text = "Service Health",
+                    style = MaterialTheme.typography.titleMedium
+                )
+                Button(
+                    onClick = { refreshHealth() },
+                    enabled = !isLoading
+                ) {
+                    if (isLoading) {
+                        CircularProgressIndicator(
+                            modifier = Modifier.size(16.dp),
+                            strokeWidth = 2.dp
+                        )
+                        Spacer(modifier = Modifier.width(8.dp))
+                    }
+                    Text(if (hasChecked) "Refresh" else "Check Services")
+                }
+            }
+
+            if (!hasChecked) {
+                Text(
+                    text = "Click 'Check Services' to check service health",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            } else {
+                allServices.forEach { service ->
+                    ServiceHealthRow(
+                        service = service,
+                        isActionInProgress = actionInProgress == service.name,
+                        onStart = { controlService(service.name, "start") },
+                        onRestart = { controlService(service.name, "restart") },
+                        onStop = { controlService(service.name, "stop") }
+                    )
+                }
+            }
+
+            actionMessage?.let { message ->
+                Text(
+                    text = message,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = if (message.startsWith("Error")) MaterialTheme.colorScheme.error
+                           else MaterialTheme.colorScheme.primary
+                )
+            }
+
+            // Cloudflare Cache Purge button
+            HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp))
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    text = "Cloudflare Cache",
+                    style = MaterialTheme.typography.bodyMedium
+                )
+                Button(
+                    onClick = { purgeCloudflareCache() },
+                    enabled = !isPurgingCache,
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = MaterialTheme.colorScheme.error
+                    )
+                ) {
+                    if (isPurgingCache) {
+                        CircularProgressIndicator(
+                            modifier = Modifier.size(16.dp),
+                            strokeWidth = 2.dp,
+                            color = MaterialTheme.colorScheme.onError
+                        )
+                        Spacer(modifier = Modifier.width(8.dp))
+                    }
+                    Text("Purge Cache")
+                }
+            }
+        }
+    }
+}
+
+@Composable
+fun ServiceHealthRow(
+    service: ServiceStatusDto,
+    isActionInProgress: Boolean,
+    onStart: () -> Unit,
+    onRestart: () -> Unit,
+    onStop: () -> Unit
+) {
+    val canControl = service.name in listOf("ollama", "stable_diffusion", "cloudflare")
+
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.surfaceVariant
+        )
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(12.dp),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Row(
+                horizontalArrangement = Arrangement.spacedBy(12.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                modifier = Modifier.weight(1f)
+            ) {
+                // Health indicator (red/green circle)
+                Box(
+                    modifier = Modifier
+                        .size(12.dp)
+                        .clip(CircleShape)
+                        .background(
+                            if (service.healthy) Color(0xFF4CAF50) // Green
+                            else Color(0xFFF44336) // Red
+                        )
+                )
+
+                Column {
+                    Text(
+                        text = service.displayName,
+                        style = MaterialTheme.typography.bodyMedium
+                    )
+                    service.url?.let { url ->
+                        Text(
+                            text = url,
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                }
+            }
+
+            if (canControl) {
+                if (isActionInProgress) {
+                    CircularProgressIndicator(
+                        modifier = Modifier.size(24.dp),
+                        strokeWidth = 2.dp
+                    )
+                } else {
+                    Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                        if (!service.healthy) {
+                            IconButton(
+                                onClick = onStart,
+                                modifier = Modifier.size(32.dp)
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.PlayArrow,
+                                    contentDescription = "Start",
+                                    tint = Color(0xFF4CAF50),
+                                    modifier = Modifier.size(20.dp)
+                                )
+                            }
+                        } else {
+                            IconButton(
+                                onClick = onRestart,
+                                modifier = Modifier.size(32.dp)
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.Refresh,
+                                    contentDescription = "Restart",
+                                    tint = MaterialTheme.colorScheme.primary,
+                                    modifier = Modifier.size(20.dp)
+                                )
+                            }
+                            IconButton(
+                                onClick = onStop,
+                                modifier = Modifier.size(32.dp)
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.Stop,
+                                    contentDescription = "Stop",
+                                    tint = Color(0xFFF44336),
+                                    modifier = Modifier.size(20.dp)
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+/**
  * Admin panel view with file upload functionality
  */
 @Composable
@@ -8935,6 +9455,9 @@ fun AdminPanelView(
                 )
             }
         }
+
+        // Service Health Panel
+        ServiceHealthPanel()
 
         // File Upload Section
         Card(modifier = Modifier.fillMaxWidth()) {

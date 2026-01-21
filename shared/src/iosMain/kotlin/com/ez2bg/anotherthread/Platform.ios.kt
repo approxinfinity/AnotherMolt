@@ -9,3 +9,6 @@ class IOSPlatform: Platform {
 actual fun getPlatform(): Platform = IOSPlatform()
 
 actual fun developmentBaseUrl(): String = "http://localhost:8080"
+
+// No-op on iOS - URL cache busting is web-only
+actual fun updateUrlWithCacheBuster(view: String) {}

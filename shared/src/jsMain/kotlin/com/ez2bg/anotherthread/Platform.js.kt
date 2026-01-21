@@ -1,6 +1,7 @@
 package com.ez2bg.anotherthread
 
 import kotlinx.browser.window
+import kotlin.random.Random
 
 class JsPlatform: Platform {
     override val name: String = "Web with Kotlin/JS"
@@ -19,4 +20,19 @@ actual fun developmentBaseUrl(): String {
     } else {
         "http://$hostname:8081"
     }
+}
+
+private fun generateCacheBusterId(): String {
+    val chars = "abcdefghijklmnopqrstuvwxyz0123456789"
+    return (1..8).map { chars[Random.nextInt(chars.length)] }.joinToString("")
+}
+
+actual fun updateUrlWithCacheBuster(view: String) {
+    val cacheBuster = generateCacheBusterId()
+    val newUrl = if (view.isNotEmpty()) {
+        "?v=$view&_=$cacheBuster"
+    } else {
+        "?_=$cacheBuster"
+    }
+    window.history.replaceState(null, "", newUrl)
 }

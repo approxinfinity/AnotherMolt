@@ -23,3 +23,10 @@ composeApp/src/wasmJsMain/resources/config.js
 
 # Webpack config customizations (allow all hosts, etc.)
 composeApp/webpack.config.d/
+
+# Environment variables
+.env
+.env.local
+
+# Server secrets
+server/src/main/resources/secrets.conf

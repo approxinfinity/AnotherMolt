@@ -16,6 +16,8 @@ import io.ktor.server.routing.*
 import kotlinx.coroutines.launch
 import kotlinx.serialization.Serializable
 import java.io.File
+import java.net.HttpURLConnection
+import java.net.URL
 import java.time.LocalDateTime
 
 @Serializable
@@ -191,6 +193,25 @@ data class FileUploadResponse(
     val success: Boolean,
     val url: String? = null,
     val error: String? = null
+)
+
+@Serializable
+data class ServiceStatus(
+    val name: String,
+    val displayName: String,
+    val healthy: Boolean,
+    val url: String? = null
+)
+
+@Serializable
+data class ServiceActionRequest(
+    val action: String // "start", "stop", "restart"
+)
+
+@Serializable
+data class ServiceActionResponse(
+    val success: Boolean,
+    val message: String
 )
 
 // Admin feature ID constant
@@ -394,6 +415,46 @@ fun getDirectionBetweenCoordinates(
         dx == -1 && dy == -1 -> ExitDirection.NORTHWEST
         else -> null
     }
+}
+
+/**
+ * Find a random unused coordinate for a new location.
+ * Searches in an expanding spiral from origin, with randomization.
+ */
+fun findRandomUnusedCoordinate(existingLocations: List<Location>): Triple<Int, Int, Int> {
+    val usedCoords = existingLocations
+        .filter { it.gridX != null && it.gridY != null }
+        .map { Triple(it.gridX!!, it.gridY!!, it.gridZ ?: 0) }
+        .toSet()
+
+    // If no locations exist, return origin
+    if (usedCoords.isEmpty()) return Triple(0, 0, 0)
+
+    // Search in expanding rings around the origin, picking a random unused spot
+    val random = java.util.Random()
+    for (radius in 1..100) {
+        val candidates = mutableListOf<Triple<Int, Int, Int>>()
+
+        // Collect all coordinates at this radius (Manhattan distance)
+        for (x in -radius..radius) {
+            for (y in -radius..radius) {
+                if (kotlin.math.abs(x) == radius || kotlin.math.abs(y) == radius) {
+                    val coord = Triple(x, y, 0)
+                    if (coord !in usedCoords) {
+                        candidates.add(coord)
+                    }
+                }
+            }
+        }
+
+        // If we found candidates at this radius, pick one randomly
+        if (candidates.isNotEmpty()) {
+            return candidates[random.nextInt(candidates.size)]
+        }
+    }
+
+    // Fallback: very far away random coordinate
+    return Triple(random.nextInt(1000) + 100, random.nextInt(1000) + 100, 0)
 }
 
 /**
@@ -977,21 +1038,52 @@ fun Application.module() {
                 val userId = call.request.header("X-User-Id") ?: "unknown"
                 val userName = call.request.header("X-User-Name") ?: "unknown"
 
-                // Check if this is the first location (assign 0,0,0 coordinates)
                 val existingLocations = LocationRepository.findAll()
-                val isFirstLocation = existingLocations.isEmpty()
+                val exits = request.exits.map { Exit(it.locationId, it.direction) }
+
+                // Determine coordinates for the new location
+                val (gridX, gridY, gridZ) = when {
+                    // First location gets origin
+                    existingLocations.isEmpty() -> Triple(0, 0, 0)
+
+                    // If has exits to existing locations, calculate coordinates from exit direction
+                    exits.isNotEmpty() -> {
+                        val firstExit = exits.first()
+                        val targetLocation = existingLocations.find { it.id == firstExit.locationId }
+                        if (targetLocation?.gridX != null && targetLocation.gridY != null) {
+                            // Calculate coordinate based on the OPPOSITE direction (new location is in that direction from target)
+                            val oppositeDir = getOppositeDirection(firstExit.direction)
+                            val offset = getDirectionOffset(oppositeDir)
+                            if (offset != null) {
+                                Triple(
+                                    targetLocation.gridX + offset.first,
+                                    targetLocation.gridY + offset.second,
+                                    targetLocation.gridZ ?: 0
+                                )
+                            } else {
+                                // Direction unknown, assign random coordinate
+                                findRandomUnusedCoordinate(existingLocations)
+                            }
+                        } else {
+                            // Target has no coordinates, assign random
+                            findRandomUnusedCoordinate(existingLocations)
+                        }
+                    }
+
+                    // No exits - assign random unused coordinate
+                    else -> findRandomUnusedCoordinate(existingLocations)
+                }
 
                 val location = Location(
                     name = request.name,
                     desc = request.desc,
                     itemIds = request.itemIds,
                     creatureIds = request.creatureIds,
-                    exits = request.exits.map { Exit(it.locationId, it.direction) },
+                    exits = exits,
                     featureIds = request.featureIds,
-                    // First location gets (0,0,0), others start without coordinates until connected
-                    gridX = if (isFirstLocation) 0 else null,
-                    gridY = if (isFirstLocation) 0 else null,
-                    gridZ = if (isFirstLocation) 0 else null,
+                    gridX = gridX,
+                    gridY = gridY,
+                    gridZ = gridZ,
                     // Set lastEditedBy/At for user-created locations
                     lastEditedBy = userId,
                     lastEditedAt = LocalDateTime.now().toString(),
@@ -1926,5 +2018,255 @@ fun Application.module() {
                 call.respond(AuditLogRepository.findByUserId(userId, limit))
             }
         }
+
+        // Service health and management routes (admin only)
+        route("/admin/services") {
+            // Get health status of local services (Ollama, Stable Diffusion)
+            get("/health/local") {
+                val services = mutableListOf<ServiceStatus>()
+
+                // Check Ollama (localhost:11434)
+                services.add(ServiceStatus(
+                    name = "ollama",
+                    displayName = "Ollama LLM",
+                    healthy = checkServiceHealth("http://localhost:11434/api/tags"),
+                    url = "http://localhost:11434"
+                ))
+
+                // Check Stable Diffusion (localhost:7860)
+                services.add(ServiceStatus(
+                    name = "stable_diffusion",
+                    displayName = "Stable Diffusion",
+                    healthy = checkServiceHealth("http://localhost:7860/"),
+                    url = "http://localhost:7860"
+                ))
+
+                call.respond(services)
+            }
+
+            // Get health status of Cloudflare tunnel endpoints
+            get("/health/cloudflare") {
+                val services = mutableListOf<ServiceStatus>()
+
+                // Check Cloudflare Frontend (anotherthread.ez2bgood.com)
+                services.add(ServiceStatus(
+                    name = "cloudflare_frontend",
+                    displayName = "Cloudflare Frontend",
+                    healthy = checkServiceHealth("https://anotherthread.ez2bgood.com/", 5000),
+                    url = "https://anotherthread.ez2bgood.com"
+                ))
+
+                // Check Cloudflare Backend (api.ez2bgood.com)
+                services.add(ServiceStatus(
+                    name = "cloudflare_backend",
+                    displayName = "Cloudflare Backend",
+                    healthy = checkServiceHealth("https://api.ez2bgood.com/health", 5000),
+                    url = "https://api.ez2bgood.com"
+                ))
+
+                call.respond(services)
+            }
+
+            // Control a service (start/stop/restart)
+            post("/{serviceName}/control") {
+                val serviceName = call.parameters["serviceName"]
+                    ?: return@post call.respond(HttpStatusCode.BadRequest)
+                val request = call.receive<ServiceActionRequest>()
+
+                val result = when (serviceName) {
+                    "ollama" -> controlOllama(request.action)
+                    "stable_diffusion" -> controlStableDiffusion(request.action)
+                    "cloudflare" -> controlCloudflare(request.action)
+                    else -> ServiceActionResponse(false, "Unknown service: $serviceName")
+                }
+
+                call.respond(if (result.success) HttpStatusCode.OK else HttpStatusCode.InternalServerError, result)
+            }
+
+            // Purge Cloudflare cache
+            post("/cloudflare/purge-cache") {
+                val zoneId = environment.config.propertyOrNull("app.cloudflare.zoneId")?.getString()
+                val apiToken = environment.config.propertyOrNull("app.cloudflare.apiToken")?.getString()
+
+                if (zoneId.isNullOrBlank() || apiToken.isNullOrBlank()) {
+                    call.respond(HttpStatusCode.InternalServerError, ServiceActionResponse(false, "Cloudflare credentials not configured"))
+                    return@post
+                }
+
+                try {
+                    val url = URL("https://api.cloudflare.com/client/v4/zones/$zoneId/purge_cache")
+                    val connection = url.openConnection() as HttpURLConnection
+                    connection.requestMethod = "POST"
+                    connection.setRequestProperty("Authorization", "Bearer $apiToken")
+                    connection.setRequestProperty("Content-Type", "application/json")
+                    connection.doOutput = true
+
+                    connection.outputStream.use { os ->
+                        os.write("""{"purge_everything":true}""".toByteArray())
+                    }
+
+                    val responseCode = connection.responseCode
+                    val responseBody = if (responseCode in 200..299) {
+                        connection.inputStream.bufferedReader().readText()
+                    } else {
+                        connection.errorStream?.bufferedReader()?.readText() ?: "Unknown error"
+                    }
+                    connection.disconnect()
+
+                    if (responseCode in 200..299) {
+                        call.respond(HttpStatusCode.OK, ServiceActionResponse(true, "Cache purged successfully"))
+                    } else {
+                        call.respond(HttpStatusCode.InternalServerError, ServiceActionResponse(false, "Cloudflare API error: $responseBody"))
+                    }
+                } catch (e: Exception) {
+                    call.respond(HttpStatusCode.InternalServerError, ServiceActionResponse(false, "Failed to purge cache: ${e.message}"))
+                }
+            }
+        }
+
+        // Admin migration endpoint - assign coordinates to locations without them
+        post("/admin/migrate/assign-coordinates") {
+            val allLocations = LocationRepository.findAll()
+            val locationsWithoutCoords = allLocations.filter { it.gridX == null || it.gridY == null }
+
+            if (locationsWithoutCoords.isEmpty()) {
+                call.respondText(
+                    """{"message":"All locations already have coordinates","updated":0,"details":[]}""",
+                    ContentType.Application.Json
+                )
+                return@post
+            }
+
+            val updated = mutableListOf<String>()
+            var currentLocations = allLocations
+
+            for (location in locationsWithoutCoords) {
+                val (newX, newY, newZ) = findRandomUnusedCoordinate(currentLocations)
+                val updatedLocation = location.copy(gridX = newX, gridY = newY, gridZ = newZ)
+                LocationRepository.update(updatedLocation)
+                updated.add("${location.name} -> ($newX, $newY, $newZ)")
+
+                // Update our local list so next iteration sees the new coordinate as used
+                currentLocations = currentLocations.map {
+                    if (it.id == location.id) updatedLocation else it
+                }
+            }
+
+            val detailsJson = updated.joinToString(",") { "\"${it.replace("\"", "\\\"")}\"" }
+            call.respondText(
+                """{"message":"Assigned coordinates to ${updated.size} locations","updated":${updated.size},"details":[$detailsJson]}""",
+                ContentType.Application.Json
+            )
+        }
+    }
+}
+
+/**
+ * Check if a service is healthy by making a simple HTTP request.
+ */
+fun checkServiceHealth(url: String, timeoutMs: Int = 3000): Boolean {
+    return try {
+        val connection = URL(url).openConnection() as HttpURLConnection
+        connection.requestMethod = "GET"
+        connection.connectTimeout = timeoutMs
+        connection.readTimeout = timeoutMs
+        connection.connect()
+        val responseCode = connection.responseCode
+        connection.disconnect()
+        responseCode in 200..399
+    } catch (e: Exception) {
+        false
+    }
+}
+
+/**
+ * Control Ollama service.
+ */
+fun controlOllama(action: String): ServiceActionResponse {
+    return try {
+        when (action) {
+            "start" -> {
+                Runtime.getRuntime().exec(arrayOf("ollama", "serve"))
+                ServiceActionResponse(true, "Ollama start command sent")
+            }
+            "stop" -> {
+                Runtime.getRuntime().exec(arrayOf("pkill", "-f", "ollama"))
+                ServiceActionResponse(true, "Ollama stop command sent")
+            }
+            "restart" -> {
+                Runtime.getRuntime().exec(arrayOf("pkill", "-f", "ollama"))
+                Thread.sleep(2000)
+                Runtime.getRuntime().exec(arrayOf("ollama", "serve"))
+                ServiceActionResponse(true, "Ollama restart command sent")
+            }
+            else -> ServiceActionResponse(false, "Unknown action: $action")
+        }
+    } catch (e: Exception) {
+        ServiceActionResponse(false, "Error controlling Ollama: ${e.message}")
+    }
+}
+
+/**
+ * Control Stable Diffusion service.
+ */
+fun controlStableDiffusion(action: String): ServiceActionResponse {
+    val sdPath = System.getProperty("user.home") + "/stable-diffusion-webui-forge"
+    return try {
+        when (action) {
+            "start" -> {
+                ProcessBuilder("bash", "-c", "cd $sdPath && ./webui.sh &")
+                    .redirectErrorStream(true)
+                    .start()
+                ServiceActionResponse(true, "Stable Diffusion start command sent")
+            }
+            "stop" -> {
+                Runtime.getRuntime().exec(arrayOf("pkill", "-f", "webui.sh"))
+                Runtime.getRuntime().exec(arrayOf("pkill", "-f", "python.*launch.py"))
+                ServiceActionResponse(true, "Stable Diffusion stop command sent")
+            }
+            "restart" -> {
+                Runtime.getRuntime().exec(arrayOf("pkill", "-f", "webui.sh"))
+                Runtime.getRuntime().exec(arrayOf("pkill", "-f", "python.*launch.py"))
+                Thread.sleep(3000)
+                ProcessBuilder("bash", "-c", "cd $sdPath && ./webui.sh &")
+                    .redirectErrorStream(true)
+                    .start()
+                ServiceActionResponse(true, "Stable Diffusion restart command sent")
+            }
+            else -> ServiceActionResponse(false, "Unknown action: $action")
+        }
+    } catch (e: Exception) {
+        ServiceActionResponse(false, "Error controlling Stable Diffusion: ${e.message}")
+    }
+}
+
+/**
+ * Control Cloudflare tunnel service.
+ */
+fun controlCloudflare(action: String): ServiceActionResponse {
+    return try {
+        when (action) {
+            "start" -> {
+                ProcessBuilder("bash", "-c", "cloudflared tunnel run anotherthread &")
+                    .redirectErrorStream(true)
+                    .start()
+                ServiceActionResponse(true, "Cloudflare tunnel start command sent")
+            }
+            "stop" -> {
+                Runtime.getRuntime().exec(arrayOf("pkill", "-f", "cloudflared"))
+                ServiceActionResponse(true, "Cloudflare tunnel stop command sent")
+            }
+            "restart" -> {
+                Runtime.getRuntime().exec(arrayOf("pkill", "-f", "cloudflared"))
+                Thread.sleep(2000)
+                ProcessBuilder("bash", "-c", "cloudflared tunnel run anotherthread &")
+                    .redirectErrorStream(true)
+                    .start()
+                ServiceActionResponse(true, "Cloudflare tunnel restart command sent")
+            }
+            else -> ServiceActionResponse(false, "Unknown action: $action")
+        }
+    } catch (e: Exception) {
+        ServiceActionResponse(false, "Error controlling Cloudflare: ${e.message}")
     }
 }

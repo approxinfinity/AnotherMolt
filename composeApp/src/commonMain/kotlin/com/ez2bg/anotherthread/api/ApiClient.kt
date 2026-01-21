@@ -215,6 +215,26 @@ data class FileUploadResponseDto(
 // Admin feature ID constant
 const val ADMIN_FEATURE_ID = "1"
 
+// Service health DTOs
+@Serializable
+data class ServiceStatusDto(
+    val name: String,
+    val displayName: String,
+    val healthy: Boolean,
+    val url: String? = null
+)
+
+@Serializable
+data class ServiceActionRequest(
+    val action: String
+)
+
+@Serializable
+data class ServiceActionResponse(
+    val success: Boolean,
+    val message: String
+)
+
 // Audit log DTOs
 @Serializable
 data class AuditLogDto(
@@ -669,6 +689,29 @@ object ApiClient {
             contentType(ContentType.Application.Json)
             setBody(ValidateExitRequest(fromLocationId, toLocationId))
         }.body()
+    }
+
+    // Service health and management
+    // Get local service health (Ollama, Stable Diffusion) via backend API
+    suspend fun getLocalServicesHealth(): Result<List<ServiceStatusDto>> = runCatching {
+        client.get("$baseUrl/admin/services/health/local").body()
+    }
+
+    // Get Cloudflare tunnel health via backend API
+    suspend fun getCloudflareServicesHealth(): Result<List<ServiceStatusDto>> = runCatching {
+        client.get("$baseUrl/admin/services/health/cloudflare").body()
+    }
+
+    suspend fun controlService(serviceName: String, action: String): Result<ServiceActionResponse> = runCatching {
+        client.post("$baseUrl/admin/services/$serviceName/control") {
+            contentType(ContentType.Application.Json)
+            setBody(ServiceActionRequest(action))
+        }.body()
+    }
+
+    // Purge Cloudflare cache
+    suspend fun purgeCloudflareCache(): Result<ServiceActionResponse> = runCatching {
+        client.post("$baseUrl/admin/services/cloudflare/purge-cache").body()
     }
 }
 
