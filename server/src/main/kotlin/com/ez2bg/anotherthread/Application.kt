@@ -89,6 +89,29 @@ data class DataIntegrityResponse(
     val issues: List<IntegrityIssue>
 )
 
+/**
+ * Admin user info for user management panel.
+ */
+@Serializable
+data class AdminUserInfo(
+    val id: String,
+    val name: String,
+    val createdAt: Long,
+    val lastActiveAt: Long,
+    val currentLocationId: String?,
+    val currentLocationName: String?
+)
+
+/**
+ * Response for admin users list endpoint.
+ */
+@Serializable
+data class AdminUsersResponse(
+    val success: Boolean,
+    val totalUsers: Int,
+    val users: List<AdminUserInfo>
+)
+
 @Serializable
 data class CreateLocationRequest(
     val name: String,
@@ -2396,6 +2419,44 @@ fun Application.module() {
                             totalLocations = 0,
                             issuesFound = 0,
                             issues = emptyList()
+                        )
+                    )
+                }
+            }
+        }
+
+        // Admin users routes
+        route("/admin/users") {
+            // Get all users with activity info
+            get {
+                try {
+                    val allUsers = UserRepository.findAll()
+                    val allLocations = LocationRepository.findAll()
+                    val locationMap = allLocations.associateBy { it.id }
+
+                    val userInfos = allUsers.map { user ->
+                        AdminUserInfo(
+                            id = user.id,
+                            name = user.name,
+                            createdAt = user.createdAt,
+                            lastActiveAt = user.lastActiveAt,
+                            currentLocationId = user.currentLocationId,
+                            currentLocationName = user.currentLocationId?.let { locationMap[it]?.name }
+                        )
+                    }.sortedByDescending { it.lastActiveAt }
+
+                    call.respond(AdminUsersResponse(
+                        success = true,
+                        totalUsers = userInfos.size,
+                        users = userInfos
+                    ))
+                } catch (e: Exception) {
+                    call.respond(
+                        HttpStatusCode.InternalServerError,
+                        AdminUsersResponse(
+                            success = false,
+                            totalUsers = 0,
+                            users = emptyList()
                         )
                     )
                 }

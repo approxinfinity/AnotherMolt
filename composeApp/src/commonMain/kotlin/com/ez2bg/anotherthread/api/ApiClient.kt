@@ -268,6 +268,24 @@ data class DataIntegrityResponseDto(
     val issues: List<IntegrityIssueDto>
 )
 
+// Admin user DTOs
+@Serializable
+data class AdminUserInfoDto(
+    val id: String,
+    val name: String,
+    val createdAt: Long,
+    val lastActiveAt: Long,
+    val currentLocationId: String?,
+    val currentLocationName: String?
+)
+
+@Serializable
+data class AdminUsersResponseDto(
+    val success: Boolean,
+    val totalUsers: Int,
+    val users: List<AdminUserInfoDto>
+)
+
 // Terrain override DTOs
 @Serializable
 data class ForestParamsDto(
@@ -689,6 +707,11 @@ object ApiClient {
     // Data integrity check
     suspend fun getDataIntegrity(): Result<DataIntegrityResponseDto> = runCatching {
         client.get("$baseUrl/admin/database/data-integrity").body()
+    }
+
+    // Admin users
+    suspend fun getAdminUsers(): Result<AdminUsersResponseDto> = runCatching {
+        client.get("$baseUrl/admin/users").body()
     }
 
     // Terrain override methods

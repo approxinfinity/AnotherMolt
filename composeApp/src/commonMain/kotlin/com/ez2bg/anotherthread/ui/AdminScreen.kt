@@ -10104,6 +10104,158 @@ private fun IntegrityIssueItem(issue: IntegrityIssueDto) {
     }
 }
 
+@Composable
+fun UsersPanel() {
+    var response by remember { mutableStateOf<AdminUsersResponseDto?>(null) }
+    var isLoading by remember { mutableStateOf(false) }
+    var error by remember { mutableStateOf<String?>(null) }
+    val scope = rememberCoroutineScope()
+
+    fun loadUsers() {
+        scope.launch {
+            isLoading = true
+            error = null
+            ApiClient.getAdminUsers()
+                .onSuccess { response = it }
+                .onFailure { error = it.message }
+            isLoading = false
+        }
+    }
+
+    // Load on first composition
+    LaunchedEffect(Unit) {
+        loadUsers()
+    }
+
+    Card(modifier = Modifier.fillMaxWidth()) {
+        Column(
+            modifier = Modifier.padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp)
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Column {
+                    Text(
+                        text = "Users",
+                        style = MaterialTheme.typography.titleMedium
+                    )
+                    Text(
+                        text = "User activity and last login times",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+                Button(
+                    onClick = { loadUsers() },
+                    enabled = !isLoading
+                ) {
+                    if (isLoading) {
+                        CircularProgressIndicator(
+                            modifier = Modifier.size(16.dp),
+                            strokeWidth = 2.dp,
+                            color = MaterialTheme.colorScheme.onPrimary
+                        )
+                    } else {
+                        Text("Refresh")
+                    }
+                }
+            }
+
+            error?.let {
+                Text(
+                    text = it,
+                    color = MaterialTheme.colorScheme.error,
+                    style = MaterialTheme.typography.bodySmall
+                )
+            }
+
+            response?.let { resp ->
+                Text(
+                    text = "${resp.totalUsers} users",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+
+                if (resp.users.isNotEmpty()) {
+                    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        resp.users.forEach { user ->
+                            UserInfoItem(user)
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun UserInfoItem(user: AdminUserInfoDto) {
+    val now = com.ez2bg.anotherthread.platform.currentTimeMillis()
+    val lastActiveAgo = now - user.lastActiveAt
+    val isOnline = lastActiveAgo < 60_000 // Active in last minute
+
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        colors = CardDefaults.cardColors(
+            containerColor = if (isOnline) Color(0xFF4CAF50).copy(alpha = 0.1f)
+                           else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
+        )
+    ) {
+        Column(
+            modifier = Modifier.padding(12.dp),
+            verticalArrangement = Arrangement.spacedBy(4.dp)
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Row(
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    if (isOnline) {
+                        Surface(
+                            color = Color(0xFF4CAF50),
+                            shape = MaterialTheme.shapes.small,
+                            modifier = Modifier.size(8.dp)
+                        ) {}
+                    }
+                    Text(
+                        text = user.name,
+                        style = MaterialTheme.typography.titleSmall
+                    )
+                }
+                Text(
+                    text = formatTimeAgo(lastActiveAgo),
+                    style = MaterialTheme.typography.labelSmall,
+                    color = if (isOnline) Color(0xFF4CAF50) else MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+            user.currentLocationName?.let { locationName ->
+                Text(
+                    text = "At: $locationName",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+        }
+    }
+}
+
+private fun formatTimeAgo(millisAgo: Long): String {
+    return when {
+        millisAgo < 60_000 -> "Online now"
+        millisAgo < 3_600_000 -> "${millisAgo / 60_000}m ago"
+        millisAgo < 86_400_000 -> "${millisAgo / 3_600_000}h ago"
+        millisAgo < 604_800_000 -> "${millisAgo / 86_400_000}d ago"
+        else -> "${millisAgo / 604_800_000}w ago"
+    }
+}
+
 /**
  * Admin panel view with file upload functionality
  */
@@ -10192,6 +10344,9 @@ fun AdminPanelView(
 
         // Data Integrity Panel
         DataIntegrityPanel()
+
+        // Users Panel
+        UsersPanel()
 
         // File Upload Section
         Card(modifier = Modifier.fillMaxWidth()) {
