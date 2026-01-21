@@ -2995,13 +2995,16 @@ fun LocationGraph(
 
             // LAYER 2.5: Connection lines between exits (thin, meandering, dotted orange lines)
             // Pre-compute connection data outside Canvas to avoid scope issues
-            val connectionLines = remember(locations, locationPositions, width, height, boxSizePx) {
+            // Dot radius in pixels for offsetting line endpoints to edge of dots
+            val dotRadiusPx = 5.dp.value * 2.5f  // 5dp radius, scaled like boxSizePx
+
+            val connectionLines = remember(locations, locationPositions, width, height, boxSizePx, dotRadiusPx) {
                 val lines = mutableListOf<Triple<Offset, Offset, Long>>()
                 val drawnConnections = mutableSetOf<Pair<String, String>>()
 
                 locations.forEach { location ->
                     val fromPos = locationPositions[location.id] ?: return@forEach
-                    val fromScreen = Offset(
+                    val fromCenter = Offset(
                         fromPos.x * (width - boxSizePx) + boxSizePx / 2,
                         fromPos.y * (height - boxSizePx) + boxSizePx / 2
                     )
@@ -3018,21 +3021,42 @@ fun LocationGraph(
                         drawnConnections.add(connectionKey)
 
                         val toPos = locationPositions[toId] ?: return@exitLoop
-                        val toScreen = Offset(
+                        val toCenter = Offset(
                             toPos.x * (width - boxSizePx) + boxSizePx / 2,
                             toPos.y * (height - boxSizePx) + boxSizePx / 2
                         )
 
-                        val seed = (location.id.hashCode() xor toId.hashCode()).toLong()
-                        lines.add(Triple(fromScreen, toScreen, seed))
+                        // Calculate direction vector and offset start/end to edge of dots
+                        val dx = toCenter.x - fromCenter.x
+                        val dy = toCenter.y - fromCenter.y
+                        val distance = kotlin.math.sqrt(dx * dx + dy * dy)
+
+                        if (distance > dotRadiusPx * 2) {
+                            // Normalize and offset by dot radius
+                            val nx = dx / distance
+                            val ny = dy / distance
+
+                            val fromEdge = Offset(
+                                fromCenter.x + nx * dotRadiusPx,
+                                fromCenter.y + ny * dotRadiusPx
+                            )
+                            val toEdge = Offset(
+                                toCenter.x - nx * dotRadiusPx,
+                                toCenter.y - ny * dotRadiusPx
+                            )
+
+                            val seed = (location.id.hashCode() xor toId.hashCode()).toLong()
+                            lines.add(Triple(fromEdge, toEdge, seed))
+                        }
                     }
                 }
                 lines
             }
 
             Canvas(modifier = Modifier.fillMaxSize()) {
+                // Orange connection lines - match dot outline thickness (1.5dp) or slightly thinner
                 val connectionColor = Color(0xFFFF9800).copy(alpha = 0.25f)
-                val strokeWidth = 1.5f
+                val strokeWidth = 1.2.dp.toPx()  // Slightly thinner than dot outline (1.5dp)
                 val dashLength = 4f
                 val gapLength = 6f
 
