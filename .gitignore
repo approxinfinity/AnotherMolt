@@ -30,3 +30,15 @@ composeApp/webpack.config.d/
 
 # Server secrets
 server/src/main/resources/secrets.conf
+
+# Server data files
+server/data/anotherthread.db
+server/data/backups/
+server/data/files/
+
+# Utility scripts
+check_db.py
+
+# Claude local settings
+.claude/settings.local.json
+.claude/project-config.json
