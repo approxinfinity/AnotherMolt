@@ -75,3 +75,23 @@ Possible issues to investigate:
 1. Obstacle detection radius may be too small
 2. Avoidance force calculation may not be strong enough
 3. Screen coordinate transformation may be mismatched between obstacle positions and path positions
+
+### Data Integrity Dashboard (TODO)
+Add an admin dashboard section that displays data integrity warnings. This should run against live data and surface issues like:
+
+**Exit validation:**
+- Exits pointing to locations more than 1 tile away
+- Exit direction doesn't match actual coordinate difference (e.g., EAST exit to a location that's actually NORTH)
+- Exits pointing to non-existent locations
+- One-way exits that should probably be two-way (or vice versa)
+
+**Coordinate validation:**
+- Multiple locations at the same (x, y, z) coordinates
+- Locations with exits but no coordinates assigned
+- Orphaned locations (no exits to or from them)
+
+**Bidirectional consistency:**
+- A→B exists but B→A doesn't (when it should)
+- A→B via NORTH but B→A via EAST (directions don't match)
+
+This would be more useful than unit tests since it validates actual game data and helps content creators spot issues.
