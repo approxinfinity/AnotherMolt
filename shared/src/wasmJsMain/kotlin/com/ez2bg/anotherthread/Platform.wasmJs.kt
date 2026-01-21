@@ -15,6 +15,12 @@ private external fun getLocalBackendPort(): Int
 @JsFun("(url) => window.history.replaceState(null, '', url)")
 private external fun replaceUrl(url: String)
 
+@JsFun("() => new URLSearchParams(window.location.search).get('v') || null")
+private external fun getUrlViewParam(): JsAny?
+
+@JsFun("() => new URLSearchParams(window.location.search).get('loc') || null")
+private external fun getUrlLocationParam(): JsAny?
+
 class WasmPlatform: Platform {
     override val name: String = "Web with Kotlin/Wasm"
 }
@@ -49,4 +55,14 @@ actual fun updateUrlWithCacheBuster(view: String) {
         "?_=$cacheBuster"
     }
     replaceUrl(newUrl)
+}
+
+actual fun getInitialViewParam(): String? {
+    val value = getUrlViewParam()?.toString()
+    return value?.takeIf { it.isNotEmpty() && it != "null" }
+}
+
+actual fun getLocationParam(): String? {
+    val value = getUrlLocationParam()?.toString()
+    return value?.takeIf { it.isNotEmpty() && it != "null" }
 }

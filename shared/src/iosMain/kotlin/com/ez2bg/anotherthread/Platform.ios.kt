@@ -12,3 +12,7 @@ actual fun developmentBaseUrl(): String = "http://localhost:8080"
 
 // No-op on iOS - URL cache busting is web-only
 actual fun updateUrlWithCacheBuster(view: String) {}
+
+// No URL params on iOS
+actual fun getInitialViewParam(): String? = null
+actual fun getLocationParam(): String? = null

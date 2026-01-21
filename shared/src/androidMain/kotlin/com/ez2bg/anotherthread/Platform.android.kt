@@ -12,3 +12,7 @@ actual fun developmentBaseUrl(): String = "http://10.0.2.2:8080"
 
 // No-op on Android - URL cache busting is web-only
 actual fun updateUrlWithCacheBuster(view: String) {}
+
+// No URL params on Android
+actual fun getInitialViewParam(): String? = null
+actual fun getLocationParam(): String? = null

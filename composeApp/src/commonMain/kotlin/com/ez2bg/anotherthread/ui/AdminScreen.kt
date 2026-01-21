@@ -1,6 +1,8 @@
 package com.ez2bg.anotherthread.ui
 
 import com.ez2bg.anotherthread.updateUrlWithCacheBuster
+import com.ez2bg.anotherthread.getInitialViewParam
+import com.ez2bg.anotherthread.getLocationParam
 import com.ez2bg.anotherthread.util.SimplexNoise
 import com.ez2bg.anotherthread.util.VoronoiNoise
 import com.ez2bg.anotherthread.util.BiomeBlender
@@ -697,8 +699,39 @@ fun DragonHeader(modifier: Modifier = Modifier) {
 fun AdminScreen() {
     // Restore persisted auth state on startup
     val savedUser = remember { AuthStorage.getUser() }
-    var selectedTab by remember { mutableStateOf(AdminTab.LOCATION) }
-    var viewState by remember { mutableStateOf<ViewState>(ViewState.LocationGraph()) }
+
+    // Parse initial view from URL parameter
+    val initialViewParam = remember { getInitialViewParam() }
+    val initialTab = remember {
+        when {
+            initialViewParam?.startsWith("profile") == true -> AdminTab.USER
+            initialViewParam?.startsWith("auth") == true -> AdminTab.USER
+            initialViewParam?.startsWith("user") == true -> AdminTab.USER
+            initialViewParam?.startsWith("creature") == true -> AdminTab.CREATURE
+            initialViewParam?.startsWith("item") == true -> AdminTab.ITEM
+            initialViewParam?.startsWith("admin") == true -> AdminTab.LOCATION // Admin panel is under location tab
+            initialViewParam?.startsWith("logs") == true -> AdminTab.LOCATION // Audit logs under location tab
+            else -> AdminTab.LOCATION
+        }
+    }
+    val initialViewState = remember {
+        when {
+            initialViewParam?.startsWith("profile") == true ->
+                if (savedUser != null) ViewState.UserProfile(savedUser) else ViewState.UserAuth
+            initialViewParam?.startsWith("auth") == true -> ViewState.UserAuth
+            initialViewParam?.startsWith("creatures") == true -> ViewState.CreatureList
+            initialViewParam?.startsWith("creature-new") == true -> ViewState.CreatureCreate
+            initialViewParam?.startsWith("items") == true -> ViewState.ItemList
+            initialViewParam?.startsWith("item-new") == true -> ViewState.ItemCreate
+            initialViewParam?.startsWith("admin") == true -> ViewState.AdminPanel
+            initialViewParam?.startsWith("logs") == true -> ViewState.AuditLogs
+            initialViewParam?.startsWith("location-new") == true -> ViewState.LocationCreate
+            else -> ViewState.LocationGraph() // Default to map
+        }
+    }
+
+    var selectedTab by remember { mutableStateOf(initialTab) }
+    var viewState by remember { mutableStateOf<ViewState>(initialViewState) }
     var currentUser by remember { mutableStateOf(savedUser) }
 
     // Separate refresh key for forcing location graph refresh after CRUD operations

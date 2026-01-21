@@ -36,3 +36,15 @@ actual fun updateUrlWithCacheBuster(view: String) {
     }
     window.history.replaceState(null, "", newUrl)
 }
+
+actual fun getInitialViewParam(): String? {
+    val params = js("new URLSearchParams(window.location.search)")
+    val value = params.get("v") as? String
+    return value?.takeIf { it.isNotEmpty() }
+}
+
+actual fun getLocationParam(): String? {
+    val params = js("new URLSearchParams(window.location.search)")
+    val value = params.get("loc") as? String
+    return value?.takeIf { it.isNotEmpty() }
+}
