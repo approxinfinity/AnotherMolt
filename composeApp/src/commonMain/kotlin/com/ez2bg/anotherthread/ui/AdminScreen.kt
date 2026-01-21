@@ -2992,6 +2992,62 @@ fun LocationGraph(
                 }
             }
 
+            // LAYER 2.5: Connection lines between exits (thin, meandering, dotted orange lines)
+            // Pre-compute connection data outside Canvas to avoid scope issues
+            val connectionLines = remember(locations, locationPositions, width, height, boxSizePx) {
+                val lines = mutableListOf<Triple<Offset, Offset, Long>>()
+                val drawnConnections = mutableSetOf<Pair<String, String>>()
+
+                locations.forEach { location ->
+                    val fromPos = locationPositions[location.id] ?: return@forEach
+                    val fromScreen = Offset(
+                        fromPos.x * (width - boxSizePx) + boxSizePx / 2,
+                        fromPos.y * (height - boxSizePx) + boxSizePx / 2
+                    )
+
+                    location.exits.forEach exitLoop@{ exit ->
+                        val toId = exit.locationId
+                        val connectionKey = if (location.id < toId) {
+                            Pair(location.id, toId)
+                        } else {
+                            Pair(toId, location.id)
+                        }
+
+                        if (connectionKey in drawnConnections) return@exitLoop
+                        drawnConnections.add(connectionKey)
+
+                        val toPos = locationPositions[toId] ?: return@exitLoop
+                        val toScreen = Offset(
+                            toPos.x * (width - boxSizePx) + boxSizePx / 2,
+                            toPos.y * (height - boxSizePx) + boxSizePx / 2
+                        )
+
+                        val seed = (location.id.hashCode() xor toId.hashCode()).toLong()
+                        lines.add(Triple(fromScreen, toScreen, seed))
+                    }
+                }
+                lines
+            }
+
+            Canvas(modifier = Modifier.fillMaxSize()) {
+                val connectionColor = Color(0xFFFF9800).copy(alpha = 0.25f)
+                val strokeWidth = 1.5f
+                val dashLength = 4f
+                val gapLength = 6f
+
+                connectionLines.forEach { (from, to, seed) ->
+                    drawMeanderingDottedLine(
+                        from = from,
+                        to = to,
+                        color = connectionColor,
+                        strokeWidth = strokeWidth,
+                        dashLength = dashLength,
+                        gapLength = gapLength,
+                        seed = seed
+                    )
+                }
+            }
+
             // LAYER 3: Location dots/thumbnails
             locations.forEach { location ->
                 val pos = locationPositions[location.id] ?: return@forEach
@@ -3261,35 +3317,44 @@ private fun LocationNodeThumbnail(
                         if (exit.direction != ExitDirection.UNKNOWN) {
                             // Center of container
                             val centerOffset = thumbnailContainerSize / 2
+                            val touchTargetSize = 44.dp // Larger touch target
+                            // Outer box for larger touch target
                             Box(
                                 modifier = Modifier
                                     .offset(
-                                        x = centerOffset - exitButtonSize / 2 + (buttonDistance * offsetX),
-                                        y = centerOffset - exitButtonSize / 2 + (buttonDistance * offsetY)
+                                        x = centerOffset - touchTargetSize / 2 + (buttonDistance * offsetX),
+                                        y = centerOffset - touchTargetSize / 2 + (buttonDistance * offsetY)
                                     )
-                                    .size(exitButtonSize)
-                                    .background(Color(0xFF2196F3).copy(alpha = 0.9f), CircleShape)
-                                    .clickable { onExitClick(targetLocation) }
-                                    .padding(4.dp),
+                                    .size(touchTargetSize)
+                                    .clickable { onExitClick(targetLocation) },
                                 contentAlignment = Alignment.Center
                             ) {
-                                // Draw arrow icon pointing in the exit direction
-                                Icon(
-                                    imageVector = when (exit.direction) {
-                                        ExitDirection.NORTH -> Icons.Filled.ArrowUpward
-                                        ExitDirection.SOUTH -> Icons.Filled.ArrowDownward
-                                        ExitDirection.EAST -> Icons.AutoMirrored.Filled.ArrowForward
-                                        ExitDirection.WEST -> Icons.AutoMirrored.Filled.ArrowBack
-                                        ExitDirection.NORTHEAST -> Icons.Filled.NorthEast
-                                        ExitDirection.NORTHWEST -> Icons.Filled.NorthWest
-                                        ExitDirection.SOUTHEAST -> Icons.Filled.SouthEast
-                                        ExitDirection.SOUTHWEST -> Icons.Filled.SouthWest
-                                        ExitDirection.UNKNOWN -> Icons.Filled.ArrowUpward
-                                    },
-                                    contentDescription = exit.direction.name,
-                                    tint = Color.White,
-                                    modifier = Modifier.fillMaxSize()
-                                )
+                                // Inner visible button
+                                Box(
+                                    modifier = Modifier
+                                        .size(exitButtonSize)
+                                        .background(Color(0xFF2196F3).copy(alpha = 0.9f), CircleShape)
+                                        .padding(4.dp),
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    // Draw arrow icon pointing in the exit direction
+                                    Icon(
+                                        imageVector = when (exit.direction) {
+                                            ExitDirection.NORTH -> Icons.Filled.ArrowUpward
+                                            ExitDirection.SOUTH -> Icons.Filled.ArrowDownward
+                                            ExitDirection.EAST -> Icons.AutoMirrored.Filled.ArrowForward
+                                            ExitDirection.WEST -> Icons.AutoMirrored.Filled.ArrowBack
+                                            ExitDirection.NORTHEAST -> Icons.Filled.NorthEast
+                                            ExitDirection.NORTHWEST -> Icons.Filled.NorthWest
+                                            ExitDirection.SOUTHEAST -> Icons.Filled.SouthEast
+                                            ExitDirection.SOUTHWEST -> Icons.Filled.SouthWest
+                                            ExitDirection.UNKNOWN -> Icons.Filled.ArrowUpward
+                                        },
+                                        contentDescription = exit.direction.name,
+                                        tint = Color.White,
+                                        modifier = Modifier.fillMaxSize()
+                                    )
+                                }
                             }
                         }
                     }
@@ -3920,6 +3985,59 @@ private fun DrawScope.drawParchmentBackground(seed: Int) {
         center = Offset(compassSize + 20f, size.height - compassSize - 20f),
         size = compassSize
     )
+}
+
+// Draw a slightly meandering dotted line between two points
+private fun DrawScope.drawMeanderingDottedLine(
+    from: Offset,
+    to: Offset,
+    color: Color,
+    strokeWidth: Float,
+    dashLength: Float,
+    gapLength: Float,
+    seed: Long
+) {
+    val random = kotlin.random.Random(seed)
+    val dx = to.x - from.x
+    val dy = to.y - from.y
+    val distance = kotlin.math.sqrt(dx * dx + dy * dy)
+
+    if (distance < 1f) return
+
+    // Perpendicular direction for meandering offset
+    val perpX = -dy / distance
+    val perpY = dx / distance
+
+    // Generate control points for subtle meandering
+    val numControlPoints = 3
+    val controlPoints = mutableListOf<Offset>()
+    controlPoints.add(from)
+
+    for (i in 1..numControlPoints) {
+        val t = i.toFloat() / (numControlPoints + 1)
+        val baseX = from.x + dx * t
+        val baseY = from.y + dy * t
+        // Very subtle perpendicular offset (barely meandering)
+        val maxOffset = distance * 0.02f // 2% of distance max deviation
+        val meanderOffset = (random.nextFloat() - 0.5f) * 2 * maxOffset
+        controlPoints.add(Offset(baseX + perpX * meanderOffset, baseY + perpY * meanderOffset))
+    }
+    controlPoints.add(to)
+
+    // Draw dotted segments along the path
+    val pathEffect = PathEffect.dashPathEffect(floatArrayOf(dashLength, gapLength), 0f)
+
+    // Draw line segments between control points
+    for (i in 0 until controlPoints.size - 1) {
+        drawLine(
+            color = color,
+            start = controlPoints[i],
+            end = controlPoints[i + 1],
+            strokeWidth = strokeWidth,
+            cap = StrokeCap.Round,
+            pathEffect = pathEffect
+        )
+    }
 }
 
 // Draw decorative double-line border like vintage maps
@@ -9377,6 +9495,280 @@ fun ServiceHealthRow(
 }
 
 /**
+ * Database backup and restore panel
+ */
+@Composable
+fun DatabaseBackupPanel() {
+    var backups by remember { mutableStateOf<List<BackupInfo>>(emptyList()) }
+    var isLoading by remember { mutableStateOf(false) }
+    var isCreatingBackup by remember { mutableStateOf(false) }
+    var isRestoring by remember { mutableStateOf(false) }
+    var message by remember { mutableStateOf<String?>(null) }
+    var showRestoreDialog by remember { mutableStateOf(false) }
+    var selectedBackupForRestore by remember { mutableStateOf<String?>(null) }
+    var showDeleteDialog by remember { mutableStateOf(false) }
+    var selectedBackupForDelete by remember { mutableStateOf<String?>(null) }
+    val scope = rememberCoroutineScope()
+
+    fun loadBackups() {
+        scope.launch {
+            isLoading = true
+            ApiClient.listDatabaseBackups().onSuccess { response ->
+                backups = response.backups
+            }.onFailure { error ->
+                message = "Failed to load backups: ${error.message}"
+            }
+            isLoading = false
+        }
+    }
+
+    fun createBackup() {
+        scope.launch {
+            isCreatingBackup = true
+            message = null
+            ApiClient.createDatabaseBackup().onSuccess { response ->
+                message = response.message
+                loadBackups()
+            }.onFailure { error ->
+                message = "Backup failed: ${error.message}"
+            }
+            isCreatingBackup = false
+        }
+    }
+
+    fun restoreBackup(filename: String) {
+        scope.launch {
+            isRestoring = true
+            message = null
+            ApiClient.restoreDatabase(filename).onSuccess { response ->
+                message = "${response.message}. Pre-restore backup: ${response.preRestoreBackup}"
+                loadBackups()
+            }.onFailure { error ->
+                message = "Restore failed: ${error.message}"
+            }
+            isRestoring = false
+            showRestoreDialog = false
+            selectedBackupForRestore = null
+        }
+    }
+
+    fun deleteBackup(filename: String) {
+        scope.launch {
+            message = null
+            ApiClient.deleteBackup(filename).onSuccess { response ->
+                message = response.message
+                loadBackups()
+            }.onFailure { error ->
+                message = "Delete failed: ${error.message}"
+            }
+            showDeleteDialog = false
+            selectedBackupForDelete = null
+        }
+    }
+
+    // Load backups on mount
+    LaunchedEffect(Unit) {
+        loadBackups()
+    }
+
+    Card(modifier = Modifier.fillMaxWidth()) {
+        Column(
+            modifier = Modifier.padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp)
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    text = "Database Backup",
+                    style = MaterialTheme.typography.titleMedium
+                )
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Button(
+                        onClick = { loadBackups() },
+                        enabled = !isLoading
+                    ) {
+                        if (isLoading) {
+                            CircularProgressIndicator(
+                                modifier = Modifier.size(16.dp),
+                                strokeWidth = 2.dp
+                            )
+                            Spacer(modifier = Modifier.width(8.dp))
+                        }
+                        Text("Refresh")
+                    }
+                    Button(
+                        onClick = { createBackup() },
+                        enabled = !isCreatingBackup
+                    ) {
+                        if (isCreatingBackup) {
+                            CircularProgressIndicator(
+                                modifier = Modifier.size(16.dp),
+                                strokeWidth = 2.dp
+                            )
+                            Spacer(modifier = Modifier.width(8.dp))
+                        }
+                        Text("Create Backup")
+                    }
+                }
+            }
+
+            message?.let { msg ->
+                Text(
+                    text = msg,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = if (msg.contains("failed", ignoreCase = true)) MaterialTheme.colorScheme.error
+                           else MaterialTheme.colorScheme.primary
+                )
+            }
+
+            if (backups.isEmpty() && !isLoading) {
+                Text(
+                    text = "No backups found",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            } else {
+                backups.forEach { backup ->
+                    Card(
+                        modifier = Modifier.fillMaxWidth(),
+                        colors = CardDefaults.cardColors(
+                            containerColor = MaterialTheme.colorScheme.surfaceVariant
+                        )
+                    ) {
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(12.dp),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(
+                                    text = backup.filename,
+                                    style = MaterialTheme.typography.bodyMedium
+                                )
+                                Text(
+                                    text = "${backup.size / 1024} KB • ${formatTimestamp(backup.modified)}",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+                            Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                                IconButton(
+                                    onClick = {
+                                        selectedBackupForRestore = backup.filename
+                                        showRestoreDialog = true
+                                    },
+                                    enabled = !isRestoring
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Default.Upload,
+                                        contentDescription = "Restore",
+                                        tint = MaterialTheme.colorScheme.primary
+                                    )
+                                }
+                                IconButton(
+                                    onClick = {
+                                        selectedBackupForDelete = backup.filename
+                                        showDeleteDialog = true
+                                    }
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Default.Delete,
+                                        contentDescription = "Delete",
+                                        tint = MaterialTheme.colorScheme.error
+                                    )
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    // Restore confirmation dialog
+    if (showRestoreDialog && selectedBackupForRestore != null) {
+        AlertDialog(
+            onDismissRequest = {
+                showRestoreDialog = false
+                selectedBackupForRestore = null
+            },
+            title = { Text("Restore Database") },
+            text = {
+                Text("Are you sure you want to restore from \"${selectedBackupForRestore}\"?\n\nA backup of the current database will be created first.")
+            },
+            confirmButton = {
+                Button(
+                    onClick = { restoreBackup(selectedBackupForRestore!!) },
+                    enabled = !isRestoring,
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = MaterialTheme.colorScheme.error
+                    )
+                ) {
+                    if (isRestoring) {
+                        CircularProgressIndicator(
+                            modifier = Modifier.size(16.dp),
+                            strokeWidth = 2.dp,
+                            color = MaterialTheme.colorScheme.onError
+                        )
+                        Spacer(modifier = Modifier.width(8.dp))
+                    }
+                    Text("Restore")
+                }
+            },
+            dismissButton = {
+                TextButton(
+                    onClick = {
+                        showRestoreDialog = false
+                        selectedBackupForRestore = null
+                    }
+                ) {
+                    Text("Cancel")
+                }
+            }
+        )
+    }
+
+    // Delete confirmation dialog
+    if (showDeleteDialog && selectedBackupForDelete != null) {
+        AlertDialog(
+            onDismissRequest = {
+                showDeleteDialog = false
+                selectedBackupForDelete = null
+            },
+            title = { Text("Delete Backup") },
+            text = {
+                Text("Are you sure you want to delete \"${selectedBackupForDelete}\"?\n\nThis action cannot be undone.")
+            },
+            confirmButton = {
+                Button(
+                    onClick = { deleteBackup(selectedBackupForDelete!!) },
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = MaterialTheme.colorScheme.error
+                    )
+                ) {
+                    Text("Delete")
+                }
+            },
+            dismissButton = {
+                TextButton(
+                    onClick = {
+                        showDeleteDialog = false
+                        selectedBackupForDelete = null
+                    }
+                ) {
+                    Text("Cancel")
+                }
+            }
+        )
+    }
+}
+
+/**
  * Admin panel view with file upload functionality
  */
 @Composable
@@ -9458,6 +9850,9 @@ fun AdminPanelView(
 
         // Service Health Panel
         ServiceHealthPanel()
+
+        // Database Backup Panel
+        DatabaseBackupPanel()
 
         // File Upload Section
         Card(modifier = Modifier.fillMaxWidth()) {

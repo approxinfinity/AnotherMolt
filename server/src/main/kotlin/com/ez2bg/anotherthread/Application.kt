@@ -2158,6 +2158,167 @@ fun Application.module() {
                 ContentType.Application.Json
             )
         }
+
+        // Database backup routes
+        route("/admin/database") {
+            // Create a backup of the database
+            post("/backup") {
+                try {
+                    val backupPath = createDatabaseBackup()
+                    call.respondText(
+                        """{"success":true,"message":"Backup created successfully","path":"$backupPath"}""",
+                        ContentType.Application.Json
+                    )
+                } catch (e: Exception) {
+                    call.respondText(
+                        """{"success":false,"message":"Backup failed: ${e.message?.replace("\"", "\\\"")}"}""",
+                        ContentType.Application.Json,
+                        HttpStatusCode.InternalServerError
+                    )
+                }
+            }
+
+            // List available backups
+            get("/backups") {
+                try {
+                    val backups = listDatabaseBackups()
+                    val backupsJson = backups.joinToString(",") {
+                        """{"filename":"${it.name}","size":${it.length()},"modified":${it.lastModified()}}"""
+                    }
+                    call.respondText(
+                        """{"success":true,"backups":[$backupsJson]}""",
+                        ContentType.Application.Json
+                    )
+                } catch (e: Exception) {
+                    call.respondText(
+                        """{"success":false,"message":"Failed to list backups: ${e.message?.replace("\"", "\\\"")}"}""",
+                        ContentType.Application.Json,
+                        HttpStatusCode.InternalServerError
+                    )
+                }
+            }
+
+            // Restore from a backup (creates a backup first)
+            post("/restore/{filename}") {
+                val filename = call.parameters["filename"]
+                    ?: return@post call.respondText(
+                        """{"success":false,"message":"Filename required"}""",
+                        ContentType.Application.Json,
+                        HttpStatusCode.BadRequest
+                    )
+
+                try {
+                    // First create a backup of the current state
+                    val preRestoreBackup = createDatabaseBackup("pre-restore")
+
+                    // Then restore from the specified backup
+                    restoreDatabaseFromBackup(filename)
+
+                    call.respondText(
+                        """{"success":true,"message":"Database restored successfully","preRestoreBackup":"$preRestoreBackup"}""",
+                        ContentType.Application.Json
+                    )
+                } catch (e: Exception) {
+                    call.respondText(
+                        """{"success":false,"message":"Restore failed: ${e.message?.replace("\"", "\\\"")}"}""",
+                        ContentType.Application.Json,
+                        HttpStatusCode.InternalServerError
+                    )
+                }
+            }
+
+            // Delete a backup
+            delete("/backup/{filename}") {
+                val filename = call.parameters["filename"]
+                    ?: return@delete call.respondText(
+                        """{"success":false,"message":"Filename required"}""",
+                        ContentType.Application.Json,
+                        HttpStatusCode.BadRequest
+                    )
+
+                try {
+                    deleteDatabaseBackup(filename)
+                    call.respondText(
+                        """{"success":true,"message":"Backup deleted successfully"}""",
+                        ContentType.Application.Json
+                    )
+                } catch (e: Exception) {
+                    call.respondText(
+                        """{"success":false,"message":"Delete failed: ${e.message?.replace("\"", "\\\"")}"}""",
+                        ContentType.Application.Json,
+                        HttpStatusCode.InternalServerError
+                    )
+                }
+            }
+        }
+    }
+}
+
+/**
+ * Create a backup of the database file.
+ * Returns the path to the backup file.
+ */
+fun createDatabaseBackup(prefix: String = "backup"): String {
+    val dbPath = File("data/anotherthread.db")
+    if (!dbPath.exists()) {
+        throw IllegalStateException("Database file not found")
+    }
+
+    val backupsDir = File("data/backups")
+    if (!backupsDir.exists()) {
+        backupsDir.mkdirs()
+    }
+
+    val timestamp = java.time.LocalDateTime.now()
+        .format(java.time.format.DateTimeFormatter.ofPattern("yyyy-MM-dd_HH-mm-ss"))
+    val backupFilename = "${prefix}_${timestamp}.db"
+    val backupPath = File(backupsDir, backupFilename)
+
+    dbPath.copyTo(backupPath, overwrite = false)
+
+    return backupFilename
+}
+
+/**
+ * List all available database backups.
+ */
+fun listDatabaseBackups(): List<File> {
+    val backupsDir = File("data/backups")
+    if (!backupsDir.exists()) {
+        return emptyList()
+    }
+
+    return backupsDir.listFiles { file -> file.extension == "db" }
+        ?.sortedByDescending { it.lastModified() }
+        ?: emptyList()
+}
+
+/**
+ * Restore the database from a backup file.
+ */
+fun restoreDatabaseFromBackup(filename: String) {
+    val backupFile = File("data/backups/$filename")
+    if (!backupFile.exists()) {
+        throw IllegalArgumentException("Backup file not found: $filename")
+    }
+
+    val dbPath = File("data/anotherthread.db")
+
+    // Copy backup over the current database
+    backupFile.copyTo(dbPath, overwrite = true)
+}
+
+/**
+ * Delete a database backup file.
+ */
+fun deleteDatabaseBackup(filename: String) {
+    val backupFile = File("data/backups/$filename")
+    if (!backupFile.exists()) {
+        throw IllegalArgumentException("Backup file not found: $filename")
+    }
+
+    if (!backupFile.delete()) {
+        throw IllegalStateException("Failed to delete backup file")
     }
 }
 

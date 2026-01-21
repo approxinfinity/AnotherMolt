@@ -713,7 +713,52 @@ object ApiClient {
     suspend fun purgeCloudflareCache(): Result<ServiceActionResponse> = runCatching {
         client.post("$baseUrl/admin/services/cloudflare/purge-cache").body()
     }
+
+    // Database backup/restore
+    suspend fun createDatabaseBackup(): Result<BackupResponse> = runCatching {
+        client.post("$baseUrl/admin/database/backup").body()
+    }
+
+    suspend fun listDatabaseBackups(): Result<BackupListResponse> = runCatching {
+        client.get("$baseUrl/admin/database/backups").body()
+    }
+
+    suspend fun restoreDatabase(filename: String): Result<RestoreResponse> = runCatching {
+        client.post("$baseUrl/admin/database/restore/$filename").body()
+    }
+
+    suspend fun deleteBackup(filename: String): Result<BackupResponse> = runCatching {
+        client.delete("$baseUrl/admin/database/backup/$filename").body()
+    }
 }
+
+@Serializable
+data class BackupResponse(
+    val success: Boolean,
+    val message: String,
+    val path: String? = null
+)
+
+@Serializable
+data class BackupInfo(
+    val filename: String,
+    val size: Long,
+    val modified: Long
+)
+
+@Serializable
+data class BackupListResponse(
+    val success: Boolean,
+    val backups: List<BackupInfo> = emptyList(),
+    val message: String? = null
+)
+
+@Serializable
+data class RestoreResponse(
+    val success: Boolean,
+    val message: String,
+    val preRestoreBackup: String? = null
+)
 
 @Serializable
 data class ValidateExitRequest(
