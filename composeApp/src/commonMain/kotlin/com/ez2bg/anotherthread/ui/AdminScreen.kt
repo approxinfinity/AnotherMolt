@@ -98,6 +98,8 @@ import com.ez2bg.anotherthread.api.*
 import com.ez2bg.anotherthread.platform.readFileBytes
 import com.ez2bg.anotherthread.storage.AuthStorage
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.launch
+import androidx.compose.runtime.rememberCoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.MutableSharedFlow
@@ -3463,6 +3465,22 @@ fun LocationGraph(
             val currentLocation = locations.find { it.id == expandedLocationId }
             val currentPos = locationPositions[expandedLocationId]
 
+            // State for detail view (creature/item inspection)
+            var selectedCreature by remember { mutableStateOf<CreatureDto?>(null) }
+            var selectedItem by remember { mutableStateOf<ItemDto?>(null) }
+            val isDetailViewVisible = selectedCreature != null || selectedItem != null
+
+            // Animation for slide transition
+            val detailOffsetX by animateFloatAsState(
+                targetValue = if (isDetailViewVisible) 0f else 1f,
+                animationSpec = tween(durationMillis = 300),
+                label = "detailSlide"
+            )
+
+            // Snackbar state for action toasts
+            val snackbarHostState = remember { SnackbarHostState() }
+            val scope = rememberCoroutineScope()
+
             if (currentLocation != null) {
                 // 1. Centered 100x100 thumbnail - simple image at absolute center
                 Box(
@@ -3610,66 +3628,313 @@ fun LocationGraph(
 
                 }
 
-                // Location info fixed at bottom of viewport
-                Column(
-                    modifier = Modifier
-                        .align(Alignment.BottomCenter)
-                        .fillMaxWidth()
-                        .background(Color.Black.copy(alpha = 0.85f))
-                        .padding(16.dp),
-                    horizontalAlignment = Alignment.Start
-                ) {
-                    // Others (creatures) - show actual names
-                    Text(
-                        text = "Others",
-                        color = Color.Gray,
-                        fontSize = 10.sp
-                    )
-                    val creaturesHere = allCreatures.filter { it.id in currentLocation.creatureIds }
-                    if (creaturesHere.isEmpty()) {
+                // Location info fixed at bottom of viewport (hidden when detail view is shown)
+                if (!isDetailViewVisible) {
+                    Column(
+                        modifier = Modifier
+                            .align(Alignment.BottomCenter)
+                            .fillMaxWidth()
+                            .background(Color.Black.copy(alpha = 0.85f))
+                            .padding(16.dp),
+                        horizontalAlignment = Alignment.Start
+                    ) {
+                        // Others (creatures) - show actual names, tappable
                         Text(
-                            text = "None",
-                            color = Color.White,
-                            fontSize = 14.sp
+                            text = "Others",
+                            color = Color.Gray,
+                            fontSize = 10.sp
                         )
-                    } else {
-                        creaturesHere.forEach { creature ->
+                        val creaturesHere = allCreatures.filter { it.id in currentLocation.creatureIds }
+                        if (creaturesHere.isEmpty()) {
                             Text(
-                                text = creature.name,
+                                text = "None",
                                 color = Color.White,
                                 fontSize = 14.sp
                             )
+                        } else {
+                            creaturesHere.forEach { creature ->
+                                Text(
+                                    text = creature.name,
+                                    color = Color(0xFF64B5F6),
+                                    fontSize = 14.sp,
+                                    modifier = Modifier
+                                        .clickable { selectedCreature = creature }
+                                        .padding(vertical = 2.dp)
+                                )
+                            }
                         }
-                    }
 
-                    Spacer(modifier = Modifier.height(8.dp))
+                        Spacer(modifier = Modifier.height(8.dp))
 
-                    // Items - show actual names
-                    Text(
-                        text = "Items",
-                        color = Color.Gray,
-                        fontSize = 10.sp
-                    )
-                    val itemsHere = allItems.filter { it.id in currentLocation.itemIds }
-                    if (itemsHere.isEmpty()) {
+                        // Items - show actual names, tappable
                         Text(
-                            text = "None",
-                            color = Color.White,
-                            fontSize = 14.sp
+                            text = "Items",
+                            color = Color.Gray,
+                            fontSize = 10.sp
                         )
-                    } else {
-                        itemsHere.forEach { item ->
+                        val itemsHere = allItems.filter { it.id in currentLocation.itemIds }
+                        if (itemsHere.isEmpty()) {
                             Text(
-                                text = item.name,
+                                text = "None",
                                 color = Color.White,
                                 fontSize = 14.sp
                             )
+                        } else {
+                            itemsHere.forEach { item ->
+                                Text(
+                                    text = item.name,
+                                    color = Color(0xFFFFD54F),
+                                    fontSize = 14.sp,
+                                    modifier = Modifier
+                                        .clickable { selectedItem = item }
+                                        .padding(vertical = 2.dp)
+                                )
+                            }
                         }
                     }
                 }
 
+                // Detail view for creature/item (slides in from right)
+                if (isDetailViewVisible) {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .offset(x = (detailOffsetX * 400).dp)
+                            .background(Color.Black.copy(alpha = 0.95f)),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        val detailName = selectedCreature?.name ?: selectedItem?.name ?: ""
+                        val detailImageUrl = selectedCreature?.imageUrl ?: selectedItem?.imageUrl
+
+                        // Name above the 100x100
+                        Text(
+                            text = detailName,
+                            color = Color.White,
+                            fontSize = 18.sp,
+                            fontWeight = FontWeight.Medium,
+                            textAlign = TextAlign.Center,
+                            modifier = Modifier
+                                .align(Alignment.Center)
+                                .offset(y = (-120).dp)
+                                .background(Color.Black.copy(alpha = 0.7f), RoundedCornerShape(4.dp))
+                                .padding(horizontal = 12.dp, vertical = 4.dp)
+                        )
+
+                        // 100x100 detail image
+                        Box(
+                            modifier = Modifier
+                                .size(100.dp)
+                                .clip(RoundedCornerShape(8.dp))
+                                .background(Color.Black.copy(alpha = 0.8f))
+                                .border(2.dp, Color(0xFFFF9800), RoundedCornerShape(8.dp))
+                        ) {
+                            if (detailImageUrl != null) {
+                                AsyncImage(
+                                    model = "${AppConfig.api.baseUrl}${detailImageUrl}",
+                                    contentDescription = detailName,
+                                    modifier = Modifier.fillMaxSize(),
+                                    contentScale = ContentScale.Crop
+                                )
+                            } else {
+                                Box(
+                                    modifier = Modifier.fillMaxSize(),
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    Text(
+                                        text = detailName,
+                                        color = Color.White,
+                                        fontSize = 12.sp,
+                                        textAlign = TextAlign.Center,
+                                        modifier = Modifier.padding(8.dp)
+                                    )
+                                }
+                            }
+                        }
+
+                        // Action buttons around the 100x100 (same radius as exit buttons: 90dp)
+                        // Back arrow (WEST position) - Orange
+                        var isBackPressed by remember { mutableStateOf(false) }
+                        val backScale by animateFloatAsState(
+                            targetValue = if (isBackPressed) 1.3f else 1f,
+                            animationSpec = tween(durationMillis = 150),
+                            label = "backScale"
+                        )
+                        val backGlowAlpha by animateFloatAsState(
+                            targetValue = if (isBackPressed) 0.8f else 0f,
+                            animationSpec = tween(durationMillis = 150),
+                            label = "backGlow"
+                        )
+
+                        Box(
+                            modifier = Modifier
+                                .offset(x = (-90).dp, y = 0.dp)
+                                .size(44.dp),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Box(
+                                modifier = Modifier
+                                    .size((32 * backScale).dp)
+                                    .background(
+                                        Color(0xFFFF9800).copy(alpha = backGlowAlpha),
+                                        CircleShape
+                                    )
+                            )
+                            Box(
+                                modifier = Modifier
+                                    .size(32.dp)
+                                    .clip(CircleShape)
+                                    .background(Color(0xFFFF9800), CircleShape)
+                                    .pointerInput(Unit) {
+                                        detectTapGestures(
+                                            onPress = {
+                                                isBackPressed = true
+                                                tryAwaitRelease()
+                                                isBackPressed = false
+                                                selectedCreature = null
+                                                selectedItem = null
+                                            }
+                                        )
+                                    },
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Icon(
+                                    imageVector = Icons.AutoMirrored.Filled.ArrowBack,
+                                    contentDescription = "Back",
+                                    tint = Color.White,
+                                    modifier = Modifier.size(20.dp)
+                                )
+                            }
+                        }
+
+                        // Attack and Greet buttons only shown for creatures (not items)
+                        if (selectedCreature != null) {
+                            // Attack button (EAST position) - Sword
+                            var isAttackPressed by remember { mutableStateOf(false) }
+                            val attackScale by animateFloatAsState(
+                                targetValue = if (isAttackPressed) 1.3f else 1f,
+                                animationSpec = tween(durationMillis = 150),
+                                label = "attackScale"
+                            )
+                            val attackGlowAlpha by animateFloatAsState(
+                                targetValue = if (isAttackPressed) 0.8f else 0f,
+                                animationSpec = tween(durationMillis = 150),
+                                label = "attackGlow"
+                            )
+
+                            Box(
+                                modifier = Modifier
+                                    .offset(x = 90.dp, y = 0.dp)
+                                    .size(44.dp),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Box(
+                                    modifier = Modifier
+                                        .size((32 * attackScale).dp)
+                                        .background(
+                                            Color(0xFFFF9800).copy(alpha = attackGlowAlpha),
+                                            CircleShape
+                                        )
+                                )
+                                Box(
+                                    modifier = Modifier
+                                        .size(32.dp)
+                                        .clip(CircleShape)
+                                        .background(Color(0xFFD32F2F), CircleShape)
+                                        .pointerInput(Unit) {
+                                            detectTapGestures(
+                                                onPress = {
+                                                    isAttackPressed = true
+                                                    tryAwaitRelease()
+                                                    isAttackPressed = false
+                                                    scope.launch {
+                                                        snackbarHostState.showSnackbar(
+                                                            message = "lets fight!",
+                                                            duration = SnackbarDuration.Short
+                                                        )
+                                                    }
+                                                }
+                                            )
+                                        },
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    Icon(
+                                        imageVector = SwordIcon,
+                                        contentDescription = "Attack",
+                                        tint = Color.White,
+                                        modifier = Modifier.size(20.dp)
+                                    )
+                                }
+                            }
+
+                            // Greet button (SOUTH position) - Hand wave
+                            var isGreetPressed by remember { mutableStateOf(false) }
+                            val greetScale by animateFloatAsState(
+                                targetValue = if (isGreetPressed) 1.3f else 1f,
+                                animationSpec = tween(durationMillis = 150),
+                                label = "greetScale"
+                            )
+                            val greetGlowAlpha by animateFloatAsState(
+                                targetValue = if (isGreetPressed) 0.8f else 0f,
+                                animationSpec = tween(durationMillis = 150),
+                                label = "greetGlow"
+                            )
+
+                            Box(
+                                modifier = Modifier
+                                    .offset(x = 0.dp, y = 90.dp)
+                                    .size(44.dp),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Box(
+                                    modifier = Modifier
+                                        .size((32 * greetScale).dp)
+                                        .background(
+                                            Color(0xFFFF9800).copy(alpha = greetGlowAlpha),
+                                            CircleShape
+                                        )
+                                )
+                                Box(
+                                    modifier = Modifier
+                                        .size(32.dp)
+                                        .clip(CircleShape)
+                                        .background(Color(0xFF4CAF50), CircleShape)
+                                        .pointerInput(Unit) {
+                                            detectTapGestures(
+                                                onPress = {
+                                                    isGreetPressed = true
+                                                    tryAwaitRelease()
+                                                    isGreetPressed = false
+                                                    scope.launch {
+                                                        snackbarHostState.showSnackbar(
+                                                            message = "you say sup dude!",
+                                                            duration = SnackbarDuration.Short
+                                                        )
+                                                    }
+                                                }
+                                            )
+                                        },
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Filled.Person,
+                                        contentDescription = "Greet",
+                                        tint = Color.White,
+                                        modifier = Modifier.size(20.dp)
+                                    )
+                                }
+                            }
+                        }
+                    }
+                }
+
+                // Snackbar host for toast messages
+                SnackbarHost(
+                    hostState = snackbarHostState,
+                    modifier = Modifier.align(Alignment.BottomCenter)
+                )
+
                 // 2. Minimap in top-left - just dots and connection lines, no terrain
-                if (currentPos != null) {
+                if (currentPos != null && !isDetailViewVisible) {
                     val minimapSize = 140.dp
                     // Grid spacing - how many dp per grid unit in the minimap
                     val gridSpacing = 35.dp  // Each dot is 35dp apart in the minimap
