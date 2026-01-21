@@ -21,7 +21,8 @@ object ClassAbilitySeed {
             description = "A master of arcane or divine magic, capable of bending reality through spells. Spellcasters rely on intelligence or wisdom to fuel their magical abilities.",
             isSpellcaster = true,
             hitDie = 6,
-            primaryAttribute = "intelligence"
+            primaryAttribute = "intelligence",
+            isPublic = true
         )
         val createdSpellcaster = CharacterClassRepository.create(spellcasterClass)
 
@@ -30,7 +31,8 @@ object ClassAbilitySeed {
             description = "A trained warrior who excels in physical combat. Martial classes rely on strength, dexterity, and endurance to overcome their foes through skill and prowess.",
             isSpellcaster = false,
             hitDie = 10,
-            primaryAttribute = "strength"
+            primaryAttribute = "strength",
+            isPublic = true
         )
         val createdMartial = CharacterClassRepository.create(martialClass)
 

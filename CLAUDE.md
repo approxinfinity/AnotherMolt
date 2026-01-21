@@ -106,3 +106,53 @@ When a user enters exploration mode and has no prior presence data (currentLocat
 - Does this create issues for new users who haven't explored yet?
 - Should we handle the case where the fallback location is in a restricted area?
 - Consider adding a server-side "default starting location" setting
+
+### Class Teaching System (TODO - Future Feature)
+User-generated classes (created via LLM during character creation) are currently private to that user. In the future:
+- Users should be able to "teach" their custom class to other players
+- This could involve in-game interaction, mentorship mechanics, or quest completion
+- Taught classes become available to the student for character creation
+- Consider tracking lineage (who taught whom) for flavor/lore purposes
+- Admin-created and seeded classes remain universally available
+
+### Pro/Monetization Features (TODO - Future)
+Potential premium features to consider:
+
+**Private Worlds:**
+- Users can create their own private world instances
+- Seeded with user-created content (locations, creatures, items, classes)
+- Isolated from the main shared world
+
+**Image Generation Enhancements:**
+- Extra image generation with random seeds as a paid feature
+- "Skin swapping" - generate alternate visual versions of entities
+- Store multiple image variants per entity, allow users to switch between them
+
+### Dynamic World Features (TODO - Future)
+Consider features that make the world feel more alive over time:
+
+**Decay/Evolution System:**
+- Descriptions could evolve or decay over time without player interaction
+- Abandoned locations might become overgrown, ruined, or inhabited by new creatures
+- Periodic LLM-driven description updates based on world events or time passage
+- Image recalculation when descriptions change significantly
+
+**Environmental Variation:**
+- Seasonal images (summer, fall, winter, spring variants)
+- Day/night cycle with different images and descriptions
+- Weather effects (rain, snow, fog) affecting visuals and descriptions
+- Time-of-day could affect which creatures appear or NPC availability
+
+### User Profile Visibility (TODO - Future)
+Currently, viewing other users' profiles is restricted to admins only. Consider:
+- Allow users to view each other's profiles (read-only) with lock indicator
+- Add privacy settings for what fields are visible to other users
+- Profile visibility levels: public, friends-only, private
+
+### Character Class Assignment (TODO - Implement)
+Users need to be assigned a character class. Implementation needed:
+- Add `characterClassId` field to User model and table
+- After character creation (save or image gen), show class assignment section
+- Two options: "Autoassign" (LLM matches description to existing class) or "Generate" (LLM creates custom class)
+- UI shows a section that pops down saying "Now you must choose a class"
+- Buttons only enabled after user saves profile or generates image

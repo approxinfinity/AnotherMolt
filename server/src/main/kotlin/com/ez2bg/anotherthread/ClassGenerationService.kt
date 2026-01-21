@@ -62,7 +62,7 @@ object ClassGenerationService {
             })
         }
         engine {
-            requestTimeout = 120_000 // 2 minutes for complex generation
+            requestTimeout = 600_000 // 10 minutes for complex generation with abilities
         }
     }
 
@@ -152,7 +152,12 @@ Valid hitDie values: 6, 8, 10, 12
             """.trimIndent()
 
             val classResponse = callLlm(classPrompt)
-            val generatedClass = json.decodeFromString<GeneratedClass>(classResponse)
+            val classJson = extractJsonObject(classResponse)
+            val generatedClass = try {
+                json.decodeFromString<GeneratedClass>(classJson)
+            } catch (e: Exception) {
+                throw IllegalArgumentException("Failed to parse class from LLM response: ${classJson.take(200)}. Error: ${e.message}")
+            }
 
             // Create the CharacterClass
             val characterClass = CharacterClass(
@@ -345,6 +350,30 @@ Respond with valid JSON only in this exact format:
                 effects = suggested.effects
             ).withCalculatedCost()
         }
+    }
+
+    /**
+     * Extract JSON object from a potentially malformed response
+     */
+    private fun extractJsonObject(text: String): String {
+        // Try to find JSON object pattern
+        val objectMatch = Regex("""\{[^{}]*(?:\{[^{}]*\}[^{}]*)*\}""").find(text)
+        if (objectMatch != null) {
+            return objectMatch.value
+        }
+        // If no match, return original (will fail parsing with better error)
+        return text
+    }
+
+    /**
+     * Extract JSON array from a potentially malformed response
+     */
+    private fun extractJsonArray(text: String): String {
+        val arrayMatch = Regex("""\[[\s\S]*\]""").find(text)
+        if (arrayMatch != null) {
+            return arrayMatch.value
+        }
+        return text
     }
 
     /**

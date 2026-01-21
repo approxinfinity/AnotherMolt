@@ -1436,6 +1436,7 @@ fun UserProfileView(
 
     // Class assignment state
     var isAssigningClass by remember { mutableStateOf(false) }
+    var isClassGenerating by remember { mutableStateOf(false) } // Async generation in progress
     var assignedClass by remember { mutableStateOf<CharacterClassDto?>(null) }
     var characterClassId by remember(user.id) { mutableStateOf(user.characterClassId) }
 
@@ -1450,8 +1451,34 @@ fun UserProfileView(
             ApiClient.getCharacterClass(classId).onSuccess { fetchedClass ->
                 assignedClass = fetchedClass
             }
+            isClassGenerating = false // Stop polling when class is assigned
         } else {
             assignedClass = null
+        }
+    }
+
+    // Poll for async class generation completion
+    LaunchedEffect(isClassGenerating) {
+        if (isClassGenerating && characterClassId == null) {
+            // Poll every 5 seconds until class is assigned or 10 minutes elapsed
+            var attempts = 0
+            val maxAttempts = 120 // 10 minutes at 5 second intervals
+            while (isClassGenerating && characterClassId == null && attempts < maxAttempts) {
+                delay(5000) // 5 seconds
+                attempts++
+                // Fetch user to check if class was assigned
+                ApiClient.getUser(user.id).onSuccess { updatedUser ->
+                    if (updatedUser.characterClassId != null) {
+                        characterClassId = updatedUser.characterClassId
+                        onUserUpdated(updatedUser)
+                        message = "Class generated!"
+                    }
+                }
+            }
+            if (attempts >= maxAttempts && characterClassId == null) {
+                message = "Class generation timed out. Please refresh the page."
+                isClassGenerating = false
+            }
         }
     }
 
@@ -1618,6 +1645,13 @@ fun UserProfileView(
                 }
             }
 
+            // Helper notes
+            Text(
+                text = "If you don't generate a class, a stock class will be assigned based on your description. Generating a class or image may take a few moments.",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+
             // Save button
             Button(
                 onClick = {
@@ -1652,6 +1686,7 @@ fun UserProfileView(
                                     isAssigningClass = true
                                     message = "Assigning class, this may take a moment..."
 
+                                    val isGenerating = genClassChecked
                                     ApiClient.assignClass(
                                         userId = user.id,
                                         request = AssignClassRequest(
@@ -1659,10 +1694,16 @@ fun UserProfileView(
                                             characterDescription = desc
                                         )
                                     ).onSuccess { response ->
-                                        characterClassId = response.user.characterClassId
-                                        assignedClass = response.assignedClass
-                                        onUserUpdated(response.user)
-                                        message = response.message ?: "Class assigned!"
+                                        if (isGenerating && response.assignedClass == null) {
+                                            // Async generation started - begin polling
+                                            isClassGenerating = true
+                                            message = response.message ?: "Generating class..."
+                                        } else {
+                                            characterClassId = response.user.characterClassId
+                                            assignedClass = response.assignedClass
+                                            onUserUpdated(response.user)
+                                            message = response.message ?: "Class assigned!"
+                                        }
                                         genClassChecked = false
                                     }.onFailure { error ->
                                         message = "Error assigning class: ${error.message}"
@@ -1714,6 +1755,40 @@ fun UserProfileView(
                 color = if (it.startsWith("Error")) MaterialTheme.colorScheme.error
                 else MaterialTheme.colorScheme.primary
             )
+        }
+
+        // Class generation in progress indicator
+        if (isClassGenerating && assignedClass == null) {
+            Card(
+                modifier = Modifier.fillMaxWidth(),
+                colors = CardDefaults.cardColors(
+                    containerColor = MaterialTheme.colorScheme.primaryContainer
+                )
+            ) {
+                Row(
+                    modifier = Modifier.padding(16.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(12.dp)
+                ) {
+                    CircularProgressIndicator(
+                        modifier = Modifier.size(24.dp),
+                        strokeWidth = 2.dp,
+                        color = MaterialTheme.colorScheme.onPrimaryContainer
+                    )
+                    Column {
+                        Text(
+                            text = "Generating your custom class...",
+                            style = MaterialTheme.typography.titleSmall,
+                            color = MaterialTheme.colorScheme.onPrimaryContainer
+                        )
+                        Text(
+                            text = "This may take a few minutes. The page will update automatically.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.7f)
+                        )
+                    }
+                }
+            }
         }
 
         // Assigned class section - show if class is assigned

@@ -187,6 +187,20 @@ The server connects to Ollama at `http://localhost:11434` by default. Install Ol
 ollama pull llama3.2
 ```
 
+**Starting Ollama with parallel request support:**
+
+By default Ollama processes requests sequentially. To enable concurrent requests (recommended for multi-user scenarios):
+
+```shell
+# Stop any running Ollama instance
+pkill ollama
+
+# Start with parallel support (2 concurrent requests)
+OLLAMA_NUM_PARALLEL=2 ollama serve
+```
+
+This allows description generation to proceed while class generation is running in the background.
+
 ### Database
 SQLite database is stored at `server/data/anotherthread.db` by default.
 

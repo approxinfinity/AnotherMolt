@@ -1861,57 +1861,82 @@ fun Application.module() {
                     return@post
                 }
 
-                try {
-                    val assignedClass: CharacterClass
+                if (request.generateClass) {
+                    // For class generation, run async and return immediately
+                    // The client will poll for the user's characterClassId
+                    application.launch {
+                        try {
+                            log.info("Starting async class generation for user $id")
+                            val generateResult = ClassGenerationService.generateNewClass(
+                                characterDescription = request.characterDescription,
+                                createdByUserId = id,
+                                isPublic = false
+                            )
 
-                    if (request.generateClass) {
-                        // Generate a new custom class via LLM
-                        val generateResult = ClassGenerationService.generateNewClass(
-                            characterDescription = request.characterDescription,
-                            createdByUserId = id,
-                            isPublic = false
-                        )
+                            val (newClass, abilities) = generateResult.getOrThrow()
+                            val (savedClass, _) = ClassGenerationService.saveGeneratedClass(newClass, abilities)
 
-                        val (newClass, abilities) = generateResult.getOrThrow()
-                        // Save the class and its abilities
-                        val (savedClass, _) = ClassGenerationService.saveGeneratedClass(newClass, abilities)
-                        assignedClass = savedClass
-                    } else {
-                        // Match to an existing public class
-                        val matchResult = ClassGenerationService.matchToExistingClass(request.characterDescription)
-                        val match = matchResult.getOrThrow()
-
-                        val matchedClass = CharacterClassRepository.findById(match.matchedClassId)
-                        if (matchedClass == null) {
-                            // Fallback: get any public class
-                            val publicClasses = CharacterClassRepository.findAll().filter { it.isPublic }
-                            assignedClass = publicClasses.firstOrNull()
-                                ?: throw Exception("No classes available for assignment")
-                        } else {
-                            assignedClass = matchedClass
+                            UserRepository.updateCharacterClass(id, savedClass.id)
+                            log.info("Class generation complete for user $id: ${savedClass.name}")
+                        } catch (e: Exception) {
+                            log.error("Failed to generate class for user $id: ${e.message}")
                         }
                     }
 
-                    // Update user with assigned class
-                    UserRepository.updateCharacterClass(id, assignedClass.id)
-                    val updatedUser = UserRepository.findById(id)!!
-
+                    // Return immediately - class is being generated
                     call.respond(AssignClassResponse(
                         success = true,
-                        user = updatedUser.toResponse(),
-                        assignedClass = assignedClass,
-                        message = if (request.generateClass)
-                            "Custom class '${assignedClass.name}' created and assigned!"
-                        else
-                            "Class '${assignedClass.name}' assigned based on your description"
-                    ))
-                } catch (e: Exception) {
-                    log.warn("Failed to assign class for user $id: ${e.message}")
-                    call.respond(HttpStatusCode.InternalServerError, AssignClassResponse(
-                        success = false,
                         user = existingUser.toResponse(),
-                        message = "Failed to assign class: ${e.message}"
+                        assignedClass = null,
+                        message = "Generating your custom class... This may take a few minutes. The page will update when complete."
                     ))
+                } else {
+                    // For matching, do it synchronously (it's fast)
+                    try {
+                        val assignedClass: CharacterClass
+
+                        // First try LLM matching
+                        val matchResult = ClassGenerationService.matchToExistingClass(request.characterDescription)
+                        if (matchResult.isSuccess) {
+                            val match = matchResult.getOrThrow()
+                            val matchedClass = CharacterClassRepository.findById(match.matchedClassId)
+                            assignedClass = matchedClass ?: run {
+                                // Fallback: get any public class
+                                val publicClasses = CharacterClassRepository.findAll().filter { it.isPublic }
+                                publicClasses.firstOrNull()
+                                    ?: throw Exception("No classes available for assignment")
+                            }
+                        } else {
+                            // LLM not available - just pick a class based on description keywords
+                            log.warn("LLM matching failed, using keyword fallback: ${matchResult.exceptionOrNull()?.message}")
+                            val publicClasses = CharacterClassRepository.findAll().filter { it.isPublic }
+                            val descLower = request.characterDescription.lowercase()
+                            assignedClass = if (descLower.contains("magic") || descLower.contains("spell") ||
+                                descLower.contains("wizard") || descLower.contains("mage") ||
+                                descLower.contains("sorcerer") || descLower.contains("witch")) {
+                                publicClasses.find { it.isSpellcaster } ?: publicClasses.firstOrNull()
+                            } else {
+                                publicClasses.find { !it.isSpellcaster } ?: publicClasses.firstOrNull()
+                            } ?: throw Exception("No classes available for assignment")
+                        }
+
+                        UserRepository.updateCharacterClass(id, assignedClass.id)
+                        val updatedUser = UserRepository.findById(id)!!
+
+                        call.respond(AssignClassResponse(
+                            success = true,
+                            user = updatedUser.toResponse(),
+                            assignedClass = assignedClass,
+                            message = "Class '${assignedClass.name}' assigned based on your description"
+                        ))
+                    } catch (e: Exception) {
+                        log.warn("Failed to assign class for user $id: ${e.message}")
+                        call.respond(HttpStatusCode.InternalServerError, AssignClassResponse(
+                            success = false,
+                            user = existingUser.toResponse(),
+                            message = "Failed to assign class: ${e.message}"
+                        ))
+                    }
                 }
             }
         }
