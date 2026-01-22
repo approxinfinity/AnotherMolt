@@ -156,3 +156,18 @@ Users need to be assigned a character class. Implementation needed:
 - Two options: "Autoassign" (LLM matches description to existing class) or "Generate" (LLM creates custom class)
 - UI shows a section that pops down saying "Now you must choose a class"
 - Buttons only enabled after user saves profile or generates image
+
+### Stock Classes Storage Location (TODO - Decide)
+Currently stock classes are defined in code (`ClassAbilitySeed.kt`) and seeded to the database on startup.
+
+**Options to consider:**
+1. **Keep in code (current):** Classes are version-controlled, migrations are explicit, but requires code deployment to add/modify stock classes
+2. **Move to DB only:** Admin UI manages all classes including stock ones, more flexible but loses version control benefits
+3. **Hybrid approach:** Stock classes defined in code as "templates" but can be overridden/extended via DB, admin can't delete stock classes but can modify them
+
+**Factors:**
+- Do we want non-developers (game designers) to modify stock classes?
+- How important is version control for class balance changes?
+- Should stock classes be immutable references that user-generated classes are compared against?
+
+See `STOCK.md` for detailed analysis of current stock classes.
