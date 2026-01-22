@@ -133,7 +133,14 @@ data class CreateCreatureRequest(
     val name: String,
     val desc: String,
     val itemIds: List<String> = emptyList(),
-    val featureIds: List<String> = emptyList()
+    val featureIds: List<String> = emptyList(),
+    // Combat stats
+    val maxHp: Int = 10,
+    val baseDamage: Int = 5,
+    val abilityIds: List<String> = emptyList(),
+    val level: Int = 1,
+    val experienceValue: Int = 10,
+    val isAggressive: Boolean = false
 )
 
 @Serializable
@@ -1694,7 +1701,13 @@ fun Application.module() {
                     name = request.name,
                     desc = request.desc,
                     itemIds = request.itemIds,
-                    featureIds = request.featureIds
+                    featureIds = request.featureIds,
+                    maxHp = request.maxHp,
+                    baseDamage = request.baseDamage,
+                    abilityIds = request.abilityIds,
+                    level = request.level,
+                    experienceValue = request.experienceValue,
+                    isAggressive = request.isAggressive
                 )
                 val createdCreature = CreatureRepository.create(creature)
 
@@ -1743,7 +1756,13 @@ fun Application.module() {
                     itemIds = request.itemIds,
                     featureIds = request.featureIds,
                     imageUrl = existingCreature?.imageUrl,
-                    lockedBy = existingCreature?.lockedBy // Preserve lock status
+                    lockedBy = existingCreature?.lockedBy, // Preserve lock status
+                    maxHp = request.maxHp,
+                    baseDamage = request.baseDamage,
+                    abilityIds = request.abilityIds,
+                    level = request.level,
+                    experienceValue = request.experienceValue,
+                    isAggressive = request.isAggressive
                 )
 
                 if (CreatureRepository.update(creature)) {

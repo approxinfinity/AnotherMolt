@@ -572,29 +572,55 @@ object CombatService {
     }
 
     /**
-     * Simple AI for creature actions.
+     * Simple AI for creature actions - creatures attack players.
+     * Returns updated combatants list with damage applied.
      */
-    private fun processCreatureAI(
+    private suspend fun processCreatureAI(
         combatants: List<Combatant>,
         session: CombatSession
     ): List<Combatant> {
         val alivePlayers = combatants.filter { it.type == CombatantType.PLAYER && it.isAlive }
         if (alivePlayers.isEmpty()) return combatants
 
-        return combatants.map { creature ->
-            if (creature.type != CombatantType.CREATURE || !creature.isAlive) return@map creature
+        var updatedCombatants = combatants.toMutableList()
 
-            // Find a target (random alive player)
-            val target = alivePlayers.random()
+        for (creature in combatants.filter { it.type == CombatantType.CREATURE && it.isAlive }) {
+            // Find a target (random alive player from current state)
+            val currentAlivePlayers = updatedCombatants.filter { it.type == CombatantType.PLAYER && it.isAlive }
+            if (currentAlivePlayers.isEmpty()) break
 
-            // Simple attack: deal base damage from creature
+            val target = currentAlivePlayers.random()
+
+            // Get creature's base damage from database
             val dbCreature = CreatureRepository.findById(creature.id)
             val damage = dbCreature?.baseDamage ?: 5
 
-            // Apply damage to target in next tick (queue as pending action)
-            // For now, just do basic attack damage directly
-            creature
+            // Apply damage to target
+            val targetIndex = updatedCombatants.indexOfFirst { it.id == target.id }
+            if (targetIndex >= 0) {
+                val currentTarget = updatedCombatants[targetIndex]
+                val newHp = (currentTarget.currentHp - damage).coerceAtLeast(0)
+                updatedCombatants[targetIndex] = currentTarget.copy(
+                    currentHp = newHp,
+                    isAlive = newHp > 0
+                )
+
+                // Broadcast the attack
+                broadcastToSession(session.id, HealthUpdateMessage(
+                    sessionId = session.id,
+                    combatantId = target.id,
+                    currentHp = newHp,
+                    maxHp = currentTarget.maxHp,
+                    changeAmount = damage,
+                    sourceId = creature.id,
+                    sourceName = creature.name
+                ))
+
+                log.debug("${creature.name} attacks ${target.name} for $damage damage (${target.currentHp} -> $newHp HP)")
+            }
         }
+
+        return updatedCombatants
     }
 
     /**
