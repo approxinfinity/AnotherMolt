@@ -232,6 +232,11 @@ data class UpdateLocationRequest(
 )
 
 @Serializable
+data class UpdateClassRequest(
+    val classId: String? = null
+)
+
+@Serializable
 data class AssignClassRequest(
     val generateClass: Boolean,
     val characterDescription: String
@@ -1843,6 +1848,25 @@ fun Application.module() {
                 }
             }
 
+            // Clear or set user's character class directly
+            put("/{id}/class") {
+                val id = call.parameters["id"] ?: return@put call.respond(HttpStatusCode.BadRequest)
+                val request = call.receive<UpdateClassRequest>()
+
+                val existingUser = UserRepository.findById(id)
+                if (existingUser == null) {
+                    call.respond(HttpStatusCode.NotFound)
+                    return@put
+                }
+
+                if (UserRepository.updateCharacterClass(id, request.classId)) {
+                    val updatedUser = UserRepository.findById(id)!!
+                    call.respond(HttpStatusCode.OK, updatedUser.toResponse())
+                } else {
+                    call.respond(HttpStatusCode.InternalServerError)
+                }
+            }
+
             // Get active users at a location
             get("/at-location/{locationId}") {
                 val locationId = call.parameters["locationId"] ?: return@get call.respond(HttpStatusCode.BadRequest)
@@ -2714,7 +2738,11 @@ fun Application.module() {
         // Character Class routes
         route("/classes") {
             get {
-                call.respond(CharacterClassRepository.findAll())
+                val isAdmin = call.request.header("X-Is-Admin")?.toBoolean() ?: false
+                val allClasses = CharacterClassRepository.findAll()
+                // Non-admins only see stock classes (createdByUserId == null)
+                val visibleClasses = if (isAdmin) allClasses else allClasses.filter { it.createdByUserId == null }
+                call.respond(visibleClasses)
             }
 
             get("/{id}") {
@@ -2762,10 +2790,17 @@ fun Application.module() {
                 val request = call.receive<CreateCharacterClassRequest>()
                 val userId = call.request.header("X-User-Id") ?: "unknown"
                 val userName = call.request.header("X-User-Name") ?: "unknown"
+                val isAdmin = call.request.header("X-Is-Admin")?.toBoolean() ?: false
 
                 val existing = CharacterClassRepository.findById(id)
                 if (existing == null) {
                     call.respond(HttpStatusCode.NotFound)
+                    return@put
+                }
+
+                // Only admin can edit locked classes
+                if (existing.isLocked && !isAdmin) {
+                    call.respond(HttpStatusCode.Forbidden, mapOf("error" to "Class is locked"))
                     return@put
                 }
 
@@ -2805,6 +2840,12 @@ fun Application.module() {
                     return@delete
                 }
 
+                // Cannot delete locked classes
+                if (existing.isLocked) {
+                    call.respond(HttpStatusCode.Forbidden, mapOf("error" to "Cannot delete locked class"))
+                    return@delete
+                }
+
                 CharacterClassRepository.delete(id)
 
                 AuditLogRepository.log(
@@ -2817,6 +2858,40 @@ fun Application.module() {
                 )
 
                 call.respond(HttpStatusCode.NoContent)
+            }
+
+            put("/{id}/lock") {
+                val id = call.parameters["id"] ?: return@put call.respond(HttpStatusCode.BadRequest)
+                val isAdmin = call.request.header("X-Is-Admin")?.toBoolean() ?: false
+
+                if (!isAdmin) {
+                    call.respond(HttpStatusCode.Forbidden, mapOf("error" to "Admin access required"))
+                    return@put
+                }
+
+                val existing = CharacterClassRepository.findById(id)
+                if (existing == null) {
+                    call.respond(HttpStatusCode.NotFound)
+                    return@put
+                }
+
+                val userId = call.request.header("X-User-Id") ?: "unknown"
+                val userName = call.request.header("X-User-Name") ?: "unknown"
+
+                // Toggle lock state
+                val newLockState = !existing.isLocked
+                CharacterClassRepository.updateLocked(id, newLockState)
+
+                AuditLogRepository.log(
+                    recordId = id,
+                    recordType = "CharacterClass",
+                    recordName = existing.name,
+                    action = if (newLockState) AuditAction.LOCK else AuditAction.UNLOCK,
+                    userId = userId,
+                    userName = userName
+                )
+
+                call.respond(CharacterClassRepository.findById(id)!!)
             }
         }
 

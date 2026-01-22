@@ -61,6 +61,9 @@ import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Stop
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Star
+import androidx.compose.material.icons.filled.ExpandLess
+import androidx.compose.material.icons.filled.ExpandMore
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.material3.*
 import androidx.compose.ui.window.Dialog
@@ -892,7 +895,11 @@ fun AdminScreen() {
     }
 
     // Exploration mode state - when ON, map is hidden and navigation is non-dismissable
-    var isExplorationMode by remember { mutableStateOf(false) }
+    // Auto-start in exploration mode if user is authenticated and has a last known location
+    val startInExplorationMode = remember {
+        savedUser != null && savedUser.currentLocationId != null
+    }
+    var isExplorationMode by remember { mutableStateOf(startInExplorationMode) }
 
     // Set user context for audit logging when user changes
     LaunchedEffect(currentUser) {
@@ -1437,6 +1444,9 @@ fun UserProfileView(
     // Class assignment state - using AsyncOperationRepository for lifecycle-independent polling
     var assignedClass by remember { mutableStateOf<CharacterClassDto?>(null) }
     var characterClassId by remember(user.id) { mutableStateOf(user.characterClassId) }
+    var classAbilities by remember { mutableStateOf<List<AbilityDto>>(emptyList()) }
+    var abilitiesExpanded by remember { mutableStateOf(false) }
+    var showRerollConfirmDialog by remember { mutableStateOf(false) }
 
     // Collect class generation status from the repository
     val classGenerationStatus by AsyncOperationRepository.classGenerationStatus.collectAsState()
@@ -1471,15 +1481,19 @@ fun UserProfileView(
     val generatingEntities by BackgroundImageGenerationManager.generatingEntities.collectAsState()
     val isImageGenerating = user.id in generatingEntities
 
-    // Fetch assigned class details if user has one
+    // Fetch assigned class details and abilities if user has one
     LaunchedEffect(characterClassId) {
         val classId = characterClassId
         if (classId != null) {
             ApiClient.getCharacterClass(classId).onSuccess { fetchedClass ->
                 assignedClass = fetchedClass
             }
+            ApiClient.getAbilitiesByClass(classId).onSuccess { abilities ->
+                classAbilities = abilities.sortedBy { it.name.lowercase() }
+            }
         } else {
             assignedClass = null
+            classAbilities = emptyList()
         }
     }
 
@@ -1568,21 +1582,81 @@ fun UserProfileView(
             isGenerating = isImageGenerating
         )
 
-        // Name card (read-only)
+        // Name card (read-only) with optional reroll button
         Card(modifier = Modifier.fillMaxWidth()) {
             Column(modifier = Modifier.padding(16.dp)) {
-                Text(
-                    text = user.name,
-                    style = MaterialTheme.typography.headlineSmall
-                )
-                if (isAdmin) {
-                    Text(
-                        text = "ID: ${user.id}",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            text = user.name,
+                            style = MaterialTheme.typography.headlineSmall
+                        )
+                        if (isAdmin) {
+                            Text(
+                                text = "ID: ${user.id}",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                    }
+                    // Reroll button - only show when class is assigned and user can edit
+                    if (canEdit && characterClassId != null) {
+                        IconButton(
+                            onClick = { showRerollConfirmDialog = true },
+                            enabled = !isLoading && !isClassGenerating
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Refresh,
+                                contentDescription = "Reroll character",
+                                tint = MaterialTheme.colorScheme.primary
+                            )
+                        }
+                    }
                 }
             }
+        }
+
+        // Reroll confirmation dialog
+        if (showRerollConfirmDialog) {
+            AlertDialog(
+                onDismissRequest = { showRerollConfirmDialog = false },
+                title = { Text("Reroll Character?") },
+                text = {
+                    Text("This will clear your current class assignment and allow you to regenerate your character. Are you sure?")
+                },
+                confirmButton = {
+                    TextButton(
+                        onClick = {
+                            showRerollConfirmDialog = false
+                            scope.launch {
+                                isLoading = true
+                                // Clear the class assignment on the server
+                                ApiClient.updateUserClass(user.id, null).onSuccess { updatedUser ->
+                                    characterClassId = null
+                                    assignedClass = null
+                                    classAbilities = emptyList()
+                                    onUserUpdated(updatedUser)
+                                    message = "Character reset. You can now regenerate your class."
+                                }.onFailure { error ->
+                                    message = "Error: ${error.message}"
+                                }
+                                isLoading = false
+                            }
+                        }
+                    ) {
+                        Text("Reroll")
+                    }
+                },
+                dismissButton = {
+                    TextButton(onClick = { showRerollConfirmDialog = false }) {
+                        Text("Cancel")
+                    }
+                }
+            )
         }
 
         // Description field - always editable for canEdit users
@@ -1605,8 +1679,8 @@ fun UserProfileView(
             }
         }
 
-        // Generation checkboxes and save button - only show for editable users
-        if (canEdit) {
+        // Generation checkboxes and save button - only show for editable users WITHOUT a class assigned
+        if (canEdit && characterClassId == null) {
             // Checkboxes row
             Row(
                 modifier = Modifier.fillMaxWidth(),
@@ -1818,6 +1892,42 @@ fun UserProfileView(
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onSecondaryContainer
                     )
+                }
+            }
+        }
+
+        // Class abilities section - show when class is assigned with abilities
+        if (assignedClass != null && classAbilities.isNotEmpty()) {
+            Spacer(modifier = Modifier.height(8.dp))
+            Card(modifier = Modifier.fillMaxWidth()) {
+                Column(modifier = Modifier.padding(16.dp)) {
+                    // Header with expand/collapse
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clickable { abilitiesExpanded = !abilitiesExpanded },
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(
+                            text = if (assignedClass!!.isSpellcaster) "Spells (${classAbilities.size})" else "Abilities (${classAbilities.size})",
+                            style = MaterialTheme.typography.titleMedium
+                        )
+                        Icon(
+                            imageVector = if (abilitiesExpanded) Icons.Filled.ExpandLess else Icons.Filled.ExpandMore,
+                            contentDescription = if (abilitiesExpanded) "Collapse" else "Expand"
+                        )
+                    }
+
+                    // Abilities list (when expanded)
+                    if (abilitiesExpanded) {
+                        Spacer(modifier = Modifier.height(12.dp))
+                        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                            classAbilities.forEach { ability ->
+                                AbilityDisplayCard(ability)
+                            }
+                        }
+                    }
                 }
             }
         }
@@ -12610,7 +12720,7 @@ fun ClassListView(
     LaunchedEffect(Unit) {
         scope.launch {
             isLoading = true
-            val result = ApiClient.getCharacterClasses()
+            val result = ApiClient.getCharacterClasses(isAdmin)
             isLoading = false
             result.onSuccess { classes = it.sortedBy { c -> c.name.lowercase() } }
                 .onFailure { error = it.message }
@@ -12640,7 +12750,7 @@ fun ClassListView(
                         scope.launch {
                             isLoading = true
                             error = null
-                            val result = ApiClient.getCharacterClasses()
+                            val result = ApiClient.getCharacterClasses(isAdmin)
                             isLoading = false
                             result.onSuccess { classes = it.sortedBy { c -> c.name.lowercase() } }
                                 .onFailure { error = it.message }
@@ -12671,12 +12781,21 @@ fun ClassListView(
                                     horizontalArrangement = Arrangement.spacedBy(8.dp)
                                 ) {
                                     Text(characterClass.name)
-                                    if (!characterClass.isPublic) {
+                                    if (characterClass.isLocked) {
                                         Icon(
                                             imageVector = Icons.Filled.Lock,
                                             contentDescription = "Locked",
                                             modifier = Modifier.size(16.dp),
                                             tint = MaterialTheme.colorScheme.primary
+                                        )
+                                    }
+                                    // Show indicator for user-created classes (admin only sees these)
+                                    if (characterClass.createdByUserId != null) {
+                                        Icon(
+                                            imageVector = Icons.Filled.Person,
+                                            contentDescription = "User-created",
+                                            modifier = Modifier.size(16.dp),
+                                            tint = MaterialTheme.colorScheme.tertiary
                                         )
                                     }
                                 }
@@ -12784,7 +12903,7 @@ fun ClassDetailView(
     var isTogglingLock by remember { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
 
-    val isLocked = characterClass?.isPublic == false
+    val isLocked = characterClass?.isLocked == true
 
     LaunchedEffect(classId) {
         scope.launch {
@@ -12804,7 +12923,7 @@ fun ClassDetailView(
             onDismissRequest = { showUnlockDialog = false },
             title = { Text("Unlock Class?") },
             text = {
-                Text("Are you sure you want to unlock this class? This will make it editable by admins.")
+                Text("Are you sure you want to unlock this class? This will make it editable and deletable.")
             },
             confirmButton = {
                 TextButton(
@@ -12813,18 +12932,7 @@ fun ClassDetailView(
                         characterClass?.let { cls ->
                             scope.launch {
                                 isTogglingLock = true
-                                val request = CreateCharacterClassRequest(
-                                    name = cls.name,
-                                    description = cls.description,
-                                    isSpellcaster = cls.isSpellcaster,
-                                    hitDie = cls.hitDie,
-                                    primaryAttribute = cls.primaryAttribute,
-                                    imageUrl = cls.imageUrl,
-                                    powerBudget = cls.powerBudget,
-                                    isPublic = true,
-                                    createdByUserId = cls.createdByUserId
-                                )
-                                ApiClient.updateCharacterClass(cls.id, request)
+                                ApiClient.toggleClassLock(cls.id)
                                     .onSuccess { updated -> characterClass = updated }
                                     .onFailure { err -> error = "Failed to unlock: ${err.message}" }
                                 isTogglingLock = false
@@ -12871,18 +12979,7 @@ fun ClassDetailView(
                                 characterClass?.let { cls ->
                                     scope.launch {
                                         isTogglingLock = true
-                                        val request = CreateCharacterClassRequest(
-                                            name = cls.name,
-                                            description = cls.description,
-                                            isSpellcaster = cls.isSpellcaster,
-                                            hitDie = cls.hitDie,
-                                            primaryAttribute = cls.primaryAttribute,
-                                            imageUrl = cls.imageUrl,
-                                            powerBudget = cls.powerBudget,
-                                            isPublic = false,
-                                            createdByUserId = cls.createdByUserId
-                                        )
-                                        ApiClient.updateCharacterClass(cls.id, request)
+                                        ApiClient.toggleClassLock(cls.id)
                                             .onSuccess { updated -> characterClass = updated }
                                             .onFailure { err -> error = "Failed to lock: ${err.message}" }
                                         isTogglingLock = false
@@ -13069,6 +13166,88 @@ fun ClassDetailView(
                             Icon(Icons.Filled.Add, contentDescription = "Add Ability")
                         }
                     }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun AbilityDisplayCard(ability: AbilityDto) {
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.surfaceVariant
+        )
+    ) {
+        Column(modifier = Modifier.padding(12.dp)) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    text = ability.name,
+                    style = MaterialTheme.typography.titleSmall
+                )
+                // Power cost badge
+                Surface(
+                    shape = RoundedCornerShape(4.dp),
+                    color = MaterialTheme.colorScheme.primaryContainer
+                ) {
+                    Text(
+                        text = "Cost: ${ability.powerCost}",
+                        style = MaterialTheme.typography.labelSmall,
+                        modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                    )
+                }
+            }
+
+            Spacer(modifier = Modifier.height(4.dp))
+
+            Text(
+                text = ability.description,
+                style = MaterialTheme.typography.bodySmall
+            )
+
+            Spacer(modifier = Modifier.height(8.dp))
+
+            // Stats row
+            Row(
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                modifier = Modifier.horizontalScroll(rememberScrollState())
+            ) {
+                AssistChip(
+                    onClick = {},
+                    label = { Text(ability.abilityType.replaceFirstChar { it.uppercase() }) }
+                )
+                AssistChip(
+                    onClick = {},
+                    label = { Text(ability.targetType.replace("_", " ").replaceFirstChar { it.uppercase() }) }
+                )
+                if (ability.range > 0) {
+                    AssistChip(
+                        onClick = {},
+                        label = { Text("${ability.range}ft range") }
+                    )
+                }
+                if (ability.cooldownType != "none") {
+                    AssistChip(
+                        onClick = {},
+                        label = { Text("${ability.cooldownType.replaceFirstChar { it.uppercase() }} cooldown") }
+                    )
+                }
+                if (ability.baseDamage > 0) {
+                    AssistChip(
+                        onClick = {},
+                        label = { Text("${ability.baseDamage} damage") }
+                    )
+                }
+                if (ability.durationRounds > 0) {
+                    AssistChip(
+                        onClick = {},
+                        label = { Text("${ability.durationRounds} rounds") }
+                    )
                 }
             }
         }

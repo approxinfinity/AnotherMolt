@@ -144,6 +144,11 @@ data class UpdateUserLocationRequest(
 )
 
 @Serializable
+data class UpdateUserClassRequest(
+    val classId: String? = null
+)
+
+@Serializable
 data class AssignClassRequest(
     val generateClass: Boolean,
     val characterDescription: String
@@ -315,7 +320,8 @@ data class CharacterClassDto(
     val imageUrl: String? = null,
     val powerBudget: Int = 100,
     val isPublic: Boolean = true,
-    val createdByUserId: String? = null
+    val createdByUserId: String? = null,
+    val isLocked: Boolean = true
 )
 
 @Serializable
@@ -328,7 +334,8 @@ data class CreateCharacterClassRequest(
     val imageUrl: String? = null,
     val powerBudget: Int = 100,
     val isPublic: Boolean = true,
-    val createdByUserId: String? = null
+    val createdByUserId: String? = null,
+    val isLocked: Boolean = true
 )
 
 @Serializable
@@ -720,6 +727,13 @@ object ApiClient {
         Unit
     }
 
+    suspend fun updateUserClass(id: String, classId: String?): Result<UserDto> = runCatching {
+        client.put("$baseUrl/users/$id/class") {
+            contentType(ContentType.Application.Json)
+            setBody(UpdateUserClassRequest(classId))
+        }.body()
+    }
+
     suspend fun getActiveUsersAtLocation(locationId: String): Result<List<UserDto>> = runCatching {
         client.get("$baseUrl/users/at-location/$locationId").body()
     }
@@ -963,8 +977,10 @@ object ApiClient {
     }
 
     // Character Class methods
-    suspend fun getCharacterClasses(): Result<List<CharacterClassDto>> = runCatching {
-        client.get("$baseUrl/classes").body()
+    suspend fun getCharacterClasses(isAdmin: Boolean = false): Result<List<CharacterClassDto>> = runCatching {
+        client.get("$baseUrl/classes") {
+            header("X-Is-Admin", isAdmin.toString())
+        }.body()
     }
 
     suspend fun getCharacterClass(id: String): Result<CharacterClassDto?> = runCatching {
@@ -993,6 +1009,12 @@ object ApiClient {
     suspend fun deleteCharacterClass(id: String): Result<Unit> = runCatching {
         client.delete("$baseUrl/classes/$id")
         Unit
+    }
+
+    suspend fun toggleClassLock(classId: String): Result<CharacterClassDto> = runCatching {
+        client.put("$baseUrl/classes/$classId/lock") {
+            header("X-Is-Admin", "true")
+        }.body()
     }
 
     // Ability methods

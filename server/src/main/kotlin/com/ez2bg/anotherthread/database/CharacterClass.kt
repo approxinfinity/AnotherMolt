@@ -22,7 +22,8 @@ data class CharacterClass(
     val imageUrl: String? = null,
     val powerBudget: Int = 100,           // Total power points for abilities
     val isPublic: Boolean = true,          // Available to all users
-    val createdByUserId: String? = null    // Null for seeded/admin classes
+    val createdByUserId: String? = null,   // Null for seeded/admin classes
+    val isLocked: Boolean = true           // Locked classes cannot be edited/deleted except by admin
 )
 
 object CharacterClassRepository {
@@ -36,7 +37,8 @@ object CharacterClassRepository {
         imageUrl = this[CharacterClassTable.imageUrl],
         powerBudget = this[CharacterClassTable.powerBudget],
         isPublic = this[CharacterClassTable.isPublic],
-        createdByUserId = this[CharacterClassTable.createdByUserId]
+        createdByUserId = this[CharacterClassTable.createdByUserId],
+        isLocked = this[CharacterClassTable.isLocked]
     )
 
     fun create(characterClass: CharacterClass): CharacterClass = transaction {
@@ -51,6 +53,7 @@ object CharacterClassRepository {
             it[powerBudget] = characterClass.powerBudget
             it[isPublic] = characterClass.isPublic
             it[createdByUserId] = characterClass.createdByUserId
+            it[isLocked] = characterClass.isLocked
         }
         characterClass
     }
@@ -84,6 +87,7 @@ object CharacterClassRepository {
             it[powerBudget] = characterClass.powerBudget
             it[isPublic] = characterClass.isPublic
             it[createdByUserId] = characterClass.createdByUserId
+            it[isLocked] = characterClass.isLocked
         } > 0
     }
 
@@ -118,6 +122,13 @@ object CharacterClassRepository {
     fun updateImageUrl(id: String, imageUrl: String): Boolean = transaction {
         CharacterClassTable.update({ CharacterClassTable.id eq id }) {
             it[CharacterClassTable.imageUrl] = imageUrl
+        } > 0
+    }
+
+    /** Update the locked status of a class (admin only) */
+    fun updateLocked(id: String, locked: Boolean): Boolean = transaction {
+        CharacterClassTable.update({ CharacterClassTable.id eq id }) {
+            it[isLocked] = locked
         } > 0
     }
 

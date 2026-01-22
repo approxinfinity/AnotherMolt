@@ -17,6 +17,8 @@ object CharacterClassTable : Table("character_class") {
     val isPublic = bool("is_public").default(true)
     // Creator user ID (null for seeded/admin classes)
     val createdByUserId = varchar("created_by_user_id", 36).nullable()
+    // Whether this class is locked (cannot be edited/deleted except by admin)
+    val isLocked = bool("is_locked").default(true)
 
     override val primaryKey = PrimaryKey(id)
 }

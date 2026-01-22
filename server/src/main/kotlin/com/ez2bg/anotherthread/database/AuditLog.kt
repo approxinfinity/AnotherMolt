@@ -9,7 +9,7 @@ import org.jetbrains.exposed.sql.transactions.transaction
 import java.util.UUID
 
 enum class AuditAction {
-    CREATE, UPDATE, DELETE
+    CREATE, UPDATE, DELETE, LOCK, UNLOCK
 }
 
 @Serializable

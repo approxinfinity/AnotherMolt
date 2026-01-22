@@ -171,3 +171,27 @@ Currently stock classes are defined in code (`ClassAbilitySeed.kt`) and seeded t
 - Should stock classes be immutable references that user-generated classes are compared against?
 
 See `STOCK.md` for detailed analysis of current stock classes.
+
+### Character Ability Activation System (TODO - Design)
+When viewing their character, users should be able to activate a subset of their available abilities. This requires:
+
+**Ability Sources:**
+- Class abilities (from assigned CharacterClass)
+- Item abilities (from equipped items)
+- Special abilities (unique to character, e.g., racial traits, quest rewards)
+
+**UI Considerations:**
+- Cohesive icon set for ability types (spell, combat, utility, passive)
+- Color coding by ability source:
+  - Class abilities: Blue/primary theme
+  - Item abilities: Gold/amber
+  - Special abilities: Purple/violet
+- Active vs inactive state visual distinction (glow, border, opacity)
+- Maximum number of active abilities at once (combat loadout slots?)
+- Quick-swap ability sets for different situations (combat, exploration, social)
+
+**Technical Questions:**
+- Where to store active ability selections? User model? Separate table?
+- Should passive abilities always be active, or selectable like others?
+- How do cooldowns interact with activation/deactivation?
+- Should there be "action bar" slots that persist across sessions?
