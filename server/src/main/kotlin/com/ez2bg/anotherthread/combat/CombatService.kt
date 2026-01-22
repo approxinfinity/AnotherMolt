@@ -1,12 +1,17 @@
 package com.ez2bg.anotherthread.combat
 
 import com.ez2bg.anotherthread.database.*
+import com.ez2bg.anotherthread.experience.ExperienceService
 import io.ktor.websocket.*
 import kotlinx.coroutines.*
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonArray
+import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.jsonPrimitive
+import kotlinx.serialization.json.intOrNull
 import org.slf4j.LoggerFactory
 import java.util.concurrent.ConcurrentHashMap
 
@@ -392,6 +397,45 @@ object CombatService {
                     ))
                 }
             }
+
+            // Broadcast health updates for healing
+            if (result.healing > 0) {
+                // Determine who was healed - self or target
+                val healTargetId = if (ability.targetType == "self" || action.targetId == null) {
+                    actor.id
+                } else {
+                    action.targetId
+                }
+                val updatedHealTarget = currentCombatants.find { it.id == healTargetId }
+                if (updatedHealTarget != null) {
+                    broadcastToSession(session.id, HealthUpdateMessage(
+                        sessionId = session.id,
+                        combatantId = healTargetId,
+                        currentHp = updatedHealTarget.currentHp,
+                        maxHp = updatedHealTarget.maxHp,
+                        changeAmount = -result.healing, // Negative = healing
+                        sourceId = actor.id,
+                        sourceName = actor.name
+                    ))
+                }
+            }
+
+            // Broadcast status effect applications
+            if (result.appliedEffects.isNotEmpty()) {
+                val effectTargetId = if (ability.targetType == "self" || action.targetId == null) {
+                    actor.id
+                } else {
+                    action.targetId
+                }
+                for (effect in result.appliedEffects) {
+                    broadcastToSession(session.id, StatusEffectMessage(
+                        sessionId = session.id,
+                        combatantId = effectTargetId,
+                        effect = effect,
+                        applied = true
+                    ))
+                }
+            }
         }
 
         // Process status effects (DoTs, HoTs, duration decrements)
@@ -422,6 +466,7 @@ object CombatService {
 
     /**
      * Execute an ability and return the result.
+     * Uses CombatRng for hit/miss, damage variance, and critical hits.
      */
     private fun executeAbility(
         actor: Combatant,
@@ -429,31 +474,277 @@ object CombatService {
         target: Combatant?,
         allCombatants: List<Combatant>
     ): ActionResult {
-        // Calculate damage/healing
-        val damage = if (ability.baseDamage > 0 && target != null) {
-            // Simple damage calculation, can be enhanced later
-            ability.baseDamage + (actor.initiative / 2)
-        } else 0
+        // Parse effects from JSON to determine ability behavior
+        val parsedEffects = parseAbilityEffects(ability.effects, actor.id, ability.durationRounds)
 
-        val healing = if (ability.effects.contains("heal")) {
-            ability.baseDamage // Use baseDamage as heal amount for healing abilities
-        } else 0
+        // Determine if this is a healing ability
+        val isHealingAbility = parsedEffects.any { it.effectType == "heal" || it.effectType == "hot" }
 
-        // Build result message
-        val message = when {
-            damage > 0 && target != null -> "${actor.name} hits ${target.name} with ${ability.name} for $damage damage!"
-            healing > 0 -> "${actor.name} heals for $healing with ${ability.name}!"
-            else -> "${actor.name} uses ${ability.name}!"
+        var damage = 0
+        var healing = 0
+        var hitResult: CombatRng.HitResult = CombatRng.HitResult.HIT
+        var wasCritical = false
+        var wasGlancing = false
+
+        // Calculate damage using RNG system
+        if (!isHealingAbility && ability.baseDamage > 0 && target != null) {
+            val attackResult = CombatRng.rollAttack(
+                baseDamage = ability.baseDamage,
+                attackerAccuracy = actor.accuracy,
+                defenderEvasion = target.evasion,
+                attackerLevel = actor.level,
+                defenderLevel = target.level,
+                critBonus = actor.critBonus
+            )
+            damage = attackResult.damage
+            hitResult = attackResult.hitResult
+            wasCritical = attackResult.wasCritical
+            wasGlancing = attackResult.wasGlancing
+
+            log.debug("Attack roll: ${actor.name} vs ${target.name} - " +
+                "hitRoll=${attackResult.rollDetails.hitRoll}/${attackResult.rollDetails.hitChance}, " +
+                "result=$hitResult, damage=$damage" +
+                (if (wasCritical) " CRITICAL!" else "") +
+                (if (wasGlancing) " (glancing)" else ""))
         }
+
+        // Calculate healing using RNG system
+        if (isHealingAbility && ability.baseDamage > 0) {
+            val (healAmount, isCrit) = CombatRng.rollHealing(
+                baseHealing = ability.baseDamage,
+                critBonus = actor.critBonus
+            )
+            healing = healAmount
+            wasCritical = isCrit
+
+            log.debug("Healing roll: ${actor.name} heals for $healing" +
+                (if (wasCritical) " CRITICAL!" else ""))
+        }
+
+        // Filter effects to return (exclude instant heal since we handle it via healing amount)
+        // Only apply effects if the attack hit (not a miss)
+        val appliedEffects = if (hitResult != CombatRng.HitResult.MISS) {
+            parsedEffects.filter { effect ->
+                when (effect.effectType) {
+                    "heal" -> false // Instant heal is handled by healing amount
+                    "hot", "dot", "buff", "debuff", "stun", "root", "slow" -> true
+                    else -> false
+                }
+            }
+        } else {
+            emptyList() // No effects on miss
+        }
+
+        // Build result message with RNG details
+        val message = buildResultMessage(actor, target, ability, damage, healing, appliedEffects, hitResult, wasCritical, wasGlancing)
 
         return ActionResult(
             actionId = "${actor.id}-${ability.id}",
-            success = true,
+            success = hitResult != CombatRng.HitResult.MISS,
             damage = damage,
             healing = healing,
-            appliedEffects = emptyList(), // TODO: Parse and apply effects
-            message = message
+            appliedEffects = appliedEffects,
+            message = message,
+            hitResult = hitResult.name.lowercase(),
+            wasCritical = wasCritical,
+            wasGlancing = wasGlancing
         )
+    }
+
+    /**
+     * Parse ability effects JSON into StatusEffect objects.
+     *
+     * Effects JSON format examples:
+     * - Simple: "[\"heal\"]" or "[\"stun\"]"
+     * - Complex: "[{\"type\":\"dot\",\"value\":5},{\"type\":\"debuff\",\"stat\":\"damage\",\"value\":-3}]"
+     */
+    private fun parseAbilityEffects(effectsJson: String, sourceId: String, durationRounds: Int): List<StatusEffect> {
+        if (effectsJson.isBlank() || effectsJson == "[]") return emptyList()
+
+        val effects = mutableListOf<StatusEffect>()
+        val duration = if (durationRounds > 0) durationRounds else 3 // Default 3 rounds
+
+        try {
+            val jsonArray = json.decodeFromString<JsonArray>(effectsJson)
+
+            for (element in jsonArray) {
+                // Handle string elements like "heal", "stun"
+                if (element is kotlinx.serialization.json.JsonPrimitive && element.isString) {
+                    val effectType = element.content.lowercase()
+                    effects.add(StatusEffect(
+                        name = effectType.replaceFirstChar { it.uppercase() },
+                        effectType = effectType,
+                        value = getDefaultEffectValue(effectType),
+                        remainingRounds = duration,
+                        sourceId = sourceId
+                    ))
+                }
+                // Handle object elements with type, value, etc.
+                else if (element is kotlinx.serialization.json.JsonObject) {
+                    val obj = element.jsonObject
+                    val effectType = obj["type"]?.jsonPrimitive?.content?.lowercase() ?: continue
+                    val value = obj["value"]?.jsonPrimitive?.intOrNull ?: getDefaultEffectValue(effectType)
+                    val stat = obj["stat"]?.jsonPrimitive?.content
+
+                    effects.add(StatusEffect(
+                        name = buildEffectName(effectType, stat),
+                        effectType = effectType,
+                        value = value,
+                        remainingRounds = duration,
+                        sourceId = sourceId
+                    ))
+                }
+            }
+        } catch (e: Exception) {
+            // Fallback: check for simple string contains
+            log.debug("Failed to parse effects JSON, using fallback: ${e.message}")
+
+            if (effectsJson.contains("heal", ignoreCase = true)) {
+                effects.add(StatusEffect(
+                    name = "Heal",
+                    effectType = "heal",
+                    value = 0,
+                    remainingRounds = 1,
+                    sourceId = sourceId
+                ))
+            }
+            if (effectsJson.contains("stun", ignoreCase = true)) {
+                effects.add(StatusEffect(
+                    name = "Stunned",
+                    effectType = "stun",
+                    value = 0,
+                    remainingRounds = duration,
+                    sourceId = sourceId
+                ))
+            }
+            if (effectsJson.contains("buff", ignoreCase = true)) {
+                effects.add(StatusEffect(
+                    name = "Empowered",
+                    effectType = "buff",
+                    value = 3,
+                    remainingRounds = duration,
+                    sourceId = sourceId
+                ))
+            }
+            if (effectsJson.contains("debuff", ignoreCase = true)) {
+                effects.add(StatusEffect(
+                    name = "Weakened",
+                    effectType = "debuff",
+                    value = -3,
+                    remainingRounds = duration,
+                    sourceId = sourceId
+                ))
+            }
+            if (effectsJson.contains("dot", ignoreCase = true)) {
+                effects.add(StatusEffect(
+                    name = "Burning",
+                    effectType = "dot",
+                    value = 5,
+                    remainingRounds = duration,
+                    sourceId = sourceId
+                ))
+            }
+            if (effectsJson.contains("hot", ignoreCase = true)) {
+                effects.add(StatusEffect(
+                    name = "Regenerating",
+                    effectType = "hot",
+                    value = 5,
+                    remainingRounds = duration,
+                    sourceId = sourceId
+                ))
+            }
+        }
+
+        return effects
+    }
+
+    /**
+     * Get default value for effect types.
+     */
+    private fun getDefaultEffectValue(effectType: String): Int {
+        return when (effectType) {
+            "dot" -> 5      // 5 damage per round
+            "hot" -> 5      // 5 healing per round
+            "buff" -> 3     // +3 to affected stat
+            "debuff" -> -3  // -3 to affected stat
+            "slow" -> -2    // -2 initiative
+            else -> 0
+        }
+    }
+
+    /**
+     * Build a descriptive name for an effect.
+     */
+    private fun buildEffectName(effectType: String, stat: String?): String {
+        return when (effectType) {
+            "dot" -> "Burning"
+            "hot" -> "Regenerating"
+            "buff" -> if (stat != null) "${stat.replaceFirstChar { it.uppercase() }} Boost" else "Empowered"
+            "debuff" -> if (stat != null) "${stat.replaceFirstChar { it.uppercase() }} Weakness" else "Weakened"
+            "stun" -> "Stunned"
+            "root" -> "Rooted"
+            "slow" -> "Slowed"
+            else -> effectType.replaceFirstChar { it.uppercase() }
+        }
+    }
+
+    /**
+     * Build a descriptive message for the action result, including RNG outcomes.
+     */
+    private fun buildResultMessage(
+        actor: Combatant,
+        target: Combatant?,
+        ability: Ability,
+        damage: Int,
+        healing: Int,
+        effects: List<StatusEffect>,
+        hitResult: CombatRng.HitResult = CombatRng.HitResult.HIT,
+        wasCritical: Boolean = false,
+        wasGlancing: Boolean = false
+    ): String {
+        val parts = mutableListOf<String>()
+
+        when {
+            hitResult == CombatRng.HitResult.MISS && target != null -> {
+                parts.add("${actor.name}'s ${ability.name} misses ${target.name}!")
+            }
+            wasCritical && damage > 0 && target != null -> {
+                parts.add("CRITICAL! ${actor.name} devastates ${target.name} with ${ability.name} for $damage damage!")
+            }
+            wasGlancing && damage > 0 && target != null -> {
+                parts.add("${actor.name}'s ${ability.name} grazes ${target.name} for $damage damage.")
+            }
+            damage > 0 && target != null -> {
+                parts.add("${actor.name} hits ${target.name} with ${ability.name} for $damage damage!")
+            }
+            wasCritical && healing > 0 -> {
+                val healTarget = if (target != null && ability.targetType != "self") target.name else actor.name
+                parts.add("CRITICAL! ${actor.name} heals $healTarget for $healing with ${ability.name}!")
+            }
+            healing > 0 -> {
+                val healTarget = if (target != null && ability.targetType != "self") target.name else actor.name
+                parts.add("${actor.name} heals $healTarget for $healing with ${ability.name}!")
+            }
+            effects.isEmpty() -> {
+                parts.add("${actor.name} uses ${ability.name}!")
+            }
+        }
+
+        // Add effect application messages
+        for (effect in effects) {
+            val targetName = target?.name ?: actor.name
+            when (effect.effectType) {
+                "stun" -> parts.add("$targetName is stunned!")
+                "root" -> parts.add("$targetName is rooted in place!")
+                "slow" -> parts.add("$targetName is slowed!")
+                "dot" -> parts.add("$targetName is afflicted with ${effect.name}!")
+                "hot" -> parts.add("$targetName gains ${effect.name}!")
+                "buff" -> parts.add("$targetName gains ${effect.name}!")
+                "debuff" -> parts.add("$targetName is afflicted with ${effect.name}!")
+            }
+        }
+
+        return parts.joinToString(" ")
     }
 
     /**
@@ -465,34 +756,58 @@ object CombatService {
         result: ActionResult
     ): List<Combatant> {
         return combatants.map { combatant ->
-            when {
-                // Apply damage to target
-                combatant.id == action.targetId && result.damage > 0 -> {
-                    val newHp = (combatant.currentHp - result.damage).coerceAtLeast(0)
-                    combatant.copy(
-                        currentHp = newHp,
-                        isAlive = newHp > 0
+            var updated = combatant
+
+            // Apply damage to target
+            if (combatant.id == action.targetId && result.damage > 0) {
+                val newHp = (updated.currentHp - result.damage).coerceAtLeast(0)
+                updated = updated.copy(
+                    currentHp = newHp,
+                    isAlive = newHp > 0
+                )
+            }
+
+            // Apply healing to actor (self-heal) or target
+            if (combatant.id == action.combatantId && result.healing > 0 && action.targetId == null) {
+                val newHp = (updated.currentHp + result.healing).coerceAtMost(updated.maxHp)
+                updated = updated.copy(currentHp = newHp)
+            } else if (combatant.id == action.targetId && result.healing > 0) {
+                val newHp = (updated.currentHp + result.healing).coerceAtMost(updated.maxHp)
+                updated = updated.copy(currentHp = newHp)
+            }
+
+            // Apply status effects to target (or self for buffs)
+            if (result.appliedEffects.isNotEmpty()) {
+                val ability = AbilityRepository.findById(action.abilityId)
+                val isSelfTarget = ability?.targetType == "self" || action.targetId == null
+
+                // For self-targeting abilities, apply to actor; otherwise apply to target
+                val shouldApplyEffects = if (isSelfTarget) {
+                    combatant.id == action.combatantId
+                } else {
+                    combatant.id == action.targetId
+                }
+
+                if (shouldApplyEffects) {
+                    // Add new effects, replacing any existing effects with same name
+                    val existingEffectNames = result.appliedEffects.map { it.name }.toSet()
+                    val filteredExisting = updated.statusEffects.filter { it.name !in existingEffectNames }
+                    updated = updated.copy(
+                        statusEffects = filteredExisting + result.appliedEffects
                     )
                 }
-                // Apply healing to actor (self-heal) or target
-                combatant.id == action.combatantId && result.healing > 0 && action.targetId == null -> {
-                    val newHp = (combatant.currentHp + result.healing).coerceAtMost(combatant.maxHp)
-                    combatant.copy(currentHp = newHp)
-                }
-                combatant.id == action.targetId && result.healing > 0 -> {
-                    val newHp = (combatant.currentHp + result.healing).coerceAtMost(combatant.maxHp)
-                    combatant.copy(currentHp = newHp)
-                }
-                // Apply cooldown to actor
-                combatant.id == action.combatantId -> {
-                    val ability = AbilityRepository.findById(action.abilityId)
-                    val cooldownRounds = ability?.cooldownRounds ?: 0
-                    if (cooldownRounds > 0) {
-                        combatant.copy(cooldowns = combatant.cooldowns + (action.abilityId to cooldownRounds))
-                    } else combatant
-                }
-                else -> combatant
             }
+
+            // Apply cooldown to actor
+            if (combatant.id == action.combatantId) {
+                val ability = AbilityRepository.findById(action.abilityId)
+                val cooldownRounds = ability?.cooldownRounds ?: 0
+                if (cooldownRounds > 0) {
+                    updated = updated.copy(cooldowns = updated.cooldowns + (action.abilityId to cooldownRounds))
+                }
+            }
+
+            updated
         }
     }
 
@@ -572,7 +887,7 @@ object CombatService {
     }
 
     /**
-     * Simple AI for creature actions - creatures attack players.
+     * Simple AI for creature actions - creatures attack players using RNG system.
      * Returns updated combatants list with damage applied.
      */
     private suspend fun processCreatureAI(
@@ -585,39 +900,90 @@ object CombatService {
         var updatedCombatants = combatants.toMutableList()
 
         for (creature in combatants.filter { it.type == CombatantType.CREATURE && it.isAlive }) {
+            // Check if creature is stunned
+            if (creature.statusEffects.any { it.effectType == "stun" }) {
+                log.debug("${creature.name} is stunned and cannot act")
+                continue
+            }
+
             // Find a target (random alive player from current state)
             val currentAlivePlayers = updatedCombatants.filter { it.type == CombatantType.PLAYER && it.isAlive }
             if (currentAlivePlayers.isEmpty()) break
 
             val target = currentAlivePlayers.random()
+            val currentTarget = updatedCombatants.find { it.id == target.id } ?: continue
 
-            // Get creature's base damage from database
-            val dbCreature = CreatureRepository.findById(creature.id)
-            val damage = dbCreature?.baseDamage ?: 5
+            // Use RNG system for creature attacks
+            val attackResult = CombatRng.rollAttack(
+                baseDamage = creature.baseDamage,
+                attackerAccuracy = creature.accuracy,
+                defenderEvasion = currentTarget.evasion,
+                attackerLevel = creature.level,
+                defenderLevel = currentTarget.level,
+                critBonus = creature.critBonus
+            )
 
-            // Apply damage to target
-            val targetIndex = updatedCombatants.indexOfFirst { it.id == target.id }
-            if (targetIndex >= 0) {
-                val currentTarget = updatedCombatants[targetIndex]
-                val newHp = (currentTarget.currentHp - damage).coerceAtLeast(0)
-                updatedCombatants[targetIndex] = currentTarget.copy(
-                    currentHp = newHp,
-                    isAlive = newHp > 0
-                )
-
-                // Broadcast the attack
-                broadcastToSession(session.id, HealthUpdateMessage(
-                    sessionId = session.id,
-                    combatantId = target.id,
-                    currentHp = newHp,
-                    maxHp = currentTarget.maxHp,
-                    changeAmount = damage,
-                    sourceId = creature.id,
-                    sourceName = creature.name
-                ))
-
-                log.debug("${creature.name} attacks ${target.name} for $damage damage (${target.currentHp} -> $newHp HP)")
+            // Build attack message
+            val message = when {
+                attackResult.hitResult == CombatRng.HitResult.MISS -> {
+                    "${creature.name}'s attack misses ${currentTarget.name}!"
+                }
+                attackResult.wasCritical -> {
+                    "CRITICAL! ${creature.name} devastates ${currentTarget.name} for ${attackResult.damage} damage!"
+                }
+                attackResult.wasGlancing -> {
+                    "${creature.name}'s attack grazes ${currentTarget.name} for ${attackResult.damage} damage."
+                }
+                else -> {
+                    "${creature.name} attacks ${currentTarget.name} for ${attackResult.damage} damage!"
+                }
             }
+
+            log.debug("Creature attack: ${creature.name} vs ${currentTarget.name} - " +
+                "hitRoll=${attackResult.rollDetails.hitRoll}/${attackResult.rollDetails.hitChance}, " +
+                "result=${attackResult.hitResult}, damage=${attackResult.damage}" +
+                (if (attackResult.wasCritical) " CRITICAL!" else "") +
+                (if (attackResult.wasGlancing) " (glancing)" else ""))
+
+            // Apply damage if hit
+            if (attackResult.damage > 0) {
+                val targetIndex = updatedCombatants.indexOfFirst { it.id == target.id }
+                if (targetIndex >= 0) {
+                    val newHp = (currentTarget.currentHp - attackResult.damage).coerceAtLeast(0)
+                    updatedCombatants[targetIndex] = currentTarget.copy(
+                        currentHp = newHp,
+                        isAlive = newHp > 0
+                    )
+
+                    // Broadcast the attack
+                    broadcastToSession(session.id, HealthUpdateMessage(
+                        sessionId = session.id,
+                        combatantId = target.id,
+                        currentHp = newHp,
+                        maxHp = currentTarget.maxHp,
+                        changeAmount = attackResult.damage,
+                        sourceId = creature.id,
+                        sourceName = creature.name
+                    ))
+                }
+            }
+
+            // Broadcast ability result for the creature attack
+            broadcastToSession(session.id, AbilityResolvedMessage(
+                sessionId = session.id,
+                result = ActionResult(
+                    actionId = "${creature.id}-basic-attack",
+                    success = attackResult.hitResult != CombatRng.HitResult.MISS,
+                    damage = attackResult.damage,
+                    message = message,
+                    hitResult = attackResult.hitResult.name.lowercase(),
+                    wasCritical = attackResult.wasCritical,
+                    wasGlancing = attackResult.wasGlancing
+                ),
+                actorName = creature.name,
+                targetName = currentTarget.name,
+                abilityName = "Attack"
+            ))
         }
 
         return updatedCombatants
@@ -647,6 +1013,7 @@ object CombatService {
 
     /**
      * Handle combat ending - cleanup, rewards, etc.
+     * XP is calculated individually per player based on their level vs creature CR.
      */
     private suspend fun handleCombatEnd(session: CombatSession) {
         val victors = when (session.endReason) {
@@ -661,27 +1028,37 @@ object CombatService {
             else -> emptyList()
         }
 
-        // Calculate experience for players if they won
-        val totalExp = if (session.endReason == CombatEndReason.ALL_ENEMIES_DEFEATED) {
-            session.creatures.sumOf { creature ->
-                CreatureRepository.findById(creature.id)?.experienceValue ?: 0
-            }
-        } else 0
+        // Get defeated creatures for XP calculation
+        val defeatedCreatures = if (session.endReason == CombatEndReason.ALL_ENEMIES_DEFEATED) {
+            session.creatures.mapNotNull { CreatureRepository.findById(it.id) }
+        } else emptyList()
 
-        // Award experience to surviving players
-        val expPerPlayer = if (victors.isNotEmpty() && totalExp > 0) {
-            totalExp / victors.size
-        } else 0
+        // Award experience individually to surviving players based on their level vs creature CR
+        val xpResults = mutableMapOf<String, Int>()
+        for (playerCombatant in session.alivePlayers) {
+            val user = UserRepository.findById(playerCombatant.id) ?: continue
 
-        for (playerId in session.alivePlayers.map { it.id }) {
-            if (expPerPlayer > 0) {
-                UserRepository.awardExperience(playerId, expPerPlayer)
+            // Calculate XP from each creature individually based on player level
+            val totalXp = defeatedCreatures.sumOf { creature ->
+                ExperienceService.calculateCreatureXp(user.level, creature)
             }
+
+            if (totalXp > 0) {
+                val result = ExperienceService.awardXp(playerCombatant.id, totalXp)
+                xpResults[playerCombatant.id] = result.xpAwarded
+
+                if (result.leveledUp) {
+                    log.info("Player ${user.name} leveled up to ${result.newLevel}!")
+                }
+            }
+
             // Clear combat state
-            val playerCombatant = session.combatants.find { it.id == playerId }
-            UserRepository.updateCombatState(playerId, playerCombatant?.currentHp ?: 1, null)
-            playerSessions.remove(playerId)
+            UserRepository.updateCombatState(playerCombatant.id, playerCombatant.currentHp, null)
+            playerSessions.remove(playerCombatant.id)
         }
+
+        // For broadcast, use average XP (or first player's XP if solo)
+        val avgXp = if (xpResults.isNotEmpty()) xpResults.values.average().toInt() else 0
 
         // Broadcast combat end
         broadcastToSession(session.id, CombatEndedMessage(
@@ -689,7 +1066,7 @@ object CombatService {
             reason = session.endReason!!,
             victors = victors,
             defeated = defeated,
-            experienceGained = expPerPlayer
+            experienceGained = avgXp
         ))
 
         log.info("Combat session ${session.id} ended: ${session.endReason}")
@@ -720,12 +1097,22 @@ object CombatService {
     }
 
     /**
-     * Extension: Convert User to Combatant
+     * Extension: Convert User to Combatant.
+     * Includes combat stats from class and level for RNG calculations.
      */
     private fun User.toCombatant(): Combatant {
         val classAbilities = characterClassId?.let {
             AbilityRepository.findByClassId(it).map { a -> a.id }
         } ?: emptyList()
+
+        // Get class data for base stats
+        val characterClass = characterClassId?.let { CharacterClassRepository.findById(it) }
+
+        // Calculate combat stats based on level and class
+        // Players get +1 accuracy per 2 levels, +1 crit per 5 levels
+        val playerAccuracy = level / 2
+        val playerCritBonus = level / 5
+        val playerBaseDamage = 5 + level // Base unarmed damage
 
         return Combatant(
             id = id,
@@ -735,14 +1122,26 @@ object CombatService {
             currentHp = currentHp,
             characterClassId = characterClassId,
             abilityIds = classAbilities,
-            initiative = (1..20).random() // D20 initiative roll
+            initiative = CombatRng.rollD20(), // D20 initiative roll
+            level = level,
+            accuracy = playerAccuracy,
+            evasion = 0, // TODO: Could come from equipment/buffs
+            critBonus = playerCritBonus,
+            baseDamage = playerBaseDamage
         )
     }
 
     /**
-     * Extension: Convert Creature to Combatant
+     * Extension: Convert Creature to Combatant.
+     * Includes combat stats for RNG calculations.
      */
     private fun Creature.toCombatant(): Combatant {
+        // Creatures get stats based on level
+        // Higher level creatures are harder to hit and hit more often
+        val creatureAccuracy = level * 2 // +2 accuracy per level
+        val creatureEvasion = level // +1 evasion per level
+        val creatureCritBonus = level / 3 // +1 crit per 3 levels
+
         return Combatant(
             id = id,
             type = CombatantType.CREATURE,
@@ -750,7 +1149,12 @@ object CombatService {
             maxHp = maxHp,
             currentHp = maxHp, // Creatures start at full HP
             abilityIds = abilityIds,
-            initiative = (1..20).random()
+            initiative = CombatRng.rollD20(),
+            level = level,
+            accuracy = creatureAccuracy,
+            evasion = creatureEvasion,
+            critBonus = creatureCritBonus,
+            baseDamage = baseDamage
         )
     }
 }

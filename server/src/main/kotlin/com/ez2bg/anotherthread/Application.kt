@@ -2,6 +2,7 @@ package com.ez2bg.anotherthread
 
 import com.ez2bg.anotherthread.combat.*
 import com.ez2bg.anotherthread.database.*
+import com.ez2bg.anotherthread.spell.*
 import io.ktor.server.request.header
 import io.ktor.http.*
 import io.ktor.serialization.kotlinx.json.*
@@ -346,6 +347,23 @@ data class ServiceActionRequest(
 data class ServiceActionResponse(
     val success: Boolean,
     val message: String
+)
+
+// Spell casting DTOs
+@Serializable
+data class CastSpellRequest(
+    val userId: String,
+    val featureId: String,
+    val targetParams: Map<String, String> = emptyMap()
+)
+
+@Serializable
+data class CastSpellResponse(
+    val success: Boolean,
+    val message: String,
+    val newLocationId: String? = null,
+    val revealedInfo: SpellService.RevealedInfo? = null,
+    val spellState: SpellService.SpellStateInfo? = null
 )
 
 // Admin feature ID constant
@@ -968,6 +986,12 @@ fun Application.module() {
 
     // Seed character classes and abilities if empty
     ClassAbilitySeed.seedIfEmpty()
+
+    // Seed weapon abilities for existing items
+    WeaponAbilitySeed.seedWeaponAbilities()
+
+    // Seed spell categories and example utility spells
+    SpellFeatureSeed.seedIfEmpty()
 
     // Initialize file directories
     val fileDir = File(System.getenv("FILE_DIR") ?: "data/files").also { it.mkdirs() }
@@ -3141,6 +3165,123 @@ fun Application.module() {
                 )
 
                 call.respond(HttpStatusCode.NoContent)
+            }
+        }
+
+        // Spell routes (Feature-based spell system)
+        route("/spells") {
+            // Get all utility spells available to a user
+            get("/available/{userId}") {
+                val userId = call.parameters["userId"]
+                    ?: return@get call.respond(HttpStatusCode.BadRequest, "userId required")
+
+                val spells = SpellService.getAvailableUtilitySpells(userId)
+                call.respond(spells)
+            }
+
+            // Get all spell features (for admin/browsing)
+            get {
+                val allFeatures = FeatureRepository.findAll()
+                val spellFeatures = allFeatures.filter {
+                    SpellDataParser.isSpell(it.data)
+                }
+                call.respond(spellFeatures)
+            }
+
+            // Cast a utility spell
+            post("/cast") {
+                val request = call.receive<CastSpellRequest>()
+
+                val result = SpellService.castUtilitySpell(
+                    userId = request.userId,
+                    featureId = request.featureId,
+                    targetParams = request.targetParams
+                )
+
+                when (result) {
+                    is SpellService.CastResult.Success -> {
+                        call.respond(CastSpellResponse(
+                            success = true,
+                            message = result.message,
+                            newLocationId = result.newLocationId,
+                            revealedInfo = result.revealedInfo,
+                            spellState = result.spellState
+                        ))
+                    }
+                    is SpellService.CastResult.Failure -> {
+                        call.respond(HttpStatusCode.BadRequest, CastSpellResponse(
+                            success = false,
+                            message = result.reason
+                        ))
+                    }
+                }
+            }
+
+            // Get spell state for a user
+            get("/state/{userId}/{featureId}") {
+                val userId = call.parameters["userId"]
+                    ?: return@get call.respond(HttpStatusCode.BadRequest, "userId required")
+                val featureId = call.parameters["featureId"]
+                    ?: return@get call.respond(HttpStatusCode.BadRequest, "featureId required")
+
+                val state = SpellService.getSpellState(userId, featureId)
+                if (state != null) {
+                    call.respond(state)
+                } else {
+                    call.respond(mapOf("message" to "No state found (spell not yet used)"))
+                }
+            }
+
+            // Reset daily charges for a user (admin/debug endpoint)
+            post("/reset-charges/{userId}") {
+                val userId = call.parameters["userId"]
+                    ?: return@post call.respond(HttpStatusCode.BadRequest, "userId required")
+
+                SpellService.resetDailyCharges(userId)
+                call.respond(mapOf("success" to true, "message" to "Daily charges reset for user"))
+            }
+        }
+
+        // Feature state routes (for direct state management)
+        route("/feature-state") {
+            // Get all feature states for a user
+            get("/user/{userId}") {
+                val userId = call.parameters["userId"]
+                    ?: return@get call.respond(HttpStatusCode.BadRequest, "userId required")
+
+                val states = FeatureStateRepository.findAllByOwner(userId)
+                call.respond(states)
+            }
+
+            // Get specific feature state
+            get("/{ownerId}/{featureId}") {
+                val ownerId = call.parameters["ownerId"]
+                    ?: return@get call.respond(HttpStatusCode.BadRequest, "ownerId required")
+                val featureId = call.parameters["featureId"]
+                    ?: return@get call.respond(HttpStatusCode.BadRequest, "featureId required")
+
+                val state = FeatureStateRepository.findByOwnerAndFeature(ownerId, featureId)
+                if (state != null) {
+                    call.respond(state)
+                } else {
+                    call.respond(HttpStatusCode.NotFound, mapOf("message" to "State not found"))
+                }
+            }
+
+            // Delete feature state (admin/debug)
+            delete("/{ownerId}/{featureId}") {
+                val ownerId = call.parameters["ownerId"]
+                    ?: return@delete call.respond(HttpStatusCode.BadRequest, "ownerId required")
+                val featureId = call.parameters["featureId"]
+                    ?: return@delete call.respond(HttpStatusCode.BadRequest, "featureId required")
+
+                val id = FeatureState.createId(ownerId, featureId)
+                val deleted = FeatureStateRepository.delete(id)
+                if (deleted) {
+                    call.respond(HttpStatusCode.NoContent)
+                } else {
+                    call.respond(HttpStatusCode.NotFound)
+                }
             }
         }
 

@@ -15,7 +15,8 @@ object CreatureTable : Table("creature") {
     val baseDamage = integer("base_damage").default(5)
     val abilityIds = text("ability_ids").default("[]")
     val level = integer("level").default(1)
-    val experienceValue = integer("experience_value").default(10)
+    val experienceValue = integer("experience_value").default(10)  // Base XP, scaled by level difference
+    val challengeRating = integer("challenge_rating").default(1)  // 1-20 scale, determines difficulty tier
     val isAggressive = bool("is_aggressive").default(false)  // Auto-attacks players
 
     override val primaryKey = PrimaryKey(id)

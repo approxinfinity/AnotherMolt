@@ -2,6 +2,16 @@
 
 A Kotlin Multiplatform MUD-style game engine with AI-powered content generation. Build and manage interconnected game worlds with locations, creatures, items, and features.
 
+## Documentation
+
+| Document | Purpose |
+|----------|---------|
+| **README.md** (this file) | Architecture, setup, and API reference |
+| [OVERVIEW.md](OVERVIEW.md) | Game mechanics, vision, and how systems work together |
+| [MUSINGS.md](MUSINGS.md) | Future ideas, known issues, and design decisions pending |
+| [STOCK.md](STOCK.md) | Stock character class balance analysis |
+| [CLAUDE.md](CLAUDE.md) | AI assistant instructions (for Claude Code) |
+
 ## Features
 
 ### Game World Management
@@ -91,6 +101,75 @@ Locations can be placed on a 3D grid (X, Y, Z coordinates) for spatial organizat
 - `POST /admin/database/backup` - Create a timestamped database backup
 - `GET /admin/database/backups` - List available backup files
 - `POST /admin/database/restore/{filename}` - Restore from a backup (auto-creates safety backup first)
+
+### Combat (WebSocket)
+Connect to `ws://localhost:8081/combat?userId={userId}` for real-time combat.
+
+**Client → Server Messages:**
+- `JoinCombatMessage` - Start/join combat at current location
+- `UseAbilityMessage` - Queue an ability for current round
+- `FleeCombatMessage` - Attempt to flee (50% base chance)
+- `LeaveCombatMessage` - Exit combat gracefully
+
+**Server → Client Messages:**
+- `CombatStartedMessage` - Combat initiated with session state
+- `RoundStartMessage` - New round beginning
+- `AbilityResolvedMessage` - Ability executed with results (hit/miss/crit)
+- `HealthUpdateMessage` - HP changed for a combatant
+- `StatusEffectMessage` - Status applied/removed
+- `RoundEndMessage` - Round complete with updated state
+- `CombatEndedMessage` - Combat concluded with rewards
+
+See [OVERVIEW.md](OVERVIEW.md) for combat mechanics details.
+
+### Classes & Abilities
+- `GET /classes` - List all character classes
+- `GET /classes/{id}` - Get class by ID
+- `POST /classes` - Create character class
+- `PUT /classes/{id}` - Update character class
+- `GET /abilities` - List all abilities
+- `GET /abilities/by-class/{classId}` - Get abilities for a class
+- `POST /abilities` - Create ability
+- `PUT /abilities/{id}` - Update ability
+
+### Spells (Feature-based)
+Spells are implemented as Features with JSON data defining their behavior. Per-user state (cooldowns, charges) is tracked in FeatureState.
+
+- `GET /spells` - List all spell features
+- `GET /spells/available/{userId}` - Get spells available to a user
+- `POST /spells/cast` - Cast a utility spell
+- `GET /spells/state/{userId}/{featureId}` - Get spell cooldown/charges state
+- `POST /spells/reset-charges/{userId}` - Reset daily charges (admin)
+
+**Cast Request:**
+```json
+{
+  "userId": "user-123",
+  "featureId": "phase-walk-id",
+  "targetParams": { "direction": "NORTH" }
+}
+```
+
+**Cast Response:**
+```json
+{
+  "success": true,
+  "message": "You phase through reality...",
+  "newLocationId": "new-loc-id",
+  "spellState": {
+    "remainingCharges": 2,
+    "cooldownExpiresAt": 1769110042189,
+    "cooldownSecondsRemaining": 1800
+  }
+}
+```
+
+### Feature State
+Per-user/per-entity dynamic state for features (cooldowns, charges, buff durations).
+
+- `GET /feature-state/user/{userId}` - Get all feature states for user
+- `GET /feature-state/{ownerId}/{featureId}` - Get specific feature state
+- `DELETE /feature-state/{ownerId}/{featureId}` - Delete feature state
 
 ## Ports Configuration
 

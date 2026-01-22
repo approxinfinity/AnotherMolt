@@ -55,7 +55,13 @@ data class Combatant(
     val initiative: Int = 0,                  // Determines action order within round
     val isAlive: Boolean = currentHp > 0,
     val statusEffects: List<StatusEffect> = emptyList(),
-    val cooldowns: Map<String, Int> = emptyMap() // abilityId -> rounds remaining
+    val cooldowns: Map<String, Int> = emptyMap(), // abilityId -> rounds remaining
+    // Combat stats for RNG mechanics
+    val level: Int = 1,                       // Level affects hit chance
+    val accuracy: Int = 0,                    // Bonus to hit chance
+    val evasion: Int = 0,                     // Bonus to avoid attacks
+    val critBonus: Int = 0,                   // Bonus to critical hit chance
+    val baseDamage: Int = 5                   // Base damage for auto-attacks
 )
 
 /**
@@ -124,7 +130,11 @@ data class ActionResult(
     val damage: Int = 0,
     val healing: Int = 0,
     val appliedEffects: List<StatusEffect> = emptyList(),
-    val message: String
+    val message: String,
+    // RNG details for combat log
+    val hitResult: String? = null,            // "hit", "miss", "critical", "glancing"
+    val wasCritical: Boolean = false,
+    val wasGlancing: Boolean = false
 )
 
 // ============================================================================

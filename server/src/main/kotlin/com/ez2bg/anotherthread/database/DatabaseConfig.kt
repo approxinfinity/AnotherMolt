@@ -24,6 +24,7 @@ object DatabaseConfig {
                 UserTable,
                 FeatureCategoryTable,
                 FeatureTable,
+                FeatureStateTable,
                 AuditLogTable,
                 TerrainOverrideTable,
                 CharacterClassTable,

@@ -25,6 +25,7 @@ data class Creature(
     val abilityIds: List<String> = emptyList(),
     val level: Int = 1,
     val experienceValue: Int = 10,
+    val challengeRating: Int = 1,
     val isAggressive: Boolean = false
 )
 
@@ -56,6 +57,7 @@ object CreatureRepository {
         abilityIds = jsonToList(this[CreatureTable.abilityIds]),
         level = this[CreatureTable.level],
         experienceValue = this[CreatureTable.experienceValue],
+        challengeRating = this[CreatureTable.challengeRating],
         isAggressive = this[CreatureTable.isAggressive]
     )
 
@@ -73,6 +75,7 @@ object CreatureRepository {
             it[abilityIds] = listToJson(creature.abilityIds)
             it[level] = creature.level
             it[experienceValue] = creature.experienceValue
+            it[challengeRating] = creature.challengeRating
             it[isAggressive] = creature.isAggressive
         }
         creature
@@ -102,6 +105,7 @@ object CreatureRepository {
             it[abilityIds] = listToJson(creature.abilityIds)
             it[level] = creature.level
             it[experienceValue] = creature.experienceValue
+            it[challengeRating] = creature.challengeRating
             it[isAggressive] = creature.isAggressive
         } > 0
     }

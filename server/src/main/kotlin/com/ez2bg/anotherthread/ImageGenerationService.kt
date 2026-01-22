@@ -10,6 +10,7 @@ import io.ktor.http.*
 import io.ktor.serialization.kotlinx.json.*
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
@@ -143,13 +144,16 @@ object ImageGenerationService {
     }
 
     /**
-     * Check if the Stable Diffusion service is available
+     * Check if the Stable Diffusion service is available.
+     * Uses a short timeout to avoid blocking tests or slow startups.
      */
     suspend fun isAvailable(): Boolean = withContext(Dispatchers.IO) {
-        runCatching {
-            val response = client.get("$sdApiUrl/sdapi/v1/sd-models")
-            response.status == HttpStatusCode.OK
-        }.getOrDefault(false)
+        withTimeoutOrNull(5000L) {
+            runCatching {
+                val response = client.get("$sdApiUrl/sdapi/v1/sd-models")
+                response.status == HttpStatusCode.OK
+            }.getOrDefault(false)
+        } ?: false
     }
 
     /**

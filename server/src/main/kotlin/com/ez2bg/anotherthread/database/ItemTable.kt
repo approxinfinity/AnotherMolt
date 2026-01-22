@@ -7,6 +7,7 @@ object ItemTable : Table("item") {
     val name = text("name")
     val desc = text("desc")
     val featureIds = text("feature_ids")
+    val abilityIds = text("ability_ids").default("[]")  // JSON array of ability IDs
     val imageUrl = text("image_url").nullable()
     val lockedBy = varchar("locked_by", 36).nullable()
 

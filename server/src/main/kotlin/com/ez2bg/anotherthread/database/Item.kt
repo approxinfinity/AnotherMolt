@@ -16,6 +16,7 @@ data class Item(
     val name: String,
     val desc: String,
     val featureIds: List<String>,
+    val abilityIds: List<String> = emptyList(),  // Combat abilities this item grants
     val imageUrl: String? = null,
     val lockedBy: String? = null
 )
@@ -40,6 +41,7 @@ object ItemRepository {
         name = this[ItemTable.name],
         desc = this[ItemTable.desc],
         featureIds = jsonToList(this[ItemTable.featureIds]),
+        abilityIds = jsonToList(this[ItemTable.abilityIds]),
         imageUrl = this[ItemTable.imageUrl],
         lockedBy = this[ItemTable.lockedBy]
     )
@@ -50,6 +52,7 @@ object ItemRepository {
             it[name] = item.name
             it[desc] = item.desc
             it[featureIds] = listToJson(item.featureIds)
+            it[abilityIds] = listToJson(item.abilityIds)
             it[imageUrl] = item.imageUrl
             it[lockedBy] = item.lockedBy
         }
@@ -72,6 +75,7 @@ object ItemRepository {
             it[name] = item.name
             it[desc] = item.desc
             it[featureIds] = listToJson(item.featureIds)
+            it[abilityIds] = listToJson(item.abilityIds)
             it[imageUrl] = item.imageUrl
             it[lockedBy] = item.lockedBy
         } > 0
