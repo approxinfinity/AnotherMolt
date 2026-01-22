@@ -133,9 +133,42 @@ Items can grant combat abilities:
 ## Progression Systems
 
 ### Experience & Leveling
-- Defeating creatures grants XP based on creature level
-- XP thresholds determine player level
-- Level increases HP and combat stats
+
+**Individual XP Scaling**
+XP is calculated individually per player based on their level vs creature Challenge Rating (CR). This allows party play with level disparity - a level 1 player in a party with level 10 players still gets appropriate XP.
+
+| Level Difference | Scale Factor | Description |
+|------------------|--------------|-------------|
+| CR >= Player+4 | 1.5x | Much harder |
+| CR >= Player+2 | 1.25x | Harder |
+| CR >= Player-1 | 1.0x | Appropriate |
+| CR >= Player-4 | 0.5x | Easy |
+| CR >= Player-8 | 0.25x | Trivial |
+| CR < Player-8 | 0.1x | Grey (floor) |
+
+**XP = creature.experienceValue × scaleFactor**
+
+**Level Thresholds**
+| Level | Total XP | HP |
+|-------|----------|-----|
+| 1 | 0 | 10 |
+| 5 | 1,000 | 30 |
+| 10 | 4,500 | 55 |
+| 15 | 10,500 | 80 |
+| 20 (cap) | 19,000 | 105 |
+
+HP formula: 10 + (level - 1) × 5
+
+**PvP Experience**
+- Base XP: 20 + (opponent level × 5)
+- Same scaling factors apply
+- 50% reduction to discourage farming
+
+**Creature Challenge Rating**
+Each creature has:
+- `challengeRating` (1-20) - Difficulty tier for XP scaling
+- `experienceValue` - Base XP before scaling
+- `level` - Used for combat hit/miss calculations
 
 ### Future Progression (Not Yet Implemented)
 - Skill trees within classes
