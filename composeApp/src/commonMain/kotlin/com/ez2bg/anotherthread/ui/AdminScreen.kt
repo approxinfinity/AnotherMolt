@@ -895,9 +895,11 @@ fun AdminScreen() {
     }
 
     // Exploration mode state - when ON, map is hidden and navigation is non-dismissable
-    // Auto-start in exploration mode if user is authenticated and has a last known location
+    // Auto-start in exploration mode if user has complete profile (class assigned) and last known location
     val startInExplorationMode = remember {
-        savedUser != null && savedUser.currentLocationId != null
+        savedUser != null &&
+        savedUser.characterClassId != null &&  // Profile complete (has class)
+        savedUser.currentLocationId != null    // Has last known location
     }
     var isExplorationMode by remember { mutableStateOf(startInExplorationMode) }
 
