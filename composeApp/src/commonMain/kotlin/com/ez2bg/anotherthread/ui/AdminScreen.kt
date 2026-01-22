@@ -1434,24 +1434,35 @@ fun UserProfileView(
     var genClassChecked by remember { mutableStateOf(false) }
     var genImageChecked by remember { mutableStateOf(false) }
 
-    // Class assignment state
-    var isAssigningClass by remember { mutableStateOf(false) }
-    var isClassGenerating by remember { mutableStateOf(false) } // Async generation in progress
+    // Class assignment state - using AsyncOperationRepository for lifecycle-independent polling
     var assignedClass by remember { mutableStateOf<CharacterClassDto?>(null) }
     var characterClassId by remember(user.id) { mutableStateOf(user.characterClassId) }
 
-    // Class generation timeout (10 minutes in milliseconds)
-    val classGenerationTimeoutMs = 10 * 60 * 1000L
+    // Collect class generation status from the repository
+    val classGenerationStatus by AsyncOperationRepository.classGenerationStatus.collectAsState()
+    val isClassGenerating = user.id in classGenerationStatus
 
-    // Check on load if class generation is in progress (survives page reload)
+    // Resume polling on load if class generation was in progress (survives page reload/navigation)
     LaunchedEffect(user.id) {
         val startedAt = user.classGenerationStartedAt
         if (startedAt != null && user.characterClassId == null) {
-            val elapsed = com.ez2bg.anotherthread.platform.currentTimeMillis() - startedAt
-            if (elapsed < classGenerationTimeoutMs) {
-                // Generation was in progress and hasn't timed out - resume polling
-                isClassGenerating = true
-                message = "Class generation in progress..."
+            // Resume polling via repository (handles timeout internally)
+            AsyncOperationRepository.resumeClassGenerationPolling(user.id, startedAt)
+        }
+    }
+
+    // Collect class generation completions and update UI
+    LaunchedEffect(user.id) {
+        AsyncOperationRepository.classGenerationCompletions.collect { result ->
+            if (result.userId == user.id) {
+                if (result.success) {
+                    characterClassId = result.user?.characterClassId
+                    assignedClass = result.characterClass
+                    result.user?.let { onUserUpdated(it) }
+                    message = "Class generated!"
+                } else {
+                    message = result.errorMessage ?: "Class generation failed. Please try again."
+                }
             }
         }
     }
@@ -1467,42 +1478,8 @@ fun UserProfileView(
             ApiClient.getCharacterClass(classId).onSuccess { fetchedClass ->
                 assignedClass = fetchedClass
             }
-            isClassGenerating = false // Stop polling when class is assigned
         } else {
             assignedClass = null
-        }
-    }
-
-    // Poll for async class generation completion
-    LaunchedEffect(isClassGenerating) {
-        if (isClassGenerating && characterClassId == null) {
-            // Poll every 5 seconds until class is assigned or generation status is cleared
-            var attempts = 0
-            val maxAttempts = 120 // 10 minutes at 5 second intervals
-            while (isClassGenerating && characterClassId == null && attempts < maxAttempts) {
-                delay(5000) // 5 seconds
-                attempts++
-                // Fetch user to check if class was assigned or generation failed
-                ApiClient.getUser(user.id).onSuccess { updatedUser ->
-                    if (updatedUser != null) {
-                        if (updatedUser.characterClassId != null) {
-                            // Class generated successfully
-                            characterClassId = updatedUser.characterClassId
-                            onUserUpdated(updatedUser)
-                            message = "Class generated!"
-                            isClassGenerating = false
-                        } else if (updatedUser.classGenerationStartedAt == null) {
-                            // Generation was cleared (failed) without assigning a class
-                            message = "Class generation failed. Please try again."
-                            isClassGenerating = false
-                        }
-                    }
-                }
-            }
-            if (attempts >= maxAttempts && characterClassId == null) {
-                message = "Class generation timed out. Please try again."
-                isClassGenerating = false
-            }
         }
     }
 
@@ -1616,7 +1593,7 @@ fun UserProfileView(
                 label = { Text("Description") },
                 modifier = Modifier.fillMaxWidth(),
                 minLines = 3,
-                enabled = !isLoading && !isAssigningClass
+                enabled = !isLoading && !isClassGenerating
             )
         } else {
             // Read-only view for non-editors
@@ -1641,12 +1618,12 @@ fun UserProfileView(
                     Checkbox(
                         checked = genClassChecked,
                         onCheckedChange = { genClassChecked = it },
-                        enabled = !isLoading && !isAssigningClass
+                        enabled = !isLoading && !isClassGenerating
                     )
                     Text(
                         text = "Generate Class",
                         style = MaterialTheme.typography.bodyMedium,
-                        modifier = Modifier.clickable(enabled = !isLoading && !isAssigningClass) {
+                        modifier = Modifier.clickable(enabled = !isLoading && !isClassGenerating) {
                             genClassChecked = !genClassChecked
                         }
                     )
@@ -1657,12 +1634,12 @@ fun UserProfileView(
                     Checkbox(
                         checked = genImageChecked,
                         onCheckedChange = { genImageChecked = it },
-                        enabled = !isLoading && !isAssigningClass && !isImageGenerating
+                        enabled = !isLoading && !isClassGenerating && !isImageGenerating
                     )
                     Text(
                         text = "Generate Image",
                         style = MaterialTheme.typography.bodyMedium,
-                        modifier = Modifier.clickable(enabled = !isLoading && !isAssigningClass && !isImageGenerating) {
+                        modifier = Modifier.clickable(enabled = !isLoading && !isClassGenerating && !isImageGenerating) {
                             genImageChecked = !genImageChecked
                         }
                     )
@@ -1707,32 +1684,14 @@ fun UserProfileView(
                             // 3. Assign class if needed (checked or no class yet)
                             if (genClassChecked || characterClassId == null) {
                                 if (desc.isNotBlank()) {
-                                    isAssigningClass = true
-                                    message = "Assigning class, this may take a moment..."
-
-                                    val isGenerating = genClassChecked
-                                    ApiClient.assignClass(
+                                    message = "Assigning class..."
+                                    // Use AsyncOperationRepository for lifecycle-independent class generation
+                                    AsyncOperationRepository.startClassGeneration(
                                         userId = user.id,
-                                        request = AssignClassRequest(
-                                            generateClass = genClassChecked,
-                                            characterDescription = desc
-                                        )
-                                    ).onSuccess { response ->
-                                        if (isGenerating && response.assignedClass == null) {
-                                            // Async generation started - begin polling
-                                            isClassGenerating = true
-                                            message = response.message ?: "Generating class..."
-                                        } else {
-                                            characterClassId = response.user.characterClassId
-                                            assignedClass = response.assignedClass
-                                            onUserUpdated(response.user)
-                                            message = response.message ?: "Class assigned!"
-                                        }
-                                        genClassChecked = false
-                                    }.onFailure { error ->
-                                        message = "Error assigning class: ${error.message}"
-                                    }
-                                    isAssigningClass = false
+                                        characterDescription = desc,
+                                        generateNew = genClassChecked
+                                    )
+                                    genClassChecked = false
                                 } else {
                                     message = "Please provide a description to assign a class"
                                 }
@@ -1745,16 +1704,16 @@ fun UserProfileView(
                         isLoading = false
                     }
                 },
-                enabled = !isLoading && !isAssigningClass,
+                enabled = !isLoading && !isClassGenerating,
                 modifier = Modifier.fillMaxWidth()
             ) {
-                if (isLoading || isAssigningClass) {
+                if (isLoading) {
                     CircularProgressIndicator(
                         modifier = Modifier.size(16.dp),
                         strokeWidth = 2.dp
                     )
                     Spacer(modifier = Modifier.width(8.dp))
-                    Text(if (isAssigningClass) "Assigning Class..." else "Saving...")
+                    Text("Saving...")
                 } else {
                     Text("Save Character")
                 }
@@ -1781,8 +1740,9 @@ fun UserProfileView(
             )
         }
 
-        // Class generation in progress indicator
+        // Class generation in progress indicator - using repository status message
         if (isClassGenerating && assignedClass == null) {
+            val statusMessage = classGenerationStatus[user.id]?.message ?: "Generating class..."
             Card(
                 modifier = Modifier.fillMaxWidth(),
                 colors = CardDefaults.cardColors(
@@ -1801,7 +1761,7 @@ fun UserProfileView(
                     )
                     Column {
                         Text(
-                            text = "Generating your custom class...",
+                            text = statusMessage,
                             style = MaterialTheme.typography.titleSmall,
                             color = MaterialTheme.colorScheme.onPrimaryContainer
                         )
