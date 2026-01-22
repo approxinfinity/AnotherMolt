@@ -15,6 +15,12 @@ object UserTable : Table("user") {
     val classGenerationStartedAt = long("class_generation_started_at").nullable()
     val createdAt = long("created_at")
     val lastActiveAt = long("last_active_at")
+    // Combat stats
+    val level = integer("level").default(1)
+    val experience = integer("experience").default(0)
+    val maxHp = integer("max_hp").default(10)
+    val currentHp = integer("current_hp").default(10)
+    val currentCombatSessionId = varchar("current_combat_session_id", 36).nullable()
 
     override val primaryKey = PrimaryKey(id)
 }

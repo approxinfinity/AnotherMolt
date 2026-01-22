@@ -55,6 +55,7 @@ kotlin {
             implementation(projects.shared)
             implementation(libs.ktor.clientCore)
             implementation(libs.ktor.clientContentNegotiation)
+            implementation(libs.ktor.clientWebsockets)
             implementation(libs.ktor.serializationJson)
             implementation(libs.kotlinx.serialization.json)
             // Coil for async image loading

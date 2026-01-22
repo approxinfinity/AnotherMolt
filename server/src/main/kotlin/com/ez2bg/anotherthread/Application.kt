@@ -1,5 +1,6 @@
 package com.ez2bg.anotherthread
 
+import com.ez2bg.anotherthread.combat.*
 import com.ez2bg.anotherthread.database.*
 import io.ktor.server.request.header
 import io.ktor.http.*
@@ -9,16 +10,20 @@ import io.ktor.server.http.content.*
 import io.ktor.server.netty.*
 import io.ktor.server.plugins.contentnegotiation.*
 import io.ktor.server.plugins.cors.routing.*
+import io.ktor.server.websocket.*
+import io.ktor.websocket.*
 import io.ktor.http.content.*
 import io.ktor.server.request.*
 import io.ktor.server.response.*
 import io.ktor.server.routing.*
 import kotlinx.coroutines.launch
 import kotlinx.serialization.Serializable
+import kotlinx.serialization.json.Json
 import java.io.File
 import java.net.HttpURLConnection
 import java.net.URL
 import java.time.LocalDateTime
+import kotlin.time.Duration.Companion.seconds
 
 @Serializable
 data class ExitRequest(
@@ -940,6 +945,13 @@ fun Application.module() {
         allowMethod(HttpMethod.Options)
     }
 
+    install(WebSockets) {
+        pingPeriod = 15.seconds
+        timeout = 15.seconds
+        maxFrameSize = Long.MAX_VALUE
+        masking = false
+    }
+
     // Initialize database (TEST_DB_PATH takes precedence for testing)
     val dbPath = System.getProperty("TEST_DB_PATH")
         ?: appConfig.propertyOrNull("database.path")?.getString()
@@ -956,12 +968,110 @@ fun Application.module() {
     val uploadsDir = File(fileDir, "uploads").also { it.mkdirs() }
     log.info("Files directory: ${fileDir.absolutePath}")
 
+    // Start combat tick loop
+    CombatService.startTickLoop()
+    log.info("Combat service started")
+
+    // JSON for WebSocket message parsing
+    val combatJson = Json {
+        ignoreUnknownKeys = true
+        encodeDefaults = true
+    }
+
     routing {
         get("/") {
             call.respondText("Ktor: ${Greeting().greet()}")
         }
         get("/health") {
             call.respondText("OK")
+        }
+
+        // WebSocket endpoint for real-time combat
+        webSocket("/combat") {
+            // Get user ID from query parameter
+            val userId = call.request.queryParameters["userId"]
+            if (userId == null) {
+                close(CloseReason(CloseReason.Codes.VIOLATED_POLICY, "Missing userId"))
+                return@webSocket
+            }
+
+            // Verify user exists
+            val user = UserRepository.findById(userId)
+            if (user == null) {
+                close(CloseReason(CloseReason.Codes.VIOLATED_POLICY, "User not found"))
+                return@webSocket
+            }
+
+            log.info("WebSocket connection established for user $userId")
+            CombatService.registerConnection(userId, this)
+
+            try {
+                for (frame in incoming) {
+                    when (frame) {
+                        is Frame.Text -> {
+                            val text = frame.readText()
+                            try {
+                                // Parse the message type from JSON
+                                when {
+                                    text.contains("\"type\":\"join\"") || text.contains("JoinCombat") -> {
+                                        val msg = combatJson.decodeFromString<JoinCombatMessage>(text)
+                                        val locationId = user.currentLocationId
+                                        if (locationId == null) {
+                                            send(Frame.Text(combatJson.encodeToString(
+                                                CombatErrorMessage(error = "No current location", code = "NO_LOCATION")
+                                            )))
+                                        } else {
+                                            CombatService.startCombat(userId, locationId, msg.targetCreatureIds)
+                                                .onFailure { e ->
+                                                    send(Frame.Text(combatJson.encodeToString(
+                                                        CombatErrorMessage(error = e.message ?: "Unknown error", code = "JOIN_FAILED")
+                                                    )))
+                                                }
+                                        }
+                                    }
+                                    text.contains("\"type\":\"ability\"") || text.contains("UseAbility") -> {
+                                        val msg = combatJson.decodeFromString<UseAbilityMessage>(text)
+                                        CombatService.queueAbility(userId, msg.sessionId, msg.abilityId, msg.targetId)
+                                            .onFailure { e ->
+                                                send(Frame.Text(combatJson.encodeToString(
+                                                    CombatErrorMessage(
+                                                        sessionId = msg.sessionId,
+                                                        error = e.message ?: "Unknown error",
+                                                        code = "ABILITY_FAILED"
+                                                    )
+                                                )))
+                                            }
+                                    }
+                                    text.contains("\"type\":\"flee\"") || text.contains("FleeCombat") -> {
+                                        val msg = combatJson.decodeFromString<FleeCombatMessage>(text)
+                                        CombatService.attemptFlee(userId, msg.sessionId)
+                                    }
+                                    text.contains("\"type\":\"leave\"") || text.contains("LeaveCombat") -> {
+                                        val msg = combatJson.decodeFromString<LeaveCombatMessage>(text)
+                                        // Handle leave
+                                        log.info("User $userId left combat session ${msg.sessionId}")
+                                    }
+                                    else -> {
+                                        log.warn("Unknown combat message type: $text")
+                                    }
+                                }
+                            } catch (e: Exception) {
+                                log.error("Error processing combat message: ${e.message}")
+                                send(Frame.Text(combatJson.encodeToString(
+                                    CombatErrorMessage(error = "Invalid message format", code = "PARSE_ERROR")
+                                )))
+                            }
+                        }
+                        is Frame.Close -> {
+                            log.info("WebSocket closed for user $userId")
+                        }
+                        else -> {}
+                    }
+                }
+            } finally {
+                CombatService.unregisterConnection(userId)
+                log.info("WebSocket connection closed for user $userId")
+            }
         }
 
         // Apple App Site Association for iOS password autofill

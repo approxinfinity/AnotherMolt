@@ -21,6 +21,7 @@ dependencies {
     implementation(libs.ktor.serverNetty)
     implementation(libs.ktor.serverContentNegotiation)
     implementation(libs.ktor.serverCors)
+    implementation(libs.ktor.serverWebsockets)
     implementation(libs.ktor.serializationJson)
 
     // HTTP Client for Stable Diffusion API

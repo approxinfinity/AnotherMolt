@@ -1,7 +1,15 @@
 {
   "permissions": {
     "allow": [
-      "Bash(./gradlew :composeApp:build:*)"
+      "Bash(./gradlew :composeApp:build:*)",
+      "Bash(git clone:*)",
+      "Bash(git --version:*)",
+      "Bash(/bin/ls:*)",
+      "Bash(/bin/bash -c \"echo hello\")",
+      "Bash(exec /bin/bash -l -c \"echo working\")",
+      "Bash(pkill:*)",
+      "Bash(./gradlew :server:run:*)",
+      "Bash(./gradlew build:*)"
     ]
   }
 }

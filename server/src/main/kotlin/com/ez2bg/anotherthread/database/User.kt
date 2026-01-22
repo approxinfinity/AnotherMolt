@@ -24,7 +24,13 @@ data class User(
     val characterClassId: String? = null,
     val classGenerationStartedAt: Long? = null,
     val createdAt: Long = System.currentTimeMillis(),
-    val lastActiveAt: Long = System.currentTimeMillis()
+    val lastActiveAt: Long = System.currentTimeMillis(),
+    // Combat stats
+    val level: Int = 1,
+    val experience: Int = 0,
+    val maxHp: Int = 10,
+    val currentHp: Int = 10,
+    val currentCombatSessionId: String? = null
 )
 
 /**
@@ -42,7 +48,13 @@ data class UserResponse(
     val characterClassId: String?,
     val classGenerationStartedAt: Long?,
     val createdAt: Long,
-    val lastActiveAt: Long
+    val lastActiveAt: Long,
+    // Combat stats
+    val level: Int,
+    val experience: Int,
+    val maxHp: Int,
+    val currentHp: Int,
+    val currentCombatSessionId: String?
 )
 
 fun User.toResponse(): UserResponse = UserResponse(
@@ -56,7 +68,12 @@ fun User.toResponse(): UserResponse = UserResponse(
     characterClassId = characterClassId,
     classGenerationStartedAt = classGenerationStartedAt,
     createdAt = createdAt,
-    lastActiveAt = lastActiveAt
+    lastActiveAt = lastActiveAt,
+    level = level,
+    experience = experience,
+    maxHp = maxHp,
+    currentHp = currentHp,
+    currentCombatSessionId = currentCombatSessionId
 )
 
 object UserRepository {
@@ -86,7 +103,12 @@ object UserRepository {
         characterClassId = this[UserTable.characterClassId],
         classGenerationStartedAt = this[UserTable.classGenerationStartedAt],
         createdAt = this[UserTable.createdAt],
-        lastActiveAt = this[UserTable.lastActiveAt]
+        lastActiveAt = this[UserTable.lastActiveAt],
+        level = this[UserTable.level],
+        experience = this[UserTable.experience],
+        maxHp = this[UserTable.maxHp],
+        currentHp = this[UserTable.currentHp],
+        currentCombatSessionId = this[UserTable.currentCombatSessionId]
     )
 
     fun create(user: User): User = transaction {
@@ -103,6 +125,11 @@ object UserRepository {
             it[classGenerationStartedAt] = user.classGenerationStartedAt
             it[createdAt] = user.createdAt
             it[lastActiveAt] = user.lastActiveAt
+            it[level] = user.level
+            it[experience] = user.experience
+            it[maxHp] = user.maxHp
+            it[currentHp] = user.currentHp
+            it[currentCombatSessionId] = user.currentCombatSessionId
         }
         user
     }
@@ -134,6 +161,11 @@ object UserRepository {
             it[currentLocationId] = user.currentLocationId
             it[characterClassId] = user.characterClassId
             it[lastActiveAt] = user.lastActiveAt
+            it[level] = user.level
+            it[experience] = user.experience
+            it[maxHp] = user.maxHp
+            it[currentHp] = user.currentHp
+            it[currentCombatSessionId] = user.currentCombatSessionId
         } > 0
     }
 
@@ -189,8 +221,70 @@ object UserRepository {
             .filter { it.lastActiveAt >= cutoff }
     }
 
+    /**
+     * Update user's combat state
+     */
+    fun updateCombatState(id: String, newCurrentHp: Int, newCombatSessionId: String?): Boolean = transaction {
+        UserTable.update({ UserTable.id eq id }) {
+            it[currentHp] = newCurrentHp
+            it[currentCombatSessionId] = newCombatSessionId
+            it[lastActiveAt] = System.currentTimeMillis()
+        } > 0
+    }
+
+    /**
+     * Award experience and handle level ups
+     */
+    fun awardExperience(id: String, expGained: Int): Boolean = transaction {
+        val user = findById(id) ?: return@transaction false
+        val newExp = user.experience + expGained
+        val newLevel = calculateLevel(newExp)
+        val newMaxHp = calculateMaxHp(newLevel, user.characterClassId)
+
+        UserTable.update({ UserTable.id eq id }) {
+            it[experience] = newExp
+            it[level] = newLevel
+            it[maxHp] = newMaxHp
+            // Restore HP on level up
+            if (newLevel > user.level) {
+                it[currentHp] = newMaxHp
+            }
+            it[lastActiveAt] = System.currentTimeMillis()
+        } > 0
+    }
+
+    /**
+     * Fully heal a user
+     */
+    fun healToFull(id: String): Boolean = transaction {
+        val user = findById(id) ?: return@transaction false
+        UserTable.update({ UserTable.id eq id }) {
+            it[currentHp] = user.maxHp
+            it[lastActiveAt] = System.currentTimeMillis()
+        } > 0
+    }
+
+    /**
+     * Find all users currently in a combat session
+     */
+    fun findByCombatSession(sessionId: String): List<User> = transaction {
+        UserTable.selectAll()
+            .where { UserTable.currentCombatSessionId eq sessionId }
+            .map { it.toUser() }
+    }
+
     fun delete(id: String): Boolean = transaction {
         UserTable.deleteWhere { UserTable.id eq id } > 0
+    }
+
+    // Level calculation: every 100 exp = 1 level
+    private fun calculateLevel(experience: Int): Int = (experience / 100) + 1
+
+    // HP calculation: base 10 + (level * hitDie average)
+    private fun calculateMaxHp(level: Int, classId: String?): Int {
+        // Default to d8 (4.5 average) if no class
+        val hitDieAverage = 5 // Simplified for now, should look up class hitDie
+        return 10 + (level * hitDieAverage)
     }
 
     // Password hashing utilities

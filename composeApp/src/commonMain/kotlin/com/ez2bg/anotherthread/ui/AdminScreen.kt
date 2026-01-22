@@ -63,6 +63,8 @@ import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Star
 import androidx.compose.material.icons.filled.ExpandLess
 import androidx.compose.material.icons.filled.ExpandMore
+import androidx.compose.material.icons.filled.Security
+import androidx.compose.material.icons.filled.Dangerous
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.material3.*
@@ -9750,6 +9752,15 @@ fun CreatureForm(
     var imageGenError by remember(editCreature?.id) { mutableStateOf<String?>(null) }
     val scope = rememberCoroutineScope()
 
+    // Combat stats state
+    var maxHp by remember(editCreature?.id) { mutableStateOf(editCreature?.maxHp?.toString() ?: "10") }
+    var baseDamage by remember(editCreature?.id) { mutableStateOf(editCreature?.baseDamage?.toString() ?: "5") }
+    var level by remember(editCreature?.id) { mutableStateOf(editCreature?.level?.toString() ?: "1") }
+    var experienceValue by remember(editCreature?.id) { mutableStateOf(editCreature?.experienceValue?.toString() ?: "10") }
+    var isAggressive by remember(editCreature?.id) { mutableStateOf(editCreature?.isAggressive ?: false) }
+    var abilityIds by remember(editCreature?.id) { mutableStateOf(editCreature?.abilityIds ?: emptyList()) }
+    var showCombatStats by remember { mutableStateOf(false) }
+
     // Track if image generation is in progress for this creature
     val generatingEntities by BackgroundImageGenerationManager.generatingEntities.collectAsState()
     val isImageGenerating = editCreature?.id?.let { it in generatingEntities } ?: false
@@ -9937,6 +9948,138 @@ fun CreatureForm(
             enabled = !isDisabled
         )
 
+        // Combat Stats Section (collapsible)
+        Card(
+            modifier = Modifier.fillMaxWidth(),
+            colors = CardDefaults.cardColors(
+                containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
+            )
+        ) {
+            Column(modifier = Modifier.padding(12.dp)) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clickable { showCombatStats = !showCombatStats },
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween
+                ) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Filled.Security,
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.primary
+                        )
+                        Text(
+                            text = "Combat Stats",
+                            style = MaterialTheme.typography.titleSmall,
+                            fontWeight = FontWeight.Medium
+                        )
+                    }
+                    Icon(
+                        imageVector = if (showCombatStats) Icons.Default.ExpandLess else Icons.Default.ExpandMore,
+                        contentDescription = if (showCombatStats) "Collapse" else "Expand"
+                    )
+                }
+
+                if (showCombatStats) {
+                    Spacer(modifier = Modifier.height(12.dp))
+
+                    // Level and Experience Row
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        OutlinedTextField(
+                            value = level,
+                            onValueChange = { if (it.all { c -> c.isDigit() }) level = it },
+                            label = { Text("Level") },
+                            modifier = Modifier.weight(1f),
+                            singleLine = true,
+                            enabled = !isDisabled
+                        )
+                        OutlinedTextField(
+                            value = experienceValue,
+                            onValueChange = { if (it.all { c -> c.isDigit() }) experienceValue = it },
+                            label = { Text("XP Value") },
+                            modifier = Modifier.weight(1f),
+                            singleLine = true,
+                            enabled = !isDisabled
+                        )
+                    }
+
+                    Spacer(modifier = Modifier.height(8.dp))
+
+                    // HP and Damage Row
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        OutlinedTextField(
+                            value = maxHp,
+                            onValueChange = { if (it.all { c -> c.isDigit() }) maxHp = it },
+                            label = { Text("Max HP") },
+                            modifier = Modifier.weight(1f),
+                            singleLine = true,
+                            enabled = !isDisabled
+                        )
+                        OutlinedTextField(
+                            value = baseDamage,
+                            onValueChange = { if (it.all { c -> c.isDigit() }) baseDamage = it },
+                            label = { Text("Base Damage") },
+                            modifier = Modifier.weight(1f),
+                            singleLine = true,
+                            enabled = !isDisabled
+                        )
+                    }
+
+                    Spacer(modifier = Modifier.height(8.dp))
+
+                    // Aggressive toggle
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            Icon(
+                                imageVector = Icons.Filled.Dangerous,
+                                contentDescription = null,
+                                tint = if (isAggressive) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                            Text(
+                                text = "Aggressive",
+                                style = MaterialTheme.typography.bodyMedium
+                            )
+                            Text(
+                                text = "(auto-attacks players)",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                        Switch(
+                            checked = isAggressive,
+                            onCheckedChange = { isAggressive = it },
+                            enabled = !isDisabled
+                        )
+                    }
+
+                    // Summary text
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Text(
+                        text = "L${level.ifEmpty { "1" }} • ${maxHp.ifEmpty { "10" }} HP • ${baseDamage.ifEmpty { "5" }} DMG • ${experienceValue.ifEmpty { "10" }} XP${if (isAggressive) " • Aggressive" else ""}",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+            }
+        }
+
         Row(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.End),
@@ -9953,7 +10096,13 @@ fun CreatureForm(
                             name = name,
                             desc = desc,
                             itemIds = itemIds,
-                            featureIds = features.splitToList()
+                            featureIds = features.splitToList(),
+                            maxHp = maxHp.toIntOrNull() ?: 10,
+                            baseDamage = baseDamage.toIntOrNull() ?: 5,
+                            abilityIds = abilityIds,
+                            level = level.toIntOrNull() ?: 1,
+                            experienceValue = experienceValue.toIntOrNull() ?: 10,
+                            isAggressive = isAggressive
                         )
                         if (isEditMode) {
                             val result = ApiClient.updateCreature(editCreature!!.id, request)
@@ -10019,7 +10168,13 @@ fun CreatureForm(
                             name = name,
                             desc = desc,
                             itemIds = itemIds,
-                            featureIds = features.splitToList()
+                            featureIds = features.splitToList(),
+                            maxHp = maxHp.toIntOrNull() ?: 10,
+                            baseDamage = baseDamage.toIntOrNull() ?: 5,
+                            abilityIds = abilityIds,
+                            level = level.toIntOrNull() ?: 1,
+                            experienceValue = experienceValue.toIntOrNull() ?: 10,
+                            isAggressive = isAggressive
                         )
                         if (isEditMode) {
                             val result = ApiClient.updateCreature(editCreature!!.id, request)
@@ -10246,6 +10401,107 @@ fun CreatureDetailView(
                                 text = "Features: ${creature!!.featureIds.joinToString(", ")}",
                                 style = MaterialTheme.typography.bodySmall
                             )
+                        }
+                    }
+                }
+
+                // Combat Stats Card
+                Card(
+                    modifier = Modifier.fillMaxWidth(),
+                    colors = CardDefaults.cardColors(
+                        containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
+                    )
+                ) {
+                    Column(modifier = Modifier.padding(16.dp)) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            Icon(
+                                imageVector = Icons.Filled.Security,
+                                contentDescription = null,
+                                tint = MaterialTheme.colorScheme.primary
+                            )
+                            Text(
+                                text = "Combat Stats",
+                                style = MaterialTheme.typography.titleSmall,
+                                fontWeight = FontWeight.Bold
+                            )
+                            if (creature!!.isAggressive) {
+                                AssistChip(
+                                    onClick = {},
+                                    label = { Text("Aggressive") },
+                                    leadingIcon = {
+                                        Icon(
+                                            imageVector = Icons.Filled.Dangerous,
+                                            contentDescription = null,
+                                            modifier = Modifier.size(16.dp)
+                                        )
+                                    },
+                                    colors = AssistChipDefaults.assistChipColors(
+                                        containerColor = MaterialTheme.colorScheme.errorContainer,
+                                        labelColor = MaterialTheme.colorScheme.onErrorContainer,
+                                        leadingIconContentColor = MaterialTheme.colorScheme.error
+                                    )
+                                )
+                            }
+                        }
+                        Spacer(modifier = Modifier.height(12.dp))
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceEvenly
+                        ) {
+                            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                                Text(
+                                    text = "Level",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                                Text(
+                                    text = "${creature!!.level}",
+                                    style = MaterialTheme.typography.titleMedium,
+                                    fontWeight = FontWeight.Bold
+                                )
+                            }
+                            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                                Text(
+                                    text = "HP",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                                Text(
+                                    text = "${creature!!.maxHp}",
+                                    style = MaterialTheme.typography.titleMedium,
+                                    fontWeight = FontWeight.Bold,
+                                    color = MaterialTheme.colorScheme.error
+                                )
+                            }
+                            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                                Text(
+                                    text = "Damage",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                                Text(
+                                    text = "${creature!!.baseDamage}",
+                                    style = MaterialTheme.typography.titleMedium,
+                                    fontWeight = FontWeight.Bold,
+                                    color = MaterialTheme.colorScheme.primary
+                                )
+                            }
+                            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                                Text(
+                                    text = "XP",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                                Text(
+                                    text = "${creature!!.experienceValue}",
+                                    style = MaterialTheme.typography.titleMedium,
+                                    fontWeight = FontWeight.Bold,
+                                    color = Color(0xFF4CAF50)
+                                )
+                            }
                         }
                     }
                 }

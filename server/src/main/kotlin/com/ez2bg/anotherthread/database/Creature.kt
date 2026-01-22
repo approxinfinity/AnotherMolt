@@ -18,7 +18,14 @@ data class Creature(
     val itemIds: List<String>,
     val featureIds: List<String>,
     val imageUrl: String? = null,
-    val lockedBy: String? = null
+    val lockedBy: String? = null,
+    // Combat stats
+    val maxHp: Int = 10,
+    val baseDamage: Int = 5,
+    val abilityIds: List<String> = emptyList(),
+    val level: Int = 1,
+    val experienceValue: Int = 10,
+    val isAggressive: Boolean = false
 )
 
 object CreatureRepository {
@@ -43,7 +50,13 @@ object CreatureRepository {
         itemIds = jsonToList(this[CreatureTable.itemIds]),
         featureIds = jsonToList(this[CreatureTable.featureIds]),
         imageUrl = this[CreatureTable.imageUrl],
-        lockedBy = this[CreatureTable.lockedBy]
+        lockedBy = this[CreatureTable.lockedBy],
+        maxHp = this[CreatureTable.maxHp],
+        baseDamage = this[CreatureTable.baseDamage],
+        abilityIds = jsonToList(this[CreatureTable.abilityIds]),
+        level = this[CreatureTable.level],
+        experienceValue = this[CreatureTable.experienceValue],
+        isAggressive = this[CreatureTable.isAggressive]
     )
 
     fun create(creature: Creature): Creature = transaction {
@@ -55,6 +68,12 @@ object CreatureRepository {
             it[featureIds] = listToJson(creature.featureIds)
             it[imageUrl] = creature.imageUrl
             it[lockedBy] = creature.lockedBy
+            it[maxHp] = creature.maxHp
+            it[baseDamage] = creature.baseDamage
+            it[abilityIds] = listToJson(creature.abilityIds)
+            it[level] = creature.level
+            it[experienceValue] = creature.experienceValue
+            it[isAggressive] = creature.isAggressive
         }
         creature
     }
@@ -78,6 +97,12 @@ object CreatureRepository {
             it[featureIds] = listToJson(creature.featureIds)
             it[imageUrl] = creature.imageUrl
             it[lockedBy] = creature.lockedBy
+            it[maxHp] = creature.maxHp
+            it[baseDamage] = creature.baseDamage
+            it[abilityIds] = listToJson(creature.abilityIds)
+            it[level] = creature.level
+            it[experienceValue] = creature.experienceValue
+            it[isAggressive] = creature.isAggressive
         } > 0
     }
 

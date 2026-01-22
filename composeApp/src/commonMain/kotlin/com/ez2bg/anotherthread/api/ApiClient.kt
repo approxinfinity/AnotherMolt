@@ -61,7 +61,14 @@ data class CreatureDto(
     val itemIds: List<String> = emptyList(),
     val featureIds: List<String> = emptyList(),
     val imageUrl: String? = null,
-    val lockedBy: String? = null
+    val lockedBy: String? = null,
+    // Combat stats
+    val maxHp: Int = 10,
+    val baseDamage: Int = 5,
+    val abilityIds: List<String> = emptyList(),
+    val level: Int = 1,
+    val experienceValue: Int = 10,
+    val isAggressive: Boolean = false
 )
 
 @Serializable
@@ -89,7 +96,14 @@ data class CreateCreatureRequest(
     val name: String,
     val desc: String,
     val itemIds: List<String> = emptyList(),
-    val featureIds: List<String> = emptyList()
+    val featureIds: List<String> = emptyList(),
+    // Combat stats
+    val maxHp: Int = 10,
+    val baseDamage: Int = 5,
+    val abilityIds: List<String> = emptyList(),
+    val level: Int = 1,
+    val experienceValue: Int = 10,
+    val isAggressive: Boolean = false
 )
 
 @Serializable
@@ -116,7 +130,13 @@ data class UserDto(
     val characterClassId: String? = null,
     val classGenerationStartedAt: Long? = null,
     val createdAt: Long = 0,
-    val lastActiveAt: Long = 0
+    val lastActiveAt: Long = 0,
+    // Combat stats
+    val level: Int = 1,
+    val experience: Int = 0,
+    val maxHp: Int = 10,
+    val currentHp: Int = 10,
+    val currentCombatSessionId: String? = null
 )
 
 @Serializable
@@ -1197,4 +1217,220 @@ data class ValidateExitResponse(
     val errorMessage: String? = null,
     val targetHasCoordinates: Boolean,
     val targetIsConnected: Boolean
+)
+
+// ============================================================================
+// Combat DTOs
+// ============================================================================
+
+enum class CombatantType {
+    PLAYER,
+    CREATURE
+}
+
+enum class CombatState {
+    WAITING,
+    ACTIVE,
+    ENDED
+}
+
+enum class CombatEndReason {
+    ALL_ENEMIES_DEFEATED,
+    ALL_PLAYERS_DEFEATED,
+    ALL_PLAYERS_FLED,
+    TIMEOUT,
+    CANCELLED
+}
+
+@Serializable
+data class StatusEffectDto(
+    val id: String,
+    val name: String,
+    val effectType: String,
+    val value: Int = 0,
+    val remainingRounds: Int,
+    val sourceId: String
+)
+
+@Serializable
+data class CombatantDto(
+    val id: String,
+    val type: CombatantType,
+    val name: String,
+    val maxHp: Int,
+    val currentHp: Int,
+    val characterClassId: String? = null,
+    val abilityIds: List<String> = emptyList(),
+    val initiative: Int = 0,
+    val isAlive: Boolean = true,
+    val statusEffects: List<StatusEffectDto> = emptyList(),
+    val cooldowns: Map<String, Int> = emptyMap()
+)
+
+@Serializable
+data class CombatActionDto(
+    val id: String,
+    val combatantId: String,
+    val abilityId: String,
+    val targetId: String? = null,
+    val queuedAt: Long
+)
+
+@Serializable
+data class CombatLogEntryDto(
+    val id: String,
+    val round: Int,
+    val timestamp: Long,
+    val actorId: String,
+    val actorName: String,
+    val targetId: String? = null,
+    val targetName: String? = null,
+    val abilityName: String? = null,
+    val damage: Int = 0,
+    val healing: Int = 0,
+    val message: String
+)
+
+@Serializable
+data class CombatSessionDto(
+    val id: String,
+    val locationId: String,
+    val state: CombatState,
+    val currentRound: Int,
+    val roundStartTime: Long,
+    val combatants: List<CombatantDto> = emptyList(),
+    val pendingActions: List<CombatActionDto> = emptyList(),
+    val combatLog: List<CombatLogEntryDto> = emptyList(),
+    val endReason: CombatEndReason? = null,
+    val createdAt: Long
+)
+
+@Serializable
+data class ActionResultDto(
+    val actionId: String,
+    val success: Boolean,
+    val damage: Int = 0,
+    val healing: Int = 0,
+    val appliedEffects: List<StatusEffectDto> = emptyList(),
+    val message: String
+)
+
+// ============================================================================
+// Combat WebSocket Messages (Client -> Server)
+// ============================================================================
+
+@Serializable
+data class JoinCombatRequest(
+    val type: String = "join",
+    val userId: String,
+    val targetCreatureIds: List<String> = emptyList()
+)
+
+@Serializable
+data class UseAbilityRequest(
+    val type: String = "ability",
+    val userId: String,
+    val sessionId: String,
+    val abilityId: String,
+    val targetId: String? = null
+)
+
+@Serializable
+data class FleeCombatRequest(
+    val type: String = "flee",
+    val userId: String,
+    val sessionId: String
+)
+
+@Serializable
+data class LeaveCombatRequest(
+    val type: String = "leave",
+    val userId: String,
+    val sessionId: String
+)
+
+// ============================================================================
+// Combat WebSocket Messages (Server -> Client)
+// ============================================================================
+
+@Serializable
+data class CombatStartedResponse(
+    val session: CombatSessionDto,
+    val yourCombatant: CombatantDto
+)
+
+@Serializable
+data class RoundStartResponse(
+    val sessionId: String,
+    val roundNumber: Int,
+    val roundDurationMs: Long,
+    val combatants: List<CombatantDto>
+)
+
+@Serializable
+data class HealthUpdateResponse(
+    val sessionId: String,
+    val combatantId: String,
+    val currentHp: Int,
+    val maxHp: Int,
+    val changeAmount: Int,
+    val sourceId: String? = null,
+    val sourceName: String? = null
+)
+
+@Serializable
+data class AbilityResolvedResponse(
+    val sessionId: String,
+    val result: ActionResultDto,
+    val actorName: String,
+    val targetName: String?,
+    val abilityName: String
+)
+
+@Serializable
+data class StatusEffectResponse(
+    val sessionId: String,
+    val combatantId: String,
+    val effect: StatusEffectDto,
+    val applied: Boolean
+)
+
+@Serializable
+data class RoundEndResponse(
+    val sessionId: String,
+    val roundNumber: Int,
+    val combatants: List<CombatantDto>,
+    val logEntries: List<CombatLogEntryDto>
+)
+
+@Serializable
+data class CombatEndedResponse(
+    val sessionId: String,
+    val reason: CombatEndReason,
+    val victors: List<String>,
+    val defeated: List<String>,
+    val loot: List<String> = emptyList(),
+    val experienceGained: Int = 0
+)
+
+@Serializable
+data class FleeResultResponse(
+    val sessionId: String,
+    val combatantId: String,
+    val success: Boolean,
+    val message: String
+)
+
+@Serializable
+data class CombatErrorResponse(
+    val sessionId: String? = null,
+    val error: String,
+    val code: String
+)
+
+@Serializable
+data class AbilityQueuedResponse(
+    val sessionId: String,
+    val abilityId: String,
+    val targetId: String?
 )

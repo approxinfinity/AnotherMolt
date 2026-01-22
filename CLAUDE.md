@@ -195,3 +195,68 @@ When viewing their character, users should be able to activate a subset of their
 - Should passive abilities always be active, or selectable like others?
 - How do cooldowns interact with activation/deactivation?
 - Should there be "action bar" slots that persist across sessions?
+
+### MajorMUD-Style Combat System (TODO - Implement UI)
+Real-time combat with cooldowns has been implemented on the backend. The system uses WebSockets for real-time synchronization.
+
+**Architecture Overview:**
+- Server: Ktor with WebSockets at `/combat?userId={userId}`
+- Combat tick loop runs every 3 seconds (configurable in CombatConfig)
+- Sessions are location-based - all combatants must be at the same location
+- Actions queued during round, resolved at round end in initiative order
+
+**Combat Flow:**
+1. Player connects to WebSocket with their userId
+2. Player sends `JoinCombatMessage` to start/join combat at their location
+3. Creatures at location are automatically added as enemies
+4. Every 3 seconds:
+   - Pending actions resolve in initiative order
+   - Status effects tick (DoTs, buffs, debuffs)
+   - Cooldowns decrement
+   - Health updates broadcast to all participants
+5. Combat ends when all enemies or all players are defeated
+
+**Key Models:**
+- `CombatSession`: Tracks all combat state for a location
+- `Combatant`: Runtime state for players and creatures in combat
+- `CombatAction`: Queued ability use for current round
+- `StatusEffect`: Buffs/debuffs/DoTs with duration
+
+**WebSocket Messages (Client → Server):**
+- `JoinCombatMessage`: Enter combat at current location
+- `UseAbilityMessage`: Queue an ability for this round
+- `FleeCombatMessage`: Attempt to flee (50% base chance)
+- `LeaveCombatMessage`: Exit combat gracefully
+
+**WebSocket Messages (Server → Client):**
+- `CombatStartedMessage`: Combat initiated, includes session state
+- `RoundStartMessage`: New round beginning
+- `AbilityResolvedMessage`: Ability executed with results
+- `HealthUpdateMessage`: HP changed for a combatant
+- `StatusEffectMessage`: Status applied/removed
+- `RoundEndMessage`: Round complete, updated state
+- `CombatEndedMessage`: Combat concluded with rewards
+- `CombatErrorMessage`: Invalid action attempted
+
+**TODO - Frontend Implementation:**
+- Create combat UI component showing:
+  - Current HP bars for all combatants
+  - Ability buttons with cooldown indicators
+  - Combat log/action feed
+  - Target selection
+  - Status effect indicators
+- Connect to WebSocket from Compose app
+- Handle all server message types
+- Show combat results/rewards modal
+
+**Configuration (CombatConfig):**
+- `ROUND_DURATION_MS`: 3000 (3 seconds per round)
+- `FLEE_SUCCESS_CHANCE`: 0.5 (50%)
+- `FLEE_COOLDOWN_ROUNDS`: 2 (can't spam flee)
+- `MAX_COMBAT_ROUNDS`: 100 (timeout after ~5 minutes)
+- `HP_PER_HIT_DIE`: 6 (average HP per hit die)
+
+**Database Changes:**
+- `UserTable`: Added level, experience, maxHp, currentHp, currentCombatSessionId
+- `CreatureTable`: Added maxHp, baseDamage, abilityIds, level, experienceValue, isAggressive
+- `CombatSessionTable`: New table for persistence/reconnection support

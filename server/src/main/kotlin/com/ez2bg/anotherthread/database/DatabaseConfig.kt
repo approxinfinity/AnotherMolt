@@ -28,7 +28,8 @@ object DatabaseConfig {
                 TerrainOverrideTable,
                 CharacterClassTable,
                 AbilityTable,
-                NerfRequestTable
+                NerfRequestTable,
+                CombatSessionTable
             )
         }
     }
