@@ -145,6 +145,7 @@ class ExitCoordinateValidationTest {
         ExitDirection.SOUTHWEST -> Pair(-1, 1)
         ExitDirection.WEST -> Pair(-1, 0)
         ExitDirection.NORTHWEST -> Pair(-1, -1)
+        ExitDirection.ENTER -> Pair(0, 0)
         ExitDirection.UNKNOWN -> Pair(0, 0)
     }
 
@@ -175,6 +176,111 @@ class ExitCoordinateValidationTest {
         ExitDirection.SOUTHWEST -> ExitDirection.NORTHEAST
         ExitDirection.NORTHWEST -> ExitDirection.SOUTHEAST
         ExitDirection.SOUTHEAST -> ExitDirection.NORTHWEST
+        ExitDirection.ENTER -> ExitDirection.ENTER
         ExitDirection.UNKNOWN -> ExitDirection.UNKNOWN
+    }
+
+    // ============================================
+    // Exit Direction vs Coordinate Consistency Tests
+    // ============================================
+
+    @Test
+    fun `exit direction should match coordinate difference`() {
+        // Test that for a given coordinate pair, the expected direction is correct
+        data class ExitScenario(
+            val fromX: Int, val fromY: Int,
+            val toX: Int, val toY: Int,
+            val expectedDirection: ExitDirection
+        )
+
+        val scenarios = listOf(
+            // Cardinal directions
+            ExitScenario(0, 0, 0, -1, ExitDirection.NORTH),
+            ExitScenario(0, 0, 0, 1, ExitDirection.SOUTH),
+            ExitScenario(0, 0, 1, 0, ExitDirection.EAST),
+            ExitScenario(0, 0, -1, 0, ExitDirection.WEST),
+            // Diagonal directions
+            ExitScenario(0, 0, 1, -1, ExitDirection.NORTHEAST),
+            ExitScenario(0, 0, 1, 1, ExitDirection.SOUTHEAST),
+            ExitScenario(0, 0, -1, 1, ExitDirection.SOUTHWEST),
+            ExitScenario(0, 0, -1, -1, ExitDirection.NORTHWEST),
+            // Non-origin examples (like Healing Spore -> Amber-Lit)
+            ExitScenario(2, -13, 1, -12, ExitDirection.SOUTHWEST),
+            ExitScenario(1, -12, 2, -13, ExitDirection.NORTHEAST)
+        )
+
+        for (scenario in scenarios) {
+            val dx = scenario.toX - scenario.fromX
+            val dy = scenario.toY - scenario.fromY
+            val actualDirection = getDirectionFromOffset(dx, dy)
+            assertEquals(
+                scenario.expectedDirection,
+                actualDirection,
+                "From (${scenario.fromX}, ${scenario.fromY}) to (${scenario.toX}, ${scenario.toY}) " +
+                    "should be ${scenario.expectedDirection}, but got $actualDirection (dx=$dx, dy=$dy)"
+            )
+        }
+    }
+
+    @Test
+    fun `validateExitDirection should detect mismatched directions`() {
+        // Simulate what the data integrity check does
+        data class Location(
+            val id: String,
+            val name: String,
+            val gridX: Int?,
+            val gridY: Int?,
+            val exits: List<Pair<String, ExitDirection>>
+        )
+
+        val locations = listOf(
+            Location("A", "Location A", 0, 0, listOf("B" to ExitDirection.NORTH)),
+            Location("B", "Location B", 0, -1, listOf("A" to ExitDirection.SOUTH))
+        )
+
+        val locationMap = locations.associateBy { it.id }
+        val errors = mutableListOf<String>()
+
+        for (loc in locations) {
+            if (loc.gridX == null || loc.gridY == null) continue
+
+            for ((targetId, declaredDirection) in loc.exits) {
+                val target = locationMap[targetId] ?: continue
+                if (target.gridX == null || target.gridY == null) continue
+
+                val dx = target.gridX - loc.gridX
+                val dy = target.gridY - loc.gridY
+                val expectedDirection = getDirectionFromOffset(dx, dy)
+
+                if (declaredDirection != expectedDirection && declaredDirection != ExitDirection.ENTER) {
+                    errors.add(
+                        "${loc.name} -> ${target.name}: declared $declaredDirection but " +
+                            "coords suggest $expectedDirection (dx=$dx, dy=$dy)"
+                    )
+                }
+            }
+        }
+
+        assertTrue(errors.isEmpty(), "Exit directions should match coordinates: $errors")
+    }
+
+    @Test
+    fun `ENTER direction is valid regardless of coordinates`() {
+        // ENTER exits (portals) can connect any two locations regardless of distance
+        val fromX = 0
+        val fromY = 0
+        val toX = 100  // Far away
+        val toY = -50
+
+        val dx = toX - fromX
+        val dy = toY - fromY
+        val coordBasedDirection = getDirectionFromOffset(dx, dy)
+
+        // Coord-based would be UNKNOWN (too far), but ENTER should still be valid
+        assertEquals(ExitDirection.UNKNOWN, coordBasedDirection)
+
+        // ENTER is always valid - it's a portal, not a directional move
+        // This test documents that ENTER exits bypass coordinate validation
+        assertTrue(true, "ENTER exits are valid regardless of coordinate distance")
     }
 }

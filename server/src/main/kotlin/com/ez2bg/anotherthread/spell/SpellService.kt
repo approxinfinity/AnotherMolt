@@ -383,21 +383,22 @@ object SpellService {
         // Calculate target coordinates based on direction
         val currentX = currentLocation.gridX
         val currentY = currentLocation.gridY
-        val currentZ = currentLocation.gridZ
+        val currentAreaId = currentLocation.areaId ?: "overworld"
 
-        if (currentX == null || currentY == null || currentZ == null) {
+        if (currentX == null || currentY == null) {
             return CastResult.Failure("Current location has no coordinates")
         }
 
-        val (targetX, targetY, targetZ) = when (direction) {
-            ExitDirection.NORTH -> Triple(currentX, currentY - 1, currentZ)
-            ExitDirection.NORTHEAST -> Triple(currentX + 1, currentY - 1, currentZ)
-            ExitDirection.EAST -> Triple(currentX + 1, currentY, currentZ)
-            ExitDirection.SOUTHEAST -> Triple(currentX + 1, currentY + 1, currentZ)
-            ExitDirection.SOUTH -> Triple(currentX, currentY + 1, currentZ)
-            ExitDirection.SOUTHWEST -> Triple(currentX - 1, currentY + 1, currentZ)
-            ExitDirection.WEST -> Triple(currentX - 1, currentY, currentZ)
-            ExitDirection.NORTHWEST -> Triple(currentX - 1, currentY - 1, currentZ)
+        val (targetX, targetY) = when (direction) {
+            ExitDirection.NORTH -> Pair(currentX, currentY - 1)
+            ExitDirection.NORTHEAST -> Pair(currentX + 1, currentY - 1)
+            ExitDirection.EAST -> Pair(currentX + 1, currentY)
+            ExitDirection.SOUTHEAST -> Pair(currentX + 1, currentY + 1)
+            ExitDirection.SOUTH -> Pair(currentX, currentY + 1)
+            ExitDirection.SOUTHWEST -> Pair(currentX - 1, currentY + 1)
+            ExitDirection.WEST -> Pair(currentX - 1, currentY)
+            ExitDirection.NORTHWEST -> Pair(currentX - 1, currentY - 1)
+            ExitDirection.ENTER -> return CastResult.Failure("Cannot phase walk through portals")
             ExitDirection.UNKNOWN -> return CastResult.Failure("Cannot phase walk in unknown direction")
         }
 
@@ -405,15 +406,14 @@ object SpellService {
         val maxRange = params.range ?: 1
         val distance = maxOf(
             kotlin.math.abs(targetX - currentX),
-            kotlin.math.abs(targetY - currentY),
-            kotlin.math.abs(targetZ - currentZ)
+            kotlin.math.abs(targetY - currentY)
         )
         if (distance > maxRange) {
             return CastResult.Failure("Target is too far away")
         }
 
-        // Find location at target coordinates
-        val targetLocation = LocationRepository.findByCoordinates(targetX, targetY, targetZ)
+        // Find location at target coordinates (phase walk stays in the same area)
+        val targetLocation = LocationRepository.findByCoordinates(targetX, targetY, currentAreaId)
             ?: return CastResult.Failure("There is nothing in that direction - you cannot phase into the void")
 
         // Check if target terrain is blocked (e.g., solid rock)
@@ -461,8 +461,8 @@ object SpellService {
      */
     private fun executeRecall(user: User, params: UtilityParams): CastResult {
         // TODO: Implement bind point system
-        // For now, teleport to location at 0,0,0 (starting area)
-        val homeLocation = LocationRepository.findByCoordinates(0, 0, 0)
+        // For now, teleport to location at (0,0) in overworld (starting area)
+        val homeLocation = LocationRepository.findByCoordinates(0, 0, "overworld")
             ?: return CastResult.Failure("No home location found")
 
         UserRepository.updateCurrentLocation(user.id, homeLocation.id)

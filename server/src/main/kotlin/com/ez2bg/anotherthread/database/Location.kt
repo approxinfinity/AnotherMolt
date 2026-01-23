@@ -14,7 +14,7 @@ import org.jetbrains.exposed.sql.update
 import java.util.UUID
 
 enum class ExitDirection {
-    NORTH, NORTHEAST, EAST, SOUTHEAST, SOUTH, SOUTHWEST, WEST, NORTHWEST, UNKNOWN
+    NORTH, NORTHEAST, EAST, SOUTHEAST, SOUTH, SOUTHWEST, WEST, NORTHWEST, ENTER, UNKNOWN
 }
 
 // Location types for determining behavior
@@ -46,7 +46,9 @@ data class Location(
     // Grid coordinates - null means not yet placed in a coordinate system
     val gridX: Int? = null,
     val gridY: Int? = null,
-    val gridZ: Int? = null,
+    // Area identifier - groups locations into distinct map regions (e.g., "overworld", "fungus-forest")
+    // Note: areaId replaces gridZ - different areas can have overlapping x,y coordinates
+    val areaId: String? = null,
     // Last edited tracking - null means never edited by a user (e.g., auto-generated wilderness)
     val lastEditedBy: String? = null,
     // Stored as LocalDateTime internally but serialized as ISO string
@@ -104,7 +106,7 @@ object LocationRepository {
         lockedBy = this[LocationTable.lockedBy],
         gridX = this[LocationTable.gridX],
         gridY = this[LocationTable.gridY],
-        gridZ = this[LocationTable.gridZ],
+        areaId = this[LocationTable.areaId],
         lastEditedBy = this[LocationTable.lastEditedBy],
         lastEditedAt = this[LocationTable.lastEditedAt],
         locationType = this[LocationTable.locationType]?.let {
@@ -125,7 +127,7 @@ object LocationRepository {
             it[lockedBy] = location.lockedBy
             it[gridX] = location.gridX
             it[gridY] = location.gridY
-            it[gridZ] = location.gridZ
+            it[areaId] = location.areaId
             it[lastEditedBy] = location.lastEditedBy
             it[lastEditedAt] = location.lastEditedAt
             it[locationType] = location.locationType?.name
@@ -156,7 +158,7 @@ object LocationRepository {
             it[lockedBy] = location.lockedBy
             it[gridX] = location.gridX
             it[gridY] = location.gridY
-            it[gridZ] = location.gridZ
+            it[areaId] = location.areaId
             it[lastEditedBy] = location.lastEditedBy
             it[lastEditedAt] = location.lastEditedAt
             it[locationType] = location.locationType?.name
@@ -164,14 +166,14 @@ object LocationRepository {
     }
 
     /**
-     * Find a location at the specified grid coordinates.
+     * Find a location at the specified grid coordinates within an area.
      */
-    fun findByCoordinates(x: Int, y: Int, z: Int): Location? = transaction {
+    fun findByCoordinates(x: Int, y: Int, areaId: String? = "overworld"): Location? = transaction {
         LocationTable.selectAll()
             .where {
                 (LocationTable.gridX eq x) and
                 (LocationTable.gridY eq y) and
-                (LocationTable.gridZ eq z)
+                (LocationTable.areaId eq areaId)
             }
             .map { it.toLocation() }
             .singleOrNull()

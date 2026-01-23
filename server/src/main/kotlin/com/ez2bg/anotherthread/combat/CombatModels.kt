@@ -331,6 +331,18 @@ data class AbilityQueuedMessage(
     val targetId: String?
 ) : ServerCombatMessage()
 
+/**
+ * Sent when a creature moves between locations (wandering NPCs).
+ * Allows clients to update their view without polling.
+ */
+@Serializable
+data class CreatureMovedMessage(
+    val creatureId: String,
+    val creatureName: String,
+    val fromLocationId: String,
+    val toLocationId: String
+) : ServerCombatMessage()
+
 // ============================================================================
 // Combat Configuration
 // ============================================================================

@@ -176,6 +176,42 @@ Currently "is wilderness" is derived from `name == "Wilderness"`, which has limi
 
 ---
 
+## PDF Analysis with Ollama (In Progress)
+
+### Implementation Status
+PDF analysis with Ollama is implemented with two-pass extraction:
+1. **Pass 1**: Extract legend entries (symbols → names)
+2. **Pass 2**: Generate locations with descriptions and connections
+
+### Files Created/Modified
+- `server/src/main/kotlin/com/ez2bg/anotherthread/PdfService.kt` - Core service
+- `server/build.gradle.kts` - Added Apache PDFBox 3.0.1
+- `server/src/main/kotlin/com/ez2bg/anotherthread/Application.kt` - Added `/pdf/*` endpoints
+
+### Endpoints
+- `POST /pdf/analyze` - Full analysis with Ollama (multipart: file, analysisType, areaId)
+- `POST /pdf/extract-text` - Raw text extraction only
+- `GET /pdf/analysis-types` - Returns supported types: MAP, CLASSES, ITEMS, CREATURES, ABILITIES
+
+### TODO: Test Two-Pass Extraction
+The two-pass approach timed out during initial testing. Need to:
+1. Verify Ollama is running (`ollama serve`)
+2. Test with a simpler PDF or smaller text chunk
+3. Compare results against existing Fungus Forest data in DB
+4. May need to increase timeout (currently 5 minutes) or use a faster model
+
+### Comparison: Ollama vs Claude Extraction
+Initial single-pass test on Fungus Forest PDF:
+- **Ollama found**: Yellow House, Gaunt One Elder, Obsidian Obelisk, Poison/Heal Fungus, Waterfall, Secret Passage, DHELVANEN
+- **Claude added**: Bioluminescent Pool, Giant Toadstool Grove, connecting path locations (atmospheric additions)
+- **Ollama missed**: Exit connections between locations (hence the two-pass approach)
+
+### Configuration
+- `LLM_API_URL` env var (default: `http://127.0.0.1:11434`)
+- `LLM_MODEL` env var (default: `llama3.2:3b`)
+
+---
+
 ## Future Features
 
 ### Vertical Space (Z-axis)
@@ -235,6 +271,99 @@ Currently restricted to admins. Consider:
 One-way exits create complexity for coordinate movement:
 - Moving location B with incoming one-way exits → need to move entire connected subgraph
 - Should one-way exits be rare/special or common?
+
+---
+
+## Database Schema: JSON Blobs vs Normalized Tables
+
+### Current State
+Several fields are stored as JSON text blobs in SQLite:
+- `item_ids` - JSON array of item IDs
+- `creature_ids` - JSON array of creature IDs
+- `exit_ids` - JSON with direction + locationId objects
+- `feature_ids` - JSON array of feature IDs
+
+### The Problem
+When manipulating this data via raw SQL (e.g., sqlite3 CLI for migrations or data fixes), shell escaping mangles the JSON. The Kotlin code using `kotlinx.serialization` handles it correctly, but manual database operations are error-prone.
+
+**Example corruption observed:**
+```json
+// Intended:
+[{"locationId":"abc","direction":"ENTER"}]
+
+// After shell escaping issues:
+[{"locationId":"{\"locationId\":\"abc\""},{"locationId":"\"direction\":\"ENTER\"}"}]
+```
+
+### Proposed Migration: Normalized Join Tables
+
+**Current:**
+```sql
+location (
+  id, name, desc, item_ids TEXT, creature_ids TEXT, exit_ids TEXT, ...
+)
+```
+
+**Proposed:**
+```sql
+location (id, name, desc, ...)
+
+location_items (
+  location_id REFERENCES location(id),
+  item_id REFERENCES item(id),
+  PRIMARY KEY (location_id, item_id)
+)
+
+location_creatures (
+  location_id REFERENCES location(id),
+  creature_id REFERENCES creature(id),
+  PRIMARY KEY (location_id, creature_id)
+)
+
+location_exits (
+  from_location_id REFERENCES location(id),
+  to_location_id REFERENCES location(id),
+  direction TEXT NOT NULL,
+  PRIMARY KEY (from_location_id, to_location_id, direction)
+)
+
+location_features (
+  location_id REFERENCES location(id),
+  feature_id REFERENCES feature(id),
+  PRIMARY KEY (location_id, feature_id)
+)
+```
+
+### Benefits
+1. **Database-enforced foreign keys** - Can't have exits to non-existent locations
+2. **Queryable relationships** - "Find all locations containing creature X" is a simple JOIN
+3. **No JSON parsing overhead** - Direct SQL operations
+4. **Proper indexes** - Better query performance
+5. **Atomic updates** - No read-modify-write cycles for adding/removing items
+6. **Safe CLI operations** - No shell escaping nightmares
+
+### Costs
+1. **Migration effort** - Need to migrate existing data
+2. **More tables** - 4 new join tables
+3. **Repository changes** - Need to update all repository CRUD operations
+4. **Slightly more complex queries** - JOINs instead of single-row reads
+
+### Decision Factors
+- How often do we need to manipulate data via raw SQL?
+- Is the JSON parsing overhead noticeable?
+- Are we hitting foreign key bugs (orphaned references)?
+- Is developer ergonomics worth the migration cost?
+
+### Recommendation
+Migrate when:
+- Adding a major new feature that touches these relationships
+- Experiencing data integrity issues
+- Need complex queries across relationships
+
+Keep JSON if:
+- System is working fine and rarely needs manual data fixes
+- No performance issues observed
+- Team is comfortable with current approach
 
 ---
 

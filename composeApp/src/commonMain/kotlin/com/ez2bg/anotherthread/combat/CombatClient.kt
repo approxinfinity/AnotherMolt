@@ -33,6 +33,7 @@ sealed class CombatEvent {
     data class CombatEnded(val response: CombatEndedResponse) : CombatEvent()
     data class FleeResult(val response: FleeResultResponse) : CombatEvent()
     data class AbilityQueued(val abilityId: String, val targetId: String?) : CombatEvent()
+    data class CreatureMoved(val creatureId: String, val creatureName: String, val fromLocationId: String, val toLocationId: String) : CombatEvent()
     data class Error(val message: String, val code: String?) : CombatEvent()
 }
 
@@ -362,6 +363,11 @@ class CombatClient(
                 text.contains("CombatErrorMessage") || text.contains("\"error\"") && text.contains("\"code\"") -> {
                     val response = json.decodeFromString<CombatErrorResponse>(extractPayload(text))
                     _events.emit(CombatEvent.Error(response.error, response.code))
+                }
+
+                text.contains("CreatureMovedMessage") || (text.contains("\"creatureId\"") && text.contains("\"fromLocationId\"")) -> {
+                    val response = json.decodeFromString<CreatureMovedResponse>(extractPayload(text))
+                    _events.emit(CombatEvent.CreatureMoved(response.creatureId, response.creatureName, response.fromLocationId, response.toLocationId))
                 }
 
                 else -> {

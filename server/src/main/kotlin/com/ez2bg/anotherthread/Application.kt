@@ -55,7 +55,7 @@ data class ValidDirectionInfo(
 data class CoordinateInfo(
     val x: Int,
     val y: Int,
-    val z: Int
+    val areaId: String? = null
 )
 
 /**
@@ -141,6 +141,7 @@ data class CreateCreatureRequest(
     val abilityIds: List<String> = emptyList(),
     val level: Int = 1,
     val experienceValue: Int = 10,
+    val challengeRating: Int = 1,
     val isAggressive: Boolean = false
 )
 
@@ -381,6 +382,7 @@ fun getOppositeDirection(direction: ExitDirection): ExitDirection = when (direct
     ExitDirection.SOUTHWEST -> ExitDirection.NORTHEAST
     ExitDirection.NORTHWEST -> ExitDirection.SOUTHEAST
     ExitDirection.SOUTHEAST -> ExitDirection.NORTHWEST
+    ExitDirection.ENTER -> ExitDirection.ENTER
     ExitDirection.UNKNOWN -> ExitDirection.UNKNOWN
 }
 
@@ -411,6 +413,7 @@ fun getDirectionOffset(direction: ExitDirection): Pair<Int, Int> = when (directi
     ExitDirection.SOUTHWEST -> Pair(-1, 1)
     ExitDirection.WEST -> Pair(-1, 0)
     ExitDirection.NORTHWEST -> Pair(-1, -1)
+    ExitDirection.ENTER -> Pair(0, 0) // Portal - no grid offset
     ExitDirection.UNKNOWN -> Pair(0, 0)
 }
 
@@ -471,7 +474,7 @@ fun createWildernessLocationsForParent(
 
     val parentX = parentLocation.gridX ?: return emptyMap()
     val parentY = parentLocation.gridY ?: return emptyMap()
-    val parentZ = parentLocation.gridZ ?: 0
+    val parentAreaId = parentLocation.areaId ?: "overworld"
 
     for (direction in ALL_DIRECTIONS) {
         val (dx, dy) = getDirectionOffset(direction)
@@ -479,7 +482,7 @@ fun createWildernessLocationsForParent(
         val targetY = parentY + dy
 
         // Check if there's already a location at this coordinate
-        val existingLocation = LocationRepository.findByCoordinates(targetX, targetY, parentZ)
+        val existingLocation = LocationRepository.findByCoordinates(targetX, targetY, parentAreaId)
         if (existingLocation != null) {
             // Location already exists at this coordinate - don't create wilderness
             continue
@@ -497,7 +500,7 @@ fun createWildernessLocationsForParent(
             featureIds = parentLocation.featureIds, // Inherit parent's terrain features
             gridX = targetX,
             gridY = targetY,
-            gridZ = parentZ
+            areaId = parentAreaId
         )
 
         val createdWilderness = LocationRepository.create(wilderness)
@@ -543,11 +546,11 @@ fun addWildernessExitsToParent(
  * Returns null if not exactly 1 cell apart in a valid direction.
  */
 fun getDirectionBetweenCoordinates(
-    fromX: Int, fromY: Int, fromZ: Int,
-    toX: Int, toY: Int, toZ: Int
+    fromX: Int, fromY: Int, fromAreaId: String,
+    toX: Int, toY: Int, toAreaId: String
 ): ExitDirection? {
-    // Must be on same Z level for horizontal directions
-    if (fromZ != toZ) return null
+    // Must be in the same area for cardinal directions
+    if (fromAreaId != toAreaId) return null
 
     val dx = toX - fromX
     val dy = toY - fromY
@@ -570,28 +573,28 @@ fun getDirectionBetweenCoordinates(
 }
 
 /**
- * Find a random unused coordinate for a new location.
+ * Find a random unused coordinate for a new location in the overworld.
  * Searches in an expanding spiral from origin, with randomization.
  */
-fun findRandomUnusedCoordinate(existingLocations: List<Location>): Triple<Int, Int, Int> {
+fun findRandomUnusedCoordinate(existingLocations: List<Location>, areaId: String = "overworld"): Pair<Int, Int> {
     val usedCoords = existingLocations
-        .filter { it.gridX != null && it.gridY != null }
-        .map { Triple(it.gridX!!, it.gridY!!, it.gridZ ?: 0) }
+        .filter { it.gridX != null && it.gridY != null && (it.areaId ?: "overworld") == areaId }
+        .map { Pair(it.gridX!!, it.gridY!!) }
         .toSet()
 
-    // If no locations exist, return origin
-    if (usedCoords.isEmpty()) return Triple(0, 0, 0)
+    // If no locations exist in this area, return origin
+    if (usedCoords.isEmpty()) return Pair(0, 0)
 
     // Search in expanding rings around the origin, picking a random unused spot
     val random = java.util.Random()
     for (radius in 1..100) {
-        val candidates = mutableListOf<Triple<Int, Int, Int>>()
+        val candidates = mutableListOf<Pair<Int, Int>>()
 
         // Collect all coordinates at this radius (Manhattan distance)
         for (x in -radius..radius) {
             for (y in -radius..radius) {
                 if (kotlin.math.abs(x) == radius || kotlin.math.abs(y) == radius) {
-                    val coord = Triple(x, y, 0)
+                    val coord = Pair(x, y)
                     if (coord !in usedCoords) {
                         candidates.add(coord)
                     }
@@ -606,7 +609,7 @@ fun findRandomUnusedCoordinate(existingLocations: List<Location>): Triple<Int, I
     }
 
     // Fallback: very far away random coordinate
-    return Triple(random.nextInt(1000) + 100, random.nextInt(1000) + 100, 0)
+    return Pair(random.nextInt(1000) + 100, random.nextInt(1000) + 100)
 }
 
 /**
@@ -738,7 +741,7 @@ fun calculateSubgraphRelativePositions(
 fun canPlaceSubgraphAt(
     anchorX: Int,
     anchorY: Int,
-    anchorZ: Int,
+    anchorAreaId: String,
     relativePositions: Map<String, Pair<Int, Int>>,
     subgraphIds: Set<String>,
     allLocations: List<Location>
@@ -747,7 +750,7 @@ fun canPlaceSubgraphAt(
         val absoluteX = anchorX + relPos.first
         val absoluteY = anchorY + relPos.second
 
-        val existingAtCoord = LocationRepository.findByCoordinates(absoluteX, absoluteY, anchorZ)
+        val existingAtCoord = LocationRepository.findByCoordinates(absoluteX, absoluteY, anchorAreaId)
         if (existingAtCoord != null && existingAtCoord.id !in subgraphIds) {
             // Coordinate occupied by a location outside the subgraph
             return false
@@ -766,7 +769,7 @@ fun validateExitDirections(
 ): ValidateExitResponse {
     val fromX = fromLocation.gridX
     val fromY = fromLocation.gridY
-    val fromZ = fromLocation.gridZ ?: 0
+    val fromAreaId = fromLocation.areaId ?: "overworld"
 
     // Source must have coordinates
     if (fromX == null || fromY == null) {
@@ -781,12 +784,12 @@ fun validateExitDirections(
 
     val toX = toLocation.gridX
     val toY = toLocation.gridY
-    val toZ = toLocation.gridZ ?: 0
+    val toAreaId = toLocation.areaId ?: "overworld"
 
     // If target has coordinates
     if (toX != null && toY != null) {
-        // Check if they're exactly 1 cell apart
-        val direction = getDirectionBetweenCoordinates(fromX, fromY, fromZ, toX, toY, toZ)
+        // Check if they're exactly 1 cell apart and in the same area
+        val direction = getDirectionBetweenCoordinates(fromX, fromY, fromAreaId, toX, toY, toAreaId)
         if (direction != null) {
             return ValidateExitResponse(
                 canCreateExit = true,
@@ -794,7 +797,7 @@ fun validateExitDirections(
                     ValidDirectionInfo(
                         direction = direction,
                         isFixed = true,
-                        targetCoordinates = CoordinateInfo(toX, toY, toZ)
+                        targetCoordinates = CoordinateInfo(toX, toY, toAreaId)
                     )
                 ),
                 targetHasCoordinates = true,
@@ -804,7 +807,7 @@ fun validateExitDirections(
             return ValidateExitResponse(
                 canCreateExit = false,
                 validDirections = emptyList(),
-                errorMessage = "Target location is not adjacent (must be exactly 1 cell away)",
+                errorMessage = "Target location is not adjacent (must be exactly 1 cell away in same area)",
                 targetHasCoordinates = true,
                 targetIsConnected = true
             )
@@ -828,7 +831,7 @@ fun validateExitDirections(
         val targetY = fromY + dy
 
         // Check if the entire subgraph can be placed with target at this position
-        if (!canPlaceSubgraphAt(targetX, targetY, fromZ, relativePositions, subgraphIds, allLocations)) {
+        if (!canPlaceSubgraphAt(targetX, targetY, fromAreaId, relativePositions, subgraphIds, allLocations)) {
             // Subgraph would conflict with existing locations
             continue
         }
@@ -837,7 +840,7 @@ fun validateExitDirections(
             ValidDirectionInfo(
                 direction = direction,
                 isFixed = false,
-                targetCoordinates = CoordinateInfo(targetX, targetY, fromZ)
+                targetCoordinates = CoordinateInfo(targetX, targetY, fromAreaId)
             )
         )
     }
@@ -858,7 +861,7 @@ fun validateExitDirections(
  * @param anchorLocation The location being assigned coordinates (the target of the new exit)
  * @param anchorX The X coordinate to assign to the anchor
  * @param anchorY The Y coordinate to assign to the anchor
- * @param anchorZ The Z coordinate to assign to the anchor
+ * @param anchorAreaId The area ID to assign to the anchor
  * @param allLocations All locations in the database
  * @param userId User ID for audit logging
  * @param userName User name for audit logging
@@ -868,7 +871,7 @@ fun assignCoordinatesToSubgraph(
     anchorLocation: Location,
     anchorX: Int,
     anchorY: Int,
-    anchorZ: Int,
+    anchorAreaId: String,
     allLocations: List<Location>,
     userId: String,
     userName: String
@@ -890,7 +893,7 @@ fun assignCoordinatesToSubgraph(
         val newX = anchorX + relPos.first
         val newY = anchorY + relPos.second
 
-        val updatedLoc = loc.copy(gridX = newX, gridY = newY, gridZ = anchorZ)
+        val updatedLoc = loc.copy(gridX = newX, gridY = newY, areaId = anchorAreaId)
         LocationRepository.update(updatedLoc)
         assignedIds.add(locId)
 
@@ -923,7 +926,7 @@ fun processExitCoordinates(
     // Source must have coordinates to assign them to targets
     val srcX = sourceLocation.gridX ?: return
     val srcY = sourceLocation.gridY ?: return
-    val srcZ = sourceLocation.gridZ ?: 0
+    val srcAreaId = sourceLocation.areaId ?: "overworld"
 
     val locationById = allLocations.associateBy { it.id }
 
@@ -939,7 +942,7 @@ fun processExitCoordinates(
         val targetY = srcY + dy
 
         // Assign coordinates to the target and its subgraph
-        assignCoordinatesToSubgraph(targetLoc, targetX, targetY, srcZ, allLocations, userId, userName)
+        assignCoordinatesToSubgraph(targetLoc, targetX, targetY, srcAreaId, allLocations, userId, userName)
     }
 }
 
@@ -1230,6 +1233,106 @@ fun Application.module() {
             }
         }
 
+        // PDF analysis routes (LLM-based)
+        route("/pdf") {
+            // Analyze a PDF file
+            post("/analyze") {
+                val multipart = call.receiveMultipart()
+                var pdfBytes: ByteArray? = null
+                var analysisType: String? = null
+                var areaId: String? = null
+
+                multipart.forEachPart { part ->
+                    when (part) {
+                        is PartData.FileItem -> {
+                            pdfBytes = part.streamProvider().readBytes()
+                        }
+                        is PartData.FormItem -> {
+                            when (part.name) {
+                                "analysisType" -> analysisType = part.value
+                                "areaId" -> areaId = part.value
+                            }
+                        }
+                        else -> {}
+                    }
+                    part.dispose()
+                }
+
+                if (pdfBytes == null) {
+                    call.respond(
+                        HttpStatusCode.BadRequest,
+                        PdfAnalysisResult(
+                            success = false,
+                            analysisType = analysisType ?: "unknown",
+                            error = "No PDF file provided"
+                        )
+                    )
+                    return@post
+                }
+
+                val type = try {
+                    PdfAnalysisType.valueOf(analysisType?.uppercase() ?: "MAP")
+                } catch (e: Exception) {
+                    PdfAnalysisType.MAP
+                }
+
+                val result = PdfService.analyzePdf(pdfBytes!!, type, areaId)
+                call.respond(result)
+            }
+
+            // Extract text only (no LLM analysis)
+            post("/extract-text") {
+                val multipart = call.receiveMultipart()
+                var pdfBytes: ByteArray? = null
+
+                multipart.forEachPart { part ->
+                    when (part) {
+                        is PartData.FileItem -> {
+                            pdfBytes = part.streamProvider().readBytes()
+                        }
+                        else -> {}
+                    }
+                    part.dispose()
+                }
+
+                if (pdfBytes == null) {
+                    call.respond(
+                        HttpStatusCode.BadRequest,
+                        mapOf("error" to "No PDF file provided")
+                    )
+                    return@post
+                }
+
+                try {
+                    val text = PdfService.extractText(pdfBytes!!)
+                    call.respond(mapOf("text" to text))
+                } catch (e: Exception) {
+                    call.respond(
+                        HttpStatusCode.InternalServerError,
+                        mapOf("error" to "Failed to extract text: ${e.message}")
+                    )
+                }
+            }
+
+            // Get supported analysis types
+            get("/analysis-types") {
+                call.respond(mapOf(
+                    "types" to PdfAnalysisType.entries.map {
+                        mapOf(
+                            "value" to it.name,
+                            "description" to when (it) {
+                                PdfAnalysisType.MAP -> "ASCII map with locations and connections"
+                                PdfAnalysisType.CLASSES -> "Character classes with abilities"
+                                PdfAnalysisType.ITEMS -> "Item lists with descriptions"
+                                PdfAnalysisType.CREATURES -> "Creature/monster lists"
+                                PdfAnalysisType.ABILITIES -> "Standalone ability lists"
+                            }
+                        )
+                    }
+                ))
+            }
+        }
+
         // Content generation routes (LLM-based)
         route("/generate") {
             get("/status") {
@@ -1308,9 +1411,9 @@ fun Application.module() {
                 val exits = request.exits.map { Exit(it.locationId, it.direction) }
 
                 // Determine coordinates for the new location
-                val (gridX, gridY, gridZ) = when {
-                    // First location gets origin
-                    existingLocations.isEmpty() -> Triple(0, 0, 0)
+                val (gridX, gridY, areaId) = when {
+                    // First location gets origin in overworld
+                    existingLocations.isEmpty() -> Triple(0, 0, "overworld")
 
                     // If has exits to existing locations, calculate coordinates from exit direction
                     exits.isNotEmpty() -> {
@@ -1324,20 +1427,25 @@ fun Application.module() {
                                 Triple(
                                     targetLocation.gridX + offset.first,
                                     targetLocation.gridY + offset.second,
-                                    targetLocation.gridZ ?: 0
+                                    targetLocation.areaId ?: "overworld"
                                 )
                             } else {
-                                // Direction unknown, assign random coordinate
-                                findRandomUnusedCoordinate(existingLocations)
+                                // Direction unknown, assign random coordinate in overworld
+                                val (x, y) = findRandomUnusedCoordinate(existingLocations)
+                                Triple(x, y, "overworld")
                             }
                         } else {
-                            // Target has no coordinates, assign random
-                            findRandomUnusedCoordinate(existingLocations)
+                            // Target has no coordinates, assign random in overworld
+                            val (x, y) = findRandomUnusedCoordinate(existingLocations)
+                            Triple(x, y, "overworld")
                         }
                     }
 
-                    // No exits - assign random unused coordinate
-                    else -> findRandomUnusedCoordinate(existingLocations)
+                    // No exits - assign random unused coordinate in overworld
+                    else -> {
+                        val (x, y) = findRandomUnusedCoordinate(existingLocations)
+                        Triple(x, y, "overworld")
+                    }
                 }
 
                 val location = Location(
@@ -1349,7 +1457,7 @@ fun Application.module() {
                     featureIds = request.featureIds,
                     gridX = gridX,
                     gridY = gridY,
-                    gridZ = gridZ,
+                    areaId = areaId,
                     // Set lastEditedBy/At for user-created locations
                     lastEditedBy = userId,
                     lastEditedAt = LocalDateTime.now().toString(),
@@ -1419,7 +1527,7 @@ fun Application.module() {
                     lockedBy = existingLocation?.lockedBy, // Preserve lock status
                     gridX = existingLocation?.gridX, // Preserve coordinates
                     gridY = existingLocation?.gridY,
-                    gridZ = existingLocation?.gridZ,
+                    areaId = existingLocation?.areaId, // Preserve area
                     // Update lastEditedBy/At for user edits
                     lastEditedBy = userId,
                     lastEditedAt = LocalDateTime.now().toString(),
@@ -1566,13 +1674,13 @@ fun Application.module() {
                 for (wilderness in wildernessLocations) {
                     val wx = wilderness.gridX ?: continue
                     val wy = wilderness.gridY ?: continue
-                    val wz = wilderness.gridZ ?: 0
+                    val wAreaId = wilderness.areaId ?: "overworld"
 
                     // Find all adjacent non-wilderness locations
                     val adjacentFeatureIds = mutableSetOf<String>()
                     for (direction in ALL_DIRECTIONS) {
                         val (dx, dy) = getDirectionOffset(direction)
-                        val adjacentLoc = LocationRepository.findByCoordinates(wx + dx, wy + dy, wz)
+                        val adjacentLoc = LocationRepository.findByCoordinates(wx + dx, wy + dy, wAreaId)
                         if (adjacentLoc != null && adjacentLoc.name != "Wilderness") {
                             adjacentFeatureIds.addAll(adjacentLoc.featureIds)
                         }
@@ -1716,6 +1824,12 @@ fun Application.module() {
             get {
                 call.respond(CreatureRepository.findAll())
             }
+
+            // Get activity states for all creatures (wandering, in_combat, idle)
+            get("/states") {
+                val states = CombatService.getAllCreatureStates()
+                call.respond(states.mapValues { it.value.name.lowercase() })
+            }
             post {
                 val request = call.receive<CreateCreatureRequest>()
                 val userId = call.request.header("X-User-Id") ?: "unknown"
@@ -1731,6 +1845,7 @@ fun Application.module() {
                     abilityIds = request.abilityIds,
                     level = request.level,
                     experienceValue = request.experienceValue,
+                    challengeRating = request.challengeRating,
                     isAggressive = request.isAggressive
                 )
                 val createdCreature = CreatureRepository.create(creature)
@@ -1786,6 +1901,7 @@ fun Application.module() {
                     abilityIds = request.abilityIds,
                     level = request.level,
                     experienceValue = request.experienceValue,
+                    challengeRating = request.challengeRating,
                     isAggressive = request.isAggressive
                 )
 
@@ -2581,10 +2697,10 @@ fun Application.module() {
             var currentLocations = allLocations
 
             for (location in locationsWithoutCoords) {
-                val (newX, newY, newZ) = findRandomUnusedCoordinate(currentLocations)
-                val updatedLocation = location.copy(gridX = newX, gridY = newY, gridZ = newZ)
+                val (newX, newY) = findRandomUnusedCoordinate(currentLocations)
+                val updatedLocation = location.copy(gridX = newX, gridY = newY, areaId = "overworld")
                 LocationRepository.update(updatedLocation)
-                updated.add("${location.name} -> ($newX, $newY, $newZ)")
+                updated.add("${location.name} -> ($newX, $newY)")
 
                 // Update our local list so next iteration sees the new coordinate as used
                 currentLocations = currentLocations.map {
@@ -2698,11 +2814,11 @@ fun Application.module() {
                     val issues = mutableListOf<IntegrityIssue>()
                     val locationMap = allLocations.associateBy { it.id }
 
-                    // Check for duplicate coordinates
-                    val coordMap = mutableMapOf<Triple<Int, Int, Int>, MutableList<Location>>()
+                    // Check for duplicate coordinates (within the same area)
+                    val coordMap = mutableMapOf<Triple<Int, Int, String>, MutableList<Location>>()
                     allLocations.forEach { loc ->
                         if (loc.gridX != null && loc.gridY != null) {
-                            val coord = Triple(loc.gridX, loc.gridY, loc.gridZ ?: 0)
+                            val coord = Triple(loc.gridX, loc.gridY, loc.areaId ?: "overworld")
                             coordMap.getOrPut(coord) { mutableListOf() }.add(loc)
                         }
                     }
@@ -2714,7 +2830,7 @@ fun Application.module() {
                                 severity = "ERROR",
                                 locationId = loc.id,
                                 locationName = loc.name,
-                                message = "Shares coordinates (${coord.first}, ${coord.second}, ${coord.third}) with: ${otherNames.joinToString(", ")}"
+                                message = "Shares coordinates (${coord.first}, ${coord.second}) in area '${coord.third}' with: ${otherNames.joinToString(", ")}"
                             ))
                         }
                     }

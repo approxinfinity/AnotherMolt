@@ -14,7 +14,7 @@ import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
 
 enum class ExitDirection {
-    NORTH, NORTHEAST, EAST, SOUTHEAST, SOUTH, SOUTHWEST, WEST, NORTHWEST, UNKNOWN
+    NORTH, NORTHEAST, EAST, SOUTHEAST, SOUTH, SOUTHWEST, WEST, NORTHWEST, ENTER, UNKNOWN
 }
 
 enum class LocationType {
@@ -45,7 +45,8 @@ data class LocationDto(
     // Grid coordinates - null means not yet placed in a coordinate system
     val gridX: Int? = null,
     val gridY: Int? = null,
-    val gridZ: Int? = null,
+    // Area identifier - groups locations into distinct map regions (replaces gridZ)
+    val areaId: String? = null,
     // Last edited tracking - null means never edited by a user (e.g., auto-generated)
     val lastEditedBy: String? = null,
     val lastEditedAt: String? = null, // ISO datetime string
@@ -704,6 +705,13 @@ object ApiClient {
         creatures.find { it.id == id }
     }
 
+    /**
+     * Get activity states for all creatures (wandering, in_combat, idle).
+     */
+    suspend fun getCreatureStates(): Result<Map<String, String>> = runCatching {
+        client.get("$baseUrl/creatures/states").body()
+    }
+
     suspend fun getItems(): Result<List<ItemDto>> = runCatching {
         client.get("$baseUrl/items").body()
     }
@@ -1207,7 +1215,7 @@ data class ValidDirectionInfo(
 data class CoordinateInfo(
     val x: Int,
     val y: Int,
-    val z: Int
+    val areaId: String? = null
 )
 
 @Serializable
@@ -1433,4 +1441,12 @@ data class AbilityQueuedResponse(
     val sessionId: String,
     val abilityId: String,
     val targetId: String?
+)
+
+@Serializable
+data class CreatureMovedResponse(
+    val creatureId: String,
+    val creatureName: String,
+    val fromLocationId: String,
+    val toLocationId: String
 )

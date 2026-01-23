@@ -48,6 +48,10 @@ object CombatService {
     // Mutex for session modifications
     private val sessionMutex = Mutex()
 
+    // Track which creatures are wandering (non-aggressive, not in combat)
+    private val wanderingCreatures = mutableSetOf<String>()
+    private var lastWanderTick = 0L
+
     // Combat tick job
     private var tickJob: Job? = null
     private val tickScope = CoroutineScope(Dispatchers.Default + SupervisorJob())
@@ -63,6 +67,7 @@ object CombatService {
             while (isActive) {
                 try {
                     processTick()
+                    processCreatureWandering()
                 } catch (e: Exception) {
                     log.error("Error in combat tick: ${e.message}", e)
                 }
@@ -106,6 +111,61 @@ object CombatService {
         return sessions.values.find {
             it.locationId == locationId && it.state != CombatState.ENDED
         }
+    }
+
+    /**
+     * Creature activity state - used for UI display.
+     */
+    enum class CreatureActivityState {
+        IDLE,       // Standing still
+        WANDERING,  // Moving between locations
+        IN_COMBAT   // Engaged in combat
+    }
+
+    /**
+     * Get the current activity state of a creature.
+     */
+    fun getCreatureState(creatureId: String): CreatureActivityState {
+        // Check if creature is in active combat
+        val inCombat = sessions.values.any { session ->
+            session.state != CombatState.ENDED &&
+            session.creatures.any { it.id == creatureId }
+        }
+        if (inCombat) return CreatureActivityState.IN_COMBAT
+
+        // Check if creature is non-aggressive (wanderers)
+        val creature = CreatureRepository.findById(creatureId)
+        if (creature != null && !creature.isAggressive) {
+            return CreatureActivityState.WANDERING
+        }
+
+        return CreatureActivityState.IDLE
+    }
+
+    /**
+     * Get activity states for all creatures (efficient batch query).
+     */
+    fun getAllCreatureStates(): Map<String, CreatureActivityState> {
+        val result = mutableMapOf<String, CreatureActivityState>()
+
+        // Get all creatures in combat
+        val creaturesInCombat = sessions.values
+            .filter { it.state != CombatState.ENDED }
+            .flatMap { it.creatures.map { c -> c.id } }
+            .toSet()
+
+        // Get all non-aggressive creatures (wanderers)
+        val allCreatures = CreatureRepository.findAll()
+
+        for (creature in allCreatures) {
+            result[creature.id] = when {
+                creature.id in creaturesInCombat -> CreatureActivityState.IN_COMBAT
+                !creature.isAggressive -> CreatureActivityState.WANDERING
+                else -> CreatureActivityState.IDLE
+            }
+        }
+
+        return result
     }
 
     /**
@@ -1070,6 +1130,87 @@ object CombatService {
         ))
 
         log.info("Combat session ${session.id} ended: ${session.endReason}")
+    }
+
+    /**
+     * Process creature wandering - move non-aggressive creatures to random adjacent locations.
+     * Creatures wander every 3-5 ticks (~9-15 seconds) to make the world feel alive.
+     */
+    private suspend fun processCreatureWandering() {
+        val now = System.currentTimeMillis()
+
+        // Only wander every 3 ticks (roughly every 9 seconds)
+        if (now - lastWanderTick < CombatConfig.ROUND_DURATION_MS * 3) return
+        lastWanderTick = now
+
+        // Get all non-aggressive creatures that could wander
+        val creatures = CreatureRepository.findAll().filter { !it.isAggressive }
+
+        // Track which creatures have already moved this tick
+        val movedCreatures = mutableSetOf<String>()
+
+        for (creature in creatures) {
+            // Skip if already moved this tick
+            if (creature.id in movedCreatures) continue
+
+            // Skip if creature is in active combat
+            val inCombat = sessions.values.any { session ->
+                session.state != CombatState.ENDED &&
+                session.creatures.any { it.id == creature.id }
+            }
+            if (inCombat) continue
+
+            // 50% chance to wander each cycle
+            if (kotlin.random.Random.nextFloat() > 0.5f) continue
+
+            // Find which location this creature is in (fresh from DB)
+            val currentLocation = LocationRepository.findAll()
+                .find { creature.id in it.creatureIds } ?: continue
+
+            // Pick a random exit (excluding ENTER portals - creatures can't use those)
+            val exits = currentLocation.exits.filter { it.direction != ExitDirection.ENTER }
+            if (exits.isEmpty()) continue
+
+            val randomExit = exits.random()
+            val targetLocation = LocationRepository.findById(randomExit.locationId) ?: continue
+
+            // Move creature: remove from current location, add to target (avoid duplicates)
+            val updatedCurrentLocation = currentLocation.copy(
+                creatureIds = currentLocation.creatureIds.filter { it != creature.id }
+            )
+            val updatedTargetLocation = targetLocation.copy(
+                creatureIds = (targetLocation.creatureIds.filter { it != creature.id } + creature.id)
+            )
+
+            LocationRepository.update(updatedCurrentLocation)
+            LocationRepository.update(updatedTargetLocation)
+            movedCreatures.add(creature.id)
+
+            // Broadcast movement to all connected players
+            val moveMessage = CreatureMovedMessage(
+                creatureId = creature.id,
+                creatureName = creature.name,
+                fromLocationId = currentLocation.id,
+                toLocationId = targetLocation.id
+            )
+            broadcastToAllPlayers(moveMessage)
+
+            log.info("${creature.name} wandered from ${currentLocation.name} to ${targetLocation.name}")
+        }
+    }
+
+    /**
+     * Broadcast a message to all connected players (not just those in combat).
+     */
+    private suspend fun broadcastToAllPlayers(message: ServerCombatMessage) {
+        val jsonMessage = json.encodeToString(message)
+        for ((userId, connection) in playerConnections) {
+            try {
+                connection.send(Frame.Text(jsonMessage))
+            } catch (e: Exception) {
+                log.debug("Failed to send broadcast to player $userId: ${e.message}")
+            }
+        }
     }
 
     /**

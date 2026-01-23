@@ -65,6 +65,7 @@ import androidx.compose.material.icons.filled.ExpandLess
 import androidx.compose.material.icons.filled.ExpandMore
 import androidx.compose.material.icons.filled.Security
 import androidx.compose.material.icons.filled.Dangerous
+import androidx.compose.material.icons.filled.MeetingRoom
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.material3.*
@@ -77,6 +78,7 @@ import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.StrokeCap
@@ -102,6 +104,9 @@ import coil3.compose.AsyncImage
 import coil3.compose.AsyncImagePainter
 import com.ez2bg.anotherthread.AppConfig
 import com.ez2bg.anotherthread.api.*
+import com.ez2bg.anotherthread.combat.CombatClient
+import com.ez2bg.anotherthread.combat.CombatEvent
+import com.ez2bg.anotherthread.platform.currentTimeMillis
 import com.ez2bg.anotherthread.platform.readFileBytes
 import com.ez2bg.anotherthread.storage.AuthStorage
 import kotlinx.coroutines.CoroutineScope
@@ -124,6 +129,84 @@ import kotlin.math.sqrt
  * Extension function to check if user has a complete profile (class assigned).
  */
 fun UserDto.hasCompleteProfile(): Boolean = characterClassId != null
+
+/**
+ * Icon showing creature activity state (wandering, in_combat, idle).
+ * - Wandering: Three small footprints
+ * - In Combat: Crossed swords
+ * - Idle: No icon (transparent)
+ */
+@Composable
+fun CreatureStateIcon(
+    state: String,
+    modifier: Modifier = Modifier
+) {
+    Canvas(modifier = modifier) {
+        val iconSize = size.minDimension
+        when (state) {
+            "wandering" -> {
+                // Draw three small footprints (boot shapes)
+                val bootColor = Color(0xFF90CAF9) // Light blue
+                val bootWidth = iconSize * 0.25f
+                val bootHeight = iconSize * 0.35f
+
+                // Three footprints in a walking pattern
+                listOf(
+                    Offset(iconSize * 0.15f, iconSize * 0.6f),
+                    Offset(iconSize * 0.45f, iconSize * 0.3f),
+                    Offset(iconSize * 0.75f, iconSize * 0.55f)
+                ).forEach { pos ->
+                    // Simple boot shape - oval
+                    drawOval(
+                        color = bootColor,
+                        topLeft = Offset(pos.x - bootWidth / 2, pos.y - bootHeight / 2),
+                        size = androidx.compose.ui.geometry.Size(bootWidth, bootHeight)
+                    )
+                }
+            }
+            "in_combat" -> {
+                // Draw crossed swords
+                val swordColor = Color(0xFFEF5350) // Red
+                val strokeWidth = iconSize * 0.12f
+
+                // First sword (top-left to bottom-right)
+                drawLine(
+                    color = swordColor,
+                    start = Offset(iconSize * 0.15f, iconSize * 0.15f),
+                    end = Offset(iconSize * 0.85f, iconSize * 0.85f),
+                    strokeWidth = strokeWidth,
+                    cap = StrokeCap.Round
+                )
+                // Hilt for first sword
+                drawLine(
+                    color = swordColor,
+                    start = Offset(iconSize * 0.25f, iconSize * 0.35f),
+                    end = Offset(iconSize * 0.35f, iconSize * 0.25f),
+                    strokeWidth = strokeWidth * 0.8f,
+                    cap = StrokeCap.Round
+                )
+
+                // Second sword (top-right to bottom-left)
+                drawLine(
+                    color = swordColor,
+                    start = Offset(iconSize * 0.85f, iconSize * 0.15f),
+                    end = Offset(iconSize * 0.15f, iconSize * 0.85f),
+                    strokeWidth = strokeWidth,
+                    cap = StrokeCap.Round
+                )
+                // Hilt for second sword
+                drawLine(
+                    color = swordColor,
+                    start = Offset(iconSize * 0.65f, iconSize * 0.25f),
+                    end = Offset(iconSize * 0.75f, iconSize * 0.35f),
+                    strokeWidth = strokeWidth * 0.8f,
+                    cap = StrokeCap.Round
+                )
+            }
+            // "idle" or unknown - no icon drawn
+        }
+    }
+}
 
 /**
  * Component shown when user tries to access creation/adventure tabs without completing their profile.
@@ -855,8 +938,30 @@ fun AdminScreen() {
     // Restore persisted auth state on startup
     val savedUser = remember { AuthStorage.getUser() }
 
-    // Parse initial view from URL parameter
-    val initialViewParam = remember { getInitialViewParam() }
+    // Parse initial view from URL parameter with validation
+    val rawViewParam = remember { getInitialViewParam() }
+
+    // List of valid view param prefixes - if URL param doesn't match any, reset to default
+    val validViewPrefixes = listOf(
+        "profile", "auth", "user", "creatures", "creature-new", "creature-",
+        "items", "item-new", "item-", "admin", "logs", "location-new", "location-",
+        "map", "classes", "class-"
+    )
+
+    // Validate the param - if invalid, treat as null (will default to map)
+    val initialViewParam = remember {
+        rawViewParam?.let { param ->
+            if (validViewPrefixes.any { param.startsWith(it) } || param.isEmpty()) {
+                param
+            } else {
+                // Invalid param - reset URL and return null to default to map
+                println("DEBUG: Invalid view param '$param', resetting to default")
+                updateUrlWithCacheBuster("map")
+                null
+            }
+        }
+    }
+
     val initialTab = remember {
         when {
             initialViewParam?.startsWith("profile") == true -> AdminTab.USER
@@ -864,6 +969,7 @@ fun AdminScreen() {
             initialViewParam?.startsWith("user") == true -> AdminTab.USER
             initialViewParam?.startsWith("creature") == true -> AdminTab.CREATURE
             initialViewParam?.startsWith("item") == true -> AdminTab.ITEM
+            initialViewParam?.startsWith("class") == true -> AdminTab.CLASS
             initialViewParam?.startsWith("admin") == true -> AdminTab.LOCATION // Admin panel is under location tab
             initialViewParam?.startsWith("logs") == true -> AdminTab.LOCATION // Audit logs under location tab
             else -> AdminTab.LOCATION
@@ -878,6 +984,7 @@ fun AdminScreen() {
             initialViewParam?.startsWith("creature-new") == true -> ViewState.CreatureCreate
             initialViewParam?.startsWith("items") == true -> ViewState.ItemList
             initialViewParam?.startsWith("item-new") == true -> ViewState.ItemCreate
+            initialViewParam?.startsWith("classes") == true -> ViewState.ClassList
             initialViewParam?.startsWith("admin") == true -> ViewState.AdminPanel
             initialViewParam?.startsWith("logs") == true -> ViewState.AuditLogs
             initialViewParam?.startsWith("location-new") == true -> ViewState.LocationCreate
@@ -2252,6 +2359,7 @@ fun ExitDirection.toShortLabel(): String = when (this) {
     ExitDirection.SOUTHWEST -> "SW"
     ExitDirection.WEST -> "W"
     ExitDirection.NORTHWEST -> "NW"
+    ExitDirection.ENTER -> "EN"
     ExitDirection.UNKNOWN -> "?"
 }
 
@@ -2264,6 +2372,7 @@ fun ExitDirection.toDisplayLabel(): String = when (this) {
     ExitDirection.SOUTHWEST -> "Southwest"
     ExitDirection.WEST -> "West"
     ExitDirection.NORTHWEST -> "Northwest"
+    ExitDirection.ENTER -> "Enter"
     ExitDirection.UNKNOWN -> "Unknown"
 }
 
@@ -2276,6 +2385,7 @@ fun getOppositeDirection(direction: ExitDirection): ExitDirection = when (direct
     ExitDirection.SOUTHWEST -> ExitDirection.NORTHEAST
     ExitDirection.WEST -> ExitDirection.EAST
     ExitDirection.NORTHWEST -> ExitDirection.SOUTHEAST
+    ExitDirection.ENTER -> ExitDirection.ENTER
     ExitDirection.UNKNOWN -> ExitDirection.UNKNOWN
 }
 
@@ -2447,10 +2557,10 @@ fun ExitPillSection(
             // Both have coordinates - check if adjacent (exactly 1 cell away)
             val dx = kotlin.math.abs(targetLoc.gridX!! - currentLocation.gridX!!)
             val dy = kotlin.math.abs((targetLoc.gridY ?: 0) - (currentLocation.gridY ?: 0))
-            val dz = kotlin.math.abs((targetLoc.gridZ ?: 0) - (currentLocation.gridZ ?: 0))
+            val sameArea = (targetLoc.areaId ?: "overworld") == (currentLocation.areaId ?: "overworld")
 
-            // Adjacent means max 1 step in any direction (including diagonals), same Z level, not same cell
-            dz == 0 && dx <= 1 && dy <= 1 && !(dx == 0 && dy == 0)
+            // Adjacent means max 1 step in any direction (including diagonals), same area, not same cell
+            sameArea && dx <= 1 && dy <= 1 && !(dx == 0 && dy == 0)
         }
 
         // Filter out already used directions (max 1 exit per direction)
@@ -2510,7 +2620,7 @@ fun ExitPillSection(
                     // Show current location coordinates if available
                     if (currentLocation?.gridX != null) {
                         Text(
-                            text = "From: (${currentLocation.gridX}, ${currentLocation.gridY}, ${currentLocation.gridZ ?: 0})",
+                            text = "From: (${currentLocation.gridX}, ${currentLocation.gridY})",
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
@@ -2559,7 +2669,7 @@ fun ExitPillSection(
                                             )
                                             if (hasCoords && targetLoc != null) {
                                                 Text(
-                                                    text = "(${targetLoc.gridX}, ${targetLoc.gridY}, ${targetLoc.gridZ ?: 0})",
+                                                    text = "(${targetLoc.gridX}, ${targetLoc.gridY})",
                                                     style = MaterialTheme.typography.bodySmall,
                                                     color = if (isSelected) MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.7f) else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f)
                                                 )
@@ -2632,7 +2742,7 @@ fun ExitPillSection(
                             enabled = false,
                             label = { Text("Direction (fixed by coordinates)") },
                             supportingText = if (targetCoords != null) {
-                                { Text("Target at (${targetCoords.x}, ${targetCoords.y}, ${targetCoords.z})") }
+                                { Text("Target at (${targetCoords.x}, ${targetCoords.y})") }
                             } else null,
                             modifier = Modifier.fillMaxWidth()
                         )
@@ -2663,7 +2773,7 @@ fun ExitPillSection(
                                                 Text(direction.toDisplayLabel())
                                                 if (coordInfo != null) {
                                                     Text(
-                                                        text = "-> (${coordInfo.x}, ${coordInfo.y}, ${coordInfo.z})",
+                                                        text = "-> (${coordInfo.x}, ${coordInfo.y})",
                                                         style = MaterialTheme.typography.bodySmall,
                                                         color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f)
                                                     )
@@ -2869,6 +2979,41 @@ fun LocationGraphView(
             println("DEBUG: Loaded ${it.size} locations")
             locations = it
         }.onFailure { error = it.message }
+    }
+
+    // WebSocket connection to listen for creature movement (only in exploration mode)
+    LaunchedEffect(isExplorationMode, currentUser?.id) {
+        val userId = currentUser?.id
+        if (isExplorationMode && userId != null) {
+            println("DEBUG: Connecting to combat WebSocket for creature updates")
+            try {
+                val combatClient = CombatClient(userId)
+                combatClient.connect()
+
+                try {
+                    combatClient.events.collect { event ->
+                        when (event) {
+                            is CombatEvent.CreatureMoved -> {
+                                println("DEBUG: Creature ${event.creatureName} moved from ${event.fromLocationId} to ${event.toLocationId}")
+                                // Refresh locations to pick up creature movement
+                                val result = ApiClient.getLocations(cacheBuster = currentTimeMillis())
+                                result.onSuccess {
+                                    println("DEBUG: Refreshed locations after creature move, got ${it.size} locations")
+                                    locations = it
+                                }
+                            }
+                            else -> { /* Ignore other combat events */ }
+                        }
+                    }
+                } finally {
+                    println("DEBUG: Disconnecting combat WebSocket")
+                    combatClient.disconnect()
+                }
+            } catch (e: Exception) {
+                println("DEBUG: WebSocket error: ${e.message}")
+                // Don't crash the UI if WebSocket fails
+            }
+        }
     }
 
     // Fetch terrain overrides for all locations (lazy-loaded when locations change)
@@ -3259,12 +3404,14 @@ fun LocationGraph(
     // Creatures and items for exploration mode display
     var allCreatures by remember { mutableStateOf<List<CreatureDto>>(emptyList()) }
     var allItems by remember { mutableStateOf<List<ItemDto>>(emptyList()) }
+    var creatureStates by remember { mutableStateOf<Map<String, String>>(emptyMap()) }
 
     // Load creatures and items when entering exploration mode
     LaunchedEffect(isExplorationMode) {
         if (isExplorationMode) {
             ApiClient.getCreatures().onSuccess { allCreatures = it }
             ApiClient.getItems().onSuccess { allItems = it }
+            ApiClient.getCreatureStates().onSuccess { creatureStates = it }
         }
     }
 
@@ -3282,8 +3429,8 @@ fun LocationGraph(
             if (targetLocation != null) {
                 expandedLocationId = targetLocation.id
             } else {
-                // Fall back to location at 0,0,0 or first location with coordinates
-                val fallbackLocation = locations.find { it.gridX == 0 && it.gridY == 0 && (it.gridZ ?: 0) == 0 }
+                // Fall back to location at (0,0) in overworld or first location with coordinates
+                val fallbackLocation = locations.find { it.gridX == 0 && it.gridY == 0 && (it.areaId ?: "overworld") == "overworld" }
                     ?: locations.firstOrNull { it.gridX != null && it.gridY != null }
                     ?: locations.firstOrNull()
 
@@ -3926,7 +4073,7 @@ fun LocationGraph(
                         textAlign = TextAlign.Center,
                         modifier = Modifier
                             .align(Alignment.Center)
-                            .offset(y = (-120).dp)
+                            .offset(y = (-140).dp)
                             .background(Color.Black.copy(alpha = 0.7f), RoundedCornerShape(4.dp))
                             .padding(horizontal = 12.dp, vertical = 4.dp)
                     )
@@ -3962,22 +4109,6 @@ fun LocationGraph(
                             }
                         }
 
-                        // Explorer icon overlay in top-right corner
-                        Box(
-                            modifier = Modifier
-                                .align(Alignment.TopEnd)
-                                .padding(4.dp)
-                                .size(24.dp)
-                                .background(Color(0xFF9C27B0).copy(alpha = 0.9f), CircleShape)
-                                .padding(4.dp)
-                        ) {
-                            Icon(
-                                imageVector = ExplorerIcon,
-                                contentDescription = "Explore",
-                                modifier = Modifier.fillMaxSize(),
-                                tint = Color.White
-                            )
-                        }
                     }
 
                     // Navigation arrows around the thumbnail (pushed farther out)
@@ -3994,6 +4125,7 @@ fun LocationGraph(
                                 ExitDirection.NORTHWEST -> Triple((-65).dp, (-65).dp, Icons.Filled.NorthWest)
                                 ExitDirection.SOUTHEAST -> Triple(65.dp, 65.dp, Icons.Filled.SouthEast)
                                 ExitDirection.SOUTHWEST -> Triple((-65).dp, 65.dp, Icons.Filled.SouthWest)
+                                ExitDirection.ENTER -> Triple(0.dp, 120.dp, Icons.Filled.MeetingRoom)
                                 else -> Triple(0.dp, 0.dp, Icons.Filled.ArrowUpward)
                             }
 
@@ -4026,12 +4158,17 @@ fun LocationGraph(
                                                 CircleShape
                                             )
                                     )
-                                    // Main button
+                                    // Main button - purple for ENTER (portal), blue for directions
+                                    val buttonColor = if (exit.direction == ExitDirection.ENTER) {
+                                        Color(0xFF9C27B0) // Purple for portal/entrance
+                                    } else {
+                                        Color(0xFF1976D2) // Blue for normal directions
+                                    }
                                     Box(
                                         modifier = Modifier
                                             .size(32.dp)
                                             .clip(CircleShape)
-                                            .background(Color(0xFF1976D2), CircleShape)
+                                            .background(buttonColor, CircleShape)
                                             .pointerInput(targetLocation.id) {
                                                 detectTapGestures(
                                                     onPress = {
@@ -4046,7 +4183,7 @@ fun LocationGraph(
                                     ) {
                                         Icon(
                                             imageVector = icon,
-                                            contentDescription = "Go ${exit.direction.name}",
+                                            contentDescription = if (exit.direction == ExitDirection.ENTER) "Enter area" else "Go ${exit.direction.name}",
                                             tint = Color.White,
                                             modifier = Modifier.size(20.dp)
                                         )
@@ -4083,14 +4220,25 @@ fun LocationGraph(
                             )
                         } else {
                             creaturesHere.forEach { creature ->
-                                Text(
-                                    text = creature.name,
-                                    color = Color(0xFF64B5F6),
-                                    fontSize = 14.sp,
+                                val state = creatureStates[creature.id] ?: "idle"
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically,
                                     modifier = Modifier
                                         .clickable { selectedCreature = creature }
                                         .padding(vertical = 2.dp)
-                                )
+                                ) {
+                                    // State icon
+                                    CreatureStateIcon(
+                                        state = state,
+                                        modifier = Modifier.size(14.dp)
+                                    )
+                                    Spacer(modifier = Modifier.width(4.dp))
+                                    Text(
+                                        text = creature.name,
+                                        color = Color(0xFF64B5F6),
+                                        fontSize = 14.sp
+                                    )
+                                }
                             }
                         }
 
@@ -4387,12 +4535,16 @@ fun LocationGraph(
                         label = "minimapY"
                     )
 
-                    Box(
+                    Column(
                         modifier = Modifier
                             .align(Alignment.TopStart)
-                            .padding(12.dp)
+                            .padding(12.dp),
+                        horizontalAlignment = Alignment.CenterHorizontally
+                    ) {
+                    Box(
+                        modifier = Modifier
                             .size(minimapSize)
-                            .clip(RoundedCornerShape(8.dp))
+                            .clip(CircleShape)
                             .background(Color.Black.copy(alpha = 0.7f))
                     ) {
                         // Draw on a Canvas - dots and lines only
@@ -4561,7 +4713,37 @@ fun LocationGraph(
                                     }
                                 }
                             }
+
+                            // Fog of war - radial gradient overlay from transparent center to opaque edges
+                            val fogRadius = size.minDimension / 2
+                            drawCircle(
+                                brush = Brush.radialGradient(
+                                    colors = listOf(
+                                        Color.Transparent,
+                                        Color.Transparent,
+                                        Color.Black.copy(alpha = 0.3f),
+                                        Color.Black.copy(alpha = 0.7f),
+                                        Color.Black.copy(alpha = 0.9f)
+                                    ),
+                                    center = Offset(centerX, centerY),
+                                    radius = fogRadius
+                                ),
+                                radius = fogRadius,
+                                center = Offset(centerX, centerY)
+                            )
                         }
+                    }
+                        // Coordinates text below minimap
+                        Text(
+                            text = "($currentGridX, $currentGridY)",
+                            color = Color.White,
+                            fontSize = 12.sp,
+                            fontWeight = FontWeight.Medium,
+                            modifier = Modifier
+                                .padding(top = 6.dp)
+                                .background(Color.Black.copy(alpha = 0.7f), RoundedCornerShape(4.dp))
+                                .padding(horizontal = 8.dp, vertical = 2.dp)
+                        )
                     }
                 }
             }
@@ -4825,6 +5007,7 @@ private fun LocationNodeThumbnail(
                             ExitDirection.NORTHWEST -> Pair(-0.707f, -0.707f)
                             ExitDirection.SOUTHEAST -> Pair(0.707f, 0.707f)
                             ExitDirection.SOUTHWEST -> Pair(-0.707f, 0.707f)
+                            ExitDirection.ENTER -> Pair(0f, 1.2f) // Below, slightly further
                             ExitDirection.UNKNOWN -> Pair(0f, 0f)
                         }
 
@@ -4863,6 +5046,7 @@ private fun LocationNodeThumbnail(
                                             ExitDirection.NORTHWEST -> Icons.Filled.NorthWest
                                             ExitDirection.SOUTHEAST -> Icons.Filled.SouthEast
                                             ExitDirection.SOUTHWEST -> Icons.Filled.SouthWest
+                                            ExitDirection.ENTER -> Icons.Filled.MeetingRoom
                                             ExitDirection.UNKNOWN -> Icons.Filled.ArrowUpward
                                         },
                                         contentDescription = exit.direction.name,
@@ -4953,34 +5137,31 @@ private fun LocationNodeThumbnail(
                     FallbackLocationBox(location)
                 }
 
-                // Action icons overlaid on top-right of thumbnail
-                Column(
-                    modifier = Modifier
-                        .align(Alignment.TopEnd)
-                        .padding(4.dp),
-                    verticalArrangement = Arrangement.spacedBy(4.dp)
-                ) {
-                    // Edit/Detail icon (pencil, or explorer wizard in exploration mode)
-                    Box(
+                // Action icons overlaid on top-right of thumbnail - hidden in exploration mode
+                if (!isExplorationMode) {
+                    Column(
                         modifier = Modifier
-                            .size(28.dp)
-                            .background(
-                                if (isExplorationMode) Color(0xFF9C27B0).copy(alpha = 0.9f) else Color.Black.copy(alpha = 0.7f),
-                                CircleShape
-                            )
-                            .clickable(onClick = onClick)
-                            .padding(5.dp)
+                            .align(Alignment.TopEnd)
+                            .padding(4.dp),
+                        verticalArrangement = Arrangement.spacedBy(4.dp)
                     ) {
-                        Icon(
-                            imageVector = if (isExplorationMode) ExplorerIcon else Icons.Default.Edit,
-                            contentDescription = if (isExplorationMode) "Explore Location" else "Edit Location",
-                            modifier = Modifier.fillMaxSize(),
-                            tint = Color.White
-                        )
-                    }
+                        // Edit/Detail icon (pencil)
+                        Box(
+                            modifier = Modifier
+                                .size(28.dp)
+                                .background(Color.Black.copy(alpha = 0.7f), CircleShape)
+                                .clickable(onClick = onClick)
+                                .padding(5.dp)
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Edit,
+                                contentDescription = "Edit Location",
+                                modifier = Modifier.fillMaxSize(),
+                                tint = Color.White
+                            )
+                        }
 
-                    // Settings/Terrain icon (gear below) - hidden in exploration mode
-                    if (!isExplorationMode) {
+                        // Settings/Terrain icon (gear below)
                         Box(
                             modifier = Modifier
                                 .size(28.dp)
@@ -8890,6 +9071,7 @@ private fun getDirectionVector(direction: ExitDirection): Pair<Float, Float> = w
     ExitDirection.SOUTHWEST -> Pair(-0.707f, 0.707f)
     ExitDirection.WEST -> Pair(-1f, 0f)
     ExitDirection.NORTHWEST -> Pair(-0.707f, -0.707f)
+    ExitDirection.ENTER -> Pair(0f, 0f) // Portal/entrance - no directional bias
     ExitDirection.UNKNOWN -> Pair(0f, 0f) // No directional bias
 }
 
@@ -9029,6 +9211,7 @@ private fun getGridOffset(direction: ExitDirection): Pair<Int, Int> = when (dire
     ExitDirection.SOUTHWEST -> Pair(-1, 1)
     ExitDirection.WEST -> Pair(-1, 0)
     ExitDirection.NORTHWEST -> Pair(-1, -1)
+    ExitDirection.ENTER -> Pair(0, 0) // Portal - no grid offset (different z-level)
     ExitDirection.UNKNOWN -> Pair(0, 1) // Default to south for unknown
 }
 
@@ -9419,7 +9602,7 @@ fun LocationForm(
                     modifier = Modifier.padding(2.dp)
                 ) {
                     Text(
-                        text = "(${editLocation.gridX}, ${editLocation.gridY}, ${editLocation.gridZ ?: 0})",
+                        text = "(${editLocation.gridX}, ${editLocation.gridY})",
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onSecondaryContainer,
                         modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp)

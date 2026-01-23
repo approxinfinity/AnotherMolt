@@ -39,6 +39,9 @@ dependencies {
     // Password hashing
     implementation(libs.bcrypt)
 
+    // PDF parsing
+    implementation("org.apache.pdfbox:pdfbox:3.0.1")
+
     testImplementation(libs.ktor.serverTestHost)
     testImplementation(libs.kotlin.testJunit)
 }
