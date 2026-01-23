@@ -4365,9 +4365,13 @@ fun LocationGraph(
 
                 // 2. Minimap in top-left - just dots and connection lines, no terrain
                 if (currentPos != null && !isDetailViewVisible) {
-                    val minimapSize = 140.dp
+                    // Scale multiplier for minimap - adjust to change overall minimap size
+                    // 1.0 = default, 0.75 = 75% of original, etc.
+                    val minimapScale = 0.75f
+
+                    val minimapSize = (140 * minimapScale).dp
                     // Grid spacing - how many dp per grid unit in the minimap
-                    val gridSpacing = 35.dp  // Each dot is 35dp apart in the minimap
+                    val gridSpacing = (35 * minimapScale).dp  // Each dot is 35dp apart in the minimap
 
                     // Animated offset for smooth sliding when changing locations
                     val currentGridX = currentLocation.gridX ?: 0
@@ -4386,7 +4390,7 @@ fun LocationGraph(
                     Box(
                         modifier = Modifier
                             .align(Alignment.TopStart)
-                            .padding(8.dp)
+                            .padding(12.dp)
                             .size(minimapSize)
                             .clip(RoundedCornerShape(8.dp))
                             .background(Color.Black.copy(alpha = 0.7f))
@@ -4396,10 +4400,29 @@ fun LocationGraph(
                             val centerX = size.width / 2
                             val centerY = size.height / 2
                             val gridSpacingPx = gridSpacing.toPx()
-                            val dotRadius = 8.dp.toPx()
-                            val highlightRadius = 12.dp.toPx()
+                            val dotRadius = (8 * minimapScale).dp.toPx()
+                            val highlightRadius = (12 * minimapScale).dp.toPx()
                             val lineColor = Color(0xFFFF9800).copy(alpha = 0.7f)
-                            val lineWidth = 3.dp.toPx()
+                            val lineWidth = (3 * minimapScale).dp.toPx()
+                            val highlightStrokeWidth = (3 * minimapScale).dp.toPx()
+                            val dotOutlineWidth = (1.5f * minimapScale).dp.toPx()
+
+                            // Vignette effect - fade elements near edges
+                            // Returns alpha multiplier (0.0 to 1.0) based on distance from center
+                            val vignetteRadius = minOf(size.width, size.height) / 2
+                            fun vignetteAlpha(x: Float, y: Float): Float {
+                                val dx = x - centerX
+                                val dy = y - centerY
+                                val dist = kotlin.math.sqrt(dx * dx + dy * dy)
+                                // Start fading at 60% of radius, fully faded at 100%
+                                val fadeStart = vignetteRadius * 0.6f
+                                val fadeEnd = vignetteRadius * 1.0f
+                                return when {
+                                    dist <= fadeStart -> 1f
+                                    dist >= fadeEnd -> 0f
+                                    else -> 1f - ((dist - fadeStart) / (fadeEnd - fadeStart))
+                                }
+                            }
 
                             // Build location lookup map
                             val locationById = locations.associateBy { it.id }
@@ -4447,18 +4470,40 @@ fun LocationGraph(
                                         val toY = centerY + targetRelY * gridSpacingPx
 
                                         // Fade color based on depth
-                                        val alpha = when (depth) {
+                                        val depthAlpha = when (depth) {
                                             0 -> 0.9f
                                             1 -> 0.6f
                                             else -> 0.4f
                                         }
 
-                                        drawLine(
-                                            color = lineColor.copy(alpha = alpha),
-                                            start = Offset(fromX, fromY),
-                                            end = Offset(toX, toY),
-                                            strokeWidth = lineWidth
-                                        )
+                                        // Apply vignette fade - use minimum of both endpoints
+                                        // so line fades when either connected dot fades
+                                        val fromVignette = vignetteAlpha(fromX, fromY)
+                                        val toVignette = vignetteAlpha(toX, toY)
+                                        val vignetteMultiplier = minOf(fromVignette, toVignette)
+                                        val finalAlpha = depthAlpha * vignetteMultiplier
+
+                                        if (finalAlpha > 0.01f) {
+                                            // Shorten line to stop at dot edges (not center)
+                                            val dx = toX - fromX
+                                            val dy = toY - fromY
+                                            val length = kotlin.math.sqrt(dx * dx + dy * dy)
+                                            if (length > dotRadius * 2) {
+                                                val shortenAmount = dotRadius + 1.dp.toPx()
+                                                val ratio = shortenAmount / length
+                                                val adjustedFromX = fromX + dx * ratio
+                                                val adjustedFromY = fromY + dy * ratio
+                                                val adjustedToX = toX - dx * ratio
+                                                val adjustedToY = toY - dy * ratio
+
+                                                drawLine(
+                                                    color = lineColor.copy(alpha = finalAlpha),
+                                                    start = Offset(adjustedFromX, adjustedFromY),
+                                                    end = Offset(adjustedToX, adjustedToY),
+                                                    strokeWidth = lineWidth
+                                                )
+                                            }
+                                        }
                                     }
 
                                     // Add target to queue if not visited
@@ -4484,31 +4529,36 @@ fun LocationGraph(
                                     val dotY = centerY + relY * gridSpacingPx
                                     val isCurrentLoc = location.id == expandedLocationId
 
-                                    // Highlight for current location
-                                    if (isCurrentLoc) {
+                                    // Apply vignette fade (current location always fully visible)
+                                    val dotVignetteAlpha = if (isCurrentLoc) 1f else vignetteAlpha(dotX, dotY)
+
+                                    if (dotVignetteAlpha > 0.01f) {
+                                        // Highlight for current location
+                                        if (isCurrentLoc) {
+                                            drawCircle(
+                                                color = Color(0xFFFF9800),
+                                                radius = highlightRadius,
+                                                center = Offset(dotX, dotY),
+                                                style = Stroke(width = highlightStrokeWidth)
+                                            )
+                                        }
+
+                                        // Dot fill
+                                        val terrainColor = getTerrainColor(location.desc, location.name)
                                         drawCircle(
-                                            color = Color(0xFFFF9800),
-                                            radius = highlightRadius,
+                                            color = terrainColor.copy(alpha = terrainColor.alpha * dotVignetteAlpha),
+                                            radius = dotRadius,
+                                            center = Offset(dotX, dotY)
+                                        )
+
+                                        // Dot outline
+                                        drawCircle(
+                                            color = Color(0xFFFF9800).copy(alpha = 0.6f * dotVignetteAlpha),
+                                            radius = dotRadius,
                                             center = Offset(dotX, dotY),
-                                            style = Stroke(width = 3.dp.toPx())
+                                            style = Stroke(width = dotOutlineWidth)
                                         )
                                     }
-
-                                    // Dot fill
-                                    val terrainColor = getTerrainColor(location.desc, location.name)
-                                    drawCircle(
-                                        color = terrainColor,
-                                        radius = dotRadius,
-                                        center = Offset(dotX, dotY)
-                                    )
-
-                                    // Dot outline
-                                    drawCircle(
-                                        color = Color(0xFFFF9800).copy(alpha = 0.6f),
-                                        radius = dotRadius,
-                                        center = Offset(dotX, dotY),
-                                        style = Stroke(width = 1.5.dp.toPx())
-                                    )
                                 }
                             }
                         }
