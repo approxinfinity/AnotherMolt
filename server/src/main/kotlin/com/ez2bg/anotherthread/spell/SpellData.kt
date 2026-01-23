@@ -55,13 +55,28 @@ data class CombatConfig(
     val effects: List<CombatEffect> = emptyList()
 )
 
+/**
+ * Combat effect applied by spells/abilities.
+ *
+ * Effect types:
+ * - "dot" - Damage over time (damage field = damage per round)
+ * - "hot" - Healing over time (damage field = healing per round)
+ * - "buff" - Stat increase (stat + modifier fields)
+ * - "debuff" - Stat decrease (stat + modifier fields)
+ * - "stun" - Target cannot act
+ * - "root" - Target cannot move/flee
+ * - "slow" - Reduced initiative (modifier = initiative penalty)
+ * - "shield" - Absorbs damage (modifier = total absorption amount)
+ * - "reflect" - Reflects damage back to attacker (modifier = percentage, e.g. 30 = 30%)
+ * - "lifesteal" - Heals attacker for percentage of damage dealt (modifier = percentage)
+ */
 @Serializable
 data class CombatEffect(
-    val type: String,        // "dot", "hot", "buff", "debuff", "stun", "root", "slow"
-    val stat: String? = null,
-    val modifier: Int = 0,
-    val damage: Int = 0,
-    val duration: Int = 0
+    val type: String,
+    val stat: String? = null,   // For buff/debuff: which stat to modify
+    val modifier: Int = 0,      // Stat modifier, shield amount, or percentage for reflect/lifesteal
+    val damage: Int = 0,        // For dot/hot: damage/healing per round
+    val duration: Int = 0       // Effect duration in rounds
 )
 
 // ============================================================================

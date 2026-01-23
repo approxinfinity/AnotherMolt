@@ -713,6 +713,33 @@ object CombatService {
                     sourceId = sourceId
                 ))
             }
+            if (effectsJson.contains("shield", ignoreCase = true)) {
+                effects.add(StatusEffect(
+                    name = "Arcane Shield",
+                    effectType = "shield",
+                    value = 20,  // 20 points of damage absorption
+                    remainingRounds = duration,
+                    sourceId = sourceId
+                ))
+            }
+            if (effectsJson.contains("reflect", ignoreCase = true)) {
+                effects.add(StatusEffect(
+                    name = "Thorns",
+                    effectType = "reflect",
+                    value = 30,  // 30% damage reflected
+                    remainingRounds = duration,
+                    sourceId = sourceId
+                ))
+            }
+            if (effectsJson.contains("lifesteal", ignoreCase = true)) {
+                effects.add(StatusEffect(
+                    name = "Vampiric Touch",
+                    effectType = "lifesteal",
+                    value = 25,  // 25% lifesteal
+                    remainingRounds = duration,
+                    sourceId = sourceId
+                ))
+            }
         }
 
         return effects
@@ -723,11 +750,14 @@ object CombatService {
      */
     private fun getDefaultEffectValue(effectType: String): Int {
         return when (effectType) {
-            "dot" -> 5      // 5 damage per round
-            "hot" -> 5      // 5 healing per round
-            "buff" -> 3     // +3 to affected stat
-            "debuff" -> -3  // -3 to affected stat
-            "slow" -> -2    // -2 initiative
+            "dot" -> 5       // 5 damage per round
+            "hot" -> 5       // 5 healing per round
+            "buff" -> 3      // +3 to affected stat
+            "debuff" -> -3   // -3 to affected stat
+            "slow" -> -2     // -2 initiative
+            "shield" -> 20   // 20 damage absorption
+            "reflect" -> 30  // 30% damage reflected
+            "lifesteal" -> 25 // 25% lifesteal
             else -> 0
         }
     }
@@ -744,6 +774,9 @@ object CombatService {
             "stun" -> "Stunned"
             "root" -> "Rooted"
             "slow" -> "Slowed"
+            "shield" -> "Arcane Shield"
+            "reflect" -> "Thorns"
+            "lifesteal" -> "Vampiric Touch"
             else -> effectType.replaceFirstChar { it.uppercase() }
         }
     }
@@ -801,6 +834,9 @@ object CombatService {
                 "hot" -> parts.add("$targetName gains ${effect.name}!")
                 "buff" -> parts.add("$targetName gains ${effect.name}!")
                 "debuff" -> parts.add("$targetName is afflicted with ${effect.name}!")
+                "shield" -> parts.add("$targetName is protected by a ${effect.value}-point shield!")
+                "reflect" -> parts.add("$targetName is surrounded by a reflective barrier (${effect.value}%)!")
+                "lifesteal" -> parts.add("$targetName gains lifesteal (${effect.value}%)!")
             }
         }
 
@@ -808,23 +844,93 @@ object CombatService {
     }
 
     /**
-     * Apply action result to combatants.
+     * Apply action result to combatants, handling shield absorption, reflect, and lifesteal.
      */
     private fun applyActionResult(
         combatants: List<Combatant>,
         action: CombatAction,
         result: ActionResult
     ): List<Combatant> {
+        // First pass: calculate damage after shield absorption and track reflect/lifesteal
+        var actualDamage = result.damage
+        var reflectDamage = 0
+        var lifestealHealing = 0
+        var updatedTargetEffects: List<StatusEffect>? = null
+
+        // Find target to check for defensive effects
+        val target = combatants.find { it.id == action.targetId }
+        val attacker = combatants.find { it.id == action.combatantId }
+
+        if (target != null && actualDamage > 0) {
+            // Process shield absorption
+            val shieldEffect = target.statusEffects.find { it.effectType == "shield" }
+            if (shieldEffect != null) {
+                val absorbed = minOf(shieldEffect.value, actualDamage)
+                actualDamage -= absorbed
+                val remainingShield = shieldEffect.value - absorbed
+
+                // Update or remove shield effect
+                updatedTargetEffects = if (remainingShield > 0) {
+                    target.statusEffects.map {
+                        if (it.id == shieldEffect.id) it.copy(value = remainingShield)
+                        else it
+                    }
+                } else {
+                    target.statusEffects.filter { it.id != shieldEffect.id }
+                }
+
+                log.debug("Shield absorbed $absorbed damage, $remainingShield shield remaining")
+            }
+
+            // Process reflect (applies to original damage, not post-shield)
+            val reflectEffect = target.statusEffects.find { it.effectType == "reflect" }
+            if (reflectEffect != null && result.damage > 0) {
+                reflectDamage = (result.damage * reflectEffect.value / 100)
+                log.debug("Reflect: ${reflectEffect.value}% of ${result.damage} = $reflectDamage reflected")
+            }
+
+            // Process attacker's lifesteal
+            if (attacker != null && actualDamage > 0) {
+                val lifestealEffect = attacker.statusEffects.find { it.effectType == "lifesteal" }
+                if (lifestealEffect != null) {
+                    lifestealHealing = (actualDamage * lifestealEffect.value / 100)
+                    log.debug("Lifesteal: ${lifestealEffect.value}% of $actualDamage = $lifestealHealing healed")
+                }
+            }
+        }
+
+        // Second pass: apply all changes
         return combatants.map { combatant ->
             var updated = combatant
 
-            // Apply damage to target
-            if (combatant.id == action.targetId && result.damage > 0) {
-                val newHp = (updated.currentHp - result.damage).coerceAtLeast(0)
+            // Apply damage to target (after shield absorption)
+            if (combatant.id == action.targetId && actualDamage > 0) {
+                val newHp = (updated.currentHp - actualDamage).coerceAtLeast(0)
                 updated = updated.copy(
                     currentHp = newHp,
                     isAlive = newHp > 0
                 )
+                // Apply updated shield effects if shield was used
+                if (updatedTargetEffects != null) {
+                    updated = updated.copy(statusEffects = updatedTargetEffects)
+                }
+            }
+
+            // Apply reflect damage back to attacker
+            if (combatant.id == action.combatantId && reflectDamage > 0) {
+                val newHp = (updated.currentHp - reflectDamage).coerceAtLeast(0)
+                updated = updated.copy(
+                    currentHp = newHp,
+                    isAlive = newHp > 0
+                )
+                log.debug("${combatant.name} takes $reflectDamage reflected damage")
+            }
+
+            // Apply lifesteal healing to attacker
+            if (combatant.id == action.combatantId && lifestealHealing > 0) {
+                val newHp = (updated.currentHp + lifestealHealing).coerceAtMost(updated.maxHp)
+                updated = updated.copy(currentHp = newHp)
+                log.debug("${combatant.name} heals $lifestealHealing from lifesteal")
             }
 
             // Apply healing to actor (self-heal) or target
@@ -1005,15 +1111,69 @@ object CombatService {
                 (if (attackResult.wasCritical) " CRITICAL!" else "") +
                 (if (attackResult.wasGlancing) " (glancing)" else ""))
 
-            // Apply damage if hit
+            // Apply damage if hit, handling shield/reflect/lifesteal
             if (attackResult.damage > 0) {
                 val targetIndex = updatedCombatants.indexOfFirst { it.id == target.id }
+                val creatureIndex = updatedCombatants.indexOfFirst { it.id == creature.id }
                 if (targetIndex >= 0) {
-                    val newHp = (currentTarget.currentHp - attackResult.damage).coerceAtLeast(0)
+                    var actualDamage = attackResult.damage
+                    var reflectDamage = 0
+                    var lifestealHealing = 0
+                    var targetEffects = currentTarget.statusEffects
+
+                    // Process shield absorption
+                    val shieldEffect = currentTarget.statusEffects.find { it.effectType == "shield" }
+                    if (shieldEffect != null) {
+                        val absorbed = minOf(shieldEffect.value, actualDamage)
+                        actualDamage -= absorbed
+                        val remainingShield = shieldEffect.value - absorbed
+                        targetEffects = if (remainingShield > 0) {
+                            targetEffects.map { if (it.id == shieldEffect.id) it.copy(value = remainingShield) else it }
+                        } else {
+                            targetEffects.filter { it.id != shieldEffect.id }
+                        }
+                        log.debug("Shield absorbed $absorbed damage from ${creature.name}'s attack")
+                    }
+
+                    // Process reflect
+                    val reflectEffect = currentTarget.statusEffects.find { it.effectType == "reflect" }
+                    if (reflectEffect != null) {
+                        reflectDamage = (attackResult.damage * reflectEffect.value / 100)
+                        log.debug("Reflect: ${reflectEffect.value}% of ${attackResult.damage} = $reflectDamage reflected to ${creature.name}")
+                    }
+
+                    // Process creature's lifesteal (if any)
+                    val currentCreature = updatedCombatants.find { it.id == creature.id }
+                    val lifestealEffect = currentCreature?.statusEffects?.find { it.effectType == "lifesteal" }
+                    if (lifestealEffect != null && actualDamage > 0) {
+                        lifestealHealing = (actualDamage * lifestealEffect.value / 100)
+                    }
+
+                    // Apply damage to target
+                    val newHp = (currentTarget.currentHp - actualDamage).coerceAtLeast(0)
                     updatedCombatants[targetIndex] = currentTarget.copy(
                         currentHp = newHp,
-                        isAlive = newHp > 0
+                        isAlive = newHp > 0,
+                        statusEffects = targetEffects
                     )
+
+                    // Apply reflect damage to creature
+                    if (reflectDamage > 0 && creatureIndex >= 0) {
+                        val creatureToUpdate = updatedCombatants[creatureIndex]
+                        val creatureNewHp = (creatureToUpdate.currentHp - reflectDamage).coerceAtLeast(0)
+                        updatedCombatants[creatureIndex] = creatureToUpdate.copy(
+                            currentHp = creatureNewHp,
+                            isAlive = creatureNewHp > 0
+                        )
+                        log.debug("${creature.name} takes $reflectDamage reflected damage")
+                    }
+
+                    // Apply lifesteal healing to creature
+                    if (lifestealHealing > 0 && creatureIndex >= 0) {
+                        val creatureToUpdate = updatedCombatants[creatureIndex]
+                        val creatureNewHp = (creatureToUpdate.currentHp + lifestealHealing).coerceAtMost(creatureToUpdate.maxHp)
+                        updatedCombatants[creatureIndex] = creatureToUpdate.copy(currentHp = creatureNewHp)
+                    }
 
                     // Broadcast the attack
                     broadcastToSession(session.id, HealthUpdateMessage(
@@ -1021,7 +1181,7 @@ object CombatService {
                         combatantId = target.id,
                         currentHp = newHp,
                         maxHp = currentTarget.maxHp,
-                        changeAmount = attackResult.damage,
+                        changeAmount = actualDamage,
                         sourceId = creature.id,
                         sourceName = creature.name
                     ))

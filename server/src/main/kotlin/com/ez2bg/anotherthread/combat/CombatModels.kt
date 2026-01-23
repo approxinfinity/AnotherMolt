@@ -66,13 +66,24 @@ data class Combatant(
 
 /**
  * Status effect applied to a combatant.
+ *
+ * Effect types:
+ * - "buff" / "debuff" - Stat modifiers (+/- value to a stat)
+ * - "dot" - Damage over time (value damage per round)
+ * - "hot" - Healing over time (value healing per round)
+ * - "stun" - Cannot take actions
+ * - "root" - Cannot move (flee)
+ * - "slow" - Reduced initiative
+ * - "shield" - Absorbs damage (value = total absorption remaining)
+ * - "reflect" - Reflects percentage of damage back (value = % reflected, e.g. 30 = 30%)
+ * - "lifesteal" - Heals attacker for percentage of damage dealt (value = %)
  */
 @Serializable
 data class StatusEffect(
     val id: String = UUID.randomUUID().toString(),
     val name: String,
-    val effectType: String,           // "buff", "debuff", "dot", "hot", "stun", "root", etc.
-    val value: Int = 0,               // Damage/heal per round, stat modifier amount, etc.
+    val effectType: String,
+    val value: Int = 0,               // Damage/heal per round, stat modifier, absorption remaining, or percentage
     val remainingRounds: Int,
     val sourceId: String              // Who applied this effect
 )

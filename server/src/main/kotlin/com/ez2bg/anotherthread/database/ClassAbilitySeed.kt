@@ -159,6 +159,44 @@ object ClassAbilitySeed {
                 cooldownType = "long",
                 cooldownRounds = 0,
                 effects = """[{"type":"heal","diceCount":1,"diceSides":8,"duration":3},{"type":"damage","damageType":"radiant","diceCount":1,"diceSides":8,"targetType":"undead"}]"""
+            ),
+            // Shield, Reflect, and Lifesteal abilities
+            Ability(
+                name = "Arcane Shield",
+                description = "Conjure a shimmering barrier of magical force around yourself or an ally. The shield absorbs up to 25 points of damage before shattering. Lasts for 3 rounds or until depleted.",
+                classId = createdSpellcaster.id,
+                abilityType = "spell",
+                targetType = "single_ally",
+                range = 30,
+                cooldownType = "medium",
+                cooldownRounds = 3,
+                durationRounds = 3,
+                effects = """[{"type":"shield","modifier":25,"duration":3}]"""
+            ),
+            Ability(
+                name = "Mirror Ward",
+                description = "Surround yourself with reflective magical energy. For 3 rounds, 30% of all damage you receive is reflected back at the attacker.",
+                classId = createdSpellcaster.id,
+                abilityType = "spell",
+                targetType = "self",
+                range = 0,
+                cooldownType = "long",
+                cooldownRounds = 0,
+                durationRounds = 3,
+                effects = """[{"type":"reflect","modifier":30,"duration":3}]"""
+            ),
+            Ability(
+                name = "Vampiric Touch",
+                description = "Channel dark magic through your touch. Your next 3 attacks drain life force, healing you for 25% of the damage dealt.",
+                classId = createdSpellcaster.id,
+                abilityType = "spell",
+                targetType = "self",
+                range = 0,
+                cooldownType = "long",
+                cooldownRounds = 0,
+                baseDamage = 15,
+                durationRounds = 3,
+                effects = """[{"type":"lifesteal","modifier":25,"duration":3}]"""
             )
         )
 
@@ -275,6 +313,43 @@ object ClassAbilitySeed {
                 cooldownType = "long",
                 cooldownRounds = 0,
                 effects = """[{"type":"immunity","conditions":["fear","charm","dominate"],"duration":3,"breakOnUse":true}]"""
+            ),
+            // Shield, Reflect, and Lifesteal abilities
+            Ability(
+                name = "Bulwark",
+                description = "Raise your shield and brace for impact. For 3 rounds, you gain a protective barrier that absorbs up to 30 points of damage.",
+                classId = createdMartial.id,
+                abilityType = "combat",
+                targetType = "self",
+                range = 0,
+                cooldownType = "medium",
+                cooldownRounds = 3,
+                durationRounds = 3,
+                effects = """[{"type":"shield","modifier":30,"duration":3}]"""
+            ),
+            Ability(
+                name = "Spiked Armor",
+                description = "Your armor is fitted with razor-sharp spikes. For 3 rounds, attackers who strike you in melee take 20% of their dealt damage back as piercing damage.",
+                classId = createdMartial.id,
+                abilityType = "combat",
+                targetType = "self",
+                range = 0,
+                cooldownType = "long",
+                cooldownRounds = 0,
+                durationRounds = 3,
+                effects = """[{"type":"reflect","modifier":20,"duration":3}]"""
+            ),
+            Ability(
+                name = "Blood Frenzy",
+                description = "Enter a savage battle trance where you heal from the wounds you inflict. For 3 rounds, you recover 30% of all damage dealt as health.",
+                classId = createdMartial.id,
+                abilityType = "combat",
+                targetType = "self",
+                range = 0,
+                cooldownType = "long",
+                cooldownRounds = 0,
+                durationRounds = 3,
+                effects = """[{"type":"lifesteal","modifier":30,"duration":3}]"""
             )
         )
 
@@ -419,6 +494,19 @@ object ClassAbilitySeed {
                 cooldownType = "none",
                 cooldownRounds = 0,
                 effects = """[{"type":"immunity","conditions":["grappled"]},{"type":"movement","effect":"squeeze"}]"""
+            ),
+            // Lifesteal ability for Scoundrel
+            Ability(
+                name = "Siphon Vitality",
+                description = "Your attacks are infused with dark energy that drains the life force of your enemies. For 3 rounds, you heal for 20% of all damage you deal.",
+                classId = createdScoundrel.id,
+                abilityType = "combat",
+                targetType = "self",
+                range = 0,
+                cooldownType = "long",
+                cooldownRounds = 0,
+                durationRounds = 3,
+                effects = """[{"type":"lifesteal","modifier":20,"duration":3}]"""
             )
         )
 
@@ -556,6 +644,32 @@ object ClassAbilitySeed {
                 cooldownRounds = 3,
                 baseDamage = 20,
                 effects = """[{"type":"movement","effect":"push","distance":10,"saveType":"constitution"}]"""
+            ),
+            // Shield and Lifesteal abilities for Bard
+            Ability(
+                name = "Heroic Ballad",
+                description = "Sing an inspiring tale of legendary heroes. An ally within range gains a protective aura that absorbs up to 20 points of damage for 3 rounds.",
+                classId = createdBard.id,
+                abilityType = "spell",
+                targetType = "single_ally",
+                range = 30,
+                cooldownType = "medium",
+                cooldownRounds = 3,
+                durationRounds = 3,
+                effects = """[{"type":"shield","modifier":20,"duration":3}]"""
+            ),
+            Ability(
+                name = "Discordant Whispers",
+                description = "Whisper a cacophonous melody that torments an enemy's mind. The target takes psychic damage, and you absorb their mental anguish to heal yourself for 20% of the damage dealt.",
+                classId = createdBard.id,
+                abilityType = "spell",
+                targetType = "single_enemy",
+                range = 60,
+                cooldownType = "medium",
+                cooldownRounds = 3,
+                baseDamage = 18,
+                durationRounds = 3,
+                effects = """[{"type":"lifesteal","modifier":20,"duration":3}]"""
             )
         )
 
@@ -697,6 +811,31 @@ object ClassAbilitySeed {
                 cooldownRounds = 0,
                 baseDamage = 50,
                 effects = """[{"type":"choice","options":["full_heal","transmute_gold","damage_construct_undead"]}]"""
+            ),
+            // Shield ability for Alchemist
+            Ability(
+                name = "Stoneskin Elixir",
+                description = "Drink a potion that hardens your skin to stone. For 3 rounds, you gain a protective barrier that absorbs up to 35 points of damage.",
+                classId = createdAlchemist.id,
+                abilityType = "spell",
+                targetType = "self",
+                range = 0,
+                cooldownType = "medium",
+                cooldownRounds = 3,
+                durationRounds = 3,
+                effects = """[{"type":"shield","modifier":35,"duration":3}]"""
+            ),
+            Ability(
+                name = "Caustic Blood",
+                description = "Inject yourself with a volatile compound that makes your blood corrosive. For 3 rounds, any enemy that damages you takes 25% of that damage back as acid damage.",
+                classId = createdAlchemist.id,
+                abilityType = "spell",
+                targetType = "self",
+                range = 0,
+                cooldownType = "long",
+                cooldownRounds = 0,
+                durationRounds = 3,
+                effects = """[{"type":"reflect","modifier":25,"duration":3}]"""
             )
         )
 
@@ -837,6 +976,43 @@ object ClassAbilitySeed {
                 cooldownRounds = 0,
                 baseDamage = 30,
                 effects = """[{"type":"damage","saveType":"dexterity","shape":"cone","halfOnSave":true}]"""
+            ),
+            // Shield, Reflect, and Lifesteal abilities for Ranger
+            Ability(
+                name = "Barkskin",
+                description = "Your skin takes on the texture and resilience of bark. For 3 rounds, you gain a protective natural armor that absorbs up to 25 points of damage.",
+                classId = createdRanger.id,
+                abilityType = "spell",
+                targetType = "self",
+                range = 0,
+                cooldownType = "medium",
+                cooldownRounds = 3,
+                durationRounds = 3,
+                effects = """[{"type":"shield","modifier":25,"duration":3}]"""
+            ),
+            Ability(
+                name = "Thorns",
+                description = "Surround yourself with a barrier of sharp thorns and brambles. For 3 rounds, any enemy that strikes you in melee takes 25% of the damage back as piercing damage.",
+                classId = createdRanger.id,
+                abilityType = "spell",
+                targetType = "self",
+                range = 0,
+                cooldownType = "long",
+                cooldownRounds = 0,
+                durationRounds = 3,
+                effects = """[{"type":"reflect","modifier":25,"duration":3}]"""
+            ),
+            Ability(
+                name = "Primal Savagery",
+                description = "Channel the primal hunger of nature's predators. For 3 rounds, your attacks drain life force from your prey, healing you for 20% of the damage dealt.",
+                classId = createdRanger.id,
+                abilityType = "combat",
+                targetType = "self",
+                range = 0,
+                cooldownType = "long",
+                cooldownRounds = 0,
+                durationRounds = 3,
+                effects = """[{"type":"lifesteal","modifier":20,"duration":3}]"""
             )
         )
 
