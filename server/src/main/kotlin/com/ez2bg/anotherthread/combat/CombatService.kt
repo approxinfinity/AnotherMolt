@@ -226,6 +226,30 @@ object CombatService {
     }
 
     /**
+     * Check for aggressive creatures when a player enters a location.
+     * Returns the session if combat was started, null otherwise.
+     */
+    suspend fun checkAggressiveCreatures(userId: String, locationId: String): CombatSession? {
+        val location = LocationRepository.findById(locationId) ?: return null
+
+        // Find aggressive creatures at this location
+        val aggressiveCreatureIds = location.creatureIds.mapNotNull { creatureId ->
+            CreatureRepository.findById(creatureId)?.takeIf { it.isAggressive }?.id
+        }
+
+        if (aggressiveCreatureIds.isEmpty()) return null
+
+        // Check if player is already in combat
+        if (playerSessions[userId] != null) return null
+
+        // Start combat with all aggressive creatures
+        log.info("Player $userId encountered ${aggressiveCreatureIds.size} aggressive creature(s) at $locationId")
+        val result = startCombat(userId, locationId, aggressiveCreatureIds)
+
+        return result.getOrNull()
+    }
+
+    /**
      * Create a new combat session with creatures at a location.
      */
     private fun createSession(locationId: String, targetCreatureIds: List<String>): CombatSession {
@@ -279,6 +303,20 @@ object CombatService {
         val cooldownRemaining = combatant.cooldowns[abilityId] ?: 0
         if (cooldownRemaining > 0) {
             return Result.failure(Exception("Ability on cooldown for $cooldownRemaining more rounds"))
+        }
+
+        // Check mana cost (for players only)
+        if (combatant.type == CombatantType.PLAYER && ability.manaCost > 0) {
+            if (combatant.currentMana < ability.manaCost) {
+                return Result.failure(Exception("Not enough mana (need ${ability.manaCost}, have ${combatant.currentMana})"))
+            }
+        }
+
+        // Check stamina cost (for players only)
+        if (combatant.type == CombatantType.PLAYER && ability.staminaCost > 0) {
+            if (combatant.currentStamina < ability.staminaCost) {
+                return Result.failure(Exception("Not enough stamina (need ${ability.staminaCost}, have ${combatant.currentStamina})"))
+            }
         }
 
         // Validate target if required
@@ -407,11 +445,53 @@ object CombatService {
 
         // Execute each action
         for (action in sortedActions) {
-            val actor = currentCombatants.find { it.id == action.combatantId }
+            var actor = currentCombatants.find { it.id == action.combatantId }
             if (actor == null || !actor.isAlive) continue
 
             val ability = AbilityRepository.findById(action.abilityId) ?: continue
             val target = action.targetId?.let { tid -> currentCombatants.find { it.id == tid } }
+
+            // Check and spend resources for players
+            if (actor.type == CombatantType.PLAYER) {
+                // Check mana
+                if (ability.manaCost > 0 && actor.currentMana < ability.manaCost) {
+                    log.debug("${actor.name} doesn't have enough mana for ${ability.name}")
+                    continue
+                }
+                // Check stamina
+                if (ability.staminaCost > 0 && actor.currentStamina < ability.staminaCost) {
+                    log.debug("${actor.name} doesn't have enough stamina for ${ability.name}")
+                    continue
+                }
+
+                // Spend resources
+                val newMana = actor.currentMana - ability.manaCost
+                val newStamina = actor.currentStamina - ability.staminaCost
+
+                if (ability.manaCost > 0 || ability.staminaCost > 0) {
+                    // Update combatant state
+                    actor = actor.copy(currentMana = newMana, currentStamina = newStamina)
+                    currentCombatants = currentCombatants.map {
+                        if (it.id == actor.id) actor else it
+                    }.toMutableList()
+
+                    // Sync to database
+                    if (ability.manaCost > 0) UserRepository.spendMana(actor.id, ability.manaCost)
+                    if (ability.staminaCost > 0) UserRepository.spendStamina(actor.id, ability.staminaCost)
+
+                    // Notify clients
+                    broadcastToSession(session.id, ResourceUpdateMessage(
+                        sessionId = session.id,
+                        combatantId = actor.id,
+                        currentMana = newMana,
+                        maxMana = actor.maxMana,
+                        currentStamina = newStamina,
+                        maxStamina = actor.maxStamina,
+                        manaChange = -ability.manaCost,
+                        staminaChange = -ability.staminaCost
+                    ))
+                }
+            }
 
             // Execute the ability
             val result = executeAbility(actor, ability, target, currentCombatants)
@@ -978,7 +1058,7 @@ object CombatService {
     }
 
     /**
-     * Process status effects for all combatants.
+     * Process status effects and resource regeneration for all combatants.
      */
     private suspend fun processStatusEffects(
         combatants: List<Combatant>,
@@ -986,6 +1066,8 @@ object CombatService {
     ): List<Combatant> {
         return combatants.map { combatant ->
             var hp = combatant.currentHp
+            var mana = combatant.currentMana
+            var stamina = combatant.currentStamina
             val remainingEffects = mutableListOf<StatusEffect>()
 
             for (effect in combatant.statusEffects) {
@@ -1032,8 +1114,40 @@ object CombatService {
                 }
             }
 
+            // Resource regeneration for players
+            if (combatant.type == CombatantType.PLAYER && combatant.isAlive) {
+                val oldMana = mana
+                val oldStamina = stamina
+
+                mana = (mana + CombatConfig.MANA_REGEN_PER_ROUND).coerceAtMost(combatant.maxMana)
+                stamina = (stamina + CombatConfig.STAMINA_REGEN_PER_ROUND).coerceAtMost(combatant.maxStamina)
+
+                val manaChange = mana - oldMana
+                val staminaChange = stamina - oldStamina
+
+                // Sync to User record immediately
+                if (manaChange > 0 || staminaChange > 0) {
+                    UserRepository.restoreMana(combatant.id, manaChange)
+                    UserRepository.restoreStamina(combatant.id, staminaChange)
+
+                    // Notify clients of resource change
+                    broadcastToSession(sessionId, ResourceUpdateMessage(
+                        sessionId = sessionId,
+                        combatantId = combatant.id,
+                        currentMana = mana,
+                        maxMana = combatant.maxMana,
+                        currentStamina = stamina,
+                        maxStamina = combatant.maxStamina,
+                        manaChange = manaChange,
+                        staminaChange = staminaChange
+                    ))
+                }
+            }
+
             combatant.copy(
                 currentHp = hp,
+                currentMana = mana,
+                currentStamina = stamina,
                 isAlive = hp > 0,
                 statusEffects = remainingEffects
             )
@@ -1232,8 +1346,9 @@ object CombatService {
     }
 
     /**
-     * Handle combat ending - cleanup, rewards, etc.
+     * Handle combat ending - cleanup, rewards, loot distribution.
      * XP is calculated individually per player based on their level vs creature CR.
+     * Loot is distributed to all surviving players.
      */
     private suspend fun handleCombatEnd(session: CombatSession) {
         val victors = when (session.endReason) {
@@ -1248,14 +1363,63 @@ object CombatService {
             else -> emptyList()
         }
 
-        // Get defeated creatures for XP calculation
+        // Handle player death: drop items and respawn at Home
+        if (session.endReason == CombatEndReason.ALL_PLAYERS_DEFEATED) {
+            handlePlayerDeath(session)
+        }
+
+        // Get defeated creatures for XP and loot calculation
         val defeatedCreatures = if (session.endReason == CombatEndReason.ALL_ENEMIES_DEFEATED) {
             session.creatures.mapNotNull { CreatureRepository.findById(it.id) }
         } else emptyList()
 
-        // Award experience individually to surviving players based on their level vs creature CR
+        // Calculate total loot from all defeated creatures
+        var totalGold = 0
+        val droppedItems = mutableListOf<Item>()
+
+        for (creature in defeatedCreatures) {
+            // Roll gold drop
+            if (creature.maxGoldDrop > creature.minGoldDrop) {
+                totalGold += kotlin.random.Random.nextInt(creature.minGoldDrop, creature.maxGoldDrop + 1)
+            } else {
+                totalGold += creature.minGoldDrop
+            }
+
+            // Roll loot table
+            creature.lootTableId?.let { lootTableId ->
+                val lootTable = LootTableRepository.findById(lootTableId)
+                lootTable?.entries?.forEach { entry ->
+                    if (kotlin.random.Random.nextFloat() < entry.chance) {
+                        val qty = if (entry.maxQty > entry.minQty) {
+                            kotlin.random.Random.nextInt(entry.minQty, entry.maxQty + 1)
+                        } else entry.minQty
+
+                        repeat(qty) {
+                            ItemRepository.findById(entry.itemId)?.let { item ->
+                                droppedItems.add(item)
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        val lootResult = LootResult(
+            goldEarned = totalGold,
+            itemIds = droppedItems.map { it.id },
+            itemNames = droppedItems.map { it.name }
+        )
+
+        // Award experience and loot to surviving players
         val xpResults = mutableMapOf<String, Int>()
-        for (playerCombatant in session.alivePlayers) {
+        val survivingPlayers = session.alivePlayers
+
+        // Split gold among surviving players (rounded up)
+        val goldPerPlayer = if (survivingPlayers.isNotEmpty()) {
+            (totalGold + survivingPlayers.size - 1) / survivingPlayers.size
+        } else 0
+
+        for (playerCombatant in survivingPlayers) {
             val user = UserRepository.findById(playerCombatant.id) ?: continue
 
             // Calculate XP from each creature individually based on player level
@@ -1272,6 +1436,18 @@ object CombatService {
                 }
             }
 
+            // Award gold
+            if (goldPerPlayer > 0) {
+                UserRepository.addGold(playerCombatant.id, goldPerPlayer)
+                log.info("Player ${user.name} received $goldPerPlayer gold")
+            }
+
+            // Award items (all players get copies of dropped items for now)
+            if (droppedItems.isNotEmpty()) {
+                UserRepository.addItems(playerCombatant.id, droppedItems.map { it.id })
+                log.info("Player ${user.name} received ${droppedItems.size} item(s)")
+            }
+
             // Clear combat state
             UserRepository.updateCombatState(playerCombatant.id, playerCombatant.currentHp, null)
             playerSessions.remove(playerCombatant.id)
@@ -1280,20 +1456,93 @@ object CombatService {
         // For broadcast, use average XP (or first player's XP if solo)
         val avgXp = if (xpResults.isNotEmpty()) xpResults.values.average().toInt() else 0
 
-        // Broadcast combat end
+        // Mark defeated creatures in FeatureState for each surviving player
+        // This is used for chest visibility (guardian must be defeated)
+        if (session.endReason == CombatEndReason.ALL_ENEMIES_DEFEATED) {
+            for (playerCombatant in survivingPlayers) {
+                for (creature in defeatedCreatures) {
+                    val defeatedKey = "defeated_${creature.id}"
+                    FeatureStateRepository.setState(playerCombatant.id, defeatedKey, "true")
+                    log.debug("Marked ${creature.name} as defeated for player ${playerCombatant.id}")
+                }
+            }
+        }
+
+        // Broadcast combat end with loot
         broadcastToSession(session.id, CombatEndedMessage(
             sessionId = session.id,
             reason = session.endReason!!,
             victors = victors,
             defeated = defeated,
+            loot = lootResult,
             experienceGained = avgXp
         ))
 
-        log.info("Combat session ${session.id} ended: ${session.endReason}")
+        log.info("Combat session ${session.id} ended: ${session.endReason}. " +
+            "Loot distributed: ${totalGold}g, ${droppedItems.size} items")
     }
 
     /**
-     * Process creature wandering - move non-aggressive creatures to random adjacent locations.
+     * Handle player death: drop all items at the death location and respawn at Home.
+     */
+    private suspend fun handlePlayerDeath(session: CombatSession) {
+        val homeLocation = LocationRepository.findByCoordinates(0, 0, "overworld")
+        if (homeLocation == null) {
+            log.error("Cannot respawn players - Home location at (0,0) not found!")
+            return
+        }
+
+        for (playerCombatant in session.players) {
+            val user = UserRepository.findById(playerCombatant.id) ?: continue
+
+            // Get the player's death location
+            val deathLocationId = user.currentLocationId
+            val deathLocation = deathLocationId?.let { LocationRepository.findById(it) }
+            val droppedItemIds = user.itemIds.toList()
+            val droppedGold = user.gold
+
+            // Drop items at the death location
+            if (droppedItemIds.isNotEmpty() && deathLocationId != null) {
+                LocationRepository.addItems(deathLocationId, droppedItemIds)
+                log.info("Player ${user.name} dropped ${droppedItemIds.size} items at location $deathLocationId")
+            }
+
+            // Clear inventory (also clears equipped items)
+            UserRepository.clearInventory(playerCombatant.id)
+
+            // Clear gold
+            if (droppedGold > 0) {
+                UserRepository.addGold(playerCombatant.id, -droppedGold)
+                log.info("Player ${user.name} lost $droppedGold gold")
+            }
+
+            // Respawn at Home with full HP
+            UserRepository.updateCurrentLocation(playerCombatant.id, homeLocation.id)
+            UserRepository.healToFull(playerCombatant.id)
+            UserRepository.updateCombatState(playerCombatant.id, user.maxHp, null)
+            playerSessions.remove(playerCombatant.id)
+
+            // Notify the player about their death
+            sendToPlayer(playerCombatant.id, PlayerDeathMessage(
+                playerId = playerCombatant.id,
+                playerName = user.name,
+                deathLocationId = deathLocationId,
+                deathLocationName = deathLocation?.name,
+                respawnLocationId = homeLocation.id,
+                respawnLocationName = homeLocation.name,
+                itemsDropped = droppedItemIds.size,
+                goldLost = droppedGold
+            ))
+
+            log.info("Player ${user.name} died and respawned at ${homeLocation.name}")
+        }
+    }
+
+    /**
+     * Process creature wandering - move creatures to random adjacent locations.
+     * Non-aggressive creatures always wander.
+     * Aggressive CR1 creatures also wander (roaming mobs).
+     * Aggressive CR2+ creatures (bosses) stay put.
      * Creatures wander every 3-5 ticks (~9-15 seconds) to make the world feel alive.
      */
     private suspend fun processCreatureWandering() {
@@ -1303,8 +1552,13 @@ object CombatService {
         if (now - lastWanderTick < CombatConfig.ROUND_DURATION_MS * 3) return
         lastWanderTick = now
 
-        // Get all non-aggressive creatures that could wander
-        val creatures = CreatureRepository.findAll().filter { !it.isAggressive }
+        // Get all creatures that can wander:
+        // - Non-aggressive creatures (always wander)
+        // - Aggressive CR1 creatures (roaming mobs)
+        // - NOT aggressive CR2+ creatures (bosses stay put)
+        val creatures = CreatureRepository.findAll().filter { creature ->
+            !creature.isAggressive || (creature.isAggressive && creature.challengeRating <= 1)
+        }
 
         // Track which creatures have already moved this tick
         val movedCreatures = mutableSetOf<String>()
@@ -1421,6 +1675,10 @@ object CombatService {
             name = name,
             maxHp = maxHp,
             currentHp = currentHp,
+            maxMana = maxMana,
+            currentMana = currentMana,
+            maxStamina = maxStamina,
+            currentStamina = currentStamina,
             characterClassId = characterClassId,
             abilityIds = classAbilities,
             initiative = CombatRng.rollD20(), // D20 initiative roll

@@ -50,6 +50,10 @@ data class Combatant(
     val name: String,
     val maxHp: Int,
     val currentHp: Int,
+    val maxMana: Int = 10,                    // Maximum mana pool
+    val currentMana: Int = 10,                // Current mana (for spells)
+    val maxStamina: Int = 10,                 // Maximum stamina pool
+    val currentStamina: Int = 10,             // Current stamina (for physical abilities)
     val characterClassId: String? = null,     // For players
     val abilityIds: List<String> = emptyList(),
     val initiative: Int = 0,                  // Determines action order within round
@@ -265,6 +269,21 @@ data class HealthUpdateMessage(
 ) : ServerCombatMessage()
 
 /**
+ * Sent when a combatant's mana or stamina changes.
+ */
+@Serializable
+data class ResourceUpdateMessage(
+    val sessionId: String,
+    val combatantId: String,
+    val currentMana: Int,
+    val maxMana: Int,
+    val currentStamina: Int,
+    val maxStamina: Int,
+    val manaChange: Int = 0,         // Positive = restored, negative = spent
+    val staminaChange: Int = 0       // Positive = restored, negative = spent
+) : ServerCombatMessage()
+
+/**
  * Sent when an ability resolves.
  */
 @Serializable
@@ -299,6 +318,16 @@ data class RoundEndMessage(
 ) : ServerCombatMessage()
 
 /**
+ * Loot result from combat victory.
+ */
+@Serializable
+data class LootResult(
+    val goldEarned: Int = 0,
+    val itemIds: List<String> = emptyList(),
+    val itemNames: List<String> = emptyList()  // For display without lookup
+)
+
+/**
  * Sent when combat ends.
  */
 @Serializable
@@ -307,7 +336,7 @@ data class CombatEndedMessage(
     val reason: CombatEndReason,
     val victors: List<String>,       // IDs of winning combatants
     val defeated: List<String>,      // IDs of defeated combatants
-    val loot: List<String> = emptyList(), // Item IDs dropped
+    val loot: LootResult = LootResult(), // Gold and items dropped
     val experienceGained: Int = 0
 ) : ServerCombatMessage()
 
@@ -354,6 +383,22 @@ data class CreatureMovedMessage(
     val toLocationId: String
 ) : ServerCombatMessage()
 
+/**
+ * Sent when a player dies and respawns.
+ * Notifies the player about what was lost and where they respawned.
+ */
+@Serializable
+data class PlayerDeathMessage(
+    val playerId: String,
+    val playerName: String,
+    val deathLocationId: String?,
+    val deathLocationName: String?,
+    val respawnLocationId: String,
+    val respawnLocationName: String,
+    val itemsDropped: Int,
+    val goldLost: Int
+) : ServerCombatMessage()
+
 // ============================================================================
 // Combat Configuration
 // ============================================================================
@@ -366,4 +411,7 @@ object CombatConfig {
     const val MAX_COMBAT_ROUNDS = 100             // Timeout after 100 rounds (~5 minutes)
     const val SESSION_TIMEOUT_MS = 300000L        // 5 minute session timeout
     const val HP_PER_HIT_DIE = 6                  // Average HP per hit die
+    // Resource regeneration (per combat round)
+    const val MANA_REGEN_PER_ROUND = 2            // Mana restored per round
+    const val STAMINA_REGEN_PER_ROUND = 3         // Stamina restored per round (faster than mana)
 }

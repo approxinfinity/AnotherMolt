@@ -30,7 +30,14 @@ data class User(
     val experience: Int = 0,
     val maxHp: Int = 10,
     val currentHp: Int = 10,
-    val currentCombatSessionId: String? = null
+    val maxMana: Int = 10,
+    val currentMana: Int = 10,
+    val maxStamina: Int = 10,
+    val currentStamina: Int = 10,
+    val currentCombatSessionId: String? = null,
+    // Economy and equipment
+    val gold: Int = 0,
+    val equippedItemIds: List<String> = emptyList()
 )
 
 /**
@@ -54,7 +61,14 @@ data class UserResponse(
     val experience: Int,
     val maxHp: Int,
     val currentHp: Int,
-    val currentCombatSessionId: String?
+    val maxMana: Int,
+    val currentMana: Int,
+    val maxStamina: Int,
+    val currentStamina: Int,
+    val currentCombatSessionId: String?,
+    // Economy and equipment
+    val gold: Int,
+    val equippedItemIds: List<String>
 )
 
 fun User.toResponse(): UserResponse = UserResponse(
@@ -73,7 +87,13 @@ fun User.toResponse(): UserResponse = UserResponse(
     experience = experience,
     maxHp = maxHp,
     currentHp = currentHp,
-    currentCombatSessionId = currentCombatSessionId
+    maxMana = maxMana,
+    currentMana = currentMana,
+    maxStamina = maxStamina,
+    currentStamina = currentStamina,
+    currentCombatSessionId = currentCombatSessionId,
+    gold = gold,
+    equippedItemIds = equippedItemIds
 )
 
 object UserRepository {
@@ -108,7 +128,13 @@ object UserRepository {
         experience = this[UserTable.experience],
         maxHp = this[UserTable.maxHp],
         currentHp = this[UserTable.currentHp],
-        currentCombatSessionId = this[UserTable.currentCombatSessionId]
+        maxMana = this[UserTable.maxMana],
+        currentMana = this[UserTable.currentMana],
+        maxStamina = this[UserTable.maxStamina],
+        currentStamina = this[UserTable.currentStamina],
+        currentCombatSessionId = this[UserTable.currentCombatSessionId],
+        gold = this[UserTable.gold],
+        equippedItemIds = jsonToList(this[UserTable.equippedItemIds])
     )
 
     fun create(user: User): User = transaction {
@@ -129,7 +155,13 @@ object UserRepository {
             it[experience] = user.experience
             it[maxHp] = user.maxHp
             it[currentHp] = user.currentHp
+            it[maxMana] = user.maxMana
+            it[currentMana] = user.currentMana
+            it[maxStamina] = user.maxStamina
+            it[currentStamina] = user.currentStamina
             it[currentCombatSessionId] = user.currentCombatSessionId
+            it[gold] = user.gold
+            it[equippedItemIds] = listToJson(user.equippedItemIds)
         }
         user
     }
@@ -165,7 +197,13 @@ object UserRepository {
             it[experience] = user.experience
             it[maxHp] = user.maxHp
             it[currentHp] = user.currentHp
+            it[maxMana] = user.maxMana
+            it[currentMana] = user.currentMana
+            it[maxStamina] = user.maxStamina
+            it[currentStamina] = user.currentStamina
             it[currentCombatSessionId] = user.currentCombatSessionId
+            it[gold] = user.gold
+            it[equippedItemIds] = listToJson(user.equippedItemIds)
         } > 0
     }
 
@@ -254,12 +292,14 @@ object UserRepository {
     }
 
     /**
-     * Fully heal a user
+     * Fully heal a user (restores HP, mana, and stamina)
      */
     fun healToFull(id: String): Boolean = transaction {
         val user = findById(id) ?: return@transaction false
         UserTable.update({ UserTable.id eq id }) {
             it[currentHp] = user.maxHp
+            it[currentMana] = user.maxMana
+            it[currentStamina] = user.maxStamina
             it[lastActiveAt] = System.currentTimeMillis()
         } > 0
     }
@@ -275,6 +315,161 @@ object UserRepository {
 
     fun delete(id: String): Boolean = transaction {
         UserTable.deleteWhere { UserTable.id eq id } > 0
+    }
+
+    /**
+     * Add gold to a user's balance
+     */
+    fun addGold(id: String, amount: Int): Boolean = transaction {
+        val user = findById(id) ?: return@transaction false
+        UserTable.update({ UserTable.id eq id }) {
+            it[gold] = user.gold + amount
+            it[lastActiveAt] = System.currentTimeMillis()
+        } > 0
+    }
+
+    /**
+     * Add items to a user's inventory
+     */
+    fun addItems(id: String, itemIds: List<String>): Boolean = transaction {
+        val user = findById(id) ?: return@transaction false
+        UserTable.update({ UserTable.id eq id }) {
+            it[UserTable.itemIds] = listToJson(user.itemIds + itemIds)
+            it[lastActiveAt] = System.currentTimeMillis()
+        } > 0
+    }
+
+    /**
+     * Remove specific items from a user's inventory
+     */
+    fun removeItems(id: String, itemIdsToRemove: List<String>): Boolean = transaction {
+        val user = findById(id) ?: return@transaction false
+        val removeSet = itemIdsToRemove.toMutableList()
+        val newItemIds = user.itemIds.filter { itemId ->
+            if (itemId in removeSet) {
+                removeSet.remove(itemId)
+                false
+            } else {
+                true
+            }
+        }
+        UserTable.update({ UserTable.id eq id }) {
+            it[UserTable.itemIds] = listToJson(newItemIds)
+            it[lastActiveAt] = System.currentTimeMillis()
+        } > 0
+    }
+
+    /**
+     * Clear all items from a user's inventory
+     * Returns the list of item IDs that were removed
+     */
+    fun clearInventory(id: String): List<String> = transaction {
+        val user = findById(id) ?: return@transaction emptyList()
+        val itemIds = user.itemIds.toList()
+        UserTable.update({ UserTable.id eq id }) {
+            it[UserTable.itemIds] = listToJson(emptyList())
+            it[equippedItemIds] = listToJson(emptyList())
+            it[lastActiveAt] = System.currentTimeMillis()
+        }
+        itemIds
+    }
+
+    /**
+     * Equip an item (must be in inventory)
+     */
+    fun equipItem(id: String, itemId: String): Boolean = transaction {
+        val user = findById(id) ?: return@transaction false
+        if (itemId !in user.itemIds) return@transaction false
+        if (itemId in user.equippedItemIds) return@transaction true // Already equipped
+        UserTable.update({ UserTable.id eq id }) {
+            it[equippedItemIds] = listToJson(user.equippedItemIds + itemId)
+            it[lastActiveAt] = System.currentTimeMillis()
+        } > 0
+    }
+
+    /**
+     * Unequip an item
+     */
+    fun unequipItem(id: String, itemId: String): Boolean = transaction {
+        val user = findById(id) ?: return@transaction false
+        if (itemId !in user.equippedItemIds) return@transaction true // Already unequipped
+        UserTable.update({ UserTable.id eq id }) {
+            it[equippedItemIds] = listToJson(user.equippedItemIds - itemId)
+            it[lastActiveAt] = System.currentTimeMillis()
+        } > 0
+    }
+
+    /**
+     * Spend mana (returns false if insufficient)
+     */
+    fun spendMana(id: String, amount: Int): Boolean = transaction {
+        val user = findById(id) ?: return@transaction false
+        if (user.currentMana < amount) return@transaction false
+        UserTable.update({ UserTable.id eq id }) {
+            it[currentMana] = user.currentMana - amount
+            it[lastActiveAt] = System.currentTimeMillis()
+        } > 0
+    }
+
+    /**
+     * Spend stamina (returns false if insufficient)
+     */
+    fun spendStamina(id: String, amount: Int): Boolean = transaction {
+        val user = findById(id) ?: return@transaction false
+        if (user.currentStamina < amount) return@transaction false
+        UserTable.update({ UserTable.id eq id }) {
+            it[currentStamina] = user.currentStamina - amount
+            it[lastActiveAt] = System.currentTimeMillis()
+        } > 0
+    }
+
+    /**
+     * Restore mana (capped at max)
+     */
+    fun restoreMana(id: String, amount: Int): Boolean = transaction {
+        val user = findById(id) ?: return@transaction false
+        val newMana = (user.currentMana + amount).coerceAtMost(user.maxMana)
+        UserTable.update({ UserTable.id eq id }) {
+            it[currentMana] = newMana
+            it[lastActiveAt] = System.currentTimeMillis()
+        } > 0
+    }
+
+    /**
+     * Restore stamina (capped at max)
+     */
+    fun restoreStamina(id: String, amount: Int): Boolean = transaction {
+        val user = findById(id) ?: return@transaction false
+        val newStamina = (user.currentStamina + amount).coerceAtMost(user.maxStamina)
+        UserTable.update({ UserTable.id eq id }) {
+            it[currentStamina] = newStamina
+            it[lastActiveAt] = System.currentTimeMillis()
+        } > 0
+    }
+
+    /**
+     * Restore all resources to full (HP, Mana, Stamina)
+     */
+    fun restoreAllResources(id: String): Boolean = transaction {
+        val user = findById(id) ?: return@transaction false
+        UserTable.update({ UserTable.id eq id }) {
+            it[currentHp] = user.maxHp
+            it[currentMana] = user.maxMana
+            it[currentStamina] = user.maxStamina
+            it[lastActiveAt] = System.currentTimeMillis()
+        } > 0
+    }
+
+    /**
+     * Update max resource values (called on level up or class assignment)
+     */
+    fun updateMaxResources(id: String, newMaxHp: Int, newMaxMana: Int, newMaxStamina: Int): Boolean = transaction {
+        UserTable.update({ UserTable.id eq id }) {
+            it[maxHp] = newMaxHp
+            it[maxMana] = newMaxMana
+            it[maxStamina] = newMaxStamina
+            it[lastActiveAt] = System.currentTimeMillis()
+        } > 0
     }
 
     // Level calculation: every 100 exp = 1 level

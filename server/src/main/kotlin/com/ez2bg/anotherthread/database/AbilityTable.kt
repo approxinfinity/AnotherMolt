@@ -19,6 +19,8 @@ object AbilityTable : Table("ability") {
     val baseDamage = integer("base_damage").default(0)           // Raw damage value
     val durationRounds = integer("duration_rounds").default(0)   // How long effect lasts
     val powerCost = integer("power_cost").default(10)            // Calculated total power cost
+    val manaCost = integer("mana_cost").default(0)               // Mana cost for spells
+    val staminaCost = integer("stamina_cost").default(0)         // Stamina cost for physical abilities
 
     override val primaryKey = PrimaryKey(id)
 }

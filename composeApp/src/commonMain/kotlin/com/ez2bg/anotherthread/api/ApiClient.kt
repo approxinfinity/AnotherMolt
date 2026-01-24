@@ -137,6 +137,10 @@ data class UserDto(
     val experience: Int = 0,
     val maxHp: Int = 10,
     val currentHp: Int = 10,
+    val maxMana: Int = 10,
+    val currentMana: Int = 10,
+    val maxStamina: Int = 10,
+    val currentStamina: Int = 10,
     val currentCombatSessionId: String? = null
 )
 
@@ -338,6 +342,8 @@ data class CharacterClassDto(
     val isSpellcaster: Boolean,
     val hitDie: Int,
     val primaryAttribute: String,
+    val baseMana: Int = 10,
+    val baseStamina: Int = 10,
     val imageUrl: String? = null,
     val powerBudget: Int = 100,
     val isPublic: Boolean = true,
@@ -374,7 +380,9 @@ data class AbilityDto(
     val imageUrl: String? = null,
     val baseDamage: Int = 0,
     val durationRounds: Int = 0,
-    val powerCost: Int = 10
+    val powerCost: Int = 10,
+    val manaCost: Int = 0,
+    val staminaCost: Int = 0
 )
 
 @Serializable
@@ -1267,6 +1275,10 @@ data class CombatantDto(
     val name: String,
     val maxHp: Int,
     val currentHp: Int,
+    val maxMana: Int = 10,
+    val currentMana: Int = 10,
+    val maxStamina: Int = 10,
+    val currentStamina: Int = 10,
     val characterClassId: String? = null,
     val abilityIds: List<String> = emptyList(),
     val initiative: Int = 0,
@@ -1387,6 +1399,18 @@ data class HealthUpdateResponse(
 )
 
 @Serializable
+data class ResourceUpdateResponse(
+    val sessionId: String,
+    val combatantId: String,
+    val currentMana: Int,
+    val maxMana: Int,
+    val currentStamina: Int,
+    val maxStamina: Int,
+    val manaChange: Int = 0,
+    val staminaChange: Int = 0
+)
+
+@Serializable
 data class AbilityResolvedResponse(
     val sessionId: String,
     val result: ActionResultDto,
@@ -1412,12 +1436,19 @@ data class RoundEndResponse(
 )
 
 @Serializable
+data class LootResultDto(
+    val goldEarned: Int = 0,
+    val itemIds: List<String> = emptyList(),
+    val itemNames: List<String> = emptyList()
+)
+
+@Serializable
 data class CombatEndedResponse(
     val sessionId: String,
     val reason: CombatEndReason,
     val victors: List<String>,
     val defeated: List<String>,
-    val loot: List<String> = emptyList(),
+    val loot: LootResultDto = LootResultDto(),
     val experienceGained: Int = 0
 )
 
@@ -1449,4 +1480,16 @@ data class CreatureMovedResponse(
     val creatureName: String,
     val fromLocationId: String,
     val toLocationId: String
+)
+
+@Serializable
+data class PlayerDeathResponse(
+    val playerId: String,
+    val playerName: String,
+    val deathLocationId: String? = null,
+    val deathLocationName: String? = null,
+    val respawnLocationId: String,
+    val respawnLocationName: String,
+    val itemsDropped: Int,
+    val goldLost: Int
 )

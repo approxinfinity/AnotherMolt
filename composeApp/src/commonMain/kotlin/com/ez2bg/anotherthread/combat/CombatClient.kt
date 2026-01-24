@@ -27,6 +27,7 @@ sealed class CombatEvent {
     data class CombatStarted(val session: CombatSessionDto, val yourCombatant: CombatantDto) : CombatEvent()
     data class RoundStarted(val sessionId: String, val roundNumber: Int, val durationMs: Long, val combatants: List<CombatantDto>) : CombatEvent()
     data class HealthUpdated(val update: HealthUpdateResponse) : CombatEvent()
+    data class ResourceUpdated(val update: ResourceUpdateResponse) : CombatEvent()
     data class AbilityResolved(val result: AbilityResolvedResponse) : CombatEvent()
     data class StatusEffectChanged(val effect: StatusEffectResponse) : CombatEvent()
     data class RoundEnded(val sessionId: String, val roundNumber: Int, val combatants: List<CombatantDto>, val logEntries: List<CombatLogEntryDto>) : CombatEvent()
@@ -34,6 +35,7 @@ sealed class CombatEvent {
     data class FleeResult(val response: FleeResultResponse) : CombatEvent()
     data class AbilityQueued(val abilityId: String, val targetId: String?) : CombatEvent()
     data class CreatureMoved(val creatureId: String, val creatureName: String, val fromLocationId: String, val toLocationId: String) : CombatEvent()
+    data class PlayerDied(val response: PlayerDeathResponse) : CombatEvent()
     data class Error(val message: String, val code: String?) : CombatEvent()
 }
 
@@ -323,6 +325,11 @@ class CombatClient(
                     _events.emit(CombatEvent.HealthUpdated(response))
                 }
 
+                text.contains("ResourceUpdateMessage") || (text.contains("\"manaChange\"") && text.contains("\"staminaChange\"")) -> {
+                    val response = json.decodeFromString<ResourceUpdateResponse>(extractPayload(text))
+                    _events.emit(CombatEvent.ResourceUpdated(response))
+                }
+
                 text.contains("AbilityResolvedMessage") -> {
                     val response = json.decodeFromString<AbilityResolvedResponse>(extractPayload(text))
                     _events.emit(CombatEvent.AbilityResolved(response))
@@ -368,6 +375,13 @@ class CombatClient(
                 text.contains("CreatureMovedMessage") || (text.contains("\"creatureId\"") && text.contains("\"fromLocationId\"")) -> {
                     val response = json.decodeFromString<CreatureMovedResponse>(extractPayload(text))
                     _events.emit(CombatEvent.CreatureMoved(response.creatureId, response.creatureName, response.fromLocationId, response.toLocationId))
+                }
+
+                text.contains("PlayerDeathMessage") || (text.contains("\"respawnLocationId\"") && text.contains("\"itemsDropped\"")) -> {
+                    val response = json.decodeFromString<PlayerDeathResponse>(extractPayload(text))
+                    currentSessionId = null
+                    lastKnownCombatants = emptyList()
+                    _events.emit(CombatEvent.PlayerDied(response))
                 }
 
                 else -> {

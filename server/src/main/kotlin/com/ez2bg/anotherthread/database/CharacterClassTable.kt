@@ -9,6 +9,8 @@ object CharacterClassTable : Table("character_class") {
     val isSpellcaster = bool("is_spellcaster")
     val hitDie = integer("hit_die")
     val primaryAttribute = text("primary_attribute")
+    val baseMana = integer("base_mana").default(10)      // Base mana pool (spellcasters get more)
+    val baseStamina = integer("base_stamina").default(10) // Base stamina pool (physical classes get more)
     val imageUrl = text("image_url").nullable()
 
     // Power budget for balance - total points available for abilities

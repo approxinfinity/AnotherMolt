@@ -19,6 +19,8 @@ data class CharacterClass(
     val isSpellcaster: Boolean,
     val hitDie: Int,
     val primaryAttribute: String,
+    val baseMana: Int = 10,               // Base mana pool (spellcasters typically get 20-30)
+    val baseStamina: Int = 10,            // Base stamina pool (physical classes typically get 20-30)
     val imageUrl: String? = null,
     val powerBudget: Int = 100,           // Total power points for abilities
     val isPublic: Boolean = true,          // Available to all users
@@ -34,6 +36,8 @@ object CharacterClassRepository {
         isSpellcaster = this[CharacterClassTable.isSpellcaster],
         hitDie = this[CharacterClassTable.hitDie],
         primaryAttribute = this[CharacterClassTable.primaryAttribute],
+        baseMana = this[CharacterClassTable.baseMana],
+        baseStamina = this[CharacterClassTable.baseStamina],
         imageUrl = this[CharacterClassTable.imageUrl],
         powerBudget = this[CharacterClassTable.powerBudget],
         isPublic = this[CharacterClassTable.isPublic],
@@ -49,6 +53,8 @@ object CharacterClassRepository {
             it[isSpellcaster] = characterClass.isSpellcaster
             it[hitDie] = characterClass.hitDie
             it[primaryAttribute] = characterClass.primaryAttribute
+            it[baseMana] = characterClass.baseMana
+            it[baseStamina] = characterClass.baseStamina
             it[imageUrl] = characterClass.imageUrl
             it[powerBudget] = characterClass.powerBudget
             it[isPublic] = characterClass.isPublic
@@ -83,6 +89,8 @@ object CharacterClassRepository {
             it[isSpellcaster] = characterClass.isSpellcaster
             it[hitDie] = characterClass.hitDie
             it[primaryAttribute] = characterClass.primaryAttribute
+            it[baseMana] = characterClass.baseMana
+            it[baseStamina] = characterClass.baseStamina
             it[imageUrl] = characterClass.imageUrl
             it[powerBudget] = characterClass.powerBudget
             it[isPublic] = characterClass.isPublic

@@ -93,6 +93,7 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
@@ -124,11 +125,113 @@ import kotlin.math.abs
 import kotlin.math.cos
 import kotlin.math.sin
 import kotlin.math.sqrt
+import com.ez2bg.anotherthread.ui.components.AbilityIconButton
+import com.ez2bg.anotherthread.ui.components.AbilityIconMapper
+import com.ez2bg.anotherthread.ui.components.AbilityIconSmall
+import com.ez2bg.anotherthread.ui.components.BlindOverlay
+import com.ez2bg.anotherthread.ui.components.BlindOverlayFullScreen
+import com.ez2bg.anotherthread.ui.components.CombatTarget
+import com.ez2bg.anotherthread.ui.components.DisorientIndicator
+import com.ez2bg.anotherthread.ui.components.StatusEffectBadge
+import com.ez2bg.anotherthread.ui.components.TargetSelectionOverlay
 
 /**
  * Extension function to check if user has a complete profile (class assigned).
  */
 fun UserDto.hasCompleteProfile(): Boolean = characterClassId != null
+
+/**
+ * Generate a vague description of a creature when the player is blinded.
+ * Uses creature properties to give hints without revealing identity.
+ */
+fun getBlindPresenceDescription(creature: CreatureDto, index: Int): String {
+    val descriptions = listOf(
+        "A presence nearby",
+        "Something lurks here",
+        "A shape in the darkness",
+        "Movement to your side",
+        "A figure you sense",
+        "An unknown form"
+    )
+
+    // Use creature level/danger to hint at size/threat
+    val sizeHint = when {
+        creature.level >= 10 -> "massive "
+        creature.level >= 7 -> "large "
+        creature.level >= 4 -> ""
+        creature.level >= 2 -> "small "
+        else -> "tiny "
+    }
+
+    // Check creature type from description or name for hints
+    val typeHint = when {
+        creature.desc.contains("undead", ignoreCase = true) ||
+        creature.name.contains("skeleton", ignoreCase = true) ||
+        creature.name.contains("zombie", ignoreCase = true) -> "cold "
+
+        creature.desc.contains("beast", ignoreCase = true) ||
+        creature.desc.contains("animal", ignoreCase = true) -> "bestial "
+
+        creature.desc.contains("humanoid", ignoreCase = true) ||
+        creature.name.contains("goblin", ignoreCase = true) ||
+        creature.name.contains("orc", ignoreCase = true) -> "humanoid "
+
+        creature.desc.contains("elemental", ignoreCase = true) ||
+        creature.name.contains("fire", ignoreCase = true) ||
+        creature.name.contains("ice", ignoreCase = true) -> "unnatural "
+
+        else -> ""
+    }
+
+    return when (index % 4) {
+        0 -> "A ${sizeHint}${typeHint}presence"
+        1 -> "Something ${sizeHint}moves nearby"
+        2 -> "A ${typeHint}shape in the dark"
+        else -> "You sense ${if (sizeHint.isNotEmpty()) "a ${sizeHint.trim()} form" else "something"}"
+    }
+}
+
+/**
+ * Generate a vague description of an item when the player is blinded.
+ */
+fun getBlindItemDescription(item: ItemDto, index: Int): String {
+    // Check item type or name for hints
+    val shapeHint = when {
+        item.name.contains("sword", ignoreCase = true) ||
+        item.name.contains("blade", ignoreCase = true) ||
+        item.name.contains("dagger", ignoreCase = true) -> "long, thin object"
+
+        item.name.contains("shield", ignoreCase = true) ||
+        item.name.contains("armor", ignoreCase = true) -> "heavy metal object"
+
+        item.name.contains("potion", ignoreCase = true) ||
+        item.name.contains("vial", ignoreCase = true) ||
+        item.name.contains("flask", ignoreCase = true) -> "small container"
+
+        item.name.contains("scroll", ignoreCase = true) ||
+        item.name.contains("book", ignoreCase = true) -> "paper-like object"
+
+        item.name.contains("ring", ignoreCase = true) ||
+        item.name.contains("amulet", ignoreCase = true) ||
+        item.name.contains("necklace", ignoreCase = true) -> "small trinket"
+
+        item.name.contains("staff", ignoreCase = true) ||
+        item.name.contains("wand", ignoreCase = true) -> "wooden implement"
+
+        item.name.contains("coin", ignoreCase = true) ||
+        item.name.contains("gold", ignoreCase = true) -> "something metallic"
+
+        item.name.contains("key", ignoreCase = true) -> "small metal object"
+
+        else -> "an object"
+    }
+
+    return when (index % 3) {
+        0 -> "You feel $shapeHint"
+        1 -> "Your hand brushes $shapeHint"
+        else -> "Something here - $shapeHint"
+    }
+}
 
 /**
  * Icon showing creature activity state (wandering, in_combat, idle).
@@ -735,21 +838,32 @@ fun GenerateImageButton(
 private var refreshKeyCounter = 0L
 private fun nextRefreshKey(): Long = ++refreshKeyCounter
 
+/**
+ * Game mode enum - determines whether the user is adventuring (playing) or creating (editing).
+ */
+enum class GameMode {
+    ADVENTURE,  // Player mode: navigation, combat, interacting with the world
+    CREATE;     // Editor mode: creating/editing locations, creatures, items
+
+    val isAdventure: Boolean get() = this == ADVENTURE
+    val isCreate: Boolean get() = this == CREATE
+}
+
 sealed class ViewState {
     data object UserAuth : ViewState()
     data class UserProfile(val user: UserDto) : ViewState()
     data class UserDetail(val userId: String) : ViewState()  // View other user's profile (read-only for non-admins)
     data class LocationGraph(val refreshKey: Long = nextRefreshKey()) : ViewState()
     data object LocationCreate : ViewState()
-    data class LocationEdit(val location: LocationDto, val isExplorationMode: Boolean = false) : ViewState()
+    data class LocationEdit(val location: LocationDto, val gameMode: GameMode = GameMode.CREATE) : ViewState()
     data object CreatureList : ViewState()
     data object CreatureCreate : ViewState()
     data class CreatureEdit(val creature: CreatureDto) : ViewState()
-    data class CreatureDetail(val id: String, val isExplorationMode: Boolean = false) : ViewState()
+    data class CreatureDetail(val id: String, val gameMode: GameMode = GameMode.CREATE) : ViewState()
     data object ItemList : ViewState()
     data object ItemCreate : ViewState()
     data class ItemEdit(val item: ItemDto) : ViewState()
-    data class ItemDetail(val id: String, val isExplorationMode: Boolean = false) : ViewState()
+    data class ItemDetail(val id: String, val gameMode: GameMode = GameMode.CREATE) : ViewState()
     data object AdminPanel : ViewState()
     data object AuditLogs : ViewState()
     data object ClassList : ViewState()
@@ -1003,14 +1117,14 @@ fun AdminScreen() {
         println("DEBUG: refreshLocationGraph() called, new key: $locationGraphRefreshKey")
     }
 
-    // Exploration mode state - when ON, map is hidden and navigation is non-dismissable
-    // Auto-start in exploration mode if user has complete profile (class assigned) and last known location
-    val startInExplorationMode = remember {
+    // Game mode state - ADVENTURE for playing, CREATE for editing
+    // Auto-start in Adventure mode if user has complete profile (class assigned) and last known location
+    val startInAdventureMode = remember {
         savedUser != null &&
         savedUser.characterClassId != null &&  // Profile complete (has class)
         savedUser.currentLocationId != null    // Has last known location
     }
-    var isExplorationMode by remember { mutableStateOf(startInExplorationMode) }
+    var gameMode by remember { mutableStateOf(if (startInAdventureMode) GameMode.ADVENTURE else GameMode.CREATE) }
 
     // Set user context for audit logging when user changes
     LaunchedEffect(currentUser) {
@@ -1068,10 +1182,10 @@ fun AdminScreen() {
     Column(
         modifier = Modifier
             .fillMaxSize()
-            .padding(if (isExplorationMode) 0.dp else 16.dp)
+            .padding(if (gameMode.isAdventure) 0.dp else 16.dp)
     ) {
         // Hide header and tabs in exploration mode (full screen)
-        if (!isExplorationMode) {
+        if (gameMode.isCreate) {
             DragonHeader(modifier = Modifier.padding(bottom = 4.dp))
 
             // All tabs are visible
@@ -1160,7 +1274,7 @@ fun AdminScreen() {
                     LocationGraphView(
                         refreshKey = locationGraphRefreshKey,
                         onAddClick = { viewState = ViewState.LocationCreate },
-                        onLocationClick = { location -> viewState = ViewState.LocationEdit(location, isExplorationMode) },
+                        onLocationClick = { location -> viewState = ViewState.LocationEdit(location, gameMode) },
                         isAuthenticated = currentUser != null,
                         isAdmin = isAdmin,
                         currentUser = currentUser,
@@ -1168,8 +1282,8 @@ fun AdminScreen() {
                             selectedTab = AdminTab.USER
                             viewState = ViewState.UserAuth
                         },
-                        isExplorationMode = isExplorationMode,
-                        onExplorationModeChange = { isExplorationMode = it }
+                        gameMode = gameMode,
+                        onGameModeChange = { gameMode = it }
                     )
                 }
             }
@@ -1200,13 +1314,13 @@ fun AdminScreen() {
                 onSaved = { refreshLocationGraph(); viewState = ViewState.LocationGraph() },
                 onNavigateToItem = { id ->
                     selectedTab = AdminTab.ITEM
-                    viewState = ViewState.ItemDetail(id, state.isExplorationMode)
+                    viewState = ViewState.ItemDetail(id, state.gameMode)
                 },
                 onNavigateToCreature = { id ->
                     selectedTab = AdminTab.CREATURE
-                    viewState = ViewState.CreatureDetail(id, state.isExplorationMode)
+                    viewState = ViewState.CreatureDetail(id, state.gameMode)
                 },
-                onNavigateToLocation = { location -> viewState = ViewState.LocationEdit(location, state.isExplorationMode) },
+                onNavigateToLocation = { location -> viewState = ViewState.LocationEdit(location, state.gameMode) },
                 onNavigateToUser = { userId ->
                     selectedTab = AdminTab.USER
                     viewState = ViewState.UserDetail(userId)
@@ -1214,10 +1328,10 @@ fun AdminScreen() {
                 currentUser = currentUser,
                 isAdmin = isAdmin,
                 onLocationUpdated = { updatedLocation ->
-                    viewState = ViewState.LocationEdit(updatedLocation, state.isExplorationMode)
+                    viewState = ViewState.LocationEdit(updatedLocation, state.gameMode)
                 },
                 onDeleted = { refreshLocationGraph(); viewState = ViewState.LocationGraph() },
-                isExplorationMode = state.isExplorationMode
+                gameMode = state.gameMode
             )
             is ViewState.CreatureList -> {
                 // Block if user is authenticated but profile incomplete
@@ -1282,10 +1396,10 @@ fun AdminScreen() {
                 },
                 onNavigateToItem = { id ->
                     selectedTab = AdminTab.ITEM
-                    viewState = ViewState.ItemDetail(id, state.isExplorationMode)
+                    viewState = ViewState.ItemDetail(id, state.gameMode)
                 },
                 isAdmin = isAdmin,
-                isExplorationMode = state.isExplorationMode
+                gameMode = state.gameMode
             )
             is ViewState.ItemList -> {
                 // Block if user is authenticated but profile incomplete
@@ -1341,7 +1455,7 @@ fun AdminScreen() {
                     viewState = ViewState.ItemCreate
                 },
                 isAdmin = isAdmin,
-                isExplorationMode = state.isExplorationMode
+                gameMode = state.gameMode
             )
             is ViewState.AdminPanel -> AdminPanelView(
                 onViewAuditLogs = { viewState = ViewState.AuditLogs },
@@ -2956,8 +3070,8 @@ fun LocationGraphView(
     isAdmin: Boolean = false,
     currentUser: UserDto? = null,
     onLoginClick: () -> Unit = {},
-    isExplorationMode: Boolean = false,
-    onExplorationModeChange: (Boolean) -> Unit = {}
+    gameMode: GameMode = GameMode.CREATE,
+    onGameModeChange: (GameMode) -> Unit = {}
 ) {
     var locations by remember(refreshKey) { mutableStateOf<List<LocationDto>>(emptyList()) }
     var isLoading by remember(refreshKey) { mutableStateOf(true) }
@@ -2981,13 +3095,42 @@ fun LocationGraphView(
         }.onFailure { error = it.message }
     }
 
-    // WebSocket connection to listen for creature movement (only in exploration mode)
-    LaunchedEffect(isExplorationMode, currentUser?.id) {
+    // Combat client state - persisted across recompositions
+    var activeCombatClient by remember { mutableStateOf<CombatClient?>(null) }
+    var combatSession by remember { mutableStateOf<CombatSessionDto?>(null) }
+    var playerCombatant by remember { mutableStateOf<CombatantDto?>(null) }
+    var combatCooldowns by remember { mutableStateOf<Map<String, Int>>(emptyMap()) }
+    var combatQueuedAbilityId by remember { mutableStateOf<String?>(null) }
+
+    // Visual effect states from combat (blind/disorient)
+    var combatIsBlinded by remember { mutableStateOf(false) }
+    var combatBlindRounds by remember { mutableStateOf(0) }
+    var combatIsDisoriented by remember { mutableStateOf(false) }
+    var combatDisorientRounds by remember { mutableStateOf(0) }
+
+    // Death notification state
+    var deathNotification by remember { mutableStateOf<PlayerDeathResponse?>(null) }
+
+    // Event log state
+    var eventLogEntries by remember { mutableStateOf<List<com.ez2bg.anotherthread.ui.components.EventLogEntry>>(emptyList()) }
+
+    // Helper to add event log entry
+    fun addEventLog(message: String, type: com.ez2bg.anotherthread.ui.components.EventType) {
+        val entry = com.ez2bg.anotherthread.ui.components.EventLogEntry(
+            message = message,
+            type = type
+        )
+        eventLogEntries = (eventLogEntries + entry).takeLast(50) // Keep last 50 entries
+    }
+
+    // WebSocket connection to listen for combat events (only in Adventure mode)
+    LaunchedEffect(gameMode, currentUser?.id) {
         val userId = currentUser?.id
-        if (isExplorationMode && userId != null) {
+        if (gameMode.isAdventure && userId != null) {
             println("DEBUG: Connecting to combat WebSocket for creature updates")
             try {
                 val combatClient = CombatClient(userId)
+                activeCombatClient = combatClient
                 combatClient.connect()
 
                 try {
@@ -2995,6 +3138,7 @@ fun LocationGraphView(
                         when (event) {
                             is CombatEvent.CreatureMoved -> {
                                 println("DEBUG: Creature ${event.creatureName} moved from ${event.fromLocationId} to ${event.toLocationId}")
+                                addEventLog("${event.creatureName} wandered away", com.ez2bg.anotherthread.ui.components.EventType.MOVEMENT)
                                 // Refresh locations to pick up creature movement
                                 val result = ApiClient.getLocations(cacheBuster = currentTimeMillis())
                                 result.onSuccess {
@@ -3002,12 +3146,144 @@ fun LocationGraphView(
                                     locations = it
                                 }
                             }
-                            else -> { /* Ignore other combat events */ }
+                            is CombatEvent.CombatStarted -> {
+                                println("DEBUG: Combat started - session ${event.session.id}")
+                                combatSession = event.session
+                                playerCombatant = event.yourCombatant
+                                val enemyNames = event.session.combatants
+                                    .filter { it.type == CombatantType.CREATURE }
+                                    .joinToString(", ") { it.name }
+                                addEventLog("Combat started vs $enemyNames!", com.ez2bg.anotherthread.ui.components.EventType.COMBAT)
+                            }
+                            is CombatEvent.RoundStarted -> {
+                                println("DEBUG: Round ${event.roundNumber} started")
+                                combatQueuedAbilityId = null  // Clear queued ability for new round
+                                // Update combatants list and cooldowns
+                                val myCombatant = event.combatants.find { it.id == userId }
+                                if (myCombatant != null) {
+                                    playerCombatant = myCombatant
+                                    combatCooldowns = myCombatant.cooldowns
+                                }
+                                addEventLog("Round ${event.roundNumber}", com.ez2bg.anotherthread.ui.components.EventType.INFO)
+                            }
+                            is CombatEvent.AbilityQueued -> {
+                                println("DEBUG: Ability ${event.abilityId} queued")
+                                combatQueuedAbilityId = event.abilityId
+                            }
+                            is CombatEvent.AbilityResolved -> {
+                                println("DEBUG: Ability resolved - ${event.result.abilityName}")
+                                val r = event.result
+                                val msg = if (r.result.damage > 0) {
+                                    "${r.actorName} hits ${r.targetName ?: "target"} with ${r.abilityName} for ${r.result.damage} damage"
+                                } else if (r.result.healing > 0) {
+                                    "${r.actorName} heals ${r.targetName ?: "self"} for ${r.result.healing} HP"
+                                } else {
+                                    "${r.actorName} uses ${r.abilityName}"
+                                }
+                                val eventType = when {
+                                    r.result.damage > 0 -> com.ez2bg.anotherthread.ui.components.EventType.DAMAGE
+                                    r.result.healing > 0 -> com.ez2bg.anotherthread.ui.components.EventType.HEALING
+                                    else -> com.ez2bg.anotherthread.ui.components.EventType.INFO
+                                }
+                                addEventLog(msg, eventType)
+                            }
+                            is CombatEvent.StatusEffectChanged -> {
+                                val response = event.effect
+                                val effectDto = response.effect
+                                println("DEBUG: Status effect changed - ${effectDto.effectType} on ${response.combatantId}, applied=${response.applied}, rounds=${effectDto.remainingRounds}")
+                                // Check if this affects the player
+                                if (response.combatantId == userId) {
+                                    when (effectDto.effectType) {
+                                        "blind" -> {
+                                            combatIsBlinded = response.applied
+                                            combatBlindRounds = effectDto.remainingRounds
+                                        }
+                                        "disorient" -> {
+                                            combatIsDisoriented = response.applied
+                                            combatDisorientRounds = effectDto.remainingRounds
+                                        }
+                                    }
+                                }
+                                val action = if (response.applied) "applied" else "expired"
+                                val effectType = if (effectDto.effectType in listOf("buff", "hot", "heal")) {
+                                    com.ez2bg.anotherthread.ui.components.EventType.BUFF
+                                } else {
+                                    com.ez2bg.anotherthread.ui.components.EventType.DEBUFF
+                                }
+                                addEventLog("${effectDto.name} $action", effectType)
+                            }
+                            is CombatEvent.RoundEnded -> {
+                                println("DEBUG: Round ${event.roundNumber} ended")
+                                val myCombatant = event.combatants.find { it.id == userId }
+                                if (myCombatant != null) {
+                                    playerCombatant = myCombatant
+                                    // Update cooldowns from combatant data
+                                    combatCooldowns = myCombatant.cooldowns
+                                    println("DEBUG: Updated cooldowns: ${myCombatant.cooldowns}")
+                                }
+                                // Decrement visual effect rounds
+                                if (combatBlindRounds > 0) {
+                                    combatBlindRounds--
+                                    if (combatBlindRounds <= 0) combatIsBlinded = false
+                                }
+                                if (combatDisorientRounds > 0) {
+                                    combatDisorientRounds--
+                                    if (combatDisorientRounds <= 0) combatIsDisoriented = false
+                                }
+                            }
+                            is CombatEvent.CombatEnded -> {
+                                println("DEBUG: Combat ended")
+                                combatSession = null
+                                playerCombatant = null
+                                combatQueuedAbilityId = null
+                                combatCooldowns = emptyMap()
+                                combatIsBlinded = false
+                                combatBlindRounds = 0
+                                combatIsDisoriented = false
+                                combatDisorientRounds = 0
+                                val r = event.response
+                                val msg = when (r.reason) {
+                                    CombatEndReason.ALL_ENEMIES_DEFEATED -> "Victory! +${r.experienceGained} XP"
+                                    CombatEndReason.ALL_PLAYERS_DEFEATED -> "Defeated..."
+                                    CombatEndReason.ALL_PLAYERS_FLED -> "Escaped!"
+                                    else -> "Combat ended"
+                                }
+                                addEventLog(msg, com.ez2bg.anotherthread.ui.components.EventType.COMBAT)
+                                if (r.loot.goldEarned > 0) {
+                                    addEventLog("Found ${r.loot.goldEarned} gold!", com.ez2bg.anotherthread.ui.components.EventType.LOOT)
+                                }
+                                if (r.loot.itemNames.isNotEmpty()) {
+                                    addEventLog("Looted: ${r.loot.itemNames.joinToString()}", com.ez2bg.anotherthread.ui.components.EventType.LOOT)
+                                }
+                            }
+                            is CombatEvent.PlayerDied -> {
+                                println("DEBUG: Player died - respawning at ${event.response.respawnLocationName}")
+                                combatSession = null
+                                playerCombatant = null
+                                combatQueuedAbilityId = null
+                                combatCooldowns = emptyMap()
+                                combatIsBlinded = false
+                                combatBlindRounds = 0
+                                combatIsDisoriented = false
+                                combatDisorientRounds = 0
+                                deathNotification = event.response
+                                addEventLog("You died! Dropped ${event.response.itemsDropped} items and ${event.response.goldLost} gold", com.ez2bg.anotherthread.ui.components.EventType.DEATH)
+                            }
+                            is CombatEvent.Error -> {
+                                println("DEBUG: Combat error - ${event.message}")
+                                addEventLog(event.message, com.ez2bg.anotherthread.ui.components.EventType.INFO)
+                            }
+                            is CombatEvent.ResourceUpdated -> {
+                                // Resource updates are handled silently for now
+                                // Could add messages like "Spent 5 mana" if desired
+                            }
+                            else -> { /* Ignore other events */ }
                         }
                     }
                 } finally {
                     println("DEBUG: Disconnecting combat WebSocket")
                     combatClient.disconnect()
+                    activeCombatClient = null
                 }
             } catch (e: Exception) {
                 println("DEBUG: WebSocket error: ${e.message}")
@@ -3028,6 +3304,38 @@ fun LocationGraphView(
                 }
             }
         }
+    }
+
+    // Death notification dialog
+    deathNotification?.let { death ->
+        AlertDialog(
+            onDismissRequest = { deathNotification = null },
+            title = { Text("You Died!") },
+            text = {
+                Column {
+                    Text("You have been defeated and respawned at ${death.respawnLocationName}.")
+                    Spacer(modifier = Modifier.height(8.dp))
+                    if (death.itemsDropped > 0 || death.goldLost > 0) {
+                        Text("You dropped:", fontWeight = FontWeight.Bold)
+                        if (death.itemsDropped > 0) {
+                            Text("• ${death.itemsDropped} item(s)")
+                        }
+                        if (death.goldLost > 0) {
+                            Text("• ${death.goldLost} gold")
+                        }
+                        Spacer(modifier = Modifier.height(8.dp))
+                        death.deathLocationName?.let { locName ->
+                            Text("Your items are at: $locName", fontStyle = FontStyle.Italic)
+                        }
+                    }
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = { deathNotification = null }) {
+                    Text("OK")
+                }
+            }
+        )
     }
 
     // Terrain settings dialog
@@ -3110,14 +3418,23 @@ fun LocationGraphView(
                         selectedLocationForSettings = location
                     },
                     currentUser = currentUser,
-                    isExplorationMode = isExplorationMode,
-                    onExplorationModeChange = onExplorationModeChange
+                    gameMode = gameMode,
+                    onGameModeChange = onGameModeChange,
+                    // Pass combat state to LocationGraph
+                    activeCombatClient = activeCombatClient,
+                    combatCooldowns = combatCooldowns,
+                    combatQueuedAbilityId = combatQueuedAbilityId,
+                    combatIsBlinded = combatIsBlinded,
+                    combatBlindRounds = combatBlindRounds,
+                    combatIsDisoriented = combatIsDisoriented,
+                    combatDisorientRounds = combatDisorientRounds,
+                    eventLogEntries = eventLogEntries
                 )
             }
         }
 
         // Hide FAB and login prompt in exploration mode
-        if (!isExplorationMode) {
+        if (gameMode.isCreate) {
             if (isAuthenticated) {
                 FloatingActionButton(
                     onClick = onAddClick,
@@ -3390,8 +3707,18 @@ fun LocationGraph(
     terrainOverridesMap: Map<String, TerrainOverridesDto> = emptyMap(),
     onSettingsClick: (LocationDto) -> Unit = {},
     currentUser: UserDto? = null,
-    isExplorationMode: Boolean = false,
-    onExplorationModeChange: (Boolean) -> Unit = {}
+    gameMode: GameMode = GameMode.CREATE,
+    onGameModeChange: (GameMode) -> Unit = {},
+    // Combat state from WebSocket
+    activeCombatClient: CombatClient? = null,
+    combatCooldowns: Map<String, Int> = emptyMap(),
+    combatQueuedAbilityId: String? = null,
+    combatIsBlinded: Boolean = false,
+    combatBlindRounds: Int = 0,
+    combatIsDisoriented: Boolean = false,
+    combatDisorientRounds: Int = 0,
+    // Event log
+    eventLogEntries: List<com.ez2bg.anotherthread.ui.components.EventLogEntry> = emptyList()
 ) {
     val gridResult = remember(locations) {
         calculateForceDirectedPositions(locations)
@@ -3401,23 +3728,27 @@ fun LocationGraph(
     // Track which location is expanded (null = none expanded)
     var expandedLocationId by remember { mutableStateOf<String?>(null) }
 
-    // Creatures and items for exploration mode display
+    // Creatures, items, and abilities for Adventure mode display
     var allCreatures by remember { mutableStateOf<List<CreatureDto>>(emptyList()) }
     var allItems by remember { mutableStateOf<List<ItemDto>>(emptyList()) }
+    var allAbilitiesMap by remember { mutableStateOf<Map<String, AbilityDto>>(emptyMap()) }
     var creatureStates by remember { mutableStateOf<Map<String, String>>(emptyMap()) }
 
-    // Load creatures and items when entering exploration mode
-    LaunchedEffect(isExplorationMode) {
-        if (isExplorationMode) {
+    // Load creatures, items, and abilities when entering Adventure mode
+    LaunchedEffect(gameMode) {
+        if (gameMode.isAdventure) {
             ApiClient.getCreatures().onSuccess { allCreatures = it }
             ApiClient.getItems().onSuccess { allItems = it }
+            ApiClient.getAbilities().onSuccess { abilities ->
+                allAbilitiesMap = abilities.associateBy { it.id }
+            }
             ApiClient.getCreatureStates().onSuccess { creatureStates = it }
         }
     }
 
-    // Auto-select location when entering exploration mode based on user's presence
-    LaunchedEffect(isExplorationMode, currentUser?.id, locations) {
-        if (isExplorationMode && expandedLocationId == null && locations.isNotEmpty()) {
+    // Auto-select location when entering Adventure mode based on user's presence
+    LaunchedEffect(gameMode, currentUser?.id, locations) {
+        if (gameMode.isAdventure && expandedLocationId == null && locations.isNotEmpty()) {
             // Try to use user's current location from presence data
             val userLocationId = currentUser?.currentLocationId
             val targetLocation = if (userLocationId != null) {
@@ -3470,10 +3801,10 @@ fun LocationGraph(
     BoxWithConstraints(
         modifier = modifier
             .clipToBounds()
-            .pointerInput(expandedLocationId, isExplorationMode) {
+            .pointerInput(expandedLocationId, gameMode) {
                 detectTransformGestures { centroid, pan, zoom, _ ->
-                    // Collapse any expanded thumbnail when panning/zooming (unless in exploration mode)
-                    if (expandedLocationId != null && !isExplorationMode) {
+                    // Collapse any expanded thumbnail when panning/zooming (unless in Adventure mode)
+                    if (expandedLocationId != null && gameMode.isCreate) {
                         expandedLocationId = null
                     }
 
@@ -3574,7 +3905,7 @@ fun LocationGraph(
         }
 
         // LAYER 1.5: Dark overlay when in exploration mode (obscures map features)
-        if (isExplorationMode) {
+        if (gameMode.isAdventure) {
             Canvas(modifier = Modifier.fillMaxSize()) {
                 drawRect(Color.Black.copy(alpha = 0.85f))
             }
@@ -3728,7 +4059,7 @@ fun LocationGraph(
             }
 
             // Only render terrain tiles when NOT in exploration mode
-            if (!isExplorationMode) {
+            if (gameMode.isCreate) {
                 Canvas(modifier = Modifier.fillMaxSize()) {
                     // Render locations
                     locations.forEach { location ->
@@ -3784,7 +4115,7 @@ fun LocationGraph(
             // LAYER 2.5: Connection lines between exits
             // In exploration mode: lines are shown in the minimap instead
             // In normal mode: thin dotted lines
-            if (!isExplorationMode) {
+            if (gameMode.isCreate) {
             // LAYER 2.5: Connection lines between exits (thin, meandering, dotted orange lines)
             // The dots use: Modifier.offset(x = (pos.x * (width - boxSizePx) / 2.5f).dp, ...)
             // The value inside .dp is a raw number that becomes dp units.
@@ -3962,20 +4293,20 @@ fun LocationGraph(
                 // Orange connection lines
                 // In exploration mode: thicker solid lines like the highlight circle
                 // In normal mode: thin dotted lines
-                val connectionColor = if (isExplorationMode) {
+                val connectionColor = if (gameMode.isAdventure) {
                     Color(0xFFFF9800).copy(alpha = 0.6f)  // More visible in exploration mode
                 } else {
                     Color(0xFFFF9800).copy(alpha = 0.25f)
                 }
-                val oneWayColor = if (isExplorationMode) {
+                val oneWayColor = if (gameMode.isAdventure) {
                     Color(0xFFFF9800).copy(alpha = 0.7f)
                 } else {
                     Color(0xFFFF9800).copy(alpha = 0.35f)
                 }
                 // Exploration mode: thick like highlight circle (about 3dp), normal: thin (1.2dp)
-                val strokeWidth = if (isExplorationMode) 3.dp.toPx() else 1.2.dp.toPx()
-                val dashLength = if (isExplorationMode) 8f else 4f  // Longer dashes in exploration
-                val gapLength = if (isExplorationMode) 4f else 6f   // Smaller gaps in exploration
+                val strokeWidth = if (gameMode.isAdventure) 3.dp.toPx() else 1.2.dp.toPx()
+                val dashLength = if (gameMode.isAdventure) 8f else 4f  // Longer dashes in exploration
+                val gapLength = if (gameMode.isAdventure) 4f else 6f   // Smaller gaps in exploration
 
                 filteredConnectionLines.forEach { line ->
                     drawTerrainAwarePath(
@@ -3995,7 +4326,7 @@ fun LocationGraph(
             // LAYER 3: Location dots/thumbnails
             // In exploration mode: only render the expanded thumbnail (no collapsed dots)
             // and the dots are not clickable
-            if (!isExplorationMode) {
+            if (gameMode.isCreate) {
                 // Normal mode: render all locations with their dots
                 locations.forEach { location ->
                     val pos = locationPositions[location.id] ?: return@forEach
@@ -4029,7 +4360,7 @@ fun LocationGraph(
                             expandedLocationId = null
                         },
                         allLocations = locations,
-                        isExplorationMode = false
+                        gameMode = GameMode.CREATE
                     )
                 }
             }
@@ -4037,8 +4368,8 @@ fun LocationGraph(
             // Labels are only shown when location is expanded (tap to reveal)
         }
 
-        // Exploration mode view
-        if (isExplorationMode && expandedLocationId != null) {
+        // Adventure mode view
+        if (gameMode.isAdventure && expandedLocationId != null) {
             val currentLocation = locations.find { it.id == expandedLocationId }
             val currentPos = locationPositions[expandedLocationId]
 
@@ -4058,13 +4389,41 @@ fun LocationGraph(
             val snackbarHostState = remember { SnackbarHostState() }
             val scope = rememberCoroutineScope()
 
+            // Combat ability state (local abilities list, use combat state for cooldowns/queued)
+            var playerAbilities by remember { mutableStateOf<List<AbilityDto>>(emptyList()) }
+            // Use combat state from LocationGraphView level for cooldowns, queued ability, and visual effects:
+            // - combatCooldowns (Map<String, Int>)
+            // - combatQueuedAbilityId (String?)
+            // - combatIsBlinded, combatBlindRounds
+            // - combatIsDisoriented, combatDisorientRounds
+
+            // Alias for cleaner code in this block
+            val isBlinded = combatIsBlinded
+            val blindRoundsRemaining = combatBlindRounds
+            val isDisoriented = combatIsDisoriented
+            val disorientRoundsRemaining = combatDisorientRounds
+
+            // Target selection state for abilities that need a target
+            var pendingAbility by remember { mutableStateOf<AbilityDto?>(null) }
+
+            // Fetch player's class abilities
+            LaunchedEffect(currentUser?.characterClassId) {
+                val classId = currentUser?.characterClassId
+                if (classId != null) {
+                    ApiClient.getAbilitiesByClass(classId).onSuccess { abilities ->
+                        playerAbilities = abilities.filter { it.abilityType != "passive" }
+                            .sortedBy { it.name.lowercase() }
+                    }
+                }
+            }
+
             if (currentLocation != null) {
                 // 1. Centered 100x100 thumbnail - simple image at absolute center
                 Box(
                     modifier = Modifier.fillMaxSize(),
                     contentAlignment = Alignment.Center
                 ) {
-                    // Location name above the thumbnail (moved higher to clear diagonal arrows)
+                    // Location name above the thumbnail (moved higher to clear ability icons)
                     Text(
                         text = currentLocation.name,
                         color = Color.White,
@@ -4073,59 +4432,174 @@ fun LocationGraph(
                         textAlign = TextAlign.Center,
                         modifier = Modifier
                             .align(Alignment.Center)
-                            .offset(y = (-140).dp)
+                            .offset(y = (-160).dp)
                             .background(Color.Black.copy(alpha = 0.7f), RoundedCornerShape(4.dp))
                             .padding(horizontal = 12.dp, vertical = 4.dp)
                     )
 
-                    // Simple 100x100 box with location image or fallback
+                    // Disorient indicator below thumbnail
+                    if (isDisoriented && disorientRoundsRemaining > 0) {
+                        DisorientIndicator(
+                            roundsRemaining = disorientRoundsRemaining,
+                            modifier = Modifier
+                                .align(Alignment.Center)
+                                .offset(y = 160.dp)
+                        )
+                    }
+
+                    // Container for circular thumbnail + ability icons (apply disorient rotation here)
                     Box(
                         modifier = Modifier
-                            .size(100.dp)
-                            .clip(RoundedCornerShape(8.dp))
-                            .background(Color.Black.copy(alpha = 0.8f))
-                            .clickable { onLocationClick(currentLocation) }
+                            .graphicsLayer {
+                                if (isDisoriented) {
+                                    rotationZ = 180f
+                                }
+                            },
+                        contentAlignment = Alignment.Center
                     ) {
-                        if (currentLocation.imageUrl != null) {
-                            AsyncImage(
-                                model = "${AppConfig.api.baseUrl}${currentLocation.imageUrl}",
-                                contentDescription = currentLocation.name,
-                                modifier = Modifier.fillMaxSize(),
-                                contentScale = ContentScale.Crop
-                            )
-                        } else {
-                            // Fallback: show location name
-                            Box(
-                                modifier = Modifier.fillMaxSize(),
-                                contentAlignment = Alignment.Center
-                            ) {
-                                Text(
-                                    text = currentLocation.name,
-                                    color = Color.White,
-                                    fontSize = 12.sp,
-                                    textAlign = TextAlign.Center,
-                                    modifier = Modifier.padding(8.dp)
+                        // Ability icons ring around the thumbnail (only show if player has abilities)
+                        if (playerAbilities.isNotEmpty()) {
+                            val ringRadius = 80.dp
+                            val iconSize = 36.dp
+                            val maxIcons = 8
+                            val displayAbilities = playerAbilities.take(maxIcons)
+                            val totalIcons = displayAbilities.size
+
+                            displayAbilities.forEachIndexed { index, ability ->
+                                // Calculate angle (start at top, go clockwise)
+                                val angleDegrees = (360f / totalIcons) * index - 90f
+                                val angleRadians = angleDegrees * PI / 180.0
+                                val offsetX = (ringRadius.value * cos(angleRadians)).toFloat().dp
+                                val offsetY = (ringRadius.value * sin(angleRadians)).toFloat().dp
+
+                                AbilityIconButton(
+                                    ability = ability,
+                                    cooldownRounds = combatCooldowns[ability.id] ?: 0,
+                                    isQueued = ability.id == combatQueuedAbilityId,
+                                    onClick = {
+                                        // Cast ability via combat WebSocket
+                                        scope.launch {
+                                            val client = activeCombatClient
+                                            if (client == null) {
+                                                snackbarHostState.showSnackbar(
+                                                    "Not in combat",
+                                                    duration = SnackbarDuration.Short
+                                                )
+                                                return@launch
+                                            }
+
+                                            // Handle target selection based on ability target type
+                                            when (ability.targetType) {
+                                                "self", "area", "all_enemies", "all_allies" -> {
+                                                    // No target needed, cast immediately
+                                                    client.useAbility(ability.id, null)
+                                                    snackbarHostState.showSnackbar(
+                                                        "Casting: ${ability.name}",
+                                                        duration = SnackbarDuration.Short
+                                                    )
+                                                }
+                                                "single_enemy" -> {
+                                                    // Need to select a target - get creatures at this location
+                                                    val enemies = allCreatures.filter { it.id in currentLocation.creatureIds }
+                                                    if (enemies.size == 1) {
+                                                        // Auto-target single enemy
+                                                        client.useAbility(ability.id, enemies.first().id)
+                                                        snackbarHostState.showSnackbar(
+                                                            "Casting ${ability.name} on ${enemies.first().name}",
+                                                            duration = SnackbarDuration.Short
+                                                        )
+                                                    } else if (enemies.isEmpty()) {
+                                                        snackbarHostState.showSnackbar(
+                                                            "No enemies to target",
+                                                            duration = SnackbarDuration.Short
+                                                        )
+                                                    } else {
+                                                        // Show target selection overlay
+                                                        pendingAbility = ability
+                                                    }
+                                                }
+                                                "single_ally" -> {
+                                                    // Self-target for now (could show party members)
+                                                    client.useAbility(ability.id, currentUser?.id)
+                                                    snackbarHostState.showSnackbar(
+                                                        "Casting ${ability.name} on self",
+                                                        duration = SnackbarDuration.Short
+                                                    )
+                                                }
+                                                else -> {
+                                                    // Unknown target type, try casting without target
+                                                    client.useAbility(ability.id, null)
+                                                    snackbarHostState.showSnackbar(
+                                                        "Casting: ${ability.name}",
+                                                        duration = SnackbarDuration.Short
+                                                    )
+                                                }
+                                            }
+                                        }
+                                    },
+                                    size = iconSize,
+                                    modifier = Modifier.offset(x = offsetX, y = offsetY)
                                 )
                             }
                         }
 
+                        // Circular 100x100 thumbnail with location image or fallback
+                        Box(
+                            modifier = Modifier
+                                .size(100.dp)
+                                .clip(CircleShape)
+                                .background(Color.Black.copy(alpha = 0.8f))
+                                .border(2.dp, Color(0xFF4A4A4A), CircleShape)
+                                .clickable { onLocationClick(currentLocation) }
+                        ) {
+                            // Blind overlay covers the view
+                            if (isBlinded && blindRoundsRemaining > 0) {
+                                BlindOverlay(
+                                    roundsRemaining = blindRoundsRemaining,
+                                    modifier = Modifier.fillMaxSize()
+                                )
+                            } else {
+                                // Normal location display
+                                if (currentLocation.imageUrl != null) {
+                                    AsyncImage(
+                                        model = "${AppConfig.api.baseUrl}${currentLocation.imageUrl}",
+                                        contentDescription = currentLocation.name,
+                                        modifier = Modifier.fillMaxSize(),
+                                        contentScale = ContentScale.Crop
+                                    )
+                                } else {
+                                    // Fallback: show location initials
+                                    Box(
+                                        modifier = Modifier.fillMaxSize(),
+                                        contentAlignment = Alignment.Center
+                                    ) {
+                                        Text(
+                                            text = currentLocation.name.take(2).uppercase(),
+                                            color = Color.White.copy(alpha = 0.5f),
+                                            fontSize = 24.sp,
+                                            fontWeight = FontWeight.Bold
+                                        )
+                                    }
+                                }
+                            }
+                        }
                     }
 
-                    // Navigation arrows around the thumbnail (pushed farther out)
-                    // Check which exits exist and show arrows for them
+                    // Navigation arrows around the thumbnail (pushed farther out to clear ability icons)
+                    // Ability ring radius is 80dp, so arrows need to be beyond that
                     currentLocation.exits.forEach { exit ->
                         val targetLocation = locations.find { it.id == exit.locationId }
                         if (targetLocation != null) {
                             val (offsetX, offsetY, icon) = when (exit.direction) {
-                                ExitDirection.NORTH -> Triple(0.dp, (-90).dp, Icons.Filled.ArrowUpward)
-                                ExitDirection.SOUTH -> Triple(0.dp, 90.dp, Icons.Filled.ArrowDownward)
-                                ExitDirection.EAST -> Triple(90.dp, 0.dp, Icons.AutoMirrored.Filled.ArrowForward)
-                                ExitDirection.WEST -> Triple((-90).dp, 0.dp, Icons.AutoMirrored.Filled.ArrowBack)
-                                ExitDirection.NORTHEAST -> Triple(65.dp, (-65).dp, Icons.Filled.NorthEast)
-                                ExitDirection.NORTHWEST -> Triple((-65).dp, (-65).dp, Icons.Filled.NorthWest)
-                                ExitDirection.SOUTHEAST -> Triple(65.dp, 65.dp, Icons.Filled.SouthEast)
-                                ExitDirection.SOUTHWEST -> Triple((-65).dp, 65.dp, Icons.Filled.SouthWest)
-                                ExitDirection.ENTER -> Triple(0.dp, 120.dp, Icons.Filled.MeetingRoom)
+                                ExitDirection.NORTH -> Triple(0.dp, (-130).dp, Icons.Filled.ArrowUpward)
+                                ExitDirection.SOUTH -> Triple(0.dp, 130.dp, Icons.Filled.ArrowDownward)
+                                ExitDirection.EAST -> Triple(130.dp, 0.dp, Icons.AutoMirrored.Filled.ArrowForward)
+                                ExitDirection.WEST -> Triple((-130).dp, 0.dp, Icons.AutoMirrored.Filled.ArrowBack)
+                                ExitDirection.NORTHEAST -> Triple(92.dp, (-92).dp, Icons.Filled.NorthEast)
+                                ExitDirection.NORTHWEST -> Triple((-92).dp, (-92).dp, Icons.Filled.NorthWest)
+                                ExitDirection.SOUTHEAST -> Triple(92.dp, 92.dp, Icons.Filled.SouthEast)
+                                ExitDirection.SOUTHWEST -> Triple((-92).dp, 92.dp, Icons.Filled.SouthWest)
+                                ExitDirection.ENTER -> Triple(0.dp, 145.dp, Icons.Filled.MeetingRoom)
                                 else -> Triple(0.dp, 0.dp, Icons.Filled.ArrowUpward)
                             }
 
@@ -4205,37 +4679,47 @@ fun LocationGraph(
                             .padding(16.dp),
                         horizontalAlignment = Alignment.Start
                     ) {
-                        // Others (creatures) - show actual names, tappable
+                        // Others (creatures) - show actual names, or vague descriptions when blinded
                         Text(
-                            text = "Others",
+                            text = if (isBlinded) "Presences" else "Others",
                             color = Color.Gray,
                             fontSize = 10.sp
                         )
                         val creaturesHere = allCreatures.filter { it.id in currentLocation.creatureIds }
                         if (creaturesHere.isEmpty()) {
                             Text(
-                                text = "None",
-                                color = Color.White,
+                                text = if (isBlinded) "You sense nothing nearby" else "None",
+                                color = Color.White.copy(alpha = if (isBlinded) 0.6f else 1f),
                                 fontSize = 14.sp
                             )
                         } else {
-                            creaturesHere.forEach { creature ->
+                            creaturesHere.forEachIndexed { index, creature ->
                                 val state = creatureStates[creature.id] ?: "idle"
                                 Row(
                                     verticalAlignment = Alignment.CenterVertically,
                                     modifier = Modifier
-                                        .clickable { selectedCreature = creature }
+                                        .clickable {
+                                            // Can still click but won't know who it is
+                                            selectedCreature = creature
+                                        }
                                         .padding(vertical = 2.dp)
                                 ) {
-                                    // State icon
-                                    CreatureStateIcon(
-                                        state = state,
-                                        modifier = Modifier.size(14.dp)
-                                    )
-                                    Spacer(modifier = Modifier.width(4.dp))
+                                    if (!isBlinded) {
+                                        // State icon - only show when not blinded
+                                        CreatureStateIcon(
+                                            state = state,
+                                            modifier = Modifier.size(14.dp)
+                                        )
+                                        Spacer(modifier = Modifier.width(4.dp))
+                                    }
                                     Text(
-                                        text = creature.name,
-                                        color = Color(0xFF64B5F6),
+                                        text = if (isBlinded) {
+                                            // Generate vague description based on creature
+                                            getBlindPresenceDescription(creature, index)
+                                        } else {
+                                            creature.name
+                                        },
+                                        color = if (isBlinded) Color.White.copy(alpha = 0.6f) else Color(0xFF64B5F6),
                                         fontSize = 14.sp
                                     )
                                 }
@@ -4244,24 +4728,28 @@ fun LocationGraph(
 
                         Spacer(modifier = Modifier.height(8.dp))
 
-                        // Items - show actual names, tappable
+                        // Items - show actual names, or vague descriptions when blinded
                         Text(
-                            text = "Items",
+                            text = if (isBlinded) "Objects" else "Items",
                             color = Color.Gray,
                             fontSize = 10.sp
                         )
                         val itemsHere = allItems.filter { it.id in currentLocation.itemIds }
                         if (itemsHere.isEmpty()) {
                             Text(
-                                text = "None",
-                                color = Color.White,
+                                text = if (isBlinded) "You feel nothing unusual" else "None",
+                                color = Color.White.copy(alpha = if (isBlinded) 0.6f else 1f),
                                 fontSize = 14.sp
                             )
                         } else {
-                            itemsHere.forEach { item ->
+                            itemsHere.forEachIndexed { index, item ->
                                 Text(
-                                    text = item.name,
-                                    color = Color(0xFFFFD54F),
+                                    text = if (isBlinded) {
+                                        getBlindItemDescription(item, index)
+                                    } else {
+                                        item.name
+                                    },
+                                    color = if (isBlinded) Color.White.copy(alpha = 0.6f) else Color(0xFFFFD54F),
                                     fontSize = 14.sp,
                                     modifier = Modifier
                                         .clickable { selectedItem = item }
@@ -4270,6 +4758,18 @@ fun LocationGraph(
                             }
                         }
                     }
+                }
+
+                // Event log (bottom-left corner) - only show when events exist
+                if (eventLogEntries.isNotEmpty() && !isDetailViewVisible) {
+                    com.ez2bg.anotherthread.ui.components.EventLog(
+                        entries = eventLogEntries,
+                        modifier = Modifier
+                            .align(Alignment.BottomStart)
+                            .padding(start = 16.dp, bottom = 200.dp)
+                            .width(250.dp)
+                            .height(120.dp)
+                    )
                 }
 
                 // Detail view for creature/item (slides in from right)
@@ -4499,6 +4999,42 @@ fun LocationGraph(
                                         tint = Color.White,
                                         modifier = Modifier.size(20.dp)
                                     )
+                                }
+                            }
+
+                            // Creature abilities display (NORTH-EAST position, below name)
+                            val creature = selectedCreature
+                            val creatureAbilities = creature?.abilityIds?.mapNotNull { allAbilitiesMap[it] } ?: emptyList()
+                            if (creatureAbilities.isNotEmpty()) {
+                                Row(
+                                    modifier = Modifier
+                                        .offset(y = (-160).dp)
+                                        .background(
+                                            Color.Black.copy(alpha = 0.8f),
+                                            RoundedCornerShape(8.dp)
+                                        )
+                                        .padding(horizontal = 8.dp, vertical = 4.dp),
+                                    horizontalArrangement = Arrangement.spacedBy(4.dp),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Text(
+                                        text = "Abilities:",
+                                        color = Color.Gray,
+                                        fontSize = 10.sp
+                                    )
+                                    creatureAbilities.take(4).forEach { ability ->
+                                        AbilityIconSmall(
+                                            ability = ability,
+                                            size = 24.dp
+                                        )
+                                    }
+                                    if (creatureAbilities.size > 4) {
+                                        Text(
+                                            text = "+${creatureAbilities.size - 4}",
+                                            color = Color.Gray,
+                                            fontSize = 10.sp
+                                        )
+                                    }
                                 }
                             }
                         }
@@ -4746,10 +5282,46 @@ fun LocationGraph(
                         )
                     }
                 }
+
+                // Target selection overlay for single-target abilities
+                if (pendingAbility != null && currentLocation != null) {
+                    val ability = pendingAbility!!
+                    // Get creatures at this location from the allCreatures list
+                    val creaturesHere = allCreatures.filter { it.id in currentLocation.creatureIds }
+                    val targets = creaturesHere.map { creature ->
+                        CombatTarget(
+                            id = creature.id,
+                            name = creature.name,
+                            currentHp = creature.maxHp, // Creatures start at full HP
+                            maxHp = creature.maxHp,
+                            isPlayer = false,
+                            isAlive = true // Assume alive for target selection
+                        )
+                    }
+
+                    TargetSelectionOverlay(
+                        ability = ability,
+                        targets = targets,
+                        onTargetSelected = { targetId ->
+                            scope.launch {
+                                activeCombatClient?.useAbility(ability.id, targetId)
+                                val targetName = targets.find { it.id == targetId }?.name ?: "target"
+                                snackbarHostState.showSnackbar(
+                                    "Casting ${ability.name} on $targetName",
+                                    duration = SnackbarDuration.Short
+                                )
+                            }
+                            pendingAbility = null
+                        },
+                        onCancel = {
+                            pendingAbility = null
+                        }
+                    )
+                }
             }
         }
 
-        // Exploration mode toggle (top-right corner) - only visible when signed in
+        // Game mode toggle (top-right corner) - only visible when signed in
         if (currentUser != null) {
             Row(
                 modifier = Modifier
@@ -4760,18 +5332,24 @@ fun LocationGraph(
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(8.dp)
             ) {
-                Text("map", color = Color.White, fontSize = 14.sp)
+                Text(
+                    text = if (gameMode.isCreate) "create" else "adventure",
+                    color = Color.White,
+                    fontSize = 14.sp
+                )
                 // Custom thin toggle switch
-                val isMapOn = !isExplorationMode
-                val trackColor = if (isMapOn) Color(0xFF2E7D32).copy(alpha = 0.6f) else Color.Gray.copy(alpha = 0.4f)
-                val thumbColor = if (isMapOn) Color(0xFF4CAF50) else Color.DarkGray
+                val isCreateMode = gameMode.isCreate
+                val trackColor = if (isCreateMode) Color(0xFF2E7D32).copy(alpha = 0.6f) else Color(0xFF9C27B0).copy(alpha = 0.6f)
+                val thumbColor = if (isCreateMode) Color(0xFF4CAF50) else Color(0xFFBA68C8)
                 Box(
                     modifier = Modifier
                         .width(32.dp)
                         .height(14.dp)
                         .background(trackColor, RoundedCornerShape(7.dp))
-                        .clickable { onExplorationModeChange(!isExplorationMode) },
-                    contentAlignment = if (isMapOn) Alignment.CenterEnd else Alignment.CenterStart
+                        .clickable {
+                            onGameModeChange(if (gameMode.isCreate) GameMode.ADVENTURE else GameMode.CREATE)
+                        },
+                    contentAlignment = if (isCreateMode) Alignment.CenterEnd else Alignment.CenterStart
                 ) {
                     Box(
                         modifier = Modifier
@@ -4783,8 +5361,8 @@ fun LocationGraph(
             }
         }
 
-        // Zoom controls overlay (top-right corner, below toggle) - hidden in exploration mode
-        if (!isExplorationMode) {
+        // Zoom controls overlay (top-right corner, below toggle) - hidden in Adventure mode
+        if (gameMode.isCreate) {
             Column(
                 modifier = Modifier
                     .align(Alignment.TopEnd)
@@ -4889,7 +5467,7 @@ private fun LocationNodeThumbnail(
     onExitClick: (LocationDto) -> Unit = {},
     onDotClick: () -> Unit = {},  // Called when the orange dot is tapped (to collapse)
     allLocations: List<LocationDto> = emptyList(),
-    isExplorationMode: Boolean = false
+    gameMode: GameMode = GameMode.CREATE
 ) {
     val collapsedSize = 20.dp
     val expandedSize = 100.dp
@@ -5138,7 +5716,7 @@ private fun LocationNodeThumbnail(
                 }
 
                 // Action icons overlaid on top-right of thumbnail - hidden in exploration mode
-                if (!isExplorationMode) {
+                if (gameMode.isCreate) {
                     Column(
                         modifier = Modifier
                             .align(Alignment.TopEnd)
@@ -9263,7 +9841,7 @@ fun LocationForm(
     isAdmin: Boolean = false,
     onLocationUpdated: (LocationDto) -> Unit = {},
     onDeleted: () -> Unit = {},
-    isExplorationMode: Boolean = false
+    gameMode: GameMode = GameMode.CREATE
 ) {
     val isEditMode = editLocation != null
     var name by remember(editLocation?.id) { mutableStateOf(editLocation?.name ?: "") }
@@ -9287,9 +9865,9 @@ fun LocationForm(
     var lockerName by remember(editLocation?.id) { mutableStateOf<String?>(null) }
     val isLocked = lockedBy != null
 
-    // Combined disabled state: not authenticated OR locked OR image generating OR exploration mode
+    // Combined disabled state: not authenticated OR locked OR image generating OR Adventure mode
     val isNotAuthenticated = currentUser == null
-    val isDisabled = isNotAuthenticated || isLocked || isImageGenerating || isExplorationMode
+    val isDisabled = isNotAuthenticated || isLocked || isImageGenerating || gameMode.isAdventure
 
     // State for exit removal confirmation dialog
     var exitToRemove by remember { mutableStateOf<ExitDto?>(null) }
@@ -9383,7 +9961,7 @@ fun LocationForm(
                     horizontalArrangement = Arrangement.spacedBy(4.dp)
                 ) {
                     // Show status text
-                    if (isExplorationMode) {
+                    if (gameMode.isAdventure) {
                         Text(
                             text = "Exploration Mode",
                             style = MaterialTheme.typography.bodySmall,
@@ -9397,7 +9975,7 @@ fun LocationForm(
                         )
                     }
                     // In exploration mode, just show explorer icon (no lock toggle)
-                    if (isExplorationMode) {
+                    if (gameMode.isAdventure) {
                         Icon(
                             imageVector = ExplorerIcon,
                             contentDescription = "Exploration Mode",
@@ -9442,20 +10020,20 @@ fun LocationForm(
                         }
                     } else {
                         // Non-admins see the lock icon but can't click it
-                        // In exploration mode, show explorer icon instead
+                        // In Adventure mode, show adventurer icon instead
                         Icon(
                             imageVector = when {
-                                isExplorationMode -> ExplorerIcon
+                                gameMode.isAdventure -> ExplorerIcon
                                 isLocked -> Icons.Filled.Lock
                                 else -> Icons.Filled.LockOpen
                             },
                             contentDescription = when {
-                                isExplorationMode -> "Exploration Mode"
+                                gameMode.isAdventure -> "Adventure Mode"
                                 isLocked -> "Location is locked"
                                 else -> "Location is unlocked"
                             },
                             tint = when {
-                                isExplorationMode -> Color(0xFF9C27B0)
+                                gameMode.isAdventure -> Color(0xFF9C27B0)
                                 isLocked -> MaterialTheme.colorScheme.primary
                                 else -> MaterialTheme.colorScheme.onSurfaceVariant
                             },
@@ -10522,7 +11100,7 @@ fun CreatureDetailView(
     onCreateNew: () -> Unit,
     onNavigateToItem: (String) -> Unit,
     isAdmin: Boolean = false,
-    isExplorationMode: Boolean = false
+    gameMode: GameMode = GameMode.CREATE
 ) {
     var creature by remember { mutableStateOf<CreatureDto?>(null) }
     var isLoading by remember { mutableStateOf(true) }
@@ -10740,7 +11318,7 @@ fun CreatureDetailView(
                 }
 
                 // Show exploration mode indicator or edit button
-                if (isExplorationMode) {
+                if (gameMode.isAdventure) {
                     Row(
                         modifier = Modifier.align(Alignment.End),
                         verticalAlignment = Alignment.CenterVertically,
@@ -11149,7 +11727,7 @@ fun ItemDetailView(
     onEdit: (ItemDto) -> Unit,
     onCreateNew: () -> Unit,
     isAdmin: Boolean = false,
-    isExplorationMode: Boolean = false
+    gameMode: GameMode = GameMode.CREATE
 ) {
     var item by remember { mutableStateOf<ItemDto?>(null) }
     var isLoading by remember { mutableStateOf(true) }
@@ -11254,7 +11832,7 @@ fun ItemDetailView(
                 }
 
                 // Show exploration mode indicator or edit button
-                if (isExplorationMode) {
+                if (gameMode.isAdventure) {
                     Row(
                         modifier = Modifier.align(Alignment.End),
                         verticalAlignment = Alignment.CenterVertically,

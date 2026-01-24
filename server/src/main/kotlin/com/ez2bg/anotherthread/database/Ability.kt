@@ -26,7 +26,9 @@ data class Ability(
     // Power budget fields
     val baseDamage: Int = 0,
     val durationRounds: Int = 0,
-    val powerCost: Int = 10     // Calculated total, default to average
+    val powerCost: Int = 10,    // Calculated total, default to average
+    val manaCost: Int = 0,      // Mana cost for spells
+    val staminaCost: Int = 0    // Stamina cost for physical abilities
 ) {
     /**
      * Calculate the power cost based on ability attributes.
@@ -89,8 +91,24 @@ data class Ability(
         return cost.coerceAtLeast(1) // Minimum 1 power cost
     }
 
-    /** Create a copy with recalculated power cost */
-    fun withCalculatedCost(): Ability = copy(powerCost = calculatePowerCost())
+    /**
+     * Create a copy with recalculated power cost and resource costs.
+     * - Spells cost mana based on powerCost
+     * - Combat abilities cost stamina based on powerCost
+     * - Utility abilities can cost either (default to stamina if not specified)
+     * - Passive abilities have no cost
+     */
+    fun withCalculatedCost(): Ability {
+        val cost = calculatePowerCost()
+        val (mana, stamina) = when (abilityType) {
+            "spell" -> cost to 0
+            "combat" -> 0 to cost
+            "utility" -> if (manaCost > 0 || staminaCost > 0) manaCost to staminaCost else 0 to (cost / 2)
+            "passive" -> 0 to 0
+            else -> 0 to cost
+        }
+        return copy(powerCost = cost, manaCost = mana, staminaCost = stamina)
+    }
 }
 
 object AbilityRepository {
@@ -108,7 +126,9 @@ object AbilityRepository {
         imageUrl = this[AbilityTable.imageUrl],
         baseDamage = this[AbilityTable.baseDamage],
         durationRounds = this[AbilityTable.durationRounds],
-        powerCost = this[AbilityTable.powerCost]
+        powerCost = this[AbilityTable.powerCost],
+        manaCost = this[AbilityTable.manaCost],
+        staminaCost = this[AbilityTable.staminaCost]
     )
 
     fun create(ability: Ability): Ability = transaction {
@@ -128,6 +148,8 @@ object AbilityRepository {
             it[baseDamage] = abilityWithCost.baseDamage
             it[durationRounds] = abilityWithCost.durationRounds
             it[powerCost] = abilityWithCost.powerCost
+            it[manaCost] = abilityWithCost.manaCost
+            it[staminaCost] = abilityWithCost.staminaCost
         }
         abilityWithCost
     }
@@ -175,6 +197,8 @@ object AbilityRepository {
             it[baseDamage] = abilityWithCost.baseDamage
             it[durationRounds] = abilityWithCost.durationRounds
             it[powerCost] = abilityWithCost.powerCost
+            it[manaCost] = abilityWithCost.manaCost
+            it[staminaCost] = abilityWithCost.staminaCost
         } > 0
     }
 
