@@ -1,0 +1,459 @@
+package com.ez2bg.anotherthread.routes
+
+import com.ez2bg.anotherthread.*
+import com.ez2bg.anotherthread.combat.CombatService
+import com.ez2bg.anotherthread.database.*
+import io.ktor.http.*
+import io.ktor.server.application.*
+import io.ktor.server.request.*
+import io.ktor.server.response.*
+import io.ktor.server.routing.*
+import kotlinx.coroutines.launch
+import kotlinx.serialization.Serializable
+
+/**
+ * Auth routes for user registration and login.
+ * Base path: /auth
+ */
+fun Route.authRoutes() {
+    route("/auth") {
+        post("/register") {
+            val request = call.receive<RegisterRequest>()
+
+            // Validate input
+            if (request.name.isBlank() || request.password.isBlank()) {
+                call.respond(HttpStatusCode.BadRequest, AuthResponse(
+                    success = false,
+                    message = "Name and password are required"
+                ))
+                return@post
+            }
+
+            if (request.password.length < 4) {
+                call.respond(HttpStatusCode.BadRequest, AuthResponse(
+                    success = false,
+                    message = "Password must be at least 4 characters"
+                ))
+                return@post
+            }
+
+            // Check if username already exists
+            if (UserRepository.findByName(request.name) != null) {
+                call.respond(HttpStatusCode.Conflict, AuthResponse(
+                    success = false,
+                    message = "Username already exists"
+                ))
+                return@post
+            }
+
+            // Create user with hashed password
+            val user = User(
+                name = request.name,
+                passwordHash = UserRepository.hashPassword(request.password)
+            )
+            val createdUser = UserRepository.create(user)
+
+            call.respond(HttpStatusCode.Created, AuthResponse(
+                success = true,
+                message = "Registration successful",
+                user = createdUser.toResponse()
+            ))
+        }
+
+        post("/login") {
+            val request = call.receive<LoginRequest>()
+
+            val user = UserRepository.findByName(request.name)
+            if (user == null || !UserRepository.verifyPassword(request.password, user.passwordHash)) {
+                call.respond(HttpStatusCode.Unauthorized, AuthResponse(
+                    success = false,
+                    message = "Invalid username or password"
+                ))
+                return@post
+            }
+
+            // Update last active timestamp
+            UserRepository.updateLastActiveAt(user.id)
+
+            call.respond(HttpStatusCode.OK, AuthResponse(
+                success = true,
+                message = "Login successful",
+                user = user.toResponse()
+            ))
+        }
+    }
+}
+
+/**
+ * User routes for user management (authenticated).
+ * Base path: /users
+ */
+fun Route.userRoutes() {
+    val log = org.slf4j.LoggerFactory.getLogger("UserRoutes")
+
+    route("/users") {
+        get("/{id}") {
+            val id = call.parameters["id"] ?: return@get call.respond(HttpStatusCode.BadRequest)
+            val user = UserRepository.findById(id)
+            if (user != null) {
+                call.respond(user.toResponse())
+            } else {
+                call.respond(HttpStatusCode.NotFound)
+            }
+        }
+
+        put("/{id}") {
+            val id = call.parameters["id"] ?: return@put call.respond(HttpStatusCode.BadRequest)
+            val request = call.receive<UpdateUserRequest>()
+
+            val existingUser = UserRepository.findById(id)
+            if (existingUser == null) {
+                call.respond(HttpStatusCode.NotFound)
+                return@put
+            }
+
+            val descChanged = existingUser.desc != request.desc
+
+            val updatedUser = existingUser.copy(
+                desc = request.desc,
+                itemIds = request.itemIds,
+                featureIds = request.featureIds,
+                lastActiveAt = System.currentTimeMillis()
+            )
+
+            if (UserRepository.update(updatedUser)) {
+                // Trigger image generation if description changed
+                if (descChanged && request.desc.isNotBlank()) {
+                    application.launch {
+                        ImageGenerationService.generateImage(
+                            entityType = "user",
+                            entityId = id,
+                            description = request.desc,
+                            entityName = existingUser.name
+                        ).onSuccess { imageUrl ->
+                            UserRepository.updateImageUrl(id, imageUrl)
+                            log.info("Generated image for user $id: $imageUrl")
+                        }.onFailure { error ->
+                            log.warn("Failed to generate image for user $id: ${error.message}")
+                        }
+                    }
+                }
+                call.respond(HttpStatusCode.OK, updatedUser.toResponse())
+            } else {
+                call.respond(HttpStatusCode.InternalServerError)
+            }
+        }
+
+        put("/{id}/location") {
+            val id = call.parameters["id"] ?: return@put call.respond(HttpStatusCode.BadRequest)
+            val request = call.receive<UpdateLocationRequest>()
+
+            if (UserRepository.updateCurrentLocation(id, request.locationId)) {
+                // Check for aggressive creatures at the new location
+                val combatSession = request.locationId?.let { locationId ->
+                    CombatService.checkAggressiveCreatures(id, locationId)
+                }
+
+                if (combatSession != null) {
+                    // Return info about the auto-started combat
+                    call.respond(HttpStatusCode.OK, mapOf(
+                        "success" to true,
+                        "combatStarted" to true,
+                        "combatSessionId" to combatSession.id,
+                        "message" to "Aggressive creatures attack!"
+                    ))
+                } else {
+                    call.respond(HttpStatusCode.OK, mapOf(
+                        "success" to true,
+                        "combatStarted" to false
+                    ))
+                }
+            } else {
+                call.respond(HttpStatusCode.NotFound)
+            }
+        }
+
+        // Clear or set user's character class directly
+        put("/{id}/class") {
+            val id = call.parameters["id"] ?: return@put call.respond(HttpStatusCode.BadRequest)
+            val request = call.receive<UpdateClassRequest>()
+
+            val existingUser = UserRepository.findById(id)
+            if (existingUser == null) {
+                call.respond(HttpStatusCode.NotFound)
+                return@put
+            }
+
+            if (UserRepository.updateCharacterClass(id, request.classId)) {
+                val updatedUser = UserRepository.findById(id)!!
+                call.respond(HttpStatusCode.OK, updatedUser.toResponse())
+            } else {
+                call.respond(HttpStatusCode.InternalServerError)
+            }
+        }
+
+        // Equip an item
+        post("/{id}/equip/{itemId}") {
+            val userId = call.parameters["id"] ?: return@post call.respond(HttpStatusCode.BadRequest)
+            val itemId = call.parameters["itemId"] ?: return@post call.respond(HttpStatusCode.BadRequest)
+
+            val user = UserRepository.findById(userId)
+            if (user == null) {
+                call.respond(HttpStatusCode.NotFound, mapOf("error" to "User not found"))
+                return@post
+            }
+
+            val item = ItemRepository.findById(itemId)
+            if (item == null) {
+                call.respond(HttpStatusCode.NotFound, mapOf("error" to "Item not found"))
+                return@post
+            }
+
+            if (item.equipmentSlot == null) {
+                call.respond(HttpStatusCode.BadRequest, mapOf("error" to "Item is not equippable"))
+                return@post
+            }
+
+            if (itemId !in user.itemIds) {
+                call.respond(HttpStatusCode.BadRequest, mapOf("error" to "Item not in inventory"))
+                return@post
+            }
+
+            // Unequip any existing item in the same slot
+            val existingEquipped = user.equippedItemIds.find { equippedId ->
+                ItemRepository.findById(equippedId)?.equipmentSlot == item.equipmentSlot
+            }
+
+            if (existingEquipped != null) {
+                UserRepository.unequipItem(userId, existingEquipped)
+            }
+
+            if (UserRepository.equipItem(userId, itemId)) {
+                val updatedUser = UserRepository.findById(userId)!!
+                call.respond(HttpStatusCode.OK, mapOf(
+                    "success" to true,
+                    "equippedItemIds" to updatedUser.equippedItemIds,
+                    "unequipped" to existingEquipped
+                ))
+            } else {
+                call.respond(HttpStatusCode.InternalServerError, mapOf("error" to "Failed to equip item"))
+            }
+        }
+
+        // Unequip an item
+        post("/{id}/unequip/{itemId}") {
+            val userId = call.parameters["id"] ?: return@post call.respond(HttpStatusCode.BadRequest)
+            val itemId = call.parameters["itemId"] ?: return@post call.respond(HttpStatusCode.BadRequest)
+
+            val user = UserRepository.findById(userId)
+            if (user == null) {
+                call.respond(HttpStatusCode.NotFound, mapOf("error" to "User not found"))
+                return@post
+            }
+
+            if (itemId !in user.equippedItemIds) {
+                call.respond(HttpStatusCode.BadRequest, mapOf("error" to "Item not equipped"))
+                return@post
+            }
+
+            if (UserRepository.unequipItem(userId, itemId)) {
+                val updatedUser = UserRepository.findById(userId)!!
+                call.respond(HttpStatusCode.OK, mapOf(
+                    "success" to true,
+                    "equippedItemIds" to updatedUser.equippedItemIds
+                ))
+            } else {
+                call.respond(HttpStatusCode.InternalServerError, mapOf("error" to "Failed to unequip item"))
+            }
+        }
+
+        // Get identified entities for a user
+        get("/{id}/identified") {
+            val userId = call.parameters["id"] ?: return@get call.respond(HttpStatusCode.BadRequest)
+            val identified = IdentifiedEntityRepository.findByUser(userId)
+            call.respond(mapOf(
+                "items" to identified.filter { it.entityType == "item" }.map { it.entityId },
+                "creatures" to identified.filter { it.entityType == "creature" }.map { it.entityId }
+            ))
+        }
+
+        // Identify an entity (item or creature) for a user
+        post("/{id}/identify") {
+            val userId = call.parameters["id"] ?: return@post call.respond(HttpStatusCode.BadRequest)
+
+            @Serializable
+            data class IdentifyRequest(val entityId: String, val entityType: String)
+
+            val request = call.receive<IdentifyRequest>()
+
+            if (request.entityType !in listOf("item", "creature")) {
+                call.respond(HttpStatusCode.BadRequest, mapOf("error" to "Invalid entity type"))
+                return@post
+            }
+
+            val user = UserRepository.findById(userId)
+            if (user == null) {
+                call.respond(HttpStatusCode.NotFound, mapOf("error" to "User not found"))
+                return@post
+            }
+
+            val isNew = IdentifiedEntityRepository.identify(userId, request.entityId, request.entityType)
+            call.respond(HttpStatusCode.OK, mapOf(
+                "success" to true,
+                "newlyIdentified" to isNew,
+                "entityId" to request.entityId,
+                "entityType" to request.entityType
+            ))
+        }
+
+        // Get active users at a location
+        get("/at-location/{locationId}") {
+            val locationId = call.parameters["locationId"] ?: return@get call.respond(HttpStatusCode.BadRequest)
+            val activeUsers = UserRepository.findActiveUsersAtLocation(locationId)
+            call.respond(activeUsers.map { it.toResponse() })
+        }
+
+        // Assign class to user (either autoassign from existing or generate new)
+        post("/{id}/assign-class") {
+            val id = call.parameters["id"] ?: return@post call.respond(HttpStatusCode.BadRequest)
+            log.info("assign-class: Received request for user $id")
+
+            val request = call.receive<AssignClassRequest>()
+            log.info("assign-class: Request - generateClass=${request.generateClass}, descriptionLength=${request.characterDescription.length}")
+            log.debug("assign-class: Character description: '${request.characterDescription.take(200)}...'")
+
+            val existingUser = UserRepository.findById(id)
+            if (existingUser == null) {
+                log.warn("assign-class: User $id not found")
+                call.respond(HttpStatusCode.NotFound)
+                return@post
+            }
+            log.info("assign-class: Found user '${existingUser.name}', currentClassId=${existingUser.characterClassId}")
+
+            if (request.generateClass) {
+                log.info("assign-class: Starting class GENERATION mode for user $id")
+                // Mark that class generation has started
+                val genStarted = UserRepository.startClassGeneration(id)
+                log.info("assign-class: Class generation start marked: $genStarted")
+
+                val userWithGenStatus = UserRepository.findById(id)!!
+                log.info("assign-class: User classGenerationStartedAt=${userWithGenStatus.classGenerationStartedAt}")
+
+                // For class generation, run async and return immediately
+                // The client will poll for the user's characterClassId
+                application.launch {
+                    try {
+                        log.info("assign-class: [ASYNC] Starting class generation for user $id")
+                        log.info("assign-class: [ASYNC] Description: '${request.characterDescription.take(100)}...'")
+
+                        val generateResult = ClassGenerationService.generateNewClass(
+                            characterDescription = request.characterDescription,
+                            createdByUserId = id,
+                            isPublic = false
+                        )
+
+                        if (generateResult.isFailure) {
+                            val ex = generateResult.exceptionOrNull()
+                            log.error("assign-class: [ASYNC] Class generation failed for user $id - ${ex?.javaClass?.simpleName}: ${ex?.message}", ex)
+                            UserRepository.clearClassGeneration(id)
+                            return@launch
+                        }
+
+                        val (newClass, abilities) = generateResult.getOrThrow()
+                        log.info("assign-class: [ASYNC] Generated class '${newClass.name}' with ${abilities.size} abilities for user $id")
+
+                        val (savedClass, savedAbilities) = ClassGenerationService.saveGeneratedClass(newClass, abilities)
+                        log.info("assign-class: [ASYNC] Saved class to database with id=${savedClass.id}")
+
+                        // updateCharacterClass also clears classGenerationStartedAt
+                        val updateSuccess = UserRepository.updateCharacterClass(id, savedClass.id)
+                        log.info("assign-class: [ASYNC] Updated user with class assignment: $updateSuccess")
+                        log.info("assign-class: [ASYNC] Class generation COMPLETE for user $id: ${savedClass.name}")
+                    } catch (e: Exception) {
+                        log.error("assign-class: [ASYNC] Failed to generate class for user $id - ${e::class.simpleName}: ${e.message}", e)
+                        // Clear generation status on failure
+                        UserRepository.clearClassGeneration(id)
+                        log.info("assign-class: [ASYNC] Cleared generation status after failure")
+                    }
+                }
+
+                log.info("assign-class: Returning immediately with generation-in-progress response")
+                // Return immediately - class is being generated
+                call.respond(AssignClassResponse(
+                    success = true,
+                    user = userWithGenStatus.toResponse(),
+                    assignedClass = null,
+                    message = "Generating your custom class... This may take a few minutes. The page will update when complete."
+                ))
+            } else {
+                log.info("assign-class: Starting class MATCHING mode for user $id")
+                // For matching, do it synchronously (it's fast)
+                try {
+                    val assignedClass: CharacterClass
+
+                    // First try LLM matching
+                    log.info("assign-class: Attempting LLM class matching...")
+                    val matchResult = ClassGenerationService.matchToExistingClass(request.characterDescription)
+                    if (matchResult.isSuccess) {
+                        val match = matchResult.getOrThrow()
+                        log.info("assign-class: LLM matched to class '${match.matchedClassName}' (id=${match.matchedClassId}) with confidence ${match.confidence}")
+                        log.info("assign-class: Match reasoning: ${match.reasoning}")
+
+                        val matchedClass = CharacterClassRepository.findById(match.matchedClassId)
+                        assignedClass = matchedClass ?: run {
+                            log.warn("assign-class: Matched class id '${match.matchedClassId}' not found in database, using fallback")
+                            // Fallback: get any public class
+                            val publicClasses = CharacterClassRepository.findAll().filter { it.isPublic }
+                            log.info("assign-class: Found ${publicClasses.size} public classes for fallback")
+                            publicClasses.firstOrNull()
+                                ?: throw Exception("No classes available for assignment")
+                        }
+                        log.info("assign-class: Using class '${assignedClass.name}' (id=${assignedClass.id})")
+                    } else {
+                        // LLM not available - just pick a class based on description keywords
+                        val ex = matchResult.exceptionOrNull()
+                        log.warn("assign-class: LLM matching failed - ${ex?.javaClass?.simpleName}: ${ex?.message}")
+                        log.info("assign-class: Falling back to keyword-based matching")
+
+                        val publicClasses = CharacterClassRepository.findAll().filter { it.isPublic }
+                        log.info("assign-class: Found ${publicClasses.size} public classes for keyword matching")
+
+                        val descLower = request.characterDescription.lowercase()
+                        val hasSpellKeywords = descLower.contains("magic") || descLower.contains("spell") ||
+                            descLower.contains("wizard") || descLower.contains("mage") ||
+                            descLower.contains("sorcerer") || descLower.contains("witch")
+                        log.info("assign-class: Description has spell keywords: $hasSpellKeywords")
+
+                        assignedClass = if (hasSpellKeywords) {
+                            publicClasses.find { it.isSpellcaster } ?: publicClasses.firstOrNull()
+                        } else {
+                            publicClasses.find { !it.isSpellcaster } ?: publicClasses.firstOrNull()
+                        } ?: throw Exception("No classes available for assignment")
+
+                        log.info("assign-class: Keyword matching selected class '${assignedClass.name}'")
+                    }
+
+                    val updateSuccess = UserRepository.updateCharacterClass(id, assignedClass.id)
+                    log.info("assign-class: Updated user class assignment: $updateSuccess")
+
+                    val updatedUser = UserRepository.findById(id)!!
+                    log.info("assign-class: Class matching COMPLETE for user $id: assigned '${assignedClass.name}'")
+
+                    call.respond(AssignClassResponse(
+                        success = true,
+                        user = updatedUser.toResponse(),
+                        assignedClass = assignedClass,
+                        message = "Class '${assignedClass.name}' assigned based on your description"
+                    ))
+                } catch (e: Exception) {
+                    log.error("assign-class: Failed to assign class for user $id - ${e::class.simpleName}: ${e.message}", e)
+                    call.respond(HttpStatusCode.InternalServerError, AssignClassResponse(
+                        success = false,
+                        user = existingUser.toResponse(),
+                        message = "Failed to assign class: ${e.message}"
+                    ))
+                }
+            }
+        }
+    }
+}
