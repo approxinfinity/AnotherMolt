@@ -69,6 +69,21 @@ Real-time combat backend is implemented, but frontend UI is missing.
 - Handle all server message types
 - Combat results/rewards modal
 
+### Exploration Mode UI Layout
+The current layout of directional arrows, action buttons, and ability icons around the central thumbnail is cluttered and needs rethinking.
+
+**Issues:**
+- Ability icons overlap with directional navigation arrows
+- Action buttons (attack, greet, back) compete for space
+- Layout doesn't scale well with varying numbers of abilities/exits
+
+**Ideas to explore:**
+- Separate zones: directionals on outer ring, abilities on inner ring
+- Contextual action bar at bottom of screen
+- Swipe gestures for directions, tap for abilities
+- Collapsible/expandable ability tray
+- Radial menu on long-press of center thumbnail
+
 ### Character Ability Activation System
 Users should be able to activate a subset of their available abilities from multiple sources.
 

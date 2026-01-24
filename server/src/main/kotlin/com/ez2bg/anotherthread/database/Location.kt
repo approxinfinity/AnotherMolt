@@ -224,6 +224,16 @@ object LocationRepository {
         }
     }
 
+    /**
+     * Add items to a location's item list
+     */
+    fun addItems(id: String, newItemIds: List<String>): Boolean = transaction {
+        val location = findById(id) ?: return@transaction false
+        LocationTable.update({ LocationTable.id eq id }) {
+            it[itemIds] = listToJson(location.itemIds + newItemIds)
+        } > 0
+    }
+
     fun removeExitIdFromAll(locationId: String) = transaction {
         val locations = LocationTable.selectAll().map { it.toLocation() }
         locations.filter { loc -> loc.exits.any { it.locationId == locationId } }.forEach { location ->

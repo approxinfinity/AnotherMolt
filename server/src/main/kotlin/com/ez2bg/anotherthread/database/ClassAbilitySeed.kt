@@ -34,6 +34,8 @@ object ClassAbilitySeed {
             isSpellcaster = true,
             hitDie = 6,
             primaryAttribute = "intelligence",
+            baseMana = 30,      // High mana for pure caster
+            baseStamina = 10,   // Low stamina
             isPublic = true
         )
         val createdSpellcaster = CharacterClassRepository.create(spellcasterClass)
@@ -44,6 +46,8 @@ object ClassAbilitySeed {
             isSpellcaster = false,
             hitDie = 10,
             primaryAttribute = "strength",
+            baseMana = 10,      // Low mana
+            baseStamina = 30,   // High stamina for physical abilities
             isPublic = true
         )
         val createdMartial = CharacterClassRepository.create(martialClass)
@@ -197,6 +201,31 @@ object ClassAbilitySeed {
                 baseDamage = 15,
                 durationRounds = 3,
                 effects = """[{"type":"lifesteal","modifier":25,"duration":3}]"""
+            ),
+            // Visual effect abilities: Blind and Disorient
+            Ability(
+                name = "Blinding Flash",
+                description = "A brilliant burst of light that blinds the target, preventing them from seeing their surroundings for 2 rounds. Blinded creatures cannot see room contents or other players.",
+                classId = createdSpellcaster.id,
+                abilityType = "spell",
+                targetType = "single_enemy",
+                range = 30,
+                cooldownType = "medium",
+                cooldownRounds = 3,
+                durationRounds = 2,
+                effects = """[{"type":"blind","duration":2}]"""
+            ),
+            Ability(
+                name = "Vertigo",
+                description = "Twist the target's perception of reality, causing their world to spin. The target's view is inverted for 3 rounds, disorienting their navigation.",
+                classId = createdSpellcaster.id,
+                abilityType = "spell",
+                targetType = "single_enemy",
+                range = 60,
+                cooldownType = "long",
+                cooldownRounds = 0,
+                durationRounds = 3,
+                effects = """[{"type":"disorient","duration":3}]"""
             )
         )
 
@@ -372,6 +401,8 @@ object ClassAbilitySeed {
                 isSpellcaster = false,
                 hitDie = 8,
                 primaryAttribute = "dexterity",
+                baseMana = 10,      // Low mana
+                baseStamina = 25,   // Good stamina for physical tricks
                 isPublic = true
             )
             val createdScoundrel = CharacterClassRepository.create(scoundrelClass)
@@ -523,6 +554,8 @@ object ClassAbilitySeed {
                 isSpellcaster = true,
                 hitDie = 8,
                 primaryAttribute = "charisma",
+                baseMana = 20,      // Moderate mana for magical performances
+                baseStamina = 15,   // Decent stamina for physical stunts
                 isPublic = true
             )
             val createdBard = CharacterClassRepository.create(bardClass)
@@ -686,6 +719,8 @@ object ClassAbilitySeed {
                 isSpellcaster = true,
                 hitDie = 8,
                 primaryAttribute = "intelligence",
+                baseMana = 25,      // Good mana for concoctions
+                baseStamina = 15,   // Decent stamina for throwing
                 isPublic = true
             )
             val createdAlchemist = CharacterClassRepository.create(alchemistClass)
@@ -852,6 +887,8 @@ object ClassAbilitySeed {
                 isSpellcaster = false,
                 hitDie = 10,
                 primaryAttribute = "dexterity",
+                baseMana = 15,      // Some mana for nature magic
+                baseStamina = 25,   // Good stamina for physical tracking and combat
                 isPublic = true
             )
             val createdRanger = CharacterClassRepository.create(rangerClass)

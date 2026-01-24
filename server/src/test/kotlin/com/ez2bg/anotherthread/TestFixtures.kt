@@ -20,8 +20,14 @@ object TestFixtures {
     const val DRAGON_ID = "test-dragon"
 
     // ========== Stock Location IDs ==========
+    const val HOME_LOCATION_ID = "test-home"
     const val DUNGEON_ENTRANCE_ID = "test-dungeon-entrance"
     const val DUNGEON_ROOM_ID = "test-dungeon-room"
+
+    // ========== Stock Item IDs ==========
+    const val SWORD_ID = "test-sword"
+    const val POTION_ID = "test-potion"
+    const val SHIELD_ID = "test-shield"
 
     // ========== Stock Ability IDs ==========
     const val BASIC_ATTACK_ID = "test-basic-attack"
@@ -236,26 +242,82 @@ object TestFixtures {
         mageClass()
     )
 
+    // ========== Stock Items ==========
+
+    fun sword() = Item(
+        id = SWORD_ID,
+        name = "Test Sword",
+        desc = "A simple test sword",
+        featureIds = emptyList(),
+        equipmentType = "weapon",
+        equipmentSlot = "main_hand",
+        value = 50
+    )
+
+    fun potion() = Item(
+        id = POTION_ID,
+        name = "Test Potion",
+        desc = "A healing potion for testing",
+        featureIds = emptyList(),
+        value = 25
+    )
+
+    fun shield() = Item(
+        id = SHIELD_ID,
+        name = "Test Shield",
+        desc = "A simple test shield",
+        featureIds = emptyList(),
+        equipmentType = "armor",
+        equipmentSlot = "off_hand",
+        value = 40
+    )
+
+    fun allItems(): List<Item> = listOf(
+        sword(),
+        potion(),
+        shield()
+    )
+
     // ========== Stock Users ==========
 
-    fun player1(currentHp: Int = 30, maxHp: Int = 30) = User(
+    fun player1(
+        currentHp: Int = 30,
+        maxHp: Int = 30,
+        itemIds: List<String> = emptyList(),
+        gold: Int = 0,
+        currentLocationId: String? = null,
+        equippedItemIds: List<String> = emptyList()
+    ) = User(
         id = PLAYER_1_ID,
         name = "TestPlayer1",
         passwordHash = "test-hash",
         desc = "A test player",
         currentHp = currentHp,
         maxHp = maxHp,
-        characterClassId = WARRIOR_CLASS_ID
+        characterClassId = WARRIOR_CLASS_ID,
+        itemIds = itemIds,
+        gold = gold,
+        currentLocationId = currentLocationId,
+        equippedItemIds = equippedItemIds
     )
 
-    fun player2(currentHp: Int = 25, maxHp: Int = 25) = User(
+    fun player2(
+        currentHp: Int = 25,
+        maxHp: Int = 25,
+        itemIds: List<String> = emptyList(),
+        gold: Int = 0,
+        currentLocationId: String? = null
+    ) = User(
         id = PLAYER_2_ID,
         name = "TestPlayer2",
         passwordHash = "test-hash",
         desc = "Another test player",
         currentHp = currentHp,
         maxHp = maxHp,
-        characterClassId = HEALER_CLASS_ID
+        characterClassId = HEALER_CLASS_ID,
+        itemIds = itemIds,
+        gold = gold,
+        currentLocationId = currentLocationId
     )
 
     // ========== Stock Creatures ==========
@@ -301,14 +363,33 @@ object TestFixtures {
 
     // ========== Stock Locations ==========
 
+    /**
+     * Home location at (0,0) in overworld - where players respawn on death.
+     */
+    fun homeLocation() = Location(
+        id = HOME_LOCATION_ID,
+        name = "Town Square",
+        desc = "The central square of town. A safe place to rest.",
+        creatureIds = emptyList(),
+        exits = listOf(Exit(DUNGEON_ENTRANCE_ID, ExitDirection.NORTH)),
+        itemIds = emptyList(),
+        featureIds = emptyList(),
+        gridX = 0,
+        gridY = 0,
+        areaId = "overworld"
+    )
+
     fun dungeonEntrance() = Location(
         id = DUNGEON_ENTRANCE_ID,
         name = "Dungeon Entrance",
         desc = "The entrance to a dark dungeon.",
         creatureIds = listOf(GOBLIN_ID),
-        exits = listOf(Exit(DUNGEON_ROOM_ID, ExitDirection.NORTH)),
+        exits = listOf(Exit(DUNGEON_ROOM_ID, ExitDirection.NORTH), Exit(HOME_LOCATION_ID, ExitDirection.SOUTH)),
         itemIds = emptyList(),
-        featureIds = emptyList()
+        featureIds = emptyList(),
+        gridX = 0,
+        gridY = 1,
+        areaId = "overworld"
     )
 
     fun dungeonRoom() = Location(
@@ -318,7 +399,10 @@ object TestFixtures {
         creatureIds = listOf(ORC_ID),
         exits = listOf(Exit(DUNGEON_ENTRANCE_ID, ExitDirection.SOUTH)),
         itemIds = emptyList(),
-        featureIds = emptyList()
+        featureIds = emptyList(),
+        gridX = 0,
+        gridY = 2,
+        areaId = "overworld"
     )
 
     // ========== Stock Combatants ==========

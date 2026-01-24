@@ -18,6 +18,10 @@ object CreatureTable : Table("creature") {
     val experienceValue = integer("experience_value").default(10)  // Base XP, scaled by level difference
     val challengeRating = integer("challenge_rating").default(1)  // 1-20 scale, determines difficulty tier
     val isAggressive = bool("is_aggressive").default(false)  // Auto-attacks players
+    // Loot fields
+    val lootTableId = varchar("loot_table_id", 36).nullable()
+    val minGoldDrop = integer("min_gold_drop").default(0)
+    val maxGoldDrop = integer("max_gold_drop").default(0)
 
     override val primaryKey = PrimaryKey(id)
 }

@@ -1,6 +1,8 @@
 package com.ez2bg.anotherthread.database
 
 import kotlinx.serialization.Serializable
+import kotlinx.serialization.encodeToString
+import kotlinx.serialization.json.Json
 import org.jetbrains.exposed.sql.ResultRow
 import org.jetbrains.exposed.sql.SqlExpressionBuilder.eq
 import org.jetbrains.exposed.sql.deleteWhere
@@ -11,6 +13,13 @@ import org.jetbrains.exposed.sql.update
 import java.util.UUID
 
 @Serializable
+data class StatBonuses(
+    val attack: Int = 0,
+    val defense: Int = 0,
+    val maxHp: Int = 0
+)
+
+@Serializable
 data class Item(
     val id: String = UUID.randomUUID().toString(),
     val name: String,
@@ -18,10 +27,17 @@ data class Item(
     val featureIds: List<String>,
     val abilityIds: List<String> = emptyList(),  // Combat abilities this item grants
     val imageUrl: String? = null,
-    val lockedBy: String? = null
+    val lockedBy: String? = null,
+    // Equipment fields
+    val equipmentType: String? = null,  // "weapon", "armor", "accessory", or null
+    val equipmentSlot: String? = null,  // "main_hand", "off_hand", "head", "chest", "legs", "feet", "ring", "amulet"
+    val statBonuses: StatBonuses? = null,
+    val value: Int = 0  // Gold value
 )
 
 object ItemRepository {
+    private val json = Json { ignoreUnknownKeys = true }
+
     private fun listToJson(list: List<String>): String {
         return list.joinToString(",") { "\"${it.replace("\"", "\\\"")}\"" }
             .let { "[$it]" }
@@ -36,6 +52,14 @@ object ItemRepository {
             .filter { it.isNotEmpty() }
     }
 
+    private fun statBonusesToJson(statBonuses: StatBonuses?): String? {
+        return statBonuses?.let { json.encodeToString(it) }
+    }
+
+    private fun jsonToStatBonuses(jsonStr: String?): StatBonuses? {
+        return jsonStr?.let { json.decodeFromString<StatBonuses>(it) }
+    }
+
     private fun ResultRow.toItem(): Item = Item(
         id = this[ItemTable.id],
         name = this[ItemTable.name],
@@ -43,7 +67,11 @@ object ItemRepository {
         featureIds = jsonToList(this[ItemTable.featureIds]),
         abilityIds = jsonToList(this[ItemTable.abilityIds]),
         imageUrl = this[ItemTable.imageUrl],
-        lockedBy = this[ItemTable.lockedBy]
+        lockedBy = this[ItemTable.lockedBy],
+        equipmentType = this[ItemTable.equipmentType],
+        equipmentSlot = this[ItemTable.equipmentSlot],
+        statBonuses = jsonToStatBonuses(this[ItemTable.statBonuses]),
+        value = this[ItemTable.value]
     )
 
     fun create(item: Item): Item = transaction {
@@ -55,6 +83,10 @@ object ItemRepository {
             it[abilityIds] = listToJson(item.abilityIds)
             it[imageUrl] = item.imageUrl
             it[lockedBy] = item.lockedBy
+            it[equipmentType] = item.equipmentType
+            it[equipmentSlot] = item.equipmentSlot
+            it[statBonuses] = statBonusesToJson(item.statBonuses)
+            it[value] = item.value
         }
         item
     }
@@ -78,6 +110,10 @@ object ItemRepository {
             it[abilityIds] = listToJson(item.abilityIds)
             it[imageUrl] = item.imageUrl
             it[lockedBy] = item.lockedBy
+            it[equipmentType] = item.equipmentType
+            it[equipmentSlot] = item.equipmentSlot
+            it[statBonuses] = statBonusesToJson(item.statBonuses)
+            it[value] = item.value
         } > 0
     }
 

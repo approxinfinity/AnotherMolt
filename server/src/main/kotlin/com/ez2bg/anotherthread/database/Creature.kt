@@ -26,7 +26,11 @@ data class Creature(
     val level: Int = 1,
     val experienceValue: Int = 10,
     val challengeRating: Int = 1,
-    val isAggressive: Boolean = false
+    val isAggressive: Boolean = false,
+    // Loot fields
+    val lootTableId: String? = null,
+    val minGoldDrop: Int = 0,
+    val maxGoldDrop: Int = 0
 )
 
 object CreatureRepository {
@@ -58,7 +62,10 @@ object CreatureRepository {
         level = this[CreatureTable.level],
         experienceValue = this[CreatureTable.experienceValue],
         challengeRating = this[CreatureTable.challengeRating],
-        isAggressive = this[CreatureTable.isAggressive]
+        isAggressive = this[CreatureTable.isAggressive],
+        lootTableId = this[CreatureTable.lootTableId],
+        minGoldDrop = this[CreatureTable.minGoldDrop],
+        maxGoldDrop = this[CreatureTable.maxGoldDrop]
     )
 
     fun create(creature: Creature): Creature = transaction {
@@ -77,6 +84,9 @@ object CreatureRepository {
             it[experienceValue] = creature.experienceValue
             it[challengeRating] = creature.challengeRating
             it[isAggressive] = creature.isAggressive
+            it[lootTableId] = creature.lootTableId
+            it[minGoldDrop] = creature.minGoldDrop
+            it[maxGoldDrop] = creature.maxGoldDrop
         }
         creature
     }
@@ -107,6 +117,9 @@ object CreatureRepository {
             it[experienceValue] = creature.experienceValue
             it[challengeRating] = creature.challengeRating
             it[isAggressive] = creature.isAggressive
+            it[lootTableId] = creature.lootTableId
+            it[minGoldDrop] = creature.minGoldDrop
+            it[maxGoldDrop] = creature.maxGoldDrop
         } > 0
     }
 

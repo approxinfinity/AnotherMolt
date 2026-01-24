@@ -209,4 +209,50 @@ object FeatureStateRepository {
             true
         }
     }
+
+    // ========================================================================
+    // Simple key-value helpers for game state tracking
+    // ========================================================================
+
+    /**
+     * Simple wrapper for storing a single string value.
+     */
+    @Serializable
+    data class SimpleState(val value: String)
+
+    /**
+     * Get a simple state value by key.
+     * Used for flags like "defeated_<creatureId>" or "opened_chest_<chestId>".
+     */
+    fun getState(ownerId: String, key: String): SimpleState? {
+        val featureState = findByOwnerAndFeature(ownerId, key) ?: return null
+        return try {
+            json.decodeFromString<SimpleState>(featureState.state)
+        } catch (e: Exception) {
+            null
+        }
+    }
+
+    /**
+     * Set a simple state value by key.
+     * Creates the state if it doesn't exist, updates if it does.
+     */
+    fun setState(ownerId: String, key: String, value: String): Boolean {
+        val id = FeatureState.createId(ownerId, key)
+        val stateJson = json.encodeToString(SimpleState(value))
+        val existing = findById(id)
+
+        return if (existing != null) {
+            updateState(id, stateJson)
+        } else {
+            create(FeatureState(
+                id = id,
+                ownerId = ownerId,
+                ownerType = "user",  // Default to user for simple state
+                featureId = key,
+                state = stateJson
+            ))
+            true
+        }
+    }
 }
