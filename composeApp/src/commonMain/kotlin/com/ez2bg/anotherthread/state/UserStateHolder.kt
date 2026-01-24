@@ -66,6 +66,9 @@ object UserStateHolder {
     /**
      * Initialize from persisted storage.
      * Call this at app startup.
+     *
+     * On web: Validates session via /auth/me (cookie is auto-sent)
+     * On native: Checks if stored token is expired, then validates with server
      */
     fun initialize() {
         val savedUser = AuthStorage.getUser()
@@ -73,10 +76,40 @@ object UserStateHolder {
             _currentUser.value = savedUser
             ApiClient.setUserContext(savedUser.id, savedUser.name)
 
-            // Refresh user data from server
+            // Validate session with server (this also refreshes the session)
             scope.launch {
-                refreshUser(savedUser.id)
+                validateSession()
             }
+        }
+    }
+
+    /**
+     * Validate the current session with the server.
+     * On success, refreshes user data and session expiry.
+     * On failure, logs out the user.
+     */
+    private suspend fun validateSession() {
+        val result = ApiClient.validateSession()
+
+        result.onSuccess { response ->
+            if (response.success && response.user != null) {
+                // Update user data
+                _currentUser.value = response.user
+                AuthStorage.saveUser(response.user)
+
+                // Update session expiry for native platforms
+                if (response.sessionToken != null && response.expiresAt != null) {
+                    AuthStorage.saveSessionToken(response.sessionToken, response.expiresAt)
+                }
+            } else {
+                // Session invalid - logout
+                performLocalLogout()
+                _authEvents.emit(AuthEvent.AuthError("Session expired. Please login again."))
+            }
+        }.onFailure {
+            // Session invalid or network error - logout
+            performLocalLogout()
+            _authEvents.emit(AuthEvent.AuthError("Session expired. Please login again."))
         }
     }
 
@@ -91,7 +124,7 @@ object UserStateHolder {
 
             result.onSuccess { response ->
                 if (response.success && response.user != null) {
-                    setUser(response.user)
+                    setUser(response.user, response.sessionToken, response.expiresAt)
                     onResult(Result.success(response.user))
                 } else {
                     onResult(Result.failure(Exception(response.message ?: "Login failed")))
@@ -115,7 +148,7 @@ object UserStateHolder {
 
             result.onSuccess { response ->
                 if (response.success && response.user != null) {
-                    setUser(response.user)
+                    setUser(response.user, response.sessionToken, response.expiresAt)
                     onResult(Result.success(response.user))
                 } else {
                     onResult(Result.failure(Exception(response.message ?: "Registration failed")))
@@ -130,8 +163,34 @@ object UserStateHolder {
 
     /**
      * Logout the current user.
+     * Calls server to invalidate session, then clears local state.
      */
     fun logout() {
+        scope.launch {
+            // Call server to invalidate session
+            ApiClient.logout()
+            // Always perform local logout even if server call fails
+            performLocalLogout()
+            _authEvents.emit(AuthEvent.LoggedOut)
+        }
+    }
+
+    /**
+     * Logout from all devices.
+     * Invalidates all sessions for this user on the server.
+     */
+    fun logoutAll() {
+        scope.launch {
+            ApiClient.logoutAll()
+            performLocalLogout()
+            _authEvents.emit(AuthEvent.LoggedOut)
+        }
+    }
+
+    /**
+     * Clear local auth state without calling server.
+     */
+    private fun performLocalLogout() {
         AuthStorage.clearUser()
         ApiClient.clearUserContext()
         _currentUser.value = null
@@ -139,10 +198,6 @@ object UserStateHolder {
         // Clear related state holders
         AdventureStateHolder.clear()
         CombatStateHolder.disconnect()
-
-        scope.launch {
-            _authEvents.emit(AuthEvent.LoggedOut)
-        }
     }
 
     /**
@@ -160,11 +215,17 @@ object UserStateHolder {
 
     /**
      * Set the current user (after login/register).
+     * Also saves session token for native platforms.
      */
-    private fun setUser(user: UserDto) {
+    private fun setUser(user: UserDto, sessionToken: String? = null, expiresAt: Long? = null) {
         _currentUser.value = user
         AuthStorage.saveUser(user)
         ApiClient.setUserContext(user.id, user.name)
+
+        // Save session token for native platforms
+        if (sessionToken != null && expiresAt != null) {
+            AuthStorage.saveSessionToken(sessionToken, expiresAt)
+        }
 
         scope.launch {
             _authEvents.emit(AuthEvent.LoggedIn(user))

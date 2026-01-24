@@ -1,10 +1,13 @@
 package com.ez2bg.anotherthread.api
 
 import com.ez2bg.anotherthread.AppConfig
+import com.ez2bg.anotherthread.isWebPlatform
+import com.ez2bg.anotherthread.storage.AuthStorage
 import io.ktor.client.*
 import io.ktor.client.call.*
 import io.ktor.client.plugins.*
 import io.ktor.client.plugins.contentnegotiation.*
+import io.ktor.client.plugins.cookies.*
 import io.ktor.client.request.*
 import io.ktor.client.request.forms.*
 import io.ktor.client.statement.*
@@ -203,7 +206,9 @@ data class AssignClassResponse(
 data class AuthResponse(
     val success: Boolean,
     val message: String,
-    val user: UserDto? = null
+    val user: UserDto? = null,
+    val sessionToken: String? = null,  // For native clients
+    val expiresAt: Long? = null        // Session expiration timestamp
 )
 
 @Serializable
@@ -616,10 +621,19 @@ object ApiClient {
             connectTimeoutMillis = 30_000
             socketTimeoutMillis = 180_000
         }
+        // Enable cookies for session handling (used by web)
+        install(HttpCookies)
         install(DefaultRequest) {
             // Add user headers for audit logging if available
             currentUserId?.let { header("X-User-Id", it) }
             currentUserName?.let { header("X-User-Name", it) }
+
+            // For native platforms, add Authorization header with session token
+            if (!isWebPlatform()) {
+                AuthStorage.getSessionToken()?.let { token ->
+                    header("Authorization", "Bearer $token")
+                }
+            }
         }
     }
 
@@ -754,6 +768,32 @@ object ApiClient {
             contentType(ContentType.Application.Json)
             setBody(LoginRequest(name, password))
         }.body()
+    }
+
+    /**
+     * Validate current session and get user info.
+     * This refreshes the session expiry (sliding window).
+     * On web, the cookie is automatically sent and refreshed.
+     * On native, the Authorization header is sent and response contains new expiry.
+     */
+    suspend fun validateSession(): Result<AuthResponse> = runCatching {
+        client.get("$baseUrl/auth/me").body()
+    }
+
+    /**
+     * Logout - invalidate current session.
+     */
+    suspend fun logout(): Result<Unit> = runCatching {
+        client.post("$baseUrl/auth/logout")
+        Unit
+    }
+
+    /**
+     * Logout from all devices - invalidate all sessions for this user.
+     */
+    suspend fun logoutAll(): Result<Unit> = runCatching {
+        client.post("$baseUrl/auth/logout-all")
+        Unit
     }
 
     suspend fun getUser(id: String): Result<UserDto?> = runCatching {

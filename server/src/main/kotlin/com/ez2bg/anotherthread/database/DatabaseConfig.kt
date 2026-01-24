@@ -33,7 +33,8 @@ object DatabaseConfig {
                 CombatSessionTable,
                 LootTableTable,
                 ChestTable,
-                IdentifiedEntityTable
+                IdentifiedEntityTable,
+                SessionTable
             )
         }
     }

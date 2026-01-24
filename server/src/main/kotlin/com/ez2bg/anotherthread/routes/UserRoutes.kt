@@ -14,6 +14,12 @@ import kotlinx.serialization.Serializable
 /**
  * Auth routes for user registration and login.
  * Base path: /auth
+ *
+ * Session Management:
+ * - On successful login/register, creates a session with 7-day sliding expiration
+ * - Sets HttpOnly cookie for web clients (automatically sent with requests)
+ * - Returns token in response body for native clients (iOS/Android)
+ * - Each authenticated request refreshes the session expiry (sliding window)
  */
 fun Route.authRoutes() {
     route("/auth") {
@@ -53,10 +59,32 @@ fun Route.authRoutes() {
             )
             val createdUser = UserRepository.create(user)
 
+            // Create session
+            val session = SessionRepository.create(
+                userId = createdUser.id,
+                userAgent = call.request.header("User-Agent"),
+                ipAddress = call.request.header("X-Forwarded-For")
+                    ?: call.request.local.remoteHost
+            )
+
+            // Set HttpOnly cookie for web clients
+            call.response.cookies.append(
+                Cookie(
+                    name = "session",
+                    value = session.id,
+                    maxAge = SessionConfig.SESSION_DURATION_SECONDS,
+                    httpOnly = true,
+                    path = "/",
+                    extensions = mapOf("SameSite" to "Lax")
+                )
+            )
+
             call.respond(HttpStatusCode.Created, AuthResponse(
                 success = true,
                 message = "Registration successful",
-                user = createdUser.toResponse()
+                user = createdUser.toResponse(),
+                sessionToken = session.id,
+                expiresAt = session.expiresAt
             ))
         }
 
@@ -75,10 +103,148 @@ fun Route.authRoutes() {
             // Update last active timestamp
             UserRepository.updateLastActiveAt(user.id)
 
+            // Create session
+            val session = SessionRepository.create(
+                userId = user.id,
+                userAgent = call.request.header("User-Agent"),
+                ipAddress = call.request.header("X-Forwarded-For")
+                    ?: call.request.local.remoteHost
+            )
+
+            // Set HttpOnly cookie for web clients
+            call.response.cookies.append(
+                Cookie(
+                    name = "session",
+                    value = session.id,
+                    maxAge = SessionConfig.SESSION_DURATION_SECONDS,
+                    httpOnly = true,
+                    path = "/",
+                    extensions = mapOf("SameSite" to "Lax")
+                )
+            )
+
             call.respond(HttpStatusCode.OK, AuthResponse(
                 success = true,
                 message = "Login successful",
-                user = user.toResponse()
+                user = user.toResponse(),
+                sessionToken = session.id,
+                expiresAt = session.expiresAt
+            ))
+        }
+
+        // Logout - invalidate session
+        post("/logout") {
+            val token = call.request.cookies["session"]
+                ?: call.request.header("Authorization")?.removePrefix("Bearer ")
+
+            if (token != null) {
+                SessionRepository.delete(token)
+            }
+
+            // Clear the cookie
+            call.response.cookies.append(
+                Cookie(
+                    name = "session",
+                    value = "",
+                    maxAge = 0,
+                    httpOnly = true,
+                    path = "/"
+                )
+            )
+
+            call.respond(HttpStatusCode.OK, mapOf("success" to true, "message" to "Logged out"))
+        }
+
+        // Logout from all devices
+        post("/logout-all") {
+            val token = call.request.cookies["session"]
+                ?: call.request.header("Authorization")?.removePrefix("Bearer ")
+
+            if (token != null) {
+                val session = SessionRepository.findById(token)
+                if (session != null) {
+                    val count = SessionRepository.deleteAllForUser(session.userId)
+                    call.response.cookies.append(
+                        Cookie(
+                            name = "session",
+                            value = "",
+                            maxAge = 0,
+                            httpOnly = true,
+                            path = "/"
+                        )
+                    )
+                    call.respond(HttpStatusCode.OK, mapOf(
+                        "success" to true,
+                        "message" to "Logged out from all devices",
+                        "sessionsInvalidated" to count
+                    ))
+                    return@post
+                }
+            }
+
+            call.respond(HttpStatusCode.Unauthorized, mapOf("success" to false, "message" to "Not authenticated"))
+        }
+
+        // Validate current session and get user info
+        get("/me") {
+            val token = call.request.cookies["session"]
+                ?: call.request.header("Authorization")?.removePrefix("Bearer ")
+
+            if (token == null) {
+                call.respond(HttpStatusCode.Unauthorized, AuthResponse(
+                    success = false,
+                    message = "No session token"
+                ))
+                return@get
+            }
+
+            val session = SessionRepository.validateAndRefresh(token)
+            if (session == null) {
+                // Clear expired cookie
+                call.response.cookies.append(
+                    Cookie(
+                        name = "session",
+                        value = "",
+                        maxAge = 0,
+                        httpOnly = true,
+                        path = "/"
+                    )
+                )
+                call.respond(HttpStatusCode.Unauthorized, AuthResponse(
+                    success = false,
+                    message = "Session expired"
+                ))
+                return@get
+            }
+
+            val user = UserRepository.findById(session.userId)
+            if (user == null) {
+                SessionRepository.delete(token)
+                call.respond(HttpStatusCode.Unauthorized, AuthResponse(
+                    success = false,
+                    message = "User not found"
+                ))
+                return@get
+            }
+
+            // Refresh the cookie expiry
+            call.response.cookies.append(
+                Cookie(
+                    name = "session",
+                    value = session.id,
+                    maxAge = SessionConfig.SESSION_DURATION_SECONDS,
+                    httpOnly = true,
+                    path = "/",
+                    extensions = mapOf("SameSite" to "Lax")
+                )
+            )
+
+            call.respond(HttpStatusCode.OK, AuthResponse(
+                success = true,
+                message = "Session valid",
+                user = user.toResponse(),
+                sessionToken = session.id,
+                expiresAt = session.expiresAt
             ))
         }
     }

@@ -286,7 +286,9 @@ data class AssignClassResponse(
 data class AuthResponse(
     val success: Boolean,
     val message: String,
-    val user: UserResponse? = null
+    val user: UserResponse? = null,
+    val sessionToken: String? = null,  // For native clients (iOS/Android)
+    val expiresAt: Long? = null        // Session expiration timestamp
 )
 
 @Serializable
@@ -979,10 +981,31 @@ fun Application.module() {
     }
 
     install(CORS) {
-        anyHost()
+        // Allow credentials (cookies) - required for session auth
+        allowCredentials = true
+
+        // When allowCredentials is true, we can't use anyHost()
+        // Allow common development origins
+        allowHost("localhost:8080")
+        allowHost("localhost:8081")
+        allowHost("127.0.0.1:8080")
+        allowHost("127.0.0.1:8081")
+        allowHost("192.168.1.239:8080")  // User's local network
+        allowHost("192.168.1.239:8081")
+
+        // Production domains
+        allowHost("anotherthread.ez2bgood.com", schemes = listOf("https"))
+        allowHost("api.ez2bgood.com", schemes = listOf("https"))
+
+        // Headers
         allowHeader(HttpHeaders.ContentType)
+        allowHeader(HttpHeaders.Authorization)  // For native clients
         allowHeader("X-User-Id")
         allowHeader("X-User-Name")
+
+        // Expose headers to client
+        exposeHeader(HttpHeaders.SetCookie)
+
         allowNonSimpleContentTypes = true
         allowMethod(HttpMethod.Get)
         allowMethod(HttpMethod.Post)
