@@ -331,7 +331,18 @@ object CombatStateHolder {
             }
 
             is CombatEvent.CreatureMoved -> {
-                addEventLogEntry("${event.creatureName} moved away.", EventLogType.INFO)
+                // Only show movement if creature enters or leaves the player's current room
+                val currentLocationId = AdventureStateHolder.currentLocation.value?.id
+                if (currentLocationId != null) {
+                    when (currentLocationId) {
+                        event.fromLocationId -> {
+                            addEventLogEntry("${event.creatureName} left.", EventLogType.INFO)
+                        }
+                        event.toLocationId -> {
+                            addEventLogEntry("${event.creatureName} arrived.", EventLogType.INFO)
+                        }
+                    }
+                }
             }
 
             is CombatEvent.Error -> {

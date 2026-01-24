@@ -187,19 +187,68 @@ fun AdventureScreen(
                     }
                 }
 
-                // Top-left: Location info panel
-                LocationInfoPanel(
-                    location = location,
-                    creaturesHere = creaturesHere,
-                    itemsHere = itemsHere,
-                    isBlinded = isBlinded,
-                    onCreatureClick = { selectedCreature = it },
-                    onItemClick = { selectedItem = it },
+                // Top section: Location info panel (full width) with controls overlaid
+                Box(
                     modifier = Modifier
                         .align(Alignment.TopStart)
-                        .padding(12.dp)
-                        .widthIn(max = 200.dp)
-                )
+                        .fillMaxWidth()
+                ) {
+                    // Location info panel - full width background
+                    LocationInfoPanel(
+                        location = location,
+                        creaturesHere = creaturesHere,
+                        itemsHere = itemsHere,
+                        isBlinded = isBlinded,
+                        onCreatureClick = { selectedCreature = it },
+                        onItemClick = { selectedItem = it },
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(12.dp)
+                    )
+
+                    // Controls overlay (higher z-index) - top right
+                    Row(
+                        modifier = Modifier
+                            .align(Alignment.TopEnd)
+                            .padding(8.dp),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        // Coordinates display
+                        if (location.gridX != null && location.gridY != null) {
+                            Box(
+                                modifier = Modifier
+                                    .background(Color.Black.copy(alpha = 0.8f), RoundedCornerShape(8.dp))
+                                    .padding(horizontal = 8.dp, vertical = 4.dp)
+                            ) {
+                                Text(
+                                    text = "(${location.gridX}, ${location.gridY})",
+                                    color = Color.Gray,
+                                    fontSize = 12.sp
+                                )
+                            }
+                        }
+
+                        // Refresh button
+                        IconButton(
+                            onClick = { AdventureStateHolder.refreshCurrentLocation() },
+                            modifier = Modifier
+                                .size(36.dp)
+                                .background(Color.Black.copy(alpha = 0.8f), RoundedCornerShape(8.dp))
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Refresh,
+                                contentDescription = "Refresh",
+                                tint = Color.White
+                            )
+                        }
+
+                        // Mode toggle
+                        ModeToggle(
+                            isCreateMode = false,
+                            onToggle = onSwitchToCreate
+                        )
+                    }
+                }
 
                 // Navigation arrows for available exits
                 NavigationArrows(
@@ -238,34 +287,6 @@ fun AdventureScreen(
                         .height(80.dp)
                         .padding(horizontal = 8.dp, vertical = 4.dp)
                 )
-
-                // Top-right: Mode toggle and refresh
-                Row(
-                    modifier = Modifier
-                        .align(Alignment.TopEnd)
-                        .padding(8.dp),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
-                    // Refresh button
-                    IconButton(
-                        onClick = { AdventureStateHolder.refreshCurrentLocation() },
-                        modifier = Modifier
-                            .size(36.dp)
-                            .background(Color.Black.copy(alpha = 0.7f), RoundedCornerShape(8.dp))
-                    ) {
-                        Icon(
-                            imageVector = Icons.Default.Refresh,
-                            contentDescription = "Refresh",
-                            tint = Color.White
-                        )
-                    }
-
-                    // Mode toggle
-                    ModeToggle(
-                        isCreateMode = false,
-                        onToggle = onSwitchToCreate
-                    )
-                }
 
                 // Target selection overlay
                 if (pendingAbility != null) {
