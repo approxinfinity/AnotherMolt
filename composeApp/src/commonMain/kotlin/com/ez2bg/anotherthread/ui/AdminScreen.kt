@@ -4434,19 +4434,7 @@ fun LocationGraph(
                     modifier = Modifier.fillMaxSize(),
                     contentAlignment = Alignment.Center
                 ) {
-                    // Location name above the thumbnail (moved higher to clear ability icons)
-                    Text(
-                        text = currentLocation.name,
-                        color = Color.White,
-                        fontSize = 18.sp,
-                        fontWeight = FontWeight.Medium,
-                        textAlign = TextAlign.Center,
-                        modifier = Modifier
-                            .align(Alignment.Center)
-                            .offset(y = (-160).dp)
-                            .background(Color.Black.copy(alpha = 0.7f), RoundedCornerShape(4.dp))
-                            .padding(horizontal = 12.dp, vertical = 4.dp)
-                    )
+                    // Location name is now in the top-left info panel
 
                     // Disorient indicator below thumbnail
                     if (isDisoriented && disorientRoundsRemaining > 0) {
@@ -4877,16 +4865,25 @@ fun LocationGraph(
 
                 }
 
-                // Location info fixed at bottom of viewport (hidden when detail view is shown)
+                // Location info at top-left (hidden when detail view is shown)
                 if (!isDetailViewVisible) {
                     Column(
                         modifier = Modifier
-                            .align(Alignment.BottomCenter)
-                            .fillMaxWidth()
+                            .align(Alignment.TopStart)
+                            .fillMaxWidth(0.6f)  // Leave room for minimap on right
                             .background(Color.Black.copy(alpha = 0.85f))
                             .padding(16.dp),
                         horizontalAlignment = Alignment.Start
                     ) {
+                        // Location name at top
+                        Text(
+                            text = currentLocation.name,
+                            color = Color.White,
+                            fontSize = 18.sp,
+                            fontWeight = FontWeight.Bold,
+                            modifier = Modifier.padding(bottom = 12.dp)
+                        )
+
                         // Others (creatures) - show actual names, or vague descriptions when blinded
                         Text(
                             text = if (isBlinded) "Presences" else "Others",
@@ -4968,19 +4965,15 @@ fun LocationGraph(
                     }
                 }
 
-                // Event log (bottom-left corner) - show when events exist
-                // Larger size when in detail view (no location panel taking space)
+                // Event log (fixed at bottom, full width) - max 4 lines
                 if (eventLogEntries.isNotEmpty()) {
-                    val eventLogHeight = if (isDetailViewVisible) 300.dp else 120.dp
-                    val eventLogBottom = if (isDetailViewVisible) 16.dp else 200.dp
                     com.ez2bg.anotherthread.ui.components.EventLog(
                         entries = eventLogEntries,
                         modifier = Modifier
-                            .align(Alignment.BottomStart)
-                            .padding(start = 16.dp, bottom = eventLogBottom)
-                            .width(280.dp)
-                            .height(eventLogHeight),
-                        maxVisibleEntries = if (isDetailViewVisible) 15 else 6
+                            .align(Alignment.BottomCenter)
+                            .fillMaxWidth()
+                            .height(80.dp),
+                        maxVisibleEntries = 4
                     )
                 }
 
@@ -5533,7 +5526,7 @@ fun LocationGraph(
                     modifier = Modifier.align(Alignment.BottomCenter)
                 )
 
-                // 2. Minimap in top-left - just dots and connection lines, no terrain
+                // 2. Minimap in top-right - just dots and connection lines, no terrain
                 if (currentPos != null && !isDetailViewVisible) {
                     // Scale multiplier for minimap - adjust to change overall minimap size
                     // 1.0 = default, 0.75 = 75% of original, etc.
@@ -5559,7 +5552,7 @@ fun LocationGraph(
 
                     Column(
                         modifier = Modifier
-                            .align(Alignment.TopStart)
+                            .align(Alignment.TopEnd)
                             .padding(12.dp),
                         horizontalAlignment = Alignment.CenterHorizontally
                     ) {
