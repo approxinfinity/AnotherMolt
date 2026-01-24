@@ -4378,6 +4378,9 @@ fun LocationGraph(
             var selectedItem by remember { mutableStateOf<ItemDto?>(null) }
             val isDetailViewVisible = selectedCreature != null || selectedItem != null
 
+            // State for description popup (shown when tapping the image)
+            var showDescriptionPopup by remember { mutableStateOf(false) }
+
             // Animation for slide transition
             val detailOffsetX by animateFloatAsState(
                 targetValue = if (isDetailViewVisible) 0f else 1f,
@@ -4406,13 +4409,21 @@ fun LocationGraph(
             // Target selection state for abilities that need a target
             var pendingAbility by remember { mutableStateOf<AbilityDto?>(null) }
 
-            // Fetch player's class abilities
+            // Ranger class detection for directional attunement feature
+            var playerCharacterClass by remember { mutableStateOf<CharacterClassDto?>(null) }
+            val isRanger = playerCharacterClass?.name == "Ranger"
+
+            // Fetch player's class abilities and class info
             LaunchedEffect(currentUser?.characterClassId) {
                 val classId = currentUser?.characterClassId
                 if (classId != null) {
                     ApiClient.getAbilitiesByClass(classId).onSuccess { abilities ->
                         playerAbilities = abilities.filter { it.abilityType != "passive" }
                             .sortedBy { it.name.lowercase() }
+                    }
+                    // Fetch class info for Ranger detection
+                    ApiClient.getCharacterClass(classId).onSuccess { characterClass ->
+                        playerCharacterClass = characterClass
                     }
                 }
             }
@@ -4544,12 +4555,13 @@ fun LocationGraph(
                         }
 
                         // Circular 100x100 thumbnail with location image or fallback
+                        // For Rangers: shows minimap overlay with location image behind (semi-transparent)
                         Box(
                             modifier = Modifier
                                 .size(100.dp)
                                 .clip(CircleShape)
                                 .background(Color.Black.copy(alpha = 0.8f))
-                                .border(2.dp, Color(0xFF4A4A4A), CircleShape)
+                                .border(2.dp, if (isRanger) Color(0xFF4CAF50) else Color(0xFF4A4A4A), CircleShape)
                                 .clickable { onLocationClick(currentLocation) }
                         ) {
                             // Blind overlay covers the view
@@ -4558,8 +4570,204 @@ fun LocationGraph(
                                     roundsRemaining = blindRoundsRemaining,
                                     modifier = Modifier.fillMaxSize()
                                 )
+                            } else if (isRanger) {
+                                // Ranger's Directional Attunement: minimap overlay with location image behind
+                                // Layer 1: Location image with semi-opacity filter
+                                if (currentLocation.imageUrl != null) {
+                                    AsyncImage(
+                                        model = "${AppConfig.api.baseUrl}${currentLocation.imageUrl}",
+                                        contentDescription = currentLocation.name,
+                                        modifier = Modifier
+                                            .fillMaxSize()
+                                            .graphicsLayer { alpha = 0.35f },
+                                        contentScale = ContentScale.Crop
+                                    )
+                                }
+
+                                // Layer 2: Minimap overlay
+                                val currentGridX = currentLocation.gridX ?: 0
+                                val currentGridY = currentLocation.gridY ?: 0
+                                val animatedGridX by animateFloatAsState(
+                                    targetValue = currentGridX.toFloat(),
+                                    animationSpec = tween(durationMillis = 300),
+                                    label = "rangerMinimapX"
+                                )
+                                val animatedGridY by animateFloatAsState(
+                                    targetValue = currentGridY.toFloat(),
+                                    animationSpec = tween(durationMillis = 300),
+                                    label = "rangerMinimapY"
+                                )
+
+                                Canvas(modifier = Modifier.fillMaxSize()) {
+                                    val centerX = size.width / 2
+                                    val centerY = size.height / 2
+                                    // Smaller grid spacing for 100dp size (vs 140dp minimap)
+                                    val gridSpacingPx = 22.dp.toPx()
+                                    val dotRadius = 5.dp.toPx()
+                                    val highlightRadius = 7.dp.toPx()
+                                    val lineColor = Color(0xFF4CAF50).copy(alpha = 0.8f) // Green for Ranger
+                                    val lineWidth = 2.dp.toPx()
+                                    val highlightStrokeWidth = 2.dp.toPx()
+                                    val dotOutlineWidth = 1.dp.toPx()
+
+                                    // Vignette effect
+                                    val vignetteRadius = minOf(size.width, size.height) / 2
+                                    fun vignetteAlpha(x: Float, y: Float): Float {
+                                        val dx = x - centerX
+                                        val dy = y - centerY
+                                        val dist = kotlin.math.sqrt(dx * dx + dy * dy)
+                                        val fadeStart = vignetteRadius * 0.5f
+                                        val fadeEnd = vignetteRadius * 0.95f
+                                        return when {
+                                            dist <= fadeStart -> 1f
+                                            dist >= fadeEnd -> 0f
+                                            else -> 1f - ((dist - fadeStart) / (fadeEnd - fadeStart))
+                                        }
+                                    }
+
+                                    val locationById = locations.associateBy { it.id }
+                                    val drawnConnections = mutableSetOf<Pair<String, String>>()
+                                    val visited = mutableSetOf<String>()
+                                    val queue = ArrayDeque<Pair<String, Int>>()
+
+                                    queue.add(currentLocation.id to 0)
+                                    visited.add(currentLocation.id)
+
+                                    // Draw connections up to 2 hops
+                                    while (queue.isNotEmpty()) {
+                                        val (locId, depth) = queue.removeFirst()
+                                        if (depth >= 2) continue
+
+                                        val loc = locationById[locId] ?: continue
+                                        val locGridX = loc.gridX ?: continue
+                                        val locGridY = loc.gridY ?: continue
+                                        val locRelX = locGridX - animatedGridX
+                                        val locRelY = locGridY - animatedGridY
+
+                                        loc.exits.forEach { exit ->
+                                            val targetLoc = locationById[exit.locationId] ?: return@forEach
+                                            val targetGridX = targetLoc.gridX ?: return@forEach
+                                            val targetGridY = targetLoc.gridY ?: return@forEach
+                                            val targetRelX = targetGridX - animatedGridX
+                                            val targetRelY = targetGridY - animatedGridY
+
+                                            val connKey = if (locId < exit.locationId) locId to exit.locationId else exit.locationId to locId
+
+                                            if (kotlin.math.abs(locRelX) <= 2 && kotlin.math.abs(locRelY) <= 2 &&
+                                                kotlin.math.abs(targetRelX) <= 2 && kotlin.math.abs(targetRelY) <= 2 &&
+                                                !drawnConnections.contains(connKey)) {
+
+                                                drawnConnections.add(connKey)
+
+                                                val fromX = centerX + locRelX * gridSpacingPx
+                                                val fromY = centerY + locRelY * gridSpacingPx
+                                                val toX = centerX + targetRelX * gridSpacingPx
+                                                val toY = centerY + targetRelY * gridSpacingPx
+
+                                                val depthAlpha = when (depth) {
+                                                    0 -> 0.9f
+                                                    else -> 0.5f
+                                                }
+
+                                                val fromVignette = vignetteAlpha(fromX, fromY)
+                                                val toVignette = vignetteAlpha(toX, toY)
+                                                val vignetteMultiplier = minOf(fromVignette, toVignette)
+                                                val finalAlpha = depthAlpha * vignetteMultiplier
+
+                                                if (finalAlpha > 0.01f) {
+                                                    val dx = toX - fromX
+                                                    val dy = toY - fromY
+                                                    val length = kotlin.math.sqrt(dx * dx + dy * dy)
+                                                    if (length > dotRadius * 2) {
+                                                        val shortenAmount = dotRadius + 1.dp.toPx()
+                                                        val ratio = shortenAmount / length
+                                                        val adjustedFromX = fromX + dx * ratio
+                                                        val adjustedFromY = fromY + dy * ratio
+                                                        val adjustedToX = toX - dx * ratio
+                                                        val adjustedToY = toY - dy * ratio
+
+                                                        drawLine(
+                                                            color = lineColor.copy(alpha = finalAlpha),
+                                                            start = Offset(adjustedFromX, adjustedFromY),
+                                                            end = Offset(adjustedToX, adjustedToY),
+                                                            strokeWidth = lineWidth
+                                                        )
+                                                    }
+                                                }
+                                            }
+
+                                            if (!visited.contains(exit.locationId)) {
+                                                visited.add(exit.locationId)
+                                                queue.add(exit.locationId to depth + 1)
+                                            }
+                                        }
+                                    }
+
+                                    // Draw dots
+                                    locations.forEach { location ->
+                                        val locGridX = location.gridX ?: return@forEach
+                                        val locGridY = location.gridY ?: return@forEach
+
+                                        val relX = locGridX - animatedGridX
+                                        val relY = locGridY - animatedGridY
+
+                                        if (kotlin.math.abs(relX) <= 2 && kotlin.math.abs(relY) <= 2) {
+                                            val dotX = centerX + relX * gridSpacingPx
+                                            val dotY = centerY + relY * gridSpacingPx
+                                            val isCurrentLoc = location.id == expandedLocationId
+
+                                            val dotVignetteAlpha = if (isCurrentLoc) 1f else vignetteAlpha(dotX, dotY)
+
+                                            if (dotVignetteAlpha > 0.01f) {
+                                                // Highlight for current location (green for Ranger)
+                                                if (isCurrentLoc) {
+                                                    drawCircle(
+                                                        color = Color(0xFF4CAF50),
+                                                        radius = highlightRadius,
+                                                        center = Offset(dotX, dotY),
+                                                        style = Stroke(width = highlightStrokeWidth)
+                                                    )
+                                                }
+
+                                                // Dot fill with terrain color
+                                                val terrainColor = getTerrainColor(location.desc, location.name)
+                                                drawCircle(
+                                                    color = terrainColor.copy(alpha = terrainColor.alpha * dotVignetteAlpha),
+                                                    radius = dotRadius,
+                                                    center = Offset(dotX, dotY)
+                                                )
+
+                                                // Dot outline (green for Ranger)
+                                                drawCircle(
+                                                    color = Color(0xFF4CAF50).copy(alpha = 0.7f * dotVignetteAlpha),
+                                                    radius = dotRadius,
+                                                    center = Offset(dotX, dotY),
+                                                    style = Stroke(width = dotOutlineWidth)
+                                                )
+                                            }
+                                        }
+                                    }
+
+                                    // Subtle fog of war effect
+                                    val fogRadius = size.minDimension / 2
+                                    drawCircle(
+                                        brush = Brush.radialGradient(
+                                            colors = listOf(
+                                                Color.Transparent,
+                                                Color.Transparent,
+                                                Color.Black.copy(alpha = 0.2f),
+                                                Color.Black.copy(alpha = 0.5f),
+                                                Color.Black.copy(alpha = 0.8f)
+                                            ),
+                                            center = Offset(centerX, centerY),
+                                            radius = fogRadius
+                                        ),
+                                        radius = fogRadius,
+                                        center = Offset(centerX, centerY)
+                                    )
+                                }
                             } else {
-                                // Normal location display
+                                // Normal location display (non-Ranger)
                                 if (currentLocation.imageUrl != null) {
                                     AsyncImage(
                                         model = "${AppConfig.api.baseUrl}${currentLocation.imageUrl}",
@@ -4760,15 +4968,19 @@ fun LocationGraph(
                     }
                 }
 
-                // Event log (bottom-left corner) - only show when events exist
-                if (eventLogEntries.isNotEmpty() && !isDetailViewVisible) {
+                // Event log (bottom-left corner) - show when events exist
+                // Larger size when in detail view (no location panel taking space)
+                if (eventLogEntries.isNotEmpty()) {
+                    val eventLogHeight = if (isDetailViewVisible) 300.dp else 120.dp
+                    val eventLogBottom = if (isDetailViewVisible) 16.dp else 200.dp
                     com.ez2bg.anotherthread.ui.components.EventLog(
                         entries = eventLogEntries,
                         modifier = Modifier
                             .align(Alignment.BottomStart)
-                            .padding(start = 16.dp, bottom = 200.dp)
-                            .width(250.dp)
-                            .height(120.dp)
+                            .padding(start = 16.dp, bottom = eventLogBottom)
+                            .width(280.dp)
+                            .height(eventLogHeight),
+                        maxVisibleEntries = if (isDetailViewVisible) 15 else 6
                     )
                 }
 
@@ -4798,13 +5010,18 @@ fun LocationGraph(
                                 .padding(horizontal = 12.dp, vertical = 4.dp)
                         )
 
-                        // 100x100 detail image
+                        // 100x100 detail image - tappable to show description
                         Box(
                             modifier = Modifier
                                 .size(100.dp)
                                 .clip(RoundedCornerShape(8.dp))
                                 .background(Color.Black.copy(alpha = 0.8f))
                                 .border(2.dp, Color(0xFFFF9800), RoundedCornerShape(8.dp))
+                                .pointerInput(Unit) {
+                                    detectTapGestures(
+                                        onTap = { showDescriptionPopup = true }
+                                    )
+                                }
                         ) {
                             if (detailImageUrl != null) {
                                 AsyncImage(
@@ -4826,6 +5043,22 @@ fun LocationGraph(
                                         modifier = Modifier.padding(8.dp)
                                     )
                                 }
+                            }
+                            // Tap hint indicator
+                            Box(
+                                modifier = Modifier
+                                    .align(Alignment.BottomEnd)
+                                    .padding(4.dp)
+                                    .size(16.dp)
+                                    .background(Color.Black.copy(alpha = 0.6f), CircleShape),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Text(
+                                    text = "i",
+                                    color = Color.White,
+                                    fontSize = 10.sp,
+                                    fontWeight = FontWeight.Bold
+                                )
                             }
                         }
 
@@ -5035,6 +5268,259 @@ fun LocationGraph(
                                             fontSize = 10.sp
                                         )
                                     }
+                                }
+                            }
+                        }
+
+                        // Description popup overlay (shown when tapping image)
+                        if (showDescriptionPopup) {
+                            val description = selectedCreature?.desc ?: selectedItem?.desc ?: ""
+                            val creature = selectedCreature
+                            val item = selectedItem
+
+                            Box(
+                                modifier = Modifier
+                                    .fillMaxSize()
+                                    .background(Color.Black.copy(alpha = 0.9f))
+                                    .pointerInput(Unit) {
+                                        detectTapGestures(
+                                            onTap = { showDescriptionPopup = false }
+                                        )
+                                    },
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Column(
+                                    modifier = Modifier
+                                        .fillMaxWidth(0.85f)
+                                        .background(
+                                            Color(0xFF1A1A1A),
+                                            RoundedCornerShape(12.dp)
+                                        )
+                                        .border(
+                                            1.dp,
+                                            Color(0xFFFF9800),
+                                            RoundedCornerShape(12.dp)
+                                        )
+                                        .padding(16.dp),
+                                    horizontalAlignment = Alignment.CenterHorizontally
+                                ) {
+                                    // Enlarged image (150x150)
+                                    Box(
+                                        modifier = Modifier
+                                            .size(150.dp)
+                                            .clip(RoundedCornerShape(8.dp))
+                                            .background(Color.Black)
+                                            .border(2.dp, Color(0xFFFF9800), RoundedCornerShape(8.dp))
+                                    ) {
+                                        if (detailImageUrl != null) {
+                                            AsyncImage(
+                                                model = "${AppConfig.api.baseUrl}${detailImageUrl}",
+                                                contentDescription = detailName,
+                                                modifier = Modifier.fillMaxSize(),
+                                                contentScale = ContentScale.Crop
+                                            )
+                                        }
+                                    }
+
+                                    Spacer(modifier = Modifier.height(12.dp))
+
+                                    // Name
+                                    Text(
+                                        text = detailName,
+                                        color = Color.White,
+                                        fontSize = 20.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        textAlign = TextAlign.Center
+                                    )
+
+                                    Spacer(modifier = Modifier.height(8.dp))
+
+                                    // Description
+                                    if (description.isNotEmpty()) {
+                                        Text(
+                                            text = description,
+                                            color = Color(0xFFCCCCCC),
+                                            fontSize = 14.sp,
+                                            textAlign = TextAlign.Center,
+                                            lineHeight = 20.sp,
+                                            modifier = Modifier.padding(horizontal = 8.dp)
+                                        )
+                                    }
+
+                                    // Creature stats
+                                    if (creature != null) {
+                                        Spacer(modifier = Modifier.height(12.dp))
+                                        Row(
+                                            modifier = Modifier.fillMaxWidth(),
+                                            horizontalArrangement = Arrangement.SpaceEvenly
+                                        ) {
+                                            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                                                Text("Level", color = Color.Gray, fontSize = 10.sp)
+                                                Text(
+                                                    "${creature.level}",
+                                                    color = Color.White,
+                                                    fontSize = 16.sp,
+                                                    fontWeight = FontWeight.Bold
+                                                )
+                                            }
+                                            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                                                Text("HP", color = Color.Gray, fontSize = 10.sp)
+                                                Text(
+                                                    "${creature.maxHp}",
+                                                    color = Color(0xFFFF5252),
+                                                    fontSize = 16.sp,
+                                                    fontWeight = FontWeight.Bold
+                                                )
+                                            }
+                                            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                                                Text("Damage", color = Color.Gray, fontSize = 10.sp)
+                                                Text(
+                                                    "${creature.baseDamage}",
+                                                    color = Color(0xFFFFAB40),
+                                                    fontSize = 16.sp,
+                                                    fontWeight = FontWeight.Bold
+                                                )
+                                            }
+                                            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                                                Text("XP", color = Color.Gray, fontSize = 10.sp)
+                                                Text(
+                                                    "${creature.experienceValue}",
+                                                    color = Color(0xFF69F0AE),
+                                                    fontSize = 16.sp,
+                                                    fontWeight = FontWeight.Bold
+                                                )
+                                            }
+                                        }
+
+                                        // Aggressive indicator
+                                        if (creature.isAggressive) {
+                                            Spacer(modifier = Modifier.height(8.dp))
+                                            Row(
+                                                verticalAlignment = Alignment.CenterVertically,
+                                                horizontalArrangement = Arrangement.Center
+                                            ) {
+                                                Icon(
+                                                    imageVector = Icons.Filled.Dangerous,
+                                                    contentDescription = "Aggressive",
+                                                    tint = Color(0xFFFF5252),
+                                                    modifier = Modifier.size(16.dp)
+                                                )
+                                                Spacer(modifier = Modifier.width(4.dp))
+                                                Text(
+                                                    "Aggressive",
+                                                    color = Color(0xFFFF5252),
+                                                    fontSize = 12.sp
+                                                )
+                                            }
+                                        }
+                                    }
+
+                                    // Item stats
+                                    if (item != null) {
+                                        Spacer(modifier = Modifier.height(12.dp))
+
+                                        // Equipment type badge
+                                        if (item.equipmentType != null) {
+                                            Row(
+                                                modifier = Modifier
+                                                    .background(
+                                                        Color(0xFF2196F3).copy(alpha = 0.2f),
+                                                        RoundedCornerShape(4.dp)
+                                                    )
+                                                    .padding(horizontal = 8.dp, vertical = 4.dp),
+                                                verticalAlignment = Alignment.CenterVertically
+                                            ) {
+                                                Text(
+                                                    text = item.equipmentType.replaceFirstChar { it.uppercase() },
+                                                    color = Color(0xFF2196F3),
+                                                    fontSize = 12.sp,
+                                                    fontWeight = FontWeight.Medium
+                                                )
+                                                if (item.equipmentSlot != null) {
+                                                    Text(
+                                                        text = " • ${item.equipmentSlot.replace("_", " ").replaceFirstChar { it.uppercase() }}",
+                                                        color = Color(0xFF2196F3).copy(alpha = 0.7f),
+                                                        fontSize = 12.sp
+                                                    )
+                                                }
+                                            }
+                                            Spacer(modifier = Modifier.height(8.dp))
+                                        }
+
+                                        // Stat bonuses
+                                        val statBonuses = item.statBonuses
+                                        if (statBonuses != null && (statBonuses.attack != 0 || statBonuses.defense != 0 || statBonuses.maxHp != 0)) {
+                                            Row(
+                                                modifier = Modifier.fillMaxWidth(),
+                                                horizontalArrangement = Arrangement.SpaceEvenly
+                                            ) {
+                                                if (statBonuses.attack != 0) {
+                                                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                                                        Text("Attack", color = Color.Gray, fontSize = 10.sp)
+                                                        Text(
+                                                            "${if (statBonuses.attack > 0) "+" else ""}${statBonuses.attack}",
+                                                            color = if (statBonuses.attack > 0) Color(0xFF69F0AE) else Color(0xFFFF5252),
+                                                            fontSize = 16.sp,
+                                                            fontWeight = FontWeight.Bold
+                                                        )
+                                                    }
+                                                }
+                                                if (statBonuses.defense != 0) {
+                                                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                                                        Text("Defense", color = Color.Gray, fontSize = 10.sp)
+                                                        Text(
+                                                            "${if (statBonuses.defense > 0) "+" else ""}${statBonuses.defense}",
+                                                            color = if (statBonuses.defense > 0) Color(0xFF448AFF) else Color(0xFFFF5252),
+                                                            fontSize = 16.sp,
+                                                            fontWeight = FontWeight.Bold
+                                                        )
+                                                    }
+                                                }
+                                                if (statBonuses.maxHp != 0) {
+                                                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                                                        Text("Max HP", color = Color.Gray, fontSize = 10.sp)
+                                                        Text(
+                                                            "${if (statBonuses.maxHp > 0) "+" else ""}${statBonuses.maxHp}",
+                                                            color = if (statBonuses.maxHp > 0) Color(0xFFFF5252) else Color.Gray,
+                                                            fontSize = 16.sp,
+                                                            fontWeight = FontWeight.Bold
+                                                        )
+                                                    }
+                                                }
+                                            }
+                                            Spacer(modifier = Modifier.height(8.dp))
+                                        }
+
+                                        // Gold value
+                                        if (item.value > 0) {
+                                            Row(
+                                                verticalAlignment = Alignment.CenterVertically,
+                                                horizontalArrangement = Arrangement.Center
+                                            ) {
+                                                Text(
+                                                    text = "${item.value}",
+                                                    color = Color(0xFFFFD700),
+                                                    fontSize = 14.sp,
+                                                    fontWeight = FontWeight.Bold
+                                                )
+                                                Spacer(modifier = Modifier.width(4.dp))
+                                                Text(
+                                                    text = "gold",
+                                                    color = Color(0xFFFFD700).copy(alpha = 0.7f),
+                                                    fontSize = 12.sp
+                                                )
+                                            }
+                                        }
+                                    }
+
+                                    Spacer(modifier = Modifier.height(16.dp))
+
+                                    // Tap to close hint
+                                    Text(
+                                        text = "Tap anywhere to close",
+                                        color = Color.Gray,
+                                        fontSize = 11.sp
+                                    )
                                 }
                             }
                         }

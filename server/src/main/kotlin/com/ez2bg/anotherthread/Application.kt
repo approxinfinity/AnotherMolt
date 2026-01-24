@@ -996,6 +996,9 @@ fun Application.module() {
     // Seed spell categories and example utility spells
     SpellFeatureSeed.seedIfEmpty()
 
+    // Seed Fungus Forest content (creatures, items, loot tables, chest)
+    FungusForestSeed.seedIfEmpty()
+
     // Initialize file directories
     val fileDir = File(System.getenv("FILE_DIR") ?: "data/files").also { it.mkdirs() }
     val imageGenDir = File(fileDir, "imageGen").also { it.mkdirs() }
@@ -2111,7 +2114,25 @@ fun Application.module() {
                 val request = call.receive<UpdateLocationRequest>()
 
                 if (UserRepository.updateCurrentLocation(id, request.locationId)) {
-                    call.respond(HttpStatusCode.OK)
+                    // Check for aggressive creatures at the new location
+                    val combatSession = request.locationId?.let { locationId ->
+                        CombatService.checkAggressiveCreatures(id, locationId)
+                    }
+
+                    if (combatSession != null) {
+                        // Return info about the auto-started combat
+                        call.respond(HttpStatusCode.OK, mapOf(
+                            "success" to true,
+                            "combatStarted" to true,
+                            "combatSessionId" to combatSession.id,
+                            "message" to "Aggressive creatures attack!"
+                        ))
+                    } else {
+                        call.respond(HttpStatusCode.OK, mapOf(
+                            "success" to true,
+                            "combatStarted" to false
+                        ))
+                    }
                 } else {
                     call.respond(HttpStatusCode.NotFound)
                 }
@@ -2134,6 +2155,120 @@ fun Application.module() {
                 } else {
                     call.respond(HttpStatusCode.InternalServerError)
                 }
+            }
+
+            // Equip an item
+            post("/{id}/equip/{itemId}") {
+                val userId = call.parameters["id"] ?: return@post call.respond(HttpStatusCode.BadRequest)
+                val itemId = call.parameters["itemId"] ?: return@post call.respond(HttpStatusCode.BadRequest)
+
+                val user = UserRepository.findById(userId)
+                if (user == null) {
+                    call.respond(HttpStatusCode.NotFound, mapOf("error" to "User not found"))
+                    return@post
+                }
+
+                val item = ItemRepository.findById(itemId)
+                if (item == null) {
+                    call.respond(HttpStatusCode.NotFound, mapOf("error" to "Item not found"))
+                    return@post
+                }
+
+                if (item.equipmentSlot == null) {
+                    call.respond(HttpStatusCode.BadRequest, mapOf("error" to "Item is not equippable"))
+                    return@post
+                }
+
+                if (itemId !in user.itemIds) {
+                    call.respond(HttpStatusCode.BadRequest, mapOf("error" to "Item not in inventory"))
+                    return@post
+                }
+
+                // Unequip any existing item in the same slot
+                val existingEquipped = user.equippedItemIds.find { equippedId ->
+                    ItemRepository.findById(equippedId)?.equipmentSlot == item.equipmentSlot
+                }
+
+                if (existingEquipped != null) {
+                    UserRepository.unequipItem(userId, existingEquipped)
+                }
+
+                if (UserRepository.equipItem(userId, itemId)) {
+                    val updatedUser = UserRepository.findById(userId)!!
+                    call.respond(HttpStatusCode.OK, mapOf(
+                        "success" to true,
+                        "equippedItemIds" to updatedUser.equippedItemIds,
+                        "unequipped" to existingEquipped
+                    ))
+                } else {
+                    call.respond(HttpStatusCode.InternalServerError, mapOf("error" to "Failed to equip item"))
+                }
+            }
+
+            // Unequip an item
+            post("/{id}/unequip/{itemId}") {
+                val userId = call.parameters["id"] ?: return@post call.respond(HttpStatusCode.BadRequest)
+                val itemId = call.parameters["itemId"] ?: return@post call.respond(HttpStatusCode.BadRequest)
+
+                val user = UserRepository.findById(userId)
+                if (user == null) {
+                    call.respond(HttpStatusCode.NotFound, mapOf("error" to "User not found"))
+                    return@post
+                }
+
+                if (itemId !in user.equippedItemIds) {
+                    call.respond(HttpStatusCode.BadRequest, mapOf("error" to "Item not equipped"))
+                    return@post
+                }
+
+                if (UserRepository.unequipItem(userId, itemId)) {
+                    val updatedUser = UserRepository.findById(userId)!!
+                    call.respond(HttpStatusCode.OK, mapOf(
+                        "success" to true,
+                        "equippedItemIds" to updatedUser.equippedItemIds
+                    ))
+                } else {
+                    call.respond(HttpStatusCode.InternalServerError, mapOf("error" to "Failed to unequip item"))
+                }
+            }
+
+            // Get identified entities for a user
+            get("/{id}/identified") {
+                val userId = call.parameters["id"] ?: return@get call.respond(HttpStatusCode.BadRequest)
+                val identified = IdentifiedEntityRepository.findByUser(userId)
+                call.respond(mapOf(
+                    "items" to identified.filter { it.entityType == "item" }.map { it.entityId },
+                    "creatures" to identified.filter { it.entityType == "creature" }.map { it.entityId }
+                ))
+            }
+
+            // Identify an entity (item or creature) for a user
+            post("/{id}/identify") {
+                val userId = call.parameters["id"] ?: return@post call.respond(HttpStatusCode.BadRequest)
+
+                @Serializable
+                data class IdentifyRequest(val entityId: String, val entityType: String)
+
+                val request = call.receive<IdentifyRequest>()
+
+                if (request.entityType !in listOf("item", "creature")) {
+                    call.respond(HttpStatusCode.BadRequest, mapOf("error" to "Invalid entity type"))
+                    return@post
+                }
+
+                val user = UserRepository.findById(userId)
+                if (user == null) {
+                    call.respond(HttpStatusCode.NotFound, mapOf("error" to "User not found"))
+                    return@post
+                }
+
+                val isNew = IdentifiedEntityRepository.identify(userId, request.entityId, request.entityType)
+                call.respond(HttpStatusCode.OK, mapOf(
+                    "success" to true,
+                    "newlyIdentified" to isNew,
+                    "entityId" to request.entityId,
+                    "entityType" to request.entityType
+                ))
             }
 
             // Get active users at a location
@@ -2430,6 +2565,215 @@ fun Application.module() {
             }
         }
 
+        // Chest routes
+        route("/chests") {
+            // Get all chests
+            get {
+                call.respond(ChestRepository.findAll())
+            }
+
+            // Get chest by ID
+            get("/{id}") {
+                val id = call.parameters["id"] ?: return@get call.respond(HttpStatusCode.BadRequest)
+                val chest = ChestRepository.findById(id)
+                if (chest != null) {
+                    call.respond(chest)
+                } else {
+                    call.respond(HttpStatusCode.NotFound)
+                }
+            }
+
+            // Get chests at a location (filtered by guardian defeated)
+            get("/at-location/{locationId}") {
+                val locationId = call.parameters["locationId"] ?: return@get call.respond(HttpStatusCode.BadRequest)
+                val userId = call.request.header("X-User-Id")
+
+                val chests = ChestRepository.findByLocationId(locationId)
+
+                // Filter to only show chests whose guardian has been defeated (if any)
+                val visibleChests = if (userId != null) {
+                    chests.filter { chest ->
+                        if (chest.guardianCreatureId == null) {
+                            true // No guardian, always visible
+                        } else {
+                            // Check if user has defeated the guardian via FeatureState
+                            val defeatedKey = "defeated_${chest.guardianCreatureId}"
+                            val featureState = FeatureStateRepository.getState(userId, defeatedKey)
+                            featureState?.value == "true"
+                        }
+                    }
+                } else {
+                    chests.filter { it.guardianCreatureId == null }
+                }
+
+                call.respond(visibleChests)
+            }
+
+            // Open a chest (bash or pick_lock)
+            post("/{id}/open") {
+                val chestId = call.parameters["id"] ?: return@post call.respond(HttpStatusCode.BadRequest)
+                val userId = call.request.header("X-User-Id") ?: return@post call.respond(HttpStatusCode.Unauthorized)
+
+                @Serializable
+                data class OpenChestRequest(val method: String) // "bash" or "pick_lock"
+
+                val request = call.receive<OpenChestRequest>()
+
+                val chest = ChestRepository.findById(chestId)
+                if (chest == null) {
+                    call.respond(HttpStatusCode.NotFound, mapOf("error" to "Chest not found"))
+                    return@post
+                }
+
+                val user = UserRepository.findById(userId)
+                if (user == null) {
+                    call.respond(HttpStatusCode.NotFound, mapOf("error" to "User not found"))
+                    return@post
+                }
+
+                // Check if guardian is defeated
+                if (chest.guardianCreatureId != null) {
+                    val defeatedKey = "defeated_${chest.guardianCreatureId}"
+                    val featureState = FeatureStateRepository.getState(userId, defeatedKey)
+                    if (featureState?.value != "true") {
+                        call.respond(HttpStatusCode.Forbidden, mapOf(
+                            "error" to "The guardian still protects this chest"
+                        ))
+                        return@post
+                    }
+                }
+
+                // Check if already opened by this user
+                val openedKey = "opened_chest_${chestId}"
+                val openedState = FeatureStateRepository.getState(userId, openedKey)
+                if (openedState?.value == "true") {
+                    call.respond(HttpStatusCode.BadRequest, mapOf("error" to "Chest already opened"))
+                    return@post
+                }
+
+                // Check class for method validity
+                val characterClass = user.characterClassId?.let { CharacterClassRepository.findById(it) }
+                val archetype = characterClass?.name?.lowercase() ?: ""
+
+                val canBash = archetype in listOf("warrior", "berserker", "paladin", "fighter", "knight")
+                val canPickLock = archetype in listOf("rogue", "assassin", "bard", "thief", "scoundrel")
+
+                when (request.method) {
+                    "bash" -> if (!canBash) {
+                        call.respond(HttpStatusCode.Forbidden, mapOf(
+                            "error" to "Only martial classes can bash chests"
+                        ))
+                        return@post
+                    }
+                    "pick_lock" -> if (!canPickLock) {
+                        call.respond(HttpStatusCode.Forbidden, mapOf(
+                            "error" to "Only scoundrel classes can pick locks"
+                        ))
+                        return@post
+                    }
+                    else -> {
+                        call.respond(HttpStatusCode.BadRequest, mapOf("error" to "Invalid method"))
+                        return@post
+                    }
+                }
+
+                // Roll for success
+                val difficulty = when (request.method) {
+                    "bash" -> chest.bashDifficulty
+                    "pick_lock" -> chest.lockDifficulty
+                    else -> 5
+                }
+                val successChance = 1.0f / difficulty
+                val success = kotlin.random.Random.nextFloat() < successChance
+
+                if (!success) {
+                    call.respond(HttpStatusCode.OK, mapOf(
+                        "success" to false,
+                        "message" to "You failed to open the chest!"
+                    ))
+                    return@post
+                }
+
+                // Success! Mark chest as opened and distribute loot
+                FeatureStateRepository.setState(userId, openedKey, "true")
+
+                var goldEarned = chest.goldAmount
+                val itemsEarned = mutableListOf<Item>()
+
+                // Roll loot table
+                chest.lootTableId?.let { lootTableId ->
+                    val lootTable = LootTableRepository.findById(lootTableId)
+                    lootTable?.entries?.forEach { entry ->
+                        if (kotlin.random.Random.nextFloat() < entry.chance) {
+                            val qty = if (entry.maxQty > entry.minQty) {
+                                kotlin.random.Random.nextInt(entry.minQty, entry.maxQty + 1)
+                            } else entry.minQty
+
+                            repeat(qty) {
+                                ItemRepository.findById(entry.itemId)?.let { item ->
+                                    itemsEarned.add(item)
+                                }
+                            }
+                        }
+                    }
+                }
+
+                // Award loot to user
+                if (goldEarned > 0) {
+                    UserRepository.addGold(userId, goldEarned)
+                }
+                if (itemsEarned.isNotEmpty()) {
+                    UserRepository.addItems(userId, itemsEarned.map { it.id })
+                }
+
+                call.respond(HttpStatusCode.OK, mapOf(
+                    "success" to true,
+                    "message" to "You opened the chest!",
+                    "goldEarned" to goldEarned,
+                    "itemsEarned" to itemsEarned.map { it.name }
+                ))
+            }
+
+            // Get available actions for a chest (based on user class)
+            get("/{id}/actions") {
+                val chestId = call.parameters["id"] ?: return@get call.respond(HttpStatusCode.BadRequest)
+                val userId = call.request.header("X-User-Id") ?: return@get call.respond(HttpStatusCode.Unauthorized)
+
+                val chest = ChestRepository.findById(chestId)
+                if (chest == null) {
+                    call.respond(HttpStatusCode.NotFound)
+                    return@get
+                }
+
+                val user = UserRepository.findById(userId)
+                if (user == null) {
+                    call.respond(HttpStatusCode.NotFound)
+                    return@get
+                }
+
+                // Check if already opened
+                val openedKey = "opened_chest_${chestId}"
+                val openedState = FeatureStateRepository.getState(userId, openedKey)
+                if (openedState?.value == "true") {
+                    call.respond(mapOf("actions" to emptyList<String>(), "opened" to true))
+                    return@get
+                }
+
+                val characterClass = user.characterClassId?.let { CharacterClassRepository.findById(it) }
+                val archetype = characterClass?.name?.lowercase() ?: ""
+
+                val actions = mutableListOf<String>()
+                if (archetype in listOf("warrior", "berserker", "paladin", "fighter", "knight")) {
+                    actions.add("bash")
+                }
+                if (archetype in listOf("rogue", "assassin", "bard", "thief", "scoundrel")) {
+                    actions.add("pick_lock")
+                }
+
+                call.respond(mapOf("actions" to actions, "opened" to false))
+            }
+        }
+
         // Feature Category routes
         route("/feature-categories") {
             get {
@@ -2572,6 +2916,51 @@ fun Application.module() {
                 val userId = call.parameters["userId"] ?: return@get call.respond(HttpStatusCode.BadRequest)
                 val limit = call.request.queryParameters["limit"]?.toIntOrNull() ?: 100
                 call.respond(AuditLogRepository.findByUserId(userId, limit))
+            }
+        }
+
+        // Fungus Forest admin routes
+        route("/admin/fungus-forest") {
+            // Trigger image generation for all Fungus Forest entities
+            post("/generate-images") {
+                application.launch {
+                    FungusForestSeed.generateMissingImages()
+                }
+                call.respond(HttpStatusCode.Accepted, mapOf(
+                    "message" to "Image generation started for Fungus Forest entities",
+                    "note" to "Check server logs for progress"
+                ))
+            }
+
+            // Generate images for Fungus Forest locations
+            post("/generate-location-images") {
+                val prompts = FungusForestSeed.locationImagePrompts
+                var count = 0
+
+                for ((locationId, prompt) in prompts) {
+                    val location = LocationRepository.findById(locationId)
+                    if (location != null && location.imageUrl == null) {
+                        application.launch {
+                            ImageGenerationService.generateImage(
+                                entityType = "location",
+                                entityId = locationId,
+                                description = prompt,
+                                entityName = location.name
+                            ).onSuccess { imageUrl ->
+                                LocationRepository.updateImageUrl(locationId, imageUrl)
+                                log.info("Generated image for location ${location.name}: $imageUrl")
+                            }.onFailure { error ->
+                                log.warn("Failed to generate image for location ${location.name}: ${error.message}")
+                            }
+                        }
+                        count++
+                    }
+                }
+
+                call.respond(HttpStatusCode.Accepted, mapOf(
+                    "message" to "Started generating images for $count locations",
+                    "note" to "Check server logs for progress"
+                ))
             }
         }
 

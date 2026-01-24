@@ -73,13 +73,25 @@ data class CreatureDto(
 )
 
 @Serializable
+data class StatBonusesDto(
+    val attack: Int = 0,
+    val defense: Int = 0,
+    val maxHp: Int = 0
+)
+
+@Serializable
 data class ItemDto(
     val id: String,
     val name: String,
     val desc: String,
     val featureIds: List<String> = emptyList(),
     val imageUrl: String? = null,
-    val lockedBy: String? = null
+    val lockedBy: String? = null,
+    // Equipment fields
+    val equipmentType: String? = null,  // "weapon", "armor", "accessory", or null
+    val equipmentSlot: String? = null,  // "main_hand", "off_hand", "head", etc.
+    val statBonuses: StatBonusesDto? = null,
+    val value: Int = 0  // Gold value
 )
 
 @Serializable
@@ -772,6 +784,35 @@ object ApiClient {
 
     suspend fun getActiveUsersAtLocation(locationId: String): Result<List<UserDto>> = runCatching {
         client.get("$baseUrl/users/at-location/$locationId").body()
+    }
+
+    // Entity identification
+    @Serializable
+    data class IdentifiedEntitiesResponse(
+        val items: List<String> = emptyList(),
+        val creatures: List<String> = emptyList()
+    )
+
+    @Serializable
+    data class IdentifyRequest(val entityId: String, val entityType: String)
+
+    @Serializable
+    data class IdentifyResponse(
+        val success: Boolean,
+        val newlyIdentified: Boolean,
+        val entityId: String,
+        val entityType: String
+    )
+
+    suspend fun getIdentifiedEntities(userId: String): Result<IdentifiedEntitiesResponse> = runCatching {
+        client.get("$baseUrl/users/$userId/identified").body()
+    }
+
+    suspend fun identifyEntity(userId: String, entityId: String, entityType: String): Result<IdentifyResponse> = runCatching {
+        client.post("$baseUrl/users/$userId/identify") {
+            contentType(ContentType.Application.Json)
+            setBody(IdentifyRequest(entityId, entityType))
+        }.body()
     }
 
     suspend fun assignClass(userId: String, request: AssignClassRequest): Result<AssignClassResponse> = runCatching {

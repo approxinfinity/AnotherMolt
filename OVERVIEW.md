@@ -77,11 +77,29 @@ Real-time, round-based combat inspired by MajorMUD.
 
 **Combat Stats**
 - **HP** - Health points, 0 = defeated
+- **Mana** - Resource for casting spells (regenerates 2/round in combat)
+- **Stamina** - Resource for physical abilities (regenerates 3/round in combat)
 - **Accuracy** - Bonus to hit chance
 - **Evasion** - Bonus to avoid attacks
 - **Crit Bonus** - Bonus to critical hit chance
 - **Initiative** - Action order within round (D20 roll)
 - **Level** - Overall power, affects hit chance
+
+**Resource System**
+Each character class defines base mana and stamina pools:
+- **Spellcasters** typically have higher mana pools (e.g., 30 mana, 10 stamina)
+- **Martial classes** typically have higher stamina pools (e.g., 10 mana, 30 stamina)
+- **Hybrid classes** have balanced pools (e.g., 20 mana, 20 stamina)
+
+Abilities cost resources based on their type:
+- **Spell abilities** cost mana (calculated from power cost)
+- **Combat abilities** cost stamina (calculated from power cost)
+- **Utility abilities** cost either (based on ability design)
+- **Passive abilities** have no cost
+
+Resources regenerate during combat:
+- Mana: +2 per round
+- Stamina: +3 per round (faster recovery for physical fighters)
 
 **Abilities**
 Each ability has:
@@ -107,6 +125,29 @@ Items can grant combat abilities:
 - Equipped weapons provide special attacks
 - Each weapon has themed abilities matching its lore
 - Example: Staff of Kazekage grants "Soothing Winds" (heal) and "Inner Balance" (buff)
+
+### Adventure Mode UI
+
+**Detail Views**
+Tapping a creature or item in the world opens a detail view with:
+- Enlarged image (150x150)
+- Full description
+- Stats (for creatures: Level, HP, Damage, XP value)
+- Equipment info (for items: type, slot, stat bonuses, gold value)
+- Action buttons (Attack, Greet for creatures; Pick up for items)
+
+**Entity Identification**
+Some item/creature stats may be hidden until identified:
+- Use the Identify spell (utility ability) to reveal hidden properties
+- Once identified, properties remain visible permanently for that user
+- Tracked per-user in the database
+
+**Class-Specific UI Features**
+Certain character classes have unique UI enhancements:
+
+| Class | Feature | Description |
+|-------|---------|-------------|
+| Ranger | Directional Attunement | Location thumbnail shows a minimap overlay with the location image behind (semi-transparent). Green-themed map shows nearby locations and connections. |
 
 ### AI Content Generation
 

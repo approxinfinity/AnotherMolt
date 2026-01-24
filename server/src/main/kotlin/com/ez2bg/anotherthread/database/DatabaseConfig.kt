@@ -30,7 +30,10 @@ object DatabaseConfig {
                 CharacterClassTable,
                 AbilityTable,
                 NerfRequestTable,
-                CombatSessionTable
+                CombatSessionTable,
+                LootTableTable,
+                ChestTable,
+                IdentifiedEntityTable
             )
         }
     }
@@ -40,6 +43,7 @@ object DatabaseConfig {
      */
     fun clearAllTables() {
         transaction {
+            IdentifiedEntityTable.deleteAll()
             UserTable.deleteAll()
             CreatureTable.deleteAll()
             ItemTable.deleteAll()
