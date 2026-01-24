@@ -336,11 +336,12 @@ object CombatStateHolder {
                 if (currentLocationId != null) {
                     when (currentLocationId) {
                         event.fromLocationId -> {
-                            addEventLogEntry("${event.creatureName} left.", EventLogType.INFO)
+                            addEventLogEntry("${event.creatureName} wandered off.", EventLogType.NAVIGATION)
                         }
                         event.toLocationId -> {
-                            addEventLogEntry("${event.creatureName} arrived.", EventLogType.INFO)
+                            addEventLogEntry("${event.creatureName} wandered in.", EventLogType.NAVIGATION)
                         }
+                        // Silently ignore movement between other locations
                     }
                 }
             }

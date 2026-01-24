@@ -174,6 +174,14 @@ object AdventureStateHolder {
     }
 
     /**
+     * Set the current location directly (for external callers like AdventureScreen).
+     * Only updates the location reference without clearing selection or triggering other side effects.
+     */
+    fun setCurrentLocationDirect(location: LocationDto) {
+        _currentLocation.value = location
+    }
+
+    /**
      * Update creatures and items at the current location.
      * Uses the location's creatureIds and itemIds lists.
      */

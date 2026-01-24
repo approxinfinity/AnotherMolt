@@ -27,6 +27,7 @@ import com.ez2bg.anotherthread.ui.admin.ItemListView
 import com.ez2bg.anotherthread.ui.admin.LocationForm
 import com.ez2bg.anotherthread.ui.admin.LocationGraphView
 import com.ez2bg.anotherthread.ui.admin.UserAuthView
+import com.ez2bg.anotherthread.ui.screens.AdventureScreen
 import com.ez2bg.anotherthread.ui.admin.UserDetailView
 import com.ez2bg.anotherthread.ui.admin.UserProfileView
 
@@ -167,7 +168,7 @@ fun AdminScreen() {
             .fillMaxSize()
             .padding(if (gameMode.isAdventure) 0.dp else 16.dp)
     ) {
-        // Hide header and tabs in exploration mode (full screen)
+        // Hide header and tabs in adventure mode (full screen)
         if (gameMode.isCreate) {
             DragonHeader(modifier = Modifier.padding(bottom = 4.dp))
 
@@ -253,7 +254,15 @@ fun AdminScreen() {
                             viewState = ViewState.UserProfile(user)
                         }
                     )
+                } else if (gameMode.isAdventure && currentUser != null) {
+                    // Adventure mode uses dedicated AdventureScreen
+                    AdventureScreen(
+                        currentUser = currentUser,
+                        onSwitchToCreate = { gameMode = GameMode.CREATE },
+                        onViewLocationDetails = { location -> viewState = ViewState.LocationEdit(location, gameMode) }
+                    )
                 } else {
+                    // Create mode uses LocationGraphView
                     LocationGraphView(
                         refreshKey = locationGraphRefreshKey,
                         onAddClick = { viewState = ViewState.LocationCreate },
