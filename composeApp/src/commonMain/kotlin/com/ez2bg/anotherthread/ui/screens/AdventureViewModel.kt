@@ -344,6 +344,27 @@ class AdventureViewModel(
         _localState.update { it.copy(pendingAbility = null) }
     }
 
+    /**
+     * Use an ability directly on a selected creature (from detail view).
+     * This bypasses target selection since the target is already selected.
+     */
+    fun useAbilityOnCreature(ability: AbilityDto, creature: CreatureDto?) {
+        if (creature == null) {
+            showSnackbar("No target selected")
+            return
+        }
+
+        if (!CombatStateHolder.isInCombat) {
+            // Start combat by joining with this creature
+            CombatStateHolder.joinCombat(listOf(creature.id))
+            showSnackbar("Engaging ${creature.name}!")
+        }
+
+        // Use the ability on the creature
+        CombatStateHolder.useAbility(ability.id, creature.id)
+        showSnackbar("${ability.name} -> ${creature.name}")
+    }
+
     // =========================================================================
     // SNACKBAR
     // =========================================================================

@@ -27,6 +27,7 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.scale
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
@@ -99,6 +100,9 @@ fun AdventureScreen(
     val isDisoriented by viewModel.isDisoriented.collectAsState()
     val disorientRounds by viewModel.disorientRounds.collectAsState()
     val eventLogState by viewModel.eventLog.collectAsState()
+
+    // Location detail popup state
+    var showLocationDetailPopup by remember { mutableStateOf(false) }
 
     // Convert event log entries to UI format
     val eventLogEntries = remember(eventLogState) {
@@ -193,7 +197,7 @@ fun AdventureScreen(
                 }
             }
 
-            // === CENTER SECTION: Location thumbnail with ability ring ===
+            // === CENTER SECTION: Location thumbnail with directional ring ===
             Box(
                 modifier = Modifier.fillMaxSize(),
                 contentAlignment = Alignment.Center
@@ -204,11 +208,11 @@ fun AdventureScreen(
                         roundsRemaining = disorientRounds,
                         modifier = Modifier
                             .align(Alignment.Center)
-                            .offset(y = 160.dp)
+                            .offset(y = 120.dp)
                     )
                 }
 
-                // Container for thumbnail + abilities (rotates when disoriented)
+                // Container for thumbnail + directionals (rotates when disoriented)
                 Box(
                     modifier = Modifier
                         .graphicsLayer {
@@ -218,15 +222,12 @@ fun AdventureScreen(
                         },
                     contentAlignment = Alignment.Center
                 ) {
-                    // Ability ring around thumbnail
-                    if (uiState.playerAbilities.isNotEmpty()) {
-                        AbilityRing(
-                            abilities = uiState.playerAbilities,
-                            cooldowns = cooldowns,
-                            queuedAbilityId = queuedAbilityId,
-                            onAbilityClick = { viewModel.handleAbilityClick(it) }
-                        )
-                    }
+                    // Directional navigation ring (innermost, around thumbnail)
+                    DirectionalRing(
+                        exits = currentLocation.exits,
+                        locations = uiState.locations,
+                        onNavigate = { viewModel.navigateToExit(it) }
+                    )
 
                     // Location thumbnail (with Ranger minimap overlay if applicable)
                     LocationThumbnail(
@@ -235,24 +236,30 @@ fun AdventureScreen(
                         isBlinded = isBlinded,
                         blindRounds = blindRounds,
                         isRanger = uiState.isRanger,
-                        onClick = { onViewLocationDetails(currentLocation) }
+                        onClick = { showLocationDetailPopup = true }
                     )
                 }
-
-                // Navigation arrows around the thumbnail
-                NavigationArrows(
-                    exits = currentLocation.exits,
-                    locations = uiState.locations,
-                    onNavigate = { viewModel.navigateToExit(it) }
-                )
             }
 
-            // === BOTTOM SECTION: Mode toggle and event log ===
+            // === BOTTOM SECTION: Abilities row, mode toggle, and event log ===
             Column(
                 modifier = Modifier
                     .align(Alignment.BottomCenter)
                     .fillMaxWidth()
             ) {
+                // Abilities row (non-creature-specific actions above scroll section)
+                if (uiState.playerAbilities.isNotEmpty()) {
+                    AbilityRow(
+                        abilities = uiState.playerAbilities,
+                        cooldowns = cooldowns,
+                        queuedAbilityId = queuedAbilityId,
+                        onAbilityClick = { viewModel.handleAbilityClick(it) },
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 8.dp, vertical = 4.dp)
+                    )
+                }
+
                 // Mode toggle - bottom right of middle section
                 Row(
                     modifier = Modifier.fillMaxWidth(),
@@ -281,12 +288,24 @@ fun AdventureScreen(
                     creature = uiState.selectedCreature,
                     item = uiState.selectedItem,
                     allAbilitiesMap = uiState.allAbilitiesMap,
+                    playerAbilities = uiState.playerAbilities,
+                    cooldowns = cooldowns,
+                    queuedAbilityId = queuedAbilityId,
                     showDescriptionPopup = uiState.showDescriptionPopup,
                     offsetX = detailOffsetX,
                     snackbarHostState = snackbarHostState,
                     onBack = { viewModel.clearSelection() },
                     onShowDescription = { viewModel.showDescriptionPopup() },
-                    onHideDescription = { viewModel.hideDescriptionPopup() }
+                    onHideDescription = { viewModel.hideDescriptionPopup() },
+                    onAbilityClick = { ability -> viewModel.useAbilityOnCreature(ability, uiState.selectedCreature) }
+                )
+            }
+
+            // === LOCATION DETAIL POPUP ===
+            if (showLocationDetailPopup && uiState.currentLocation != null) {
+                LocationDetailPopup(
+                    location = uiState.currentLocation!!,
+                    onDismiss = { showLocationDetailPopup = false }
                 )
             }
 
@@ -625,36 +644,147 @@ private fun Minimap(
 }
 
 // =============================================================================
-// ABILITY RING
+// DIRECTIONAL RING (innermost ring around location thumbnail)
 // =============================================================================
 
+/**
+ * Directional navigation buttons arranged in a ring around the location thumbnail.
+ * This is now the innermost ring, replacing the ability ring.
+ */
 @Composable
-private fun AbilityRing(
+private fun DirectionalRing(
+    exits: List<ExitDto>,
+    locations: List<LocationDto>,
+    onNavigate: (ExitDto) -> Unit
+) {
+    val ringRadius = 70.dp  // Closer to thumbnail than ability ring was
+    val buttonSize = 28.dp
+
+    Box(contentAlignment = Alignment.Center) {
+        exits.forEach { exit ->
+            val targetLocation = locations.find { it.id == exit.locationId }
+            if (targetLocation != null && exit.direction != ExitDirection.UNKNOWN) {
+                // Calculate position based on direction
+                val (offsetX, offsetY) = when (exit.direction) {
+                    ExitDirection.NORTH -> Pair(0.dp, -ringRadius)
+                    ExitDirection.SOUTH -> Pair(0.dp, ringRadius)
+                    ExitDirection.EAST -> Pair(ringRadius, 0.dp)
+                    ExitDirection.WEST -> Pair(-ringRadius, 0.dp)
+                    ExitDirection.NORTHEAST -> {
+                        val diag = ringRadius.value * 0.707f
+                        Pair(diag.dp, -diag.dp)
+                    }
+                    ExitDirection.NORTHWEST -> {
+                        val diag = ringRadius.value * 0.707f
+                        Pair(-diag.dp, -diag.dp)
+                    }
+                    ExitDirection.SOUTHEAST -> {
+                        val diag = ringRadius.value * 0.707f
+                        Pair(diag.dp, diag.dp)
+                    }
+                    ExitDirection.SOUTHWEST -> {
+                        val diag = ringRadius.value * 0.707f
+                        Pair(-diag.dp, diag.dp)
+                    }
+                    ExitDirection.ENTER -> Pair(0.dp, ringRadius + 15.dp)  // Below south
+                    else -> Pair(0.dp, 0.dp)
+                }
+
+                val icon = when (exit.direction) {
+                    ExitDirection.NORTH -> Icons.Filled.ArrowUpward
+                    ExitDirection.SOUTH -> Icons.Filled.ArrowDownward
+                    ExitDirection.EAST -> Icons.AutoMirrored.Filled.ArrowForward
+                    ExitDirection.WEST -> Icons.AutoMirrored.Filled.ArrowBack
+                    ExitDirection.NORTHEAST -> Icons.Filled.NorthEast
+                    ExitDirection.NORTHWEST -> Icons.Filled.NorthWest
+                    ExitDirection.SOUTHEAST -> Icons.Filled.SouthEast
+                    ExitDirection.SOUTHWEST -> Icons.Filled.SouthWest
+                    ExitDirection.ENTER -> Icons.Filled.MeetingRoom
+                    else -> Icons.Filled.ArrowUpward
+                }
+
+                var isPressed by remember { mutableStateOf(false) }
+                val navScale by animateFloatAsState(
+                    targetValue = if (isPressed) 1.2f else 1f,
+                    animationSpec = tween(durationMillis = 100),
+                    label = "dirScale"
+                )
+
+                val buttonColor = if (exit.direction == ExitDirection.ENTER) {
+                    Color(0xFF9C27B0)  // Purple for portal
+                } else {
+                    Color(0xFF1976D2)  // Blue for directions
+                }
+
+                Box(
+                    modifier = Modifier
+                        .offset(x = offsetX, y = offsetY)
+                        .size(buttonSize)
+                        .scale(navScale)
+                        .clip(CircleShape)
+                        .background(buttonColor, CircleShape)
+                        .pointerInput(targetLocation.id) {
+                            detectTapGestures(
+                                onPress = {
+                                    isPressed = true
+                                    tryAwaitRelease()
+                                    isPressed = false
+                                    onNavigate(exit)
+                                }
+                            )
+                        },
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(
+                        imageVector = icon,
+                        contentDescription = if (exit.direction == ExitDirection.ENTER) "Enter" else exit.direction.name,
+                        tint = Color.White,
+                        modifier = Modifier.size(16.dp)
+                    )
+                }
+            }
+        }
+    }
+}
+
+// =============================================================================
+// ABILITY ROW (flat row above scroll section)
+// =============================================================================
+
+/**
+ * Horizontal row of ability buttons displayed above the event log.
+ * Non-creature-specific actions (self buffs, area effects, etc.)
+ */
+@Composable
+private fun AbilityRow(
     abilities: List<AbilityDto>,
     cooldowns: Map<String, Int>,
     queuedAbilityId: String?,
-    onAbilityClick: (AbilityDto) -> Unit
+    onAbilityClick: (AbilityDto) -> Unit,
+    modifier: Modifier = Modifier
 ) {
-    val ringRadius = 80.dp
-    val iconSize = 36.dp
-    val maxIcons = 8
-    val displayAbilities = abilities.take(maxIcons)
-    val totalIcons = displayAbilities.size
+    val iconSize = 32.dp
+    val maxIcons = 10
 
-    displayAbilities.forEachIndexed { index, ability ->
-        val angleDegrees = (360f / totalIcons) * index - 90f
-        val angleRadians = angleDegrees * PI / 180.0
-        val offsetX = (ringRadius.value * cos(angleRadians)).toFloat().dp
-        val offsetY = (ringRadius.value * sin(angleRadians)).toFloat().dp
+    // Filter to show non-passive abilities
+    val displayAbilities = abilities.filter { it.abilityType != "passive" }.take(maxIcons)
 
-        AbilityIconButton(
-            ability = ability,
-            cooldownRounds = cooldowns[ability.id] ?: 0,
-            isQueued = ability.id == queuedAbilityId,
-            onClick = { onAbilityClick(ability) },
-            size = iconSize,
-            modifier = Modifier.offset(x = offsetX, y = offsetY)
-        )
+    Row(
+        modifier = modifier
+            .background(Color.Black.copy(alpha = 0.7f), RoundedCornerShape(8.dp))
+            .padding(horizontal = 8.dp, vertical = 6.dp),
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        displayAbilities.forEach { ability ->
+            AbilityIconButton(
+                ability = ability,
+                cooldownRounds = cooldowns[ability.id] ?: 0,
+                isQueued = ability.id == queuedAbilityId,
+                onClick = { onAbilityClick(ability) },
+                size = iconSize
+            )
+        }
     }
 }
 
@@ -910,98 +1040,6 @@ private fun RangerThumbnailMinimap(
 }
 
 // =============================================================================
-// NAVIGATION ARROWS
-// =============================================================================
-
-@Composable
-private fun NavigationArrows(
-    exits: List<ExitDto>,
-    locations: List<LocationDto>,
-    onNavigate: (ExitDto) -> Unit
-) {
-    Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-        exits.forEach { exit ->
-            val targetLocation = locations.find { it.id == exit.locationId }
-            if (targetLocation != null) {
-                val (offsetX, offsetY, icon) = when (exit.direction) {
-                    ExitDirection.NORTH -> Triple(0.dp, (-130).dp, Icons.Filled.ArrowUpward)
-                    ExitDirection.SOUTH -> Triple(0.dp, 130.dp, Icons.Filled.ArrowDownward)
-                    ExitDirection.EAST -> Triple(130.dp, 0.dp, Icons.AutoMirrored.Filled.ArrowForward)
-                    ExitDirection.WEST -> Triple((-130).dp, 0.dp, Icons.AutoMirrored.Filled.ArrowBack)
-                    ExitDirection.NORTHEAST -> Triple(92.dp, (-92).dp, Icons.Filled.NorthEast)
-                    ExitDirection.NORTHWEST -> Triple((-92).dp, (-92).dp, Icons.Filled.NorthWest)
-                    ExitDirection.SOUTHEAST -> Triple(92.dp, 92.dp, Icons.Filled.SouthEast)
-                    ExitDirection.SOUTHWEST -> Triple((-92).dp, 92.dp, Icons.Filled.SouthWest)
-                    ExitDirection.ENTER -> Triple(0.dp, 145.dp, Icons.Filled.MeetingRoom)
-                    else -> Triple(0.dp, 0.dp, Icons.Filled.ArrowUpward)
-                }
-
-                if (exit.direction != ExitDirection.UNKNOWN) {
-                    var isPressed by remember { mutableStateOf(false) }
-                    val navScale by animateFloatAsState(
-                        targetValue = if (isPressed) 1.3f else 1f,
-                        animationSpec = tween(durationMillis = 150),
-                        label = "navScale"
-                    )
-                    val glowAlpha by animateFloatAsState(
-                        targetValue = if (isPressed) 0.8f else 0f,
-                        animationSpec = tween(durationMillis = 150),
-                        label = "navGlow"
-                    )
-
-                    Box(
-                        modifier = Modifier
-                            .offset(x = offsetX, y = offsetY)
-                            .size(44.dp),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        // Glow ring
-                        Box(
-                            modifier = Modifier
-                                .size((32 * navScale).dp)
-                                .background(
-                                    Color(0xFFFF9800).copy(alpha = glowAlpha),
-                                    CircleShape
-                                )
-                        )
-                        // Button
-                        val buttonColor = if (exit.direction == ExitDirection.ENTER) {
-                            Color(0xFF9C27B0) // Purple for portal
-                        } else {
-                            Color(0xFF1976D2) // Blue for directions
-                        }
-                        Box(
-                            modifier = Modifier
-                                .size(32.dp)
-                                .clip(CircleShape)
-                                .background(buttonColor, CircleShape)
-                                .pointerInput(targetLocation.id) {
-                                    detectTapGestures(
-                                        onPress = {
-                                            isPressed = true
-                                            tryAwaitRelease()
-                                            isPressed = false
-                                            onNavigate(exit)
-                                        }
-                                    )
-                                },
-                            contentAlignment = Alignment.Center
-                        ) {
-                            Icon(
-                                imageVector = icon,
-                                contentDescription = if (exit.direction == ExitDirection.ENTER) "Enter area" else "Go ${exit.direction.name}",
-                                tint = Color.White,
-                                modifier = Modifier.size(20.dp)
-                            )
-                        }
-                    }
-                }
-            }
-        }
-    }
-}
-
-// =============================================================================
 // MODE TOGGLE
 // =============================================================================
 
@@ -1054,16 +1092,24 @@ private fun DetailView(
     creature: CreatureDto?,
     item: ItemDto?,
     allAbilitiesMap: Map<String, AbilityDto>,
+    playerAbilities: List<AbilityDto>,
+    cooldowns: Map<String, Int>,
+    queuedAbilityId: String?,
     showDescriptionPopup: Boolean,
     offsetX: Float,
     snackbarHostState: SnackbarHostState,
     onBack: () -> Unit,
     onShowDescription: () -> Unit,
-    onHideDescription: () -> Unit
+    onHideDescription: () -> Unit,
+    onAbilityClick: (AbilityDto) -> Unit
 ) {
-    val scope = rememberCoroutineScope()
     val detailName = creature?.name ?: item?.name ?: ""
     val detailImageUrl = creature?.imageUrl ?: item?.imageUrl
+
+    // Filter combat abilities for the ring display (exclude passive, utility for non-combat scenarios)
+    val combatAbilities = playerAbilities.filter { ability ->
+        ability.abilityType == "combat" || ability.abilityType == "spell"
+    }.take(8)
 
     Box(
         modifier = Modifier
@@ -1081,10 +1127,20 @@ private fun DetailView(
             textAlign = TextAlign.Center,
             modifier = Modifier
                 .align(Alignment.Center)
-                .offset(y = (-120).dp)
+                .offset(y = (-140).dp)
                 .background(Color.Black.copy(alpha = 0.7f), RoundedCornerShape(4.dp))
                 .padding(horizontal = 12.dp, vertical = 4.dp)
         )
+
+        // Combat ability ring around creature (similar to location ability ring)
+        if (creature != null && combatAbilities.isNotEmpty()) {
+            CreatureCombatRing(
+                abilities = combatAbilities,
+                cooldowns = cooldowns,
+                queuedAbilityId = queuedAbilityId,
+                onAbilityClick = onAbilityClick
+            )
+        }
 
         // 100x100 detail image
         Box(
@@ -1136,62 +1192,36 @@ private fun DetailView(
             }
         }
 
-        // Back button (WEST position)
-        ActionButton(
-            offset = Offset(-90f, 0f),
-            color = Color(0xFFFF9800),
-            icon = Icons.AutoMirrored.Filled.ArrowBack,
-            contentDescription = "Back",
-            onClick = onBack
-        )
+        // Back button - positioned outside the ability ring
+        Box(
+            modifier = Modifier
+                .align(Alignment.CenterStart)
+                .padding(start = 24.dp)
+        ) {
+            ActionButton(
+                offset = Offset(0f, 0f),
+                color = Color(0xFFFF9800),
+                icon = Icons.AutoMirrored.Filled.ArrowBack,
+                contentDescription = "Back",
+                onClick = onBack
+            )
+        }
 
-        // Attack and Greet buttons for creatures
+        // Creature abilities display (what abilities the creature has) - bottom
         if (creature != null) {
-            // Attack button (EAST position)
-            ActionButton(
-                offset = Offset(90f, 0f),
-                color = Color(0xFFD32F2F),
-                icon = SwordIcon,
-                contentDescription = "Attack",
-                onClick = {
-                    scope.launch {
-                        snackbarHostState.showSnackbar(
-                            message = "lets fight!",
-                            duration = SnackbarDuration.Short
-                        )
-                    }
-                }
-            )
-
-            // Greet button (SOUTH position)
-            ActionButton(
-                offset = Offset(0f, 90f),
-                color = Color(0xFF4CAF50),
-                icon = Icons.Filled.Person,
-                contentDescription = "Greet",
-                onClick = {
-                    scope.launch {
-                        snackbarHostState.showSnackbar(
-                            message = "you say sup dude!",
-                            duration = SnackbarDuration.Short
-                        )
-                    }
-                }
-            )
-
-            // Creature abilities display
             val creatureAbilities = creature.abilityIds?.mapNotNull { allAbilitiesMap[it] } ?: emptyList()
             if (creatureAbilities.isNotEmpty()) {
                 Row(
                     modifier = Modifier
-                        .offset(y = (-160).dp)
+                        .align(Alignment.Center)
+                        .offset(y = 140.dp)
                         .background(Color.Black.copy(alpha = 0.8f), RoundedCornerShape(8.dp))
                         .padding(horizontal = 8.dp, vertical = 4.dp),
                     horizontalArrangement = Arrangement.spacedBy(4.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Text(
-                        text = "Abilities:",
+                        text = "Knows:",
                         color = Color.Gray,
                         fontSize = 10.sp
                     )
@@ -1221,6 +1251,40 @@ private fun DetailView(
                 onDismiss = onHideDescription
             )
         }
+    }
+}
+
+/**
+ * Combat ability ring displayed around the creature thumbnail on detail view.
+ * Similar to the main location ability ring but specifically for targeting a creature.
+ */
+@Composable
+private fun CreatureCombatRing(
+    abilities: List<AbilityDto>,
+    cooldowns: Map<String, Int>,
+    queuedAbilityId: String?,
+    onAbilityClick: (AbilityDto) -> Unit
+) {
+    val ringRadius = 80.dp
+    val iconSize = 36.dp
+    val maxIcons = 8
+    val displayAbilities = abilities.take(maxIcons)
+    val totalIcons = displayAbilities.size
+
+    displayAbilities.forEachIndexed { index, ability ->
+        val angleDegrees = (360f / totalIcons) * index - 90f
+        val angleRadians = angleDegrees * PI / 180.0
+        val offsetX = (ringRadius.value * cos(angleRadians)).toFloat().dp
+        val offsetY = (ringRadius.value * sin(angleRadians)).toFloat().dp
+
+        AbilityIconButton(
+            ability = ability,
+            cooldownRounds = cooldowns[ability.id] ?: 0,
+            isQueued = ability.id == queuedAbilityId,
+            onClick = { onAbilityClick(ability) },
+            size = iconSize,
+            modifier = Modifier.offset(x = offsetX, y = offsetY)
+        )
     }
 }
 
@@ -1495,6 +1559,149 @@ private fun StatColumn(label: String, value: String, valueColor: Color) {
 }
 
 // =============================================================================
+// LOCATION DETAIL POPUP
+// =============================================================================
+
+/**
+ * Full screen popup showing location details when tapping on the location thumbnail.
+ * Similar to the creature description popup - black background with larger image and description.
+ */
+@Composable
+private fun LocationDetailPopup(
+    location: LocationDto,
+    onDismiss: () -> Unit
+) {
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(Color.Black.copy(alpha = 0.9f))
+            .pointerInput(Unit) {
+                detectTapGestures(onTap = { onDismiss() })
+            },
+        contentAlignment = Alignment.Center
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth(0.85f)
+                .background(Color(0xFF1A1A1A), RoundedCornerShape(12.dp))
+                .border(1.dp, Color(0xFF4A90A4), RoundedCornerShape(12.dp))
+                .padding(16.dp),
+            horizontalAlignment = Alignment.CenterHorizontally
+        ) {
+            // Enlarged location image
+            Box(
+                modifier = Modifier
+                    .size(150.dp)
+                    .clip(CircleShape)
+                    .background(Color.Black)
+                    .border(2.dp, Color(0xFF4A90A4), CircleShape)
+            ) {
+                if (location.imageUrl != null) {
+                    AsyncImage(
+                        model = "${AppConfig.api.baseUrl}${location.imageUrl}",
+                        contentDescription = location.name,
+                        modifier = Modifier.fillMaxSize(),
+                        contentScale = ContentScale.Crop
+                    )
+                } else {
+                    // Fallback - terrain color based on description
+                    Box(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .background(getTerrainColor(location.desc, location.name)),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Text(
+                            text = location.name.take(2).uppercase(),
+                            color = Color.White,
+                            fontSize = 32.sp,
+                            fontWeight = FontWeight.Bold
+                        )
+                    }
+                }
+            }
+
+            Spacer(modifier = Modifier.height(12.dp))
+
+            // Location name
+            Text(
+                text = location.name,
+                color = Color.White,
+                fontSize = 20.sp,
+                fontWeight = FontWeight.Bold,
+                textAlign = TextAlign.Center
+            )
+
+            // Coordinates
+            val gridX = location.gridX ?: 0
+            val gridY = location.gridY ?: 0
+            Text(
+                text = "($gridX, $gridY)",
+                color = Color.Gray,
+                fontSize = 12.sp,
+                modifier = Modifier.padding(top = 4.dp)
+            )
+
+            Spacer(modifier = Modifier.height(8.dp))
+
+            // Description
+            if (location.desc.isNotEmpty()) {
+                Text(
+                    text = location.desc,
+                    color = Color(0xFFCCCCCC),
+                    fontSize = 14.sp,
+                    textAlign = TextAlign.Center,
+                    lineHeight = 20.sp,
+                    modifier = Modifier.padding(horizontal = 8.dp)
+                )
+            }
+
+            // Exits info
+            if (location.exits.isNotEmpty()) {
+                Spacer(modifier = Modifier.height(12.dp))
+                Text(
+                    text = "Exits",
+                    color = Color.Gray,
+                    fontSize = 10.sp
+                )
+                Row(
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    modifier = Modifier.padding(top = 4.dp)
+                ) {
+                    location.exits.forEach { exit ->
+                        val directionColor = if (exit.direction == ExitDirection.ENTER) {
+                            Color(0xFF9C27B0)  // Purple for portals
+                        } else {
+                            Color(0xFF1976D2)  // Blue for normal directions
+                        }
+                        Box(
+                            modifier = Modifier
+                                .background(directionColor.copy(alpha = 0.2f), RoundedCornerShape(4.dp))
+                                .padding(horizontal = 8.dp, vertical = 4.dp)
+                        ) {
+                            Text(
+                                text = exit.direction.name,
+                                color = directionColor,
+                                fontSize = 10.sp,
+                                fontWeight = FontWeight.Medium
+                            )
+                        }
+                    }
+                }
+            }
+
+            Spacer(modifier = Modifier.height(16.dp))
+
+            Text(
+                text = "Tap anywhere to close",
+                color = Color.Gray,
+                fontSize = 11.sp
+            )
+        }
+    }
+}
+
+// =============================================================================
 // PREVIEWS
 // =============================================================================
 
@@ -1619,14 +1826,15 @@ private fun ModeTogglePreview() {
 
 @Preview
 @Composable
-private fun NavigationArrowsPreview() {
+private fun DirectionalRingPreview() {
     MaterialTheme {
         Box(
             modifier = Modifier
                 .size(300.dp)
-                .background(Color.Black)
+                .background(Color.Black),
+            contentAlignment = Alignment.Center
         ) {
-            NavigationArrows(
+            DirectionalRing(
                 exits = PreviewData.sampleExits,
                 locations = listOf(
                     PreviewData.sampleLocation.copy(id = "loc-2"),
