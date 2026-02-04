@@ -125,3 +125,52 @@ This document tracks all changes made during the adventure mode refactoring focu
 
 **Files Modified:**
 - `server/src/main/kotlin/com/ez2bg/anotherthread/combat/CombatModels.kt` (regeneration constants)
+
+## Session 6: Ability Cost Balance (Jan 4, 2025)
+
+**Duration**: ~10 minutes  
+**Focus**: Align ability costs with tactical resource regeneration rates
+
+### Changes Made
+
+1. **Implemented Ability Cost Balancing System**:
+   - Created `server/src/main/kotlin/com/ez2bg/anotherthread/AbilityCostBalancer.kt`
+   - Addresses misalignment between ability costs and resource regeneration
+   - Tactical resource rates: 1 mana/2 stamina per round
+   - Prevents abilities from being usable every round
+
+2. **Cost Balance Framework**:
+   - **Healing Abilities**: 3 mana (requires 3 rounds of planning)
+   - **Combat Abilities**: 3-6 stamina (emphasizes stamina for physical actions)
+   - **Utility Spells**: 2-4 mana based on power level
+   - **Resource Specialization**: Mana for magic, stamina for physical
+
+3. **Specific Balance Rules**:
+   - Healing spells: 3 mana minimum (tactical significance)
+   - Focus/buff abilities: 2 mana (utility value)
+   - Strike abilities: 2 mana or 3 stamina (depending on type)
+   - Frenzy abilities: 4 mana or 6 stamina (high power abilities)
+   - Physical attacks: Primarily stamina-based costs
+
+4. **Integration**:
+   - Auto-runs on server startup after creature stat balancing
+   - Uses SQLDelight for safe database operations
+   - Comprehensive logging of all cost adjustments
+
+### Impact on Adventure Mode
+
+- **Tactical Resource Management**: Players must plan ability usage over multiple rounds
+- **Resource Specialization**: Clear distinction between mana (magic) and stamina (physical)
+- **Combat Pacing**: Eliminates ability spam, encourages strategic planning
+- **Healing Balance**: Healing requires significant resource investment
+
+### Technical Implementation
+
+- Uses existing `selectAllAbilities()` and `updateAbility()` queries
+- Intelligent cost calculation based on ability name and type
+- Maintains minimum costs to prevent trivial resource usage
+- Integrated into server startup sequence for automatic balance
+
+**Files Modified:**
+- `server/src/main/kotlin/com/ez2bg/anotherthread/AbilityCostBalancer.kt` (new)
+- `server/src/main/kotlin/com/ez2bg/anotherthread/Application.kt` (startup integration)

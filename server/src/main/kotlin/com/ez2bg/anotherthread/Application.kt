@@ -1042,6 +1042,10 @@ fun Application.module() {
     SimpleGoldBalancer.addMissingGoldDrops()
     FungusForestSeed.seedIfEmpty()
 
+    // Auto-balance ability costs on startup
+    val abilityCostBalancer = AbilityCostBalancer()
+    abilityCostBalancer.balanceAbilityCosts()
+
     // Initialize file directories
     val fileDir = File(System.getenv("FILE_DIR") ?: "data/files").also { it.mkdirs() }
     val imageGenDir = File(fileDir, "imageGen").also { it.mkdirs() }
