@@ -363,105 +363,148 @@ fun LocationForm(
             }
         }
 
-        // Display current location coordinates
+        // Enhanced coordinate display with better visual hierarchy
         if (editLocation != null && editLocation.gridX != null && editLocation.gridY != null) {
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(vertical = 8.dp),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(8.dp)
-            ) {
-                Text(
-                    text = "Coordinates:",
-                    style = MaterialTheme.typography.bodyMedium,
-                    fontWeight = FontWeight.Medium
+            Card(
+                modifier = Modifier.fillMaxWidth(),
+                colors = CardDefaults.cardColors(
+                    containerColor = MaterialTheme.colorScheme.tertiaryContainer.copy(alpha = 0.3f)
                 )
-                Surface(
-                    shape = RoundedCornerShape(16.dp),
-                    color = MaterialTheme.colorScheme.secondaryContainer,
-                    modifier = Modifier.padding(2.dp)
+            ) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(16.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(12.dp)
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Edit, // Using a map-like icon would be better
+                        contentDescription = "Location coordinates",
+                        tint = MaterialTheme.colorScheme.onTertiaryContainer,
+                        modifier = Modifier.size(20.dp)
+                    )
+                    Column {
+                        Text(
+                            text = "Map Coordinates",
+                            style = MaterialTheme.typography.labelMedium,
+                            color = MaterialTheme.colorScheme.onTertiaryContainer
+                        )
+                        Text(
+                            text = "(${editLocation.gridX}, ${editLocation.gridY})",
+        // Enhanced exit management section
+        Card(
+            modifier = Modifier.fillMaxWidth(),
+            colors = CardDefaults.cardColors(
+                containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
+            )
+        ) {
+            Column(
+                modifier = Modifier.padding(16.dp),
+                verticalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
                     Text(
-                        text = "(${editLocation.gridX}, ${editLocation.gridY})",
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSecondaryContainer,
-                        modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp)
+                        text = "Exits",
+                        style = MaterialTheme.typography.titleMedium,
+                        modifier = Modifier.weight(1f)
                     )
-                }
-            }
-        }
-
-        ExitPillSection(
-            label = "Exits",
-            exits = exits,
-            availableOptions = availableLocations,
-            onPillClick = { locationId ->
-                scope.launch {
-                    ApiClient.getLocation(locationId).onSuccess { loc ->
-                        if (loc != null) onNavigateToLocation(loc)
+                    Surface(
+                        shape = RoundedCornerShape(12.dp),
+                        color = MaterialTheme.colorScheme.primary.copy(alpha = 0.1f)
+                    ) {
+                        Text(
+                            text = "${exits.size}",
+                            style = MaterialTheme.typography.labelMedium,
+                            color = MaterialTheme.colorScheme.primary,
+                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
+                        )
                     }
                 }
-            },
-            onAddExit = { newExit ->
-                if (isDisabled) return@ExitPillSection
-                // Add exit locally
-                exits = exits + newExit
-                // Add bidirectional exit on the other location (if we have an id)
-                // Use opposite direction for the reverse exit
-                if (editLocation != null) {
-                    scope.launch {
-                        ApiClient.getLocation(newExit.locationId).onSuccess { otherLoc ->
-                            if (otherLoc != null && otherLoc.exits.none { it.locationId == editLocation.id }) {
-                                val oppositeDirection = getOppositeDirection(newExit.direction)
-                                val updatedExits = otherLoc.exits + ExitDto(editLocation.id, oppositeDirection)
-                                val updateRequest = CreateLocationRequest(
-                                    name = otherLoc.name,
-                                    desc = otherLoc.desc,
-                                    itemIds = otherLoc.itemIds,
-                                    creatureIds = otherLoc.creatureIds,
-                                    exits = updatedExits,
-                                    featureIds = otherLoc.featureIds
-                                )
-                                ApiClient.updateLocation(otherLoc.id, updateRequest)
+                
+                ExitPillSection(
+                    label = "", // Label now handled above
+                    exits = exits,
+                    availableOptions = availableLocations,
+                    onPillClick = { locationId ->
+                        scope.launch {
+                            ApiClient.getLocation(locationId).onSuccess { loc ->
+                                if (loc != null) onNavigateToLocation(loc)
                             }
                         }
-                    }
-                }
-            },
-            onUpdateExit = { oldExit, newExit ->
-                if (isDisabled) return@ExitPillSection
-                // Update exit direction locally
-                exits = exits.map { if (it == oldExit) newExit else it }
-                // Update the bidirectional exit on the other location with opposite direction
-                if (editLocation != null) {
-                    scope.launch {
-                        ApiClient.getLocation(newExit.locationId).onSuccess { otherLoc ->
-                            if (otherLoc != null) {
-                                val oppositeDirection = getOppositeDirection(newExit.direction)
-                                val updatedExits = otherLoc.exits.map { exit ->
-                                    if (exit.locationId == editLocation.id) {
-                                        exit.copy(direction = oppositeDirection)
-                                    } else {
-                                        exit
+                    },
+                    onAddExit = { newExit ->
+                        if (isDisabled) return@ExitPillSection
+                        // Add exit locally
+                        exits = exits + newExit
+                        // Add bidirectional exit on the other location (if we have an id)
+                        // Use opposite direction for the reverse exit
+                        if (editLocation != null) {
+                            scope.launch {
+                                ApiClient.getLocation(newExit.locationId).onSuccess { otherLoc ->
+                                    if (otherLoc != null && otherLoc.exits.none { it.locationId == editLocation.id }) {
+                                        val oppositeDirection = getOppositeDirection(newExit.direction)
+                                        val updatedExits = otherLoc.exits + ExitDto(editLocation.id, oppositeDirection)
+                                        val updateRequest = CreateLocationRequest(
+                                            name = otherLoc.name,
+                                            desc = otherLoc.desc,
+                                            itemIds = otherLoc.itemIds,
+                                            creatureIds = otherLoc.creatureIds,
+                                            exits = updatedExits,
+                                            featureIds = otherLoc.featureIds
+                                        )
+                                        ApiClient.updateLocation(otherLoc.id, updateRequest)
                                     }
                                 }
-                                val updateRequest = CreateLocationRequest(
-                                    name = otherLoc.name,
-                                    desc = otherLoc.desc,
-                                    itemIds = otherLoc.itemIds,
-                                    creatureIds = otherLoc.creatureIds,
-                                    exits = updatedExits,
-                                    featureIds = otherLoc.featureIds
-                                )
-                                ApiClient.updateLocation(otherLoc.id, updateRequest)
                             }
                         }
-                    }
-                }
-            },
-            onRemoveExit = { exit ->
-                if (isDisabled) return@ExitPillSection
+                    },
+                    onUpdateExit = { oldExit, newExit ->
+                        if (isDisabled) return@ExitPillSection
+                        // Update exit direction locally
+                        exits = exits.map { if (it == oldExit) newExit else it }
+                        // Update the bidirectional exit on the other location with opposite direction
+                        if (editLocation != null) {
+                            scope.launch {
+                                ApiClient.getLocation(newExit.locationId).onSuccess { otherLoc ->
+                                    if (otherLoc != null) {
+                                        val oppositeDirection = getOppositeDirection(newExit.direction)
+                                        val updatedExits = otherLoc.exits.map { exit ->
+                                            if (exit.locationId == editLocation.id) {
+                                                exit.copy(direction = oppositeDirection)
+                                            } else {
+                                                exit
+                                            }
+                                        }
+                                        val updateRequest = CreateLocationRequest(
+                                            name = otherLoc.name,
+                                            desc = otherLoc.desc,
+                                            itemIds = otherLoc.itemIds,
+                                            creatureIds = otherLoc.creatureIds,
+                                            exits = updatedExits,
+                                            featureIds = otherLoc.featureIds
+                                        )
+                                        ApiClient.updateLocation(otherLoc.id, updateRequest)
+                                    }
+                                }
+                            }
+                        }
+                    },
+                    onRemoveExit = { exit ->
+                        if (isDisabled) return@ExitPillSection
+                        // Show confirmation dialog for exit removal
+                        exitToRemove = exit
+                        showRemoveExitDialog = true
+                    },
+                    enabled = !isDisabled,
+                    currentLocationId = editLocation?.id,
+                    allLocations = allLocationsForCoords
+                )
+            }
+        }
                 // Show confirmation dialog for exit removal
                 exitToRemove = exit
                 showRemoveExitDialog = true
