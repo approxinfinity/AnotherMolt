@@ -18,7 +18,7 @@ actual fun developmentBaseUrl(): String {
     } else if (hostname.endsWith(".trycloudflare.com")) {
         "https://vegetarian-distance-fires-chip.trycloudflare.com"
     } else {
-        "http://$hostname:8081"
+        "http://$hostname:12081"
     }
 }
 

@@ -9,7 +9,7 @@ private external fun getHostname(): JsAny
 @JsFun("() => window.APP_CONFIG?.tunnelBackendUrl || null")
 private external fun getTunnelBackendUrl(): JsAny?
 
-@JsFun("() => window.APP_CONFIG?.localBackendPort || 8081")
+@JsFun("() => window.APP_CONFIG?.localBackendPort || 12081")
 private external fun getLocalBackendPort(): Int
 
 @JsFun("(url) => window.history.replaceState(null, '', url)")

@@ -103,7 +103,7 @@ Locations can be placed on a 3D grid (X, Y, Z coordinates) for spatial organizat
 - `POST /admin/database/restore/{filename}` - Restore from a backup (auto-creates safety backup first)
 
 ### Combat (WebSocket)
-Connect to `ws://localhost:8081/combat?userId={userId}` for real-time combat.
+Connect to `ws://localhost:12081/combat?userId={userId}` for real-time combat.
 
 **Client → Server Messages:**
 - `JoinCombatMessage` - Start/join combat at current location
@@ -177,16 +177,17 @@ Per-user/per-entity dynamic state for features (cooldowns, charges, buff duratio
 
 | Port | Service | Description |
 |------|---------|-------------|
-| **8080** | Web Client | Frontend (HTML/JS/Wasm) served by webpack dev server |
-| **8081** | Backend API | Ktor REST API server with database |
+| **12080** | Web Client | Frontend (HTML/JS/Wasm) served by webpack dev server |
+| **12081** | Backend API | Ktor REST API server with database |
 
 ### Key Files for Port Configuration
 
 | File | Purpose |
 |------|---------|
-| `server/src/main/resources/application.conf` | Backend port (8081) and CORS allowed hosts |
-| `shared/src/jsMain/kotlin/.../Platform.js.kt` | JS client backend URL (must use port 8081) |
-| `shared/src/wasmJsMain/kotlin/.../Platform.wasmJs.kt` | Wasm client backend URL (must use port 8081) |
+| `server/src/main/resources/application.conf` | Backend port (12081) and CORS allowed hosts |
+| `shared/src/jsMain/kotlin/.../Platform.js.kt` | JS client backend URL (must use port 12081) |
+| `shared/src/wasmJsMain/kotlin/.../Platform.wasmJs.kt` | Wasm client backend URL (must use port 12081) |
+| `composeApp/webpack.config.d/devServer.js` | Frontend dev server port (12080) |
 
 ### Local Network Access
 
