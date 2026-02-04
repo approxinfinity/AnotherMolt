@@ -124,179 +124,75 @@ fun IdPillSection(
 
         AlertDialog(
             onDismissRequest = { showAddDialog = false; newId = "" },
-            title = { 
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
-                    val entityIcon = when (entityType) {
-                        EntityType.ITEM -> "🎒"
-                        EntityType.CREATURE -> "🐉"
-                        EntityType.LOCATION -> "📍"
-                    }
-                    Text("$entityIcon Add ${entityType.name.lowercase().replaceFirstChar { it.uppercase() }}")
-                }
-            },
+            title = { Text("Add ${entityType.name.lowercase().replaceFirstChar { it.uppercase() }}") },
             text = {
                 Column(
                     modifier = Modifier.fillMaxWidth(),
-                    verticalArrangement = Arrangement.spacedBy(16.dp)
+                    verticalArrangement = Arrangement.spacedBy(12.dp)
                 ) {
-                    // Enhanced existing options section
+                    // Show list of available options if there are any
                     if (unselectedOptions.isNotEmpty()) {
-                        Surface(
-                            shape = RoundedCornerShape(12.dp),
-                            color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
+                        Text(
+                            text = "Select from existing:",
+                            style = MaterialTheme.typography.labelMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                        LazyColumn(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .heightIn(max = 200.dp),
+                            verticalArrangement = Arrangement.spacedBy(4.dp)
                         ) {
-                            Column(
-                                modifier = Modifier.padding(16.dp),
-                                verticalArrangement = Arrangement.spacedBy(12.dp)
-                            ) {
-                                Row(
-                                    verticalAlignment = Alignment.CenterVertically,
-                                    horizontalArrangement = Arrangement.spacedBy(8.dp)
-                                ) {
-                                    Surface(
-                                        shape = androidx.compose.foundation.shape.CircleShape,
-                                        color = MaterialTheme.colorScheme.primary,
-                                        modifier = Modifier.size(20.dp)
-                                    ) {
-                                        Text(
-                                            text = "1",
-                                            color = MaterialTheme.colorScheme.onPrimary,
-                                            style = MaterialTheme.typography.labelSmall,
-                                            modifier = Modifier.padding(4.dp),
-                                            textAlign = androidx.compose.ui.text.style.TextAlign.Center
-                                        )
-                                    }
-                                    Text(
-                                        text = "Select from existing:",
-                                        style = MaterialTheme.typography.titleSmall,
-                                        color = MaterialTheme.colorScheme.onSurface
-                                    )
-                                    Surface(
-                                        shape = RoundedCornerShape(10.dp),
-                                        color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.3f)
-                                    ) {
-                                        Text(
-                                            text = "${unselectedOptions.size}",
-                                            style = MaterialTheme.typography.labelSmall,
-                                            color = MaterialTheme.colorScheme.onPrimaryContainer,
-                                            modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
-                                        )
-                                    }
-                                }
-                                
-                                LazyColumn(
+                            items(unselectedOptions) { option ->
+                                Surface(
                                     modifier = Modifier
                                         .fillMaxWidth()
-                                        .heightIn(max = 200.dp),
-                                    verticalArrangement = Arrangement.spacedBy(6.dp)
+                                        .clickable {
+                                            onAddId(option.id)
+                                            showAddDialog = false
+                                            newId = ""
+                                        },
+                                    shape = RoundedCornerShape(8.dp),
+                                    color = MaterialTheme.colorScheme.surfaceVariant
                                 ) {
-            confirmButton = {
-                Button(
-                    onClick = {
-                        if (newId.isNotBlank()) {
-                            onAddId(newId.trim())
-                            newId = ""
-                            showAddDialog = false
-                        }
-                    },
-                    enabled = newId.isNotBlank(),
-                    shape = RoundedCornerShape(8.dp)
-                ) {
-                    val entityIcon = when (entityType) {
-                        EntityType.ITEM -> "🎒"
-                        EntityType.CREATURE -> "🐉"
-                        EntityType.LOCATION -> "📍"
-                    }
-                    Text("$entityIcon Add Manual ID")
-                }
-            },
-            dismissButton = {
-                TextButton(
-                    onClick = { showAddDialog = false; newId = "" },
-                    shape = RoundedCornerShape(8.dp)
-                ) {
-                    Text("Cancel")
-                }
-            }
-                                                        maxLines = 1,
-                                                        overflow = TextOverflow.Ellipsis
-                                                    )
-                                                    Text(
-                                                        text = option.id,
-                                                        style = MaterialTheme.typography.bodySmall,
-                                                        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f),
-                                                        maxLines = 1,
-                                                        overflow = TextOverflow.Ellipsis
-                                                    )
-                                                }
-                                                Surface(
-                                                    shape = androidx.compose.foundation.shape.CircleShape,
-                                                    color = pillColor.copy(alpha = 0.3f),
-                                                    modifier = Modifier.size(24.dp)
-                                                ) {
-                                                    Icon(
-                                                        imageVector = Icons.Filled.Add,
-                                                        contentDescription = "Add",
-                                                        tint = pillTextColor,
-                                                        modifier = Modifier.size(14.dp)
-                                                    )
-                                                }
-                                            }
-                                        }
+                                    Column(
+                                        modifier = Modifier.padding(12.dp)
+                                    ) {
+                                        Text(
+                                            text = option.name.ifBlank { "(No name)" },
+                                            style = MaterialTheme.typography.bodyLarge,
+                                            maxLines = 1,
+                                            overflow = TextOverflow.Ellipsis
+                                        )
+                                        Text(
+                                            text = option.id,
+                                            style = MaterialTheme.typography.bodySmall,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                            maxLines = 1,
+                                            overflow = TextOverflow.Ellipsis
+                                        )
                                     }
                                 }
                             }
                         }
+
+                        HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp))
                     }
 
-                    // Enhanced manual entry section
-                    Surface(
-                        shape = RoundedCornerShape(12.dp),
-                        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = if (unselectedOptions.isNotEmpty()) 0.3f else 0.5f)
-                    ) {
-                        Column(
-                            modifier = Modifier.padding(16.dp),
-                            verticalArrangement = Arrangement.spacedBy(12.dp)
-                        ) {
-                            Row(
-                                verticalAlignment = Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.spacedBy(8.dp)
-                            ) {
-                                Surface(
-                                    shape = androidx.compose.foundation.shape.CircleShape,
-                                    color = if (unselectedOptions.isNotEmpty()) MaterialTheme.colorScheme.outline else MaterialTheme.colorScheme.primary,
-                                    modifier = Modifier.size(20.dp)
-                                ) {
-                                    Text(
-                                        text = if (unselectedOptions.isNotEmpty()) "2" else "1",
-                                        color = if (unselectedOptions.isNotEmpty()) MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f) else MaterialTheme.colorScheme.onPrimary,
-                                        style = MaterialTheme.typography.labelSmall,
-                                        modifier = Modifier.padding(4.dp),
-                                        textAlign = androidx.compose.ui.text.style.TextAlign.Center
-                                    )
-                                }
-                                Text(
-                                    text = if (unselectedOptions.isNotEmpty()) "Or enter ID manually:" else "Enter ID manually:",
-                                    style = MaterialTheme.typography.titleSmall,
-                                    color = MaterialTheme.colorScheme.onSurface
-                                )
-                            }
-                            OutlinedTextField(
-                                value = newId,
-                                onValueChange = { newId = it },
-                                label = { Text("${entityType.name} ID") },
-                                placeholder = { Text("Enter unique identifier") },
-                                singleLine = true,
-                                modifier = Modifier.fillMaxWidth(),
-                                shape = RoundedCornerShape(12.dp)
-                            )
-                        }
-                    }
+                    // Free-form text field for manual entry
+                    Text(
+                        text = "Or enter ID manually:",
+                        style = MaterialTheme.typography.labelMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    OutlinedTextField(
+                        value = newId,
+                        onValueChange = { newId = it },
+                        label = { Text("ID") },
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth()
+                    )
                 }
-            },
             },
             confirmButton = {
                 TextButton(

@@ -142,29 +142,24 @@ internal fun LocationNodeThumbnail(
                     val radius = size.minDimension / 2
                     val center = Offset(size.width / 2, size.height / 2)
 
-                    // Draw terrain-based fill for consistency with collapsed dots
-                    val terrainColor = getTerrainColor(location.desc, location.name)
+                    // Draw translucent tan fill (same as collapsed dots)
+                    val tanColor = Color(0xFFD4B896)
+                    val fillAlpha = 0.15f
                     drawCircle(
-                        color = terrainColor.copy(alpha = 0.3f),
+                        color = tanColor.copy(alpha = fillAlpha),
                         radius = radius,
                         center = center
                     )
 
-                    // Draw pulsing orange border to indicate selection
+                    // Draw orange border to indicate selection
                     drawCircle(
                         color = Color(0xFFFF9800),
                         radius = radius,
                         center = center,
-                        style = Stroke(width = 2.5.dp.toPx())
-                    )
-                    
-                    // Add inner glow effect
-                    drawCircle(
-                        color = Color(0xFFFF9800).copy(alpha = 0.2f),
-                        radius = radius * 0.8f,
-                        center = center
+                        style = Stroke(width = 2.dp.toPx())
                     )
                 }
+            }
 
             // Container for thumbnail and exit buttons
             // No clickable here - let clicks pass through to adjacent dots
@@ -210,28 +205,19 @@ internal fun LocationNodeThumbnail(
                                     .offset(
                                         x = centerOffset - touchTargetSize / 2 + (buttonDistance * offsetX),
                                         y = centerOffset - touchTargetSize / 2 + (buttonDistance * offsetY)
-                                // Inner visible button with improved styling
+                                    )
+                                    .size(touchTargetSize)
+                                    .clickable { onExitClick(targetLocation) },
+                                contentAlignment = Alignment.Center
+                            ) {
+                                // Inner visible button
                                 Box(
                                     modifier = Modifier
                                         .size(exitButtonSize)
-                                        .background(
-                                            Color(0xFF1976D2).copy(alpha = 0.95f), // More opaque background
-                                            CircleShape
-                                        )
+                                        .background(Color(0xFF2196F3).copy(alpha = 0.9f), CircleShape)
                                         .padding(4.dp),
                                     contentAlignment = Alignment.Center
                                 ) {
-                                    // Add subtle shadow effect with background circle
-                                    Box(
-                                        modifier = Modifier
-                                            .fillMaxSize()
-                                            .background(
-                                                Color.Black.copy(alpha = 0.15f),
-                                                CircleShape
-                                            )
-                                            .offset(x = 1.dp, y = 1.dp)
-                                    )
-                                    
                                     // Draw arrow icon pointing in the exit direction
                                     Icon(
                                         imageVector = when (exit.direction) {
@@ -248,9 +234,6 @@ internal fun LocationNodeThumbnail(
                                         },
                                         contentDescription = exit.direction.name,
                                         tint = Color.White,
-                                        modifier = Modifier.fillMaxSize()
-                                    )
-                                }
                                         modifier = Modifier.fillMaxSize()
                                     )
                                 }
@@ -382,16 +365,17 @@ internal fun LocationNodeThumbnail(
             }
         }
     } else {
-        // Collapsed state: improved dot with better visibility and terrain indication
+        // Collapsed state: just the dot (label is rendered separately in parent)
         val isUnedited = location.lastEditedAt == null
-        val dotSize = 12.dp  // Slightly larger for better visibility
-        
+        val dotSize = 10.dp  // Both are 10dp
+
         // Center dots within the space where a full-size dot would be
         val centeringOffset = (collapsedSize - dotSize) / 2
-        
-        // Get terrain-specific colors for better map readability
-        val terrainColor = getTerrainColor(location.desc, location.name)
-        
+
+        // Light tan color - 15% alpha for both fill and border
+        val tanColor = Color(0xFFD4B896)
+        val fillAlpha = 0.15f
+
         Box(
             modifier = modifier
                 .offset(x = centeringOffset, y = centeringOffset)
@@ -402,33 +386,23 @@ internal fun LocationNodeThumbnail(
                 val radius = size.minDimension / 2
                 val center = Offset(size.width / 2, size.height / 2)
 
-                // Draw terrain-based fill with improved opacity
+                // Draw simple tan fill
                 drawCircle(
-                    color = terrainColor.copy(alpha = 0.4f), // More visible than 0.15f
+                    color = tanColor.copy(alpha = fillAlpha),
                     radius = radius,
                     center = center
                 )
 
-                // Draw border - red for edited locations, subtle for wilderness
-                val borderColor = if (isUnedited) {
-                    terrainColor.copy(alpha = 0.6f) // Subtle border for wilderness
-                } else {
-                    DotBorderColor.copy(alpha = 0.8f) // More visible border for edited
+                // Draw red border only for edited locations (non-wilderness), same alpha as fill
+                if (!isUnedited) {
+                    drawCircle(
+                        color = DotBorderColor.copy(alpha = fillAlpha),
+                        radius = radius,
+                        center = center,
+                        style = Stroke(width = 1.5.dp.toPx())
+                    )
                 }
-                
-                drawCircle(
-                    color = borderColor,
-                    radius = radius,
-                    center = center,
-                    style = Stroke(width = 1.5.dp.toPx())
-                )
-                
-                // Add a subtle inner highlight for depth
-                drawCircle(
-                    color = Color.White.copy(alpha = 0.2f),
-                    radius = radius * 0.3f,
-                    center = Offset(center.x - radius * 0.2f, center.y - radius * 0.2f)
-                )
             }
         }
+    }
 }

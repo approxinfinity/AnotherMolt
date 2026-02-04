@@ -220,312 +220,105 @@ fun ExitPillSection(
                 selectedDirection = ExitDirection.UNKNOWN
                 validationResult = null
             },
-            title = { 
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+            title = { Text("Add Exit") },
+            text = {
+                Column(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalArrangement = Arrangement.spacedBy(12.dp)
                 ) {
-                    Text("Add Exit")
+                    // Show current location coordinates if available
                     if (currentLocation?.gridX != null) {
-                        Surface(
-                            shape = RoundedCornerShape(12.dp),
-                            color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.3f)
-                        ) {
-                            Text(
-                                text = "From: (${currentLocation.gridX}, ${currentLocation.gridY})",
-                                style = MaterialTheme.typography.labelSmall,
-                                color = MaterialTheme.colorScheme.onSurface,
-                                modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
-                            )
-                        }
+                        Text(
+                            text = "From: (${currentLocation.gridX}, ${currentLocation.gridY})",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
                     }
-                }
-                    // Enhanced Step 1: Select destination with improved visual hierarchy
-                    Surface(
-                        shape = RoundedCornerShape(12.dp),
-                        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
-                    ) {
-                        Column(
-                            modifier = Modifier.padding(16.dp),
-                            verticalArrangement = Arrangement.spacedBy(12.dp)
+
+                    // Step 1: Show list of available locations FIRST
+                    Text(
+                        text = "1. Select destination:",
+                        style = MaterialTheme.typography.labelMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    if (unselectedOptions.isNotEmpty()) {
+                        LazyColumn(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .heightIn(max = 150.dp),
+                            verticalArrangement = Arrangement.spacedBy(4.dp)
                         ) {
-                            Row(
-                                verticalAlignment = Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.spacedBy(8.dp)
-                            ) {
+                            items(unselectedOptions) { option ->
+                                val isSelected = selectedLocationId == option.id
+                                val targetLoc = allLocations.find { it.id == option.id }
+                                val hasCoords = targetLoc?.gridX != null
+
                                 Surface(
-                                    shape = androidx.compose.foundation.shape.CircleShape,
-                                    color = MaterialTheme.colorScheme.primary,
-                                    modifier = Modifier.size(20.dp)
-                                ) {
-                                    Text(
-                                        text = "1",
-                                        color = MaterialTheme.colorScheme.onPrimary,
-                                        style = MaterialTheme.typography.labelSmall,
-                                        modifier = Modifier.padding(4.dp),
-                                        textAlign = androidx.compose.ui.text.style.TextAlign.Center
-                                    )
-                                }
-                                Text(
-                                    text = "Select destination:",
-                                    style = MaterialTheme.typography.titleSmall,
-                                    color = MaterialTheme.colorScheme.onSurface
-                                )
-                            }
-                            
-                            if (unselectedOptions.isNotEmpty()) {
-                                LazyColumn(
                                     modifier = Modifier
                                         .fillMaxWidth()
-                                        .heightIn(max = 150.dp),
-                                    verticalArrangement = Arrangement.spacedBy(6.dp)
-                                ) {
-                                    items(unselectedOptions) { option ->
-                                        val isSelected = selectedLocationId == option.id
-                                        val targetLoc = allLocations.find { it.id == option.id }
-                                        val hasCoords = targetLoc?.gridX != null
-
-                                        Surface(
-                                            modifier = Modifier
-                                                .fillMaxWidth()
-                                                .clickable {
-                                                    selectedLocationId = option.id
-                                                },
-                                            shape = RoundedCornerShape(10.dp),
-                                            color = if (isSelected) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surface,
-                                            border = if (isSelected) BorderStroke(2.dp, MaterialTheme.colorScheme.primary) else null,
-                                            shadowElevation = if (isSelected) 4.dp else 1.dp
-                                        ) {
-                                            Row(
-                                                modifier = Modifier.padding(16.dp),
-                                                horizontalArrangement = Arrangement.SpaceBetween,
-                                                verticalAlignment = Alignment.CenterVertically
-                                            ) {
-                                                Column(modifier = Modifier.weight(1f)) {
-                                                    Text(
-                                                        text = option.name.ifBlank { "(No name)" },
-                    // Enhanced Step 2: Direction selection
-                    Surface(
-                        shape = RoundedCornerShape(12.dp),
-                        color = if (selectedLocationId != null) {
-                            MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
-                        } else {
-                            MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.2f)
-                        }
-                    ) {
-                        Column(
-                            modifier = Modifier.padding(16.dp),
-                            verticalArrangement = Arrangement.spacedBy(12.dp)
-                        ) {
-                            Row(
-                                verticalAlignment = Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.spacedBy(8.dp)
-                            ) {
-                                Surface(
-                                    shape = androidx.compose.foundation.shape.CircleShape,
-                                    color = if (selectedLocationId != null) {
-                                        MaterialTheme.colorScheme.primary
-                                    } else {
-                                        MaterialTheme.colorScheme.outline
-                                    },
-                                    modifier = Modifier.size(20.dp)
-                                ) {
-                                    Text(
-                                        text = "2",
-                                        color = if (selectedLocationId != null) {
-                                            MaterialTheme.colorScheme.onPrimary
-                                        } else {
-                                            MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
+                                        .clickable {
+                                            selectedLocationId = option.id
                                         },
-                                        style = MaterialTheme.typography.labelSmall,
-                                        modifier = Modifier.padding(4.dp),
-                                        textAlign = androidx.compose.ui.text.style.TextAlign.Center
-                                    )
-                                }
-                                Text(
-                                    text = "Choose direction:",
-                                    style = MaterialTheme.typography.titleSmall,
-                                    color = if (selectedLocationId != null) {
-                                        MaterialTheme.colorScheme.onSurface
-                                    } else {
-                                        MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
-                                    }
-                                )
-                            }
-
-                            if (selectedLocationId == null) {
-                                Surface(
                                     shape = RoundedCornerShape(8.dp),
-                                    color = MaterialTheme.colorScheme.surfaceVariant
-                                ) {
-                                    Text(
-                                        text = "👆 Select a destination first",
-                                        style = MaterialTheme.typography.bodyMedium,
-                                        color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
-                                        modifier = Modifier.padding(12.dp)
-                                    )
-                                }
-                            } else if (isValidating) {
-                                Surface(
-                                    shape = RoundedCornerShape(8.dp),
-                                    color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.3f)
+                                    color = if (isSelected) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceVariant,
+                                    border = if (isSelected) BorderStroke(2.dp, MaterialTheme.colorScheme.primary) else null
                                 ) {
                                     Row(
                                         modifier = Modifier.padding(12.dp),
-                                        verticalAlignment = Alignment.CenterVertically,
-                                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                                        horizontalArrangement = Arrangement.SpaceBetween,
+                                        verticalAlignment = Alignment.CenterVertically
                                     ) {
-                                        CircularProgressIndicator(
-                                            modifier = Modifier.size(16.dp), 
-                                            strokeWidth = 2.dp,
-                                            color = MaterialTheme.colorScheme.primary
-                                        )
-                                        Text(
-                                            text = "Validating connection...",
-                                            style = MaterialTheme.typography.bodyMedium,
-                                            color = MaterialTheme.colorScheme.onPrimaryContainer
-                                        )
-                                    }
-                                }
-                            } else if (validationResult != null && !validationResult!!.canCreateExit) {
-                                Surface(
-                                    shape = RoundedCornerShape(8.dp),
-                                    color = MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.3f)
-                                ) {
-                                    Text(
-                                        text = "❌ ${validationResult!!.errorMessage ?: "Cannot create exit to this location"}",
-                                        style = MaterialTheme.typography.bodyMedium,
-                                        color = MaterialTheme.colorScheme.onErrorContainer,
-                                        modifier = Modifier.padding(12.dp)
-                                    )
-                    // Enhanced summary section
-                    if (selectedLocationId != null && availableDirections.isNotEmpty() && !isValidating) {
-                        val selectedName = availableOptions.find { it.id == selectedLocationId }?.name ?: selectedLocationId
-                        val dirToShow = if (selectedDirection in availableDirections) selectedDirection else availableDirections.first()
-                        
-                        Surface(
-                            shape = RoundedCornerShape(12.dp),
-                            color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.5f)
-                        ) {
-                            Column(
-                                modifier = Modifier.padding(16.dp),
-                                verticalArrangement = Arrangement.spacedBy(8.dp)
-                            ) {
-                                Text(
-                                    text = "✅ Exit Summary",
-                                    style = MaterialTheme.typography.titleSmall,
-                                    color = MaterialTheme.colorScheme.onPrimaryContainer
-                                )
-                                Row(
-                                    verticalAlignment = Alignment.CenterVertically,
-                                    horizontalArrangement = Arrangement.spacedBy(8.dp)
-                                ) {
-                                    Surface(
-                                        shape = RoundedCornerShape(6.dp),
-                                        color = MaterialTheme.colorScheme.primary.copy(alpha = 0.2f)
-                                    ) {
-                                        Text(
-                                            text = dirToShow.toDisplayLabel(),
-                                            style = MaterialTheme.typography.labelMedium,
-                                            color = MaterialTheme.colorScheme.primary,
-                                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
-                                        )
-                                    }
-                                    Text(
-                                        text = "→",
-                                        style = MaterialTheme.typography.bodyLarge,
-                                        color = MaterialTheme.colorScheme.onPrimaryContainer
-                                    )
-                                    Text(
-                                        text = selectedName,
-                                        style = MaterialTheme.typography.bodyLarge,
-                                        color = MaterialTheme.colorScheme.onPrimaryContainer
-                                    )
-                                }
-                            }
-                        }
-                    }
-                }
-            },
-            confirmButton = {
-                Button(
-                    onClick = {
-                        if (selectedLocationId != null && availableDirections.isNotEmpty()) {
-                            val directionToUse = if (selectedDirection in availableDirections) selectedDirection else availableDirections.first()
-                            onAddExit(ExitDto(locationId = selectedLocationId!!, direction = directionToUse))
-                            showAddDialog = false
-                            selectedLocationId = null
-                            selectedDirection = ExitDirection.UNKNOWN
-                            validationResult = null
-                        }
-                    },
-                    enabled = selectedLocationId != null && availableDirections.isNotEmpty() && !isValidating,
-                    shape = RoundedCornerShape(8.dp)
-                ) {
-                    Text("Create Exit")
-                }
-            },
-            dismissButton = {
-                TextButton(
-                    onClick = {
-                        showAddDialog = false
-                        selectedLocationId = null
-                        selectedDirection = ExitDirection.UNKNOWN
-                        validationResult = null
-                    },
-                    shape = RoundedCornerShape(8.dp)
-                ) {
-                    Text("Cancel")
-                }
-            }
-                                }
-                            } else {
-                                // Direction is selectable
-                                ExposedDropdownMenuBox(
-                                    expanded = directionDropdownExpanded,
-                                    onExpandedChange = { directionDropdownExpanded = it }
-                                ) {
-                                    OutlinedTextField(
-                                        value = if (selectedDirection in availableDirections) selectedDirection.toDisplayLabel() else availableDirections.first().toDisplayLabel(),
-                                        onValueChange = {},
-                                        readOnly = true,
-                                        label = { Text("Direction") },
-                                        trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = directionDropdownExpanded) },
-                                        modifier = Modifier
-                                            .fillMaxWidth()
-                                            .menuAnchor(MenuAnchorType.PrimaryNotEditable),
-                                        shape = RoundedCornerShape(12.dp)
-                                    )
-                                    ExposedDropdownMenu(
-                                        expanded = directionDropdownExpanded,
-                                        onDismissRequest = { directionDropdownExpanded = false }
-                                    ) {
-                                        availableDirections.forEach { direction ->
-                                            val coordInfo = validationResult?.validDirections?.find { it.direction == direction }?.targetCoordinates
-                                            DropdownMenuItem(
-                                                text = {
-                                                    Column {
-                                                        Text(direction.toDisplayLabel())
-                                                        if (coordInfo != null) {
-                                                            Text(
-                                                                text = "→ (${coordInfo.x}, ${coordInfo.y})",
-                                                                style = MaterialTheme.typography.bodySmall,
-                                                                color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f)
-                                                            )
-                                                        }
-                                                    }
-                                                },
-                                                onClick = {
-                                                    selectedDirection = direction
-                                                    directionDropdownExpanded = false
-                                                }
+                                        Column(modifier = Modifier.weight(1f)) {
+                                            Text(
+                                                text = option.name.ifBlank { "(No name)" },
+                                                style = MaterialTheme.typography.bodyLarge,
+                                                color = if (isSelected) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSurfaceVariant,
+                                                maxLines = 1,
+                                                overflow = TextOverflow.Ellipsis
                                             )
+                                            if (hasCoords && targetLoc != null) {
+                                                Text(
+                                                    text = "(${targetLoc.gridX}, ${targetLoc.gridY})",
+                                                    style = MaterialTheme.typography.bodySmall,
+                                                    color = if (isSelected) MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.7f) else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f)
+                                                )
+                                            } else {
+                                                Text(
+                                                    text = "Floating (no coords)",
+                                                    style = MaterialTheme.typography.bodySmall,
+                                                    color = if (isSelected) MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.5f) else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f)
+                                                )
+                                            }
                                         }
                                     }
                                 }
                             }
                         }
+                    } else {
+                        Text(
+                            text = "No more locations available",
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
                     }
+
+                    HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp))
+
+                    // Step 2: Direction selection (only after location is selected)
+                    Text(
+                        text = "2. Direction:",
+                        style = MaterialTheme.typography.labelMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+
+                    if (selectedLocationId == null) {
+                        Text(
+                            text = "Select a destination first",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f)
+                        )
+                    } else if (isValidating) {
+                        Row(
                             verticalAlignment = Alignment.CenterVertically,
                             horizontalArrangement = Arrangement.spacedBy(8.dp)
                         ) {

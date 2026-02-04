@@ -61,8 +61,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.PointerEventType
-import androidx.compose.ui.input.pointer.*
-import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontWeight
@@ -706,23 +705,23 @@ fun LocationGraph(
             }
 
             Canvas(modifier = Modifier.fillMaxSize()) {
-                // Improved connection lines with better visibility and styling
+                // Orange connection lines
                 // In exploration mode: thicker solid lines like the highlight circle
-                // In normal mode: refined dotted lines with better contrast
+                // In normal mode: thin dotted lines
                 val connectionColor = if (gameMode.isAdventure) {
-                    Color(0xFFFF9800).copy(alpha = 0.7f)  // More visible in exploration mode
+                    Color(0xFFFF9800).copy(alpha = 0.6f)  // More visible in exploration mode
                 } else {
-                    Color(0xFFFF9800).copy(alpha = 0.4f) // Better visibility in create mode
+                    Color(0xFFFF9800).copy(alpha = 0.25f)
                 }
                 val oneWayColor = if (gameMode.isAdventure) {
-                    Color(0xFFFF5722).copy(alpha = 0.8f) // Distinct orange-red for one-way
+                    Color(0xFFFF9800).copy(alpha = 0.7f)
                 } else {
-                    Color(0xFFFF5722).copy(alpha = 0.5f) // More visible one-way indicator
+                    Color(0xFFFF9800).copy(alpha = 0.35f)
                 }
-                // Exploration mode: thick like highlight circle (about 3dp), normal: refined (1.5dp)
-                val strokeWidth = if (gameMode.isAdventure) 3.5.dp.toPx() else 2.0.dp.toPx()
-                val dashLength = if (gameMode.isAdventure) 10f else 6f  // More defined dashes
-                val gapLength = if (gameMode.isAdventure) 3f else 4f   // Smaller gaps for continuity
+                // Exploration mode: thick like highlight circle (about 3dp), normal: thin (1.2dp)
+                val strokeWidth = if (gameMode.isAdventure) 3.dp.toPx() else 1.2.dp.toPx()
+                val dashLength = if (gameMode.isAdventure) 8f else 4f  // Longer dashes in exploration
+                val gapLength = if (gameMode.isAdventure) 4f else 6f   // Smaller gaps in exploration
 
                 filteredConnectionLines.forEach { line ->
                     drawTerrainAwarePath(
@@ -737,6 +736,7 @@ fun LocationGraph(
                     )
                 }
             }
+            } // End of connection lines conditional (not shown in exploration mode)
 
             // LAYER 3: Location dots/thumbnails
             // In exploration mode: only render the expanded thumbnail (no collapsed dots)
@@ -2215,184 +2215,128 @@ fun LocationGraph(
         }
 
         // Game mode toggle (top-right corner) - only visible when signed in
-        // Enhanced game mode toggle (top-right corner) - only visible when signed in
         if (currentUser != null) {
-            Card(
+            Row(
                 modifier = Modifier
                     .align(Alignment.TopEnd)
-                    .padding(8.dp),
-                shape = RoundedCornerShape(20.dp),
-                colors = CardDefaults.cardColors(
-                    containerColor = Color.Black.copy(alpha = 0.8f)
-                ),
-                elevation = CardDefaults.cardElevation(defaultElevation = 4.dp)
+                    .padding(8.dp)
+                    .background(Color.Black.copy(alpha = 0.7f), RoundedCornerShape(8.dp))
+                    .padding(horizontal = 12.dp, vertical = 6.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
             ) {
-                Row(
-                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 10.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(12.dp)
+                Text(
+                    text = if (gameMode.isCreate) "create" else "adventure",
+                    color = Color.White,
+                    fontSize = 14.sp
+                )
+                // Custom thin toggle switch
+                val isCreateMode = gameMode.isCreate
+                val trackColor = if (isCreateMode) Color(0xFF2E7D32).copy(alpha = 0.6f) else Color(0xFF9C27B0).copy(alpha = 0.6f)
+                val thumbColor = if (isCreateMode) Color(0xFF4CAF50) else Color(0xFFBA68C8)
+                Box(
+                    modifier = Modifier
+                        .width(32.dp)
+                        .height(14.dp)
+                        .background(trackColor, RoundedCornerShape(7.dp))
+                        .clickable {
+                            onGameModeChange(if (gameMode.isCreate) GameMode.ADVENTURE else GameMode.CREATE)
+                        },
+                    contentAlignment = if (isCreateMode) Alignment.CenterEnd else Alignment.CenterStart
                 ) {
-                    // Mode label
-                    Text(
-                        text = if (gameMode.isCreate) "CREATE" else "EXPLORE",
-                        color = Color.White,
-                        fontSize = 14.sp,
-                        fontWeight = FontWeight.Medium,
-                        letterSpacing = 0.5.sp
-                    )
-                    
-                    // Enhanced toggle switch
-                    val isCreateMode = gameMode.isCreate
-                    val trackColor = if (isCreateMode) {
-                        Color(0xFF4CAF50).copy(alpha = 0.3f)
-                    } else {
-                        Color(0xFF9C27B0).copy(alpha = 0.3f)
-                    }
-                    val thumbColor = if (isCreateMode) Color(0xFF4CAF50) else Color(0xFFBA68C8)
-                    
                     Box(
                         modifier = Modifier
-                            .width(44.dp)
-                            .height(24.dp)
-                            .background(trackColor, RoundedCornerShape(12.dp))
-                            .clickable {
-                                onGameModeChange(if (gameMode.isCreate) GameMode.ADVENTURE else GameMode.CREATE)
-                            },
-                        contentAlignment = if (isCreateMode) Alignment.CenterEnd else Alignment.CenterStart
-                    ) {
-                        Box(
-                            modifier = Modifier
-                                .padding(horizontal = 3.dp)
-                                .size(18.dp)
-                                .background(thumbColor, CircleShape)
-                        )
-                    }
+                            .padding(horizontal = 2.dp)
+                            .size(10.dp)
+                            .background(thumbColor, CircleShape)
+                    )
                 }
             }
         }
-        // Enhanced zoom controls overlay (top-right corner, below toggle) - hidden in Adventure mode
+
+        // Zoom controls overlay (top-right corner, below toggle) - hidden in Adventure mode
         if (gameMode.isCreate) {
-            Card(
+            Column(
                 modifier = Modifier
                     .align(Alignment.TopEnd)
-                    .padding(top = 56.dp, end = 8.dp),
-                shape = RoundedCornerShape(12.dp),
-                colors = CardDefaults.cardColors(
-                    containerColor = Color.Black.copy(alpha = 0.8f)
-                ),
-                elevation = CardDefaults.cardElevation(defaultElevation = 4.dp)
+                    .padding(top = 48.dp, end = 8.dp),
+                verticalArrangement = Arrangement.spacedBy(4.dp)
             ) {
-                Column(
-                    modifier = Modifier.padding(8.dp),
-                    verticalArrangement = Arrangement.spacedBy(6.dp),
-                    horizontalAlignment = Alignment.CenterHorizontally
+                // Zoom in button
+                Box(
+                    modifier = Modifier
+                        .size(36.dp)
+                        .background(Color.Black.copy(alpha = 0.6f), RoundedCornerShape(8.dp))
+                        .clickable {
+                            val newScale = (scale * 1.25f).coerceIn(minScale, maxScale)
+                            if (newScale != scale) {
+                                // Zoom toward center
+                                val centerX = width / 2
+                                val centerY = height / 2
+                                val scaleFactor = newScale / scale
+                                val newOffsetX = centerX - (centerX - offset.value.x) * scaleFactor
+                                val newOffsetY = centerY - (centerY - offset.value.y) * scaleFactor
+                                scale = newScale
+                                scope.launch { offset.snapTo(Offset(newOffsetX, newOffsetY)) }
+                            }
+                        },
+                    contentAlignment = Alignment.Center
                 ) {
-                    // Zoom in button
-                    Box(
-                        modifier = Modifier
-                            .size(40.dp)
-                            .background(
-                                Color.White.copy(alpha = 0.1f), 
-                                RoundedCornerShape(8.dp)
-                            )
-                            .clickable {
-                                val newScale = (scale * 1.25f).coerceIn(minScale, maxScale)
-                                if (newScale != scale) {
-                                    // Zoom toward center
-                                    val centerX = width / 2
-                                    val centerY = height / 2
-                                    val scaleFactor = newScale / scale
-                                    val newOffsetX = centerX - (centerX - offset.value.x) * scaleFactor
-                                    val newOffsetY = centerY - (centerY - offset.value.y) * scaleFactor
-                                    scale = newScale
-                                    scope.launch { offset.snapTo(Offset(newOffsetX, newOffsetY)) }
-                                }
-                            },
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Text(
-                            "+", 
-                            color = Color.White, 
-                            style = MaterialTheme.typography.titleLarge,
-                            fontWeight = FontWeight.Bold
-                        )
-                    }
-
-                    // Zoom level indicator
-                    Surface(
-                        shape = RoundedCornerShape(6.dp),
-                        color = Color.White.copy(alpha = 0.15f)
-                    ) {
-                        Text(
-                            text = "${(scale * 100).toInt()}%",
-                            modifier = Modifier.padding(horizontal = 6.dp, vertical = 3.dp),
-                            color = Color.White,
-                            style = MaterialTheme.typography.labelSmall,
-                            fontWeight = FontWeight.Medium
-                        )
-                    }
-
-                    // Zoom out button
-                    Box(
-                        modifier = Modifier
-                            .size(40.dp)
-                            .background(
-                                Color.White.copy(alpha = 0.1f), 
-                                RoundedCornerShape(8.dp)
-                            )
-                            .clickable {
-                                val newScale = (scale * 0.8f).coerceIn(minScale, maxScale)
-                                if (newScale != scale) {
-                                    // Zoom toward center
-                                    val centerX = width / 2
-                                    val centerY = height / 2
-                                    val scaleFactor = newScale / scale
-                                    val newOffsetX = centerX - (centerX - offset.value.x) * scaleFactor
-                                    val newOffsetY = centerY - (centerY - offset.value.y) * scaleFactor
-                                    scale = newScale
-                                    scope.launch { offset.snapTo(Offset(newOffsetX, newOffsetY)) }
-                                }
-                            },
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Text(
-                            "−", 
-                            color = Color.White, 
-                            style = MaterialTheme.typography.titleLarge,
-                            fontWeight = FontWeight.Bold
-                        )
-                    }
-
-                    // Divider
-                    Box(
-                        modifier = Modifier
-                            .width(24.dp)
-                            .height(1.dp)
-                            .background(Color.White.copy(alpha = 0.2f))
-                    )
-
-                    // Reset zoom/pan button
-                    Box(
-                        modifier = Modifier
-                            .size(40.dp)
-                            .background(
-                                Color.White.copy(alpha = 0.1f), 
-                                RoundedCornerShape(8.dp)
-                            )
-                            .clickable {
-                                scale = 1f
-                                scope.launch { offset.animateTo(Offset.Zero, tween(300)) }
-                            },
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Icon(
-                            imageVector = Icons.Default.CenterFocusWeak,
-                            contentDescription = "Reset view",
-                            tint = Color.White,
-                            modifier = Modifier.size(20.dp)
-                        )
-                    }
+                    Text("+", color = Color.White, style = MaterialTheme.typography.titleMedium)
                 }
+
+                // Zoom out button
+                Box(
+                    modifier = Modifier
+                        .size(36.dp)
+                        .background(Color.Black.copy(alpha = 0.6f), RoundedCornerShape(8.dp))
+                        .clickable {
+                            val newScale = (scale * 0.8f).coerceIn(minScale, maxScale)
+                            if (newScale != scale) {
+                                // Zoom toward center
+                                val centerX = width / 2
+                                val centerY = height / 2
+                                val scaleFactor = newScale / scale
+                                val newOffsetX = centerX - (centerX - offset.value.x) * scaleFactor
+                                val newOffsetY = centerY - (centerY - offset.value.y) * scaleFactor
+                                scale = newScale
+                                scope.launch { offset.snapTo(Offset(newOffsetX, newOffsetY)) }
+                            }
+                        },
+                    contentAlignment = Alignment.Center
+                ) {
+                    Text("-", color = Color.White, style = MaterialTheme.typography.titleMedium)
+                }
+
+                // Reset zoom/pan button
+                Box(
+                    modifier = Modifier
+                        .size(36.dp)
+                        .background(Color.Black.copy(alpha = 0.6f), RoundedCornerShape(8.dp))
+                        .clickable {
+                            scale = 1f
+                            scope.launch { offset.animateTo(Offset.Zero, tween(300)) }
+                        },
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.CenterFocusWeak,
+                        contentDescription = "Reset view",
+                        tint = Color.White,
+                        modifier = Modifier.size(20.dp)
+                    )
+                }
+
+                // Zoom level indicator (right below zoom controls)
+                Text(
+                    text = "${(scale * 100).toInt()}%",
+                    modifier = Modifier
+                        .background(Color.Black.copy(alpha = 0.5f), RoundedCornerShape(4.dp))
+                        .padding(horizontal = 8.dp, vertical = 4.dp),
+                    color = Color.White,
+                    style = MaterialTheme.typography.labelSmall
+                )
             }
         }
+    }
 }

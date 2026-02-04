@@ -47,116 +47,89 @@ fun AdminPanelView(
         }
         isLoading = false
     }
+
     Column(
         modifier = Modifier
             .fillMaxWidth()
             .verticalScroll(rememberScrollState()),
         verticalArrangement = Arrangement.spacedBy(16.dp)
     ) {
-        // Enhanced header with status indicator
-        Card(
-            modifier = Modifier.fillMaxWidth(),
-            colors = CardDefaults.cardColors(
-                containerColor = MaterialTheme.colorScheme.primaryContainer
-            )
-        ) {
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(20.dp),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(12.dp)
-            ) {
-                Surface(
-                    shape = androidx.compose.foundation.shape.CircleShape,
-                    color = if (!isLoading) Color(0xFF4CAF50) else Color(0xFFFF9800),
-                    modifier = Modifier.size(12.dp)
-                ) {}
-                Column {
-                    Text(
-                        text = "Admin Panel",
-                        style = MaterialTheme.typography.titleLarge,
-                        color = MaterialTheme.colorScheme.onPrimaryContainer
-                    )
-                    Text(
-                        text = if (isLoading) "Loading..." else "System ready",
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.8f)
-                    )
-                }
-            }
-        }
+        Text(
+            text = "Admin Panel",
+            style = MaterialTheme.typography.titleLarge
+        )
 
-        // Enhanced Audit Logs Button
+        // Audit Logs Button
         Card(
             modifier = Modifier
                 .fillMaxWidth()
-                .clickable { onViewAuditLogs() },
-            colors = CardDefaults.cardColors(
-                containerColor = MaterialTheme.colorScheme.surface
-            ),
-            elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
+                .clickable { onViewAuditLogs() }
         ) {
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(20.dp),
+                    .padding(16.dp),
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Row(
-                    horizontalArrangement = Arrangement.spacedBy(16.dp),
+                    horizontalArrangement = Arrangement.spacedBy(12.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Surface(
-                        shape = androidx.compose.foundation.shape.CircleShape,
-                        color = MaterialTheme.colorScheme.primary.copy(alpha = 0.1f),
-                        modifier = Modifier.size(48.dp)
-        // Enhanced File Upload Section
-        Card(
-            modifier = Modifier.fillMaxWidth(),
-            elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
-        ) {
-            Column(
-                modifier = Modifier.padding(20.dp),
-                verticalArrangement = Arrangement.spacedBy(16.dp)
-            ) {
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(12.dp)
-                ) {
-                    Surface(
-                        shape = androidx.compose.foundation.shape.CircleShape,
-                        color = MaterialTheme.colorScheme.secondary.copy(alpha = 0.1f),
-                        modifier = Modifier.size(40.dp)
-                    ) {
-                        Box(contentAlignment = Alignment.Center) {
-                            Icon(
-                                imageVector = Icons.Default.Upload,
-                                contentDescription = null,
-                                tint = MaterialTheme.colorScheme.secondary,
-                                modifier = Modifier.size(20.dp)
-                            )
-                        }
-                    }
-                    Text(
-                        text = "File Upload",
-                        style = MaterialTheme.typography.titleMedium
+                    Icon(
+                        imageVector = Icons.Default.History,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.primary
                     )
-                }
-
-                if (allowedTypes.isNotEmpty()) {
-                    Surface(
-                        shape = RoundedCornerShape(8.dp),
-                        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
-                    ) {
+                    Column {
                         Text(
-                            text = "Allowed file types: ${allowedTypes.sorted().joinToString(", ") { ".$it" }}",
+                            text = "Audit Logs",
+                            style = MaterialTheme.typography.titleMedium
+                        )
+                        Text(
+                            text = "View history of all data changes",
                             style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            modifier = Modifier.padding(12.dp)
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
                     }
+                }
+                Icon(
+                    imageVector = Icons.Default.ChevronRight,
+                    contentDescription = "View",
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+        }
+
+        // Service Health Panel
+        ServiceHealthPanel()
+
+        // Database Backup Panel
+        DatabaseBackupPanel()
+
+        // Data Integrity Panel
+        DataIntegrityPanel()
+
+        // Users Panel
+        UsersPanel(onUserClick = onUserClick)
+
+        // File Upload Section
+        Card(modifier = Modifier.fillMaxWidth()) {
+            Column(
+                modifier = Modifier.padding(16.dp),
+                verticalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
+                Text(
+                    text = "File Upload",
+                    style = MaterialTheme.typography.titleMedium
+                )
+
+                if (allowedTypes.isNotEmpty()) {
+                    Text(
+                        text = "Allowed file types: ${allowedTypes.sorted().joinToString(", ") { ".$it" }}",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
                 }
 
                 OutlinedTextField(
@@ -165,8 +138,7 @@ fun AdminPanelView(
                     label = { Text("File path on disk") },
                     placeholder = { Text("/path/to/file.pdf") },
                     modifier = Modifier.fillMaxWidth(),
-                    singleLine = true,
-                    shape = RoundedCornerShape(12.dp)
+                    singleLine = true
                 )
 
                 Row(
@@ -213,57 +185,6 @@ fun AdminPanelView(
                                         uploadMessage = "Upload error: ${error.message}"
                                     }
                                 } catch (e: Exception) {
-                                    uploadMessage = "Error: ${e.message}"
-                                }
-
-                                isUploading = false
-                            }
-                        },
-                        enabled = !isUploading && selectedFilePath.isNotBlank(),
-                        shape = RoundedCornerShape(8.dp)
-                    ) {
-                        if (isUploading) {
-                            CircularProgressIndicator(
-                                modifier = Modifier.size(16.dp),
-                                strokeWidth = 2.dp
-                            )
-                            Spacer(modifier = Modifier.width(8.dp))
-                            Text("Uploading...")
-                        } else {
-                            Icon(
-                                imageVector = Icons.Default.Upload,
-                                contentDescription = null,
-                                modifier = Modifier.size(16.dp)
-                            )
-                            Spacer(modifier = Modifier.width(4.dp))
-                            Text("Upload")
-                        }
-                    }
-                }
-
-                uploadMessage?.let {
-                    Surface(
-                        shape = RoundedCornerShape(8.dp),
-                        color = if (it.startsWith("Error") || it.startsWith("Upload failed") || it.startsWith("File not") || it.startsWith("File type"))
-                            MaterialTheme.colorScheme.errorContainer
-                        else
-                            MaterialTheme.colorScheme.primaryContainer
-                    ) {
-                        SelectionContainer {
-                            Text(
-                                text = it,
-                                color = if (it.startsWith("Error") || it.startsWith("Upload failed") || it.startsWith("File not") || it.startsWith("File type"))
-                                    MaterialTheme.colorScheme.onErrorContainer
-                                else
-                                    MaterialTheme.colorScheme.onPrimaryContainer,
-                                style = MaterialTheme.typography.bodySmall,
-                                modifier = Modifier.padding(12.dp)
-                            )
-                        }
-                    }
-                }
-            }
-        }
                                     uploadMessage = "Error: ${e.message}"
                                 }
 

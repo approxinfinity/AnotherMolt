@@ -1,125 +1,43 @@
 package com.ez2bg.anotherthread.ui.components
 
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.slideInVertically
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material3.*
-import androidx.compose.runtime.Composable
+import androidx.compose.material3.Text
+import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.Shadow
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-    LazyColumn(
-    Card(
-        modifier = modifier
-            .fillMaxSize()
-            .padding(8.dp),
-        colors = CardDefaults.cardColors(
-            containerColor = Color.Black.copy(alpha = 0.85f)
-        ),
-        shape = RoundedCornerShape(12.dp),
-        elevation = CardDefaults.cardElevation(defaultElevation = 4.dp)
-    ) {
-        LazyColumn(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(12.dp),
-            reverseLayout = true,
-            verticalArrangement = Arrangement.spacedBy(6.dp)
-        ) {
-            items(events.takeLast(100)) { event ->
-                EventCard(event = event)
-            }
-        }
-    }
-}
+import kotlinx.coroutines.delay
 
-@Composable
-private fun EventCard(
-    event: String,
-    modifier: Modifier = Modifier
-) {
-    val eventColor = getEventColor(event)
-    val eventIcon = getEventIcon(event)
-    
-    Card(
-        modifier = modifier.fillMaxWidth(),
-        colors = CardDefaults.cardColors(
-            containerColor = eventColor.copy(alpha = 0.15f)
-        ),
-        shape = RoundedCornerShape(8.dp)
-    ) {
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(12.dp),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(8.dp)
-        ) {
-            Text(
-                text = eventIcon,
-                fontSize = 16.sp
-            )
-            
-            Text(
-                text = event,
-                color = eventColor,
-                fontSize = 13.sp,
-                lineHeight = 18.sp,
-                style = LocalTextStyle.current.copy(
-                    shadow = Shadow(
-                        color = Color.Black.copy(alpha = 0.5f),
-                        offset = Offset(0.5f, 0.5f),
-                        blurRadius = 1f
-                    )
-                )
-            )
-        }
-    }
-}
+private var eventIdCounter = 0L
 
-private fun getEventColor(event: String): Color {
-    return when {
-        event.contains("damage", ignoreCase = true) || event.contains("hit", ignoreCase = true) -> Color(0xFFFF5252)
-        event.contains("heal", ignoreCase = true) || event.contains("restore", ignoreCase = true) -> Color(0xFF4CAF50)
-        event.contains("cast", ignoreCase = true) || event.contains("spell", ignoreCase = true) -> Color(0xFF2196F3)
-        event.contains("miss", ignoreCase = true) || event.contains("dodge", ignoreCase = true) -> Color(0xFF757575)
-        event.contains("critical", ignoreCase = true) || event.contains("crit", ignoreCase = true) -> Color(0xFFFFD700)
-        event.contains("enter", ignoreCase = true) || event.contains("leave", ignoreCase = true) -> Color(0xFF9C27B0)
-        event.contains("death", ignoreCase = true) || event.contains("die", ignoreCase = true) -> Color(0xFF8B0000)
-        event.contains("level", ignoreCase = true) || event.contains("experience", ignoreCase = true) -> Color(0xFFFFD700)
-        event.contains("gold", ignoreCase = true) || event.contains("coin", ignoreCase = true) -> Color(0xFFFFD700)
-        else -> Color.White
-    }
-}
+/**
+ * A single entry in the event log.
+ */
+data class EventLogEntry(
+    val id: String = (++eventIdCounter).toString(),
+    val message: String,
+    val type: EventType = EventType.INFO
+)
 
-private fun getEventIcon(event: String): String {
-    return when {
-        event.contains("damage", ignoreCase = true) || event.contains("hit", ignoreCase = true) -> "⚔️"
-        event.contains("heal", ignoreCase = true) || event.contains("restore", ignoreCase = true) -> "💚"
-        event.contains("cast", ignoreCase = true) || event.contains("spell", ignoreCase = true) -> "🔮"
-        event.contains("miss", ignoreCase = true) || event.contains("dodge", ignoreCase = true) -> "💨"
-        event.contains("critical", ignoreCase = true) || event.contains("crit", ignoreCase = true) -> "💥"
-        event.contains("enter", ignoreCase = true) || event.contains("leave", ignoreCase = true) -> "🚶"
-        event.contains("death", ignoreCase = true) || event.contains("die", ignoreCase = true) -> "💀"
-        event.contains("level", ignoreCase = true) || event.contains("experience", ignoreCase = true) -> "⭐"
-        event.contains("gold", ignoreCase = true) || event.contains("coin", ignoreCase = true) -> "💰"
-        else -> "📝"
-    }
-}
-                            offset = Offset(0.5f, 0.5f),
-                            blurRadius = 1f
-                        )
-                    )
-                )
-            }
-        }
-    }
-}
+/**
+ * Type of event for color coding.
+ */
+enum class EventType {
+    INFO,           // Gray - general info
+    DAMAGE,         // Red - damage dealt/received
     HEALING,        // Green - healing
     BUFF,           // Blue - buffs applied
     DEBUFF,         // Orange - debuffs applied

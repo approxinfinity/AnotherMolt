@@ -1,132 +1,58 @@
 package com.ez2bg.anotherthread.ui.components
 
-import androidx.compose.foundation.background
-import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material3.*
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.offset
+import androidx.compose.foundation.layout.size
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.rotate
-import androidx.compose.ui.geometry.Offset
-import androidx.compose.ui.graphics.Brush
-import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.Shadow
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
-import com.ez2bg.anotherthread.models.Ability
-import kotlin.math
+import com.ez2bg.anotherthread.api.AbilityDto
+import kotlin.math.PI
+import kotlin.math.cos
+import kotlin.math.sin
+
+/**
  * Arranges ability icons in a circular ring around a center point.
  *
-    Card(
-        modifier = modifier.padding(8.dp),
-        colors = CardDefaults.cardColors(
-            containerColor = Color.Black.copy(alpha = 0.4f)
-        ),
-        shape = CircleShape,
-        elevation = CardDefaults.cardElevation(defaultElevation = 6.dp)
+ * @param abilities List of abilities to display
+ * @param cooldowns Map of ability ID to remaining cooldown rounds
+ * @param queuedAbilityId ID of the currently queued ability (if any)
+ * @param onAbilityClick Callback when an ability is clicked
+ * @param ringRadius Distance from center to icon centers
+ * @param iconSize Size of each ability icon
+ * @param maxIcons Maximum number of icons to display in the ring
+ */
+@Composable
+fun AbilityIconRing(
+    abilities: List<AbilityDto>,
+    cooldowns: Map<String, Int> = emptyMap(),
+    queuedAbilityId: String? = null,
+    onAbilityClick: (AbilityDto) -> Unit,
+    modifier: Modifier = Modifier,
+    ringRadius: Dp = 80.dp,
+    iconSize: Dp = 36.dp,
+    maxIcons: Int = 8
+) {
+    // Filter to combat-usable abilities (exclude passive)
+    val usableAbilities = abilities.filter { it.abilityType != "passive" }
+    val displayAbilities = usableAbilities.take(maxIcons)
+    val totalIcons = displayAbilities.size
+
+    if (totalIcons == 0) return
+
+    Box(
+        modifier = modifier.size(ringRadius * 2 + iconSize + 16.dp),
+        contentAlignment = Alignment.Center
     ) {
-        Box(
-            modifier = Modifier.size(220.dp),
-            contentAlignment = Alignment.Center
-        ) {
-            // Background ring with enhanced glow
-            Box(
-                modifier = Modifier
-                    .size(200.dp)
-                    .background(
-                        Brush.radialGradient(
-                            colors = listOf(
-                                MaterialTheme.colorScheme.primary.copy(alpha = 0.15f),
-                                MaterialTheme.colorScheme.primary.copy(alpha = 0.05f),
-                                Color.Transparent
-                            ),
-                            radius = 100f
-                        ),
-                        CircleShape
-                    )
-            )
-            
-            // Arrange abilities in a circle
-            abilities.forEachIndexed { index, ability ->
-                val angle = (index * 360f / abilities.size) - 90f // Start from top
-                val angleRad = Math.toRadians(angle.toDouble())
-                val radius = 80.dp
-                
-                val offsetX = (radius.value * kotlin.math.cos(angleRad)).dp
-                val offsetY = (radius.value * kotlin.math.sin(angleRad)).dp
-                
-                Box(
-                    modifier = Modifier.offset(
-                        x = offsetX,
-                        y = offsetY
-                    )
-                ) {
-                    AbilityIconButton(
-                        iconText = ability.icon,
-                        name = ability.name,
-                        onClick = { onAbilityClick(ability) },
-                        isUsable = ability.isUsable,
-                        cooldownRemaining = ability.cooldownRemaining,
-                        modifier = Modifier.size(56.dp)
-                    )
-                    
-                    // Connection line from center
-                    if (abilities.size > 1) {
-                        Box(
-                            modifier = Modifier
-                                .offset(
-                                    x = (-offsetX * 0.35f),
-                                    y = (-offsetY * 0.35f)
-                                )
-                                .width(2.dp)
-                                .height((radius.value * 0.65).dp)
-                                .background(
-                                    Brush.verticalGradient(
-                                        colors = listOf(
-                                            MaterialTheme.colorScheme.primary.copy(alpha = 0.6f),
-                                            MaterialTheme.colorScheme.primary.copy(alpha = 0.2f)
-                                        )
-                                    ),
-                                    RoundedCornerShape(1.dp)
-                                )
-                                .rotate(angle + 90f)
-                        )
-                    }
-                }
-            }
-            
-            // Enhanced center hub
-            Card(
-                modifier = Modifier.size(40.dp),
-                colors = CardDefaults.cardColors(
-                    containerColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.9f)
-                ),
-                shape = CircleShape,
-                elevation = CardDefaults.cardElevation(defaultElevation = 8.dp)
-            ) {
-                Box(
-                    contentAlignment = Alignment.Center,
-                    modifier = Modifier.fillMaxSize()
-                ) {
-                    Text(
-                        text = "⚔️",
-                        fontSize = 20.sp,
-                        color = MaterialTheme.colorScheme.onPrimary,
-                        style = LocalTextStyle.current.copy(
-                            shadow = Shadow(
-                                color = Color.Black.copy(alpha = 0.5f),
-                                offset = Offset(1f, 1f),
-                                blurRadius = 2f
-                            )
-                        )
-                    )
-                }
-            }
-        }
-    }
-}
+        displayAbilities.forEachIndexed { index, ability ->
+            // Calculate angle (start at top, go clockwise)
+            val angleDegrees = (360f / totalIcons) * index - 90f
+            val angleRadians = angleDegrees * PI / 180.0
+
+            // Calculate offset from center
+            val offsetX = (ringRadius.value * cos(angleRadians)).toFloat().dp
             val offsetY = (ringRadius.value * sin(angleRadians)).toFloat().dp
 
             AbilityIconButton(

@@ -1,193 +1,43 @@
 package com.ez2bg.anotherthread.ui.components
 
+import androidx.compose.animation.core.Spring
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.spring
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
-import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.border
+import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.offset
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material3.*
-import androidx.compose.runtime.Composable
+import androidx.compose.material3.Icon
+import androidx.compose.material3.Text
+import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.alpha
-import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.scale
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.Shadow
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
-import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
-    val isOnCooldown = cooldownRemaining > 0
-    val alpha = if (isOnCooldown || !isUsable) 0.6f else 1.0f
-    val backgroundColor = when {
-        isOnCooldown -> MaterialTheme.colorScheme.surface.copy(alpha = 0.7f)
-        !isUsable -> MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.5f)
-        else -> MaterialTheme.colorScheme.primary.copy(alpha = 0.9f)
-    }
-    
-    Box {
-        Button(
-            onClick = { if (isUsable && !isOnCooldown) onClick() },
-            modifier = modifier
-                .size(72.dp)
-                .alpha(alpha),
-            enabled = isUsable && !isOnCooldown,
-            colors = ButtonDefaults.buttonColors(
-                containerColor = backgroundColor,
-                disabledContainerColor = backgroundColor.copy(alpha = 0.5f)
-            ),
-            shape = RoundedCornerShape(16.dp),
-            contentPadding = PaddingValues(8.dp),
-            elevation = ButtonDefaults.buttonElevation(
-                defaultElevation = if (isUsable && !isOnCooldown) 6.dp else 2.dp
-            )
-        ) {
-            Column(
-                horizontalAlignment = Alignment.CenterHorizontally,
-                verticalArrangement = Arrangement.Center
-            ) {
-                Text(
-                    text = iconText,
-                    fontSize = 24.sp,
-                    fontWeight = FontWeight.Bold,
-                    color = if (isOnCooldown || !isUsable) 
-                        MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f) 
-                    else 
-                        MaterialTheme.colorScheme.onPrimary
-                )
-                
-                if (name.isNotEmpty()) {
-                    Text(
-                        text = name,
-                        fontSize = 9.sp,
-                        color = if (isOnCooldown || !isUsable) 
-                            MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f) 
-                        else 
-                            MaterialTheme.colorScheme.onPrimary,
-                        maxLines = 1,
-                        textAlign = TextAlign.Center,
-                        overflow = TextOverflow.Ellipsis,
-                        fontWeight = FontWeight.Medium
-                    )
-                }
-            }
-        }
-        
-        // Enhanced cooldown overlay
-        if (isOnCooldown) {
-            Surface(
-                modifier = Modifier
-                    .size(72.dp)
-                    .alpha(0.95f),
-                color = Color.Black.copy(alpha = 0.8f),
-                shape = RoundedCornerShape(16.dp)
-            ) {
-                Box(
-                    contentAlignment = Alignment.Center,
-                    modifier = Modifier.fillMaxSize()
-                ) {
-                    Column(
-                        horizontalAlignment = Alignment.CenterHorizontally,
-                        verticalArrangement = Arrangement.Center
-                    ) {
-                        Text(
-                            text = "⏱️",
-                            fontSize = 20.sp
-                        )
-                        Text(
-                            text = cooldownRemaining.toString(),
-                            color = Color.White,
-                            fontSize = 16.sp,
-                            fontWeight = FontWeight.Bold,
-                            style = LocalTextStyle.current.copy(
-                                shadow = Shadow(
-                                    color = Color.Black,
-                                    offset = Offset(1f, 1f),
-                                    blurRadius = 3f
-                                )
-                            )
-                        )
-                        Text(
-                            text = "sec",
-                            color = Color.White.copy(alpha = 0.8f),
-                            fontSize = 10.sp,
-                            fontWeight = FontWeight.Medium
-                        )
-                    }
-                }
-            )
-        }
-        
-        // Visual feedback for unusable abilities
-        if (!isUsable && !isOnCooldown) {
-            Box(
-                modifier = Modifier
-                    .align(Alignment.TopEnd)
-                    .offset(x = 4.dp, y = (-4).dp)
-                    .size(20.dp)
-                    .background(
-                        Color.Red,
-                        CircleShape
-                    ),
-                contentAlignment = Alignment.Center
-            ) {
-                Text(
-                    text = "!",
-                    color = Color.White,
-                    fontSize = 12.sp,
-                    fontWeight = FontWeight.Bold
-                )
-            }
-        }
-    }
-}
-                        overflow = TextOverflow.Ellipsis
-                    )
-                }
-            }
-        }
-        
-        // Enhanced cooldown overlay
-        if (isOnCooldown) {
-            Surface(
-                modifier = Modifier
-                    .size(64.dp)
-                    .alpha(0.95f),
-                color = Color.Black.copy(alpha = 0.8f),
-                shape = RoundedCornerShape(12.dp)
-            ) {
-                Box(
-                    contentAlignment = Alignment.Center,
-                    modifier = Modifier.fillMaxSize()
-                ) {
-                    Column(
-                        horizontalAlignment = Alignment.CenterHorizontally
-                    ) {
-                        Text(
-                            text = "⏱️",
-                            fontSize = 16.sp
-                        )
-                        Text(
-                            text = cooldownRemaining.toString(),
-                            color = Color.White,
-                            fontSize = 14.sp,
-                            fontWeight = FontWeight.Bold,
-                            style = LocalTextStyle.current.copy(
-                                shadow = Shadow(
-                                    color = Color.Black,
-                                    offset = Offset(1f, 1f),
-                                    blurRadius = 2f
-                                )
-                            )
-                        )
-                    }
-                }
-            }
-        }
-    }
-}
+import com.ez2bg.anotherthread.api.AbilityDto
+import kotlinx.coroutines.delay
+
+/**
+ * A circular button representing an ability that can be cast in combat.
+ *
+ * Features:
+ * - Icon based on ability type/effects
+ * - Cooldown overlay with remaining rounds display
+ * - Queued state glow ring
  * - Press animation
  * - Disabled state handling
  */
