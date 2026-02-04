@@ -188,41 +188,100 @@ fun LocationGraphView(
                                 // Decrement visual effect rounds
                                 if (combatBlindRounds > 0) {
                                     combatBlindRounds--
-                                    if (combatBlindRounds <= 0) combatIsBlinded = false
-                                }
-                                if (combatDisorientRounds > 0) {
-                                    combatDisorientRounds--
-                                    if (combatDisorientRounds <= 0) combatIsDisoriented = false
+    // Enhanced loading and error states with better UX
+    if (isLoading) {
+        Box(
+            modifier = Modifier.fillMaxSize(),
+            contentAlignment = Alignment.Center
+        ) {
+            Surface(
+                shape = RoundedCornerShape(16.dp),
+                color = MaterialTheme.colorScheme.surface,
+                shadowElevation = 8.dp
+            ) {
+                Column(
+                    modifier = Modifier.padding(32.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.spacedBy(16.dp)
+                ) {
+                    CircularProgressIndicator(
+                        modifier = Modifier.size(48.dp),
+                        strokeWidth = 4.dp,
+                        color = MaterialTheme.colorScheme.primary
+                    )
+                    Text(
+                        text = "🗺️ Loading world map...",
+                        style = MaterialTheme.typography.titleMedium,
+                        color = MaterialTheme.colorScheme.onSurface
+                    )
+                    Text(
+                        text = "Fetching locations and connections",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+            }
+        }
+        return
+    }
+
+    error?.let { errorMessage ->
+        Box(
+            modifier = Modifier.fillMaxSize(),
+            contentAlignment = Alignment.Center
+        ) {
+            Surface(
+                shape = RoundedCornerShape(16.dp),
+                color = MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.9f),
+                shadowElevation = 8.dp
+            ) {
+                Column(
+                    modifier = Modifier.padding(32.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.spacedBy(16.dp)
+                ) {
+                    Text(
+                        text = "⚠️ Map Loading Error",
+                        style = MaterialTheme.typography.titleLarge,
+                        color = MaterialTheme.colorScheme.onErrorContainer
+                    )
+                    SelectionContainer {
+                        Text(
+                            text = errorMessage,
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onErrorContainer.copy(alpha = 0.8f)
+                        )
+                    }
+                    Button(
+                        onClick = {
+                            scope.launch {
+                                isLoading = true
+                                error = null
+                                try {
+                                    val result = ApiClient.getLocations()
+                                    result.onSuccess { fetchedLocations ->
+                                        locations = fetchedLocations
+                                        // Also refresh terrain overrides
+                                        ApiClient.getTerrainOverrides().onSuccess { overrides ->
+                                            terrainOverridesMap = overrides.associateBy { it.locationId }
+                                        }
+                                    }.onFailure { exception ->
+                                        error = exception.message ?: "Failed to load locations"
+                                    }
+                                } finally {
+                                    isLoading = false
                                 }
                             }
-                            is CombatEvent.CombatEnded -> {
-                                println("DEBUG: Combat ended")
-                                combatSession = null
-                                playerCombatant = null
-                                combatQueuedAbilityId = null
-                                combatCooldowns = emptyMap()
-                                combatIsBlinded = false
-                                combatBlindRounds = 0
-                                combatIsDisoriented = false
-                                combatDisorientRounds = 0
-                                val r = event.response
-                                val msg = when (r.reason) {
-                                    CombatEndReason.ALL_ENEMIES_DEFEATED -> "Victory! +${r.experienceGained} XP"
-                                    CombatEndReason.ALL_PLAYERS_DEFEATED -> "Defeated..."
-                                    CombatEndReason.ALL_PLAYERS_FLED -> "Escaped!"
-                                    else -> "Combat ended"
-                                }
-                                addEventLog(msg, EventType.COMBAT)
-                                if (r.loot.goldEarned > 0) {
-                                    addEventLog("Found ${r.loot.goldEarned} gold!", EventType.LOOT)
-                                }
-                                if (r.loot.itemNames.isNotEmpty()) {
-                                    addEventLog("Looted: ${r.loot.itemNames.joinToString()}", EventType.LOOT)
-                                }
-                            }
-                            is CombatEvent.PlayerDied -> {
-                                println("DEBUG: Player died - respawning at ${event.response.respawnLocationName}")
-                                combatSession = null
+                        },
+                        shape = RoundedCornerShape(8.dp)
+                    ) {
+                        Text("🔄 Retry")
+                    }
+                }
+            }
+        }
+        return
+    }
                                 playerCombatant = null
                                 combatQueuedAbilityId = null
                                 combatCooldowns = emptyMap()
