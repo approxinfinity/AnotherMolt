@@ -411,7 +411,7 @@ object CombatConfig {
     const val MAX_COMBAT_ROUNDS = 100             // Timeout after 100 rounds (~5 minutes)
     const val SESSION_TIMEOUT_MS = 300000L        // 5 minute session timeout
     const val HP_PER_HIT_DIE = 6                  // Average HP per hit die
-    // Resource regeneration (per combat round)
-    const val MANA_REGEN_PER_ROUND = 2            // Mana restored per round
-    const val STAMINA_REGEN_PER_ROUND = 3         // Stamina restored per round (faster than mana)
+    // Resource regeneration (per combat round) - balanced for meaningful resource management
+    const val MANA_REGEN_PER_ROUND = 1            // Mana restored per round (was 2 - reduced to increase tactical value)
+    const val STAMINA_REGEN_PER_ROUND = 2         // Stamina restored per round (was 3 - maintains martial advantage)
 }

@@ -71,7 +71,7 @@ This document tracks all changes made during the adventure mode refactoring focu
 
 **Priority Fixes:**
 1. ✅ **IMPLEMENTED**: Gold drop system for immediate progression feedback
-2. Review and balance resource regeneration rates
+2. ✅ **IMPLEMENTED**: Balanced resource regeneration rates
 3. Add creature loot tables for equipment progression
 4. Adjust creature HP/damage ratios for better pacing
 
@@ -101,3 +101,27 @@ This document tracks all changes made during the adventure mode refactoring focu
 **Files Modified:**
 - `server/src/main/kotlin/com/ez2bg/anotherthread/SimpleGoldBalancer.kt` (new)
 - `server/src/main/kotlin/com/ez2bg/anotherthread/Application.kt` (startup integration)
+
+### [Session 4 - Resource Regeneration Balance]
+**Date:** 2026-02-04  
+**Focus:** Addressing resource management balance
+
+**Problem Identified:**
+- Previous rates (2 mana/3 stamina per round) potentially too generous
+- With 3-second rounds, players recovered 40 mana/60 stamina per minute
+- Resource management became trivial in longer combats
+
+**Implementation:**
+- Reduced mana regeneration: 2 → 1 per round
+- Reduced stamina regeneration: 3 → 2 per round
+- Maintains martial class advantage (stamina > mana regen)
+- Now: 20 mana/40 stamina per minute recovery
+
+**Impact:**
+- Resource management becomes more meaningful and tactical
+- Players must choose abilities more carefully in sustained combat
+- Maintains class identity (martial classes still have stamina advantage)
+- Combat pacing encourages strategic resource usage
+
+**Files Modified:**
+- `server/src/main/kotlin/com/ez2bg/anotherthread/combat/CombatModels.kt` (regeneration constants)
