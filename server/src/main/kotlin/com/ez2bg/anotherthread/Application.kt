@@ -21,6 +21,7 @@ import com.ez2bg.anotherthread.routes.pdfRoutes
 import com.ez2bg.anotherthread.routes.spellRoutes
 import com.ez2bg.anotherthread.routes.userRoutes
 import com.ez2bg.anotherthread.spell.*
+import com.ez2bg.anotherthread.SimpleGoldBalancer
 import io.ktor.server.request.header
 import io.ktor.http.*
 import io.ktor.serialization.kotlinx.json.*
@@ -1038,6 +1039,7 @@ fun Application.module() {
     SpellFeatureSeed.seedIfEmpty()
 
     // Seed Fungus Forest content (creatures, items, loot tables, chest)
+    SimpleGoldBalancer.addMissingGoldDrops()
     FungusForestSeed.seedIfEmpty()
 
     // Initialize file directories
