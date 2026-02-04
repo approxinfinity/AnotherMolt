@@ -1,63 +1,116 @@
 package com.ez2bg.anotherthread.ui.components
 
-import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Shadow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.text.font.FontWeight
     LazyColumn(
+    Card(
         modifier = modifier
-            .fillMaxHeight()
-            .background(
-                Color.Black.copy(alpha = 0.8f),
-                RoundedCornerShape(8.dp)
-            )
+            .fillMaxSize()
             .padding(8.dp),
-        reverseLayout = true,
-        verticalArrangement = Arrangement.spacedBy(4.dp)
+        colors = CardDefaults.cardColors(
+            containerColor = Color.Black.copy(alpha = 0.85f)
+        ),
+        shape = RoundedCornerShape(12.dp),
+        elevation = CardDefaults.cardElevation(defaultElevation = 4.dp)
     ) {
-        items(events.takeLast(100)) { event ->
-            val eventColor = when {
-                event.contains("damage", ignoreCase = true) || event.contains("hit", ignoreCase = true) -> Color(0xFFFF5252) // Red for damage
-                event.contains("heal", ignoreCase = true) || event.contains("restore", ignoreCase = true) -> Color(0xFF4CAF50) // Green for healing
-                event.contains("cast", ignoreCase = true) || event.contains("spell", ignoreCase = true) -> Color(0xFF2196F3) // Blue for spells
-                event.contains("miss", ignoreCase = true) || event.contains("dodge", ignoreCase = true) -> Color(0xFF757575) // Gray for misses
-                event.contains("critical", ignoreCase = true) || event.contains("crit", ignoreCase = true) -> Color(0xFFFFD700) // Gold for crits
-                event.contains("enter", ignoreCase = true) || event.contains("leave", ignoreCase = true) || event.contains("travel", ignoreCase = true) -> Color(0xFF9C27B0) // Purple for movement
-                event.contains("death", ignoreCase = true) || event.contains("die", ignoreCase = true) || event.contains("killed", ignoreCase = true) -> Color(0xFF8B0000) // Dark red for death
-                event.contains("level", ignoreCase = true) || event.contains("experience", ignoreCase = true) -> Color(0xFFFFD700) // Gold for progression
-                event.contains("gold", ignoreCase = true) || event.contains("coin", ignoreCase = true) -> Color(0xFFFFD700) // Gold for money
-                event.contains("error", ignoreCase = true) || event.contains("fail", ignoreCase = true) -> Color(0xFFFF6B6B) // Light red for errors
-                else -> Color.White
+        LazyColumn(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(12.dp),
+            reverseLayout = true,
+            verticalArrangement = Arrangement.spacedBy(6.dp)
+        ) {
+            items(events.takeLast(100)) { event ->
+                EventCard(event = event)
             }
+        }
+    }
+}
+
+@Composable
+private fun EventCard(
+    event: String,
+    modifier: Modifier = Modifier
+) {
+    val eventColor = getEventColor(event)
+    val eventIcon = getEventIcon(event)
+    
+    Card(
+        modifier = modifier.fillMaxWidth(),
+        colors = CardDefaults.cardColors(
+            containerColor = eventColor.copy(alpha = 0.15f)
+        ),
+        shape = RoundedCornerShape(8.dp)
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(12.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            Text(
+                text = eventIcon,
+                fontSize = 16.sp
+            )
             
-            Card(
-                modifier = Modifier.fillMaxWidth(),
-                colors = CardDefaults.cardColors(
-                    containerColor = Color.Black.copy(alpha = 0.4f)
-                ),
-                shape = RoundedCornerShape(6.dp)
-            ) {
-                Text(
-                    text = event,
-                    color = eventColor,
-                    fontSize = 12.sp,
-                    lineHeight = 16.sp,
-                    modifier = Modifier.padding(8.dp),
-                    style = LocalTextStyle.current.copy(
-                        shadow = Shadow(
-                            color = Color.Black,
+            Text(
+                text = event,
+                color = eventColor,
+                fontSize = 13.sp,
+                lineHeight = 18.sp,
+                style = LocalTextStyle.current.copy(
+                    shadow = Shadow(
+                        color = Color.Black.copy(alpha = 0.5f),
+                        offset = Offset(0.5f, 0.5f),
+                        blurRadius = 1f
+                    )
+                )
+            )
+        }
+    }
+}
+
+private fun getEventColor(event: String): Color {
+    return when {
+        event.contains("damage", ignoreCase = true) || event.contains("hit", ignoreCase = true) -> Color(0xFFFF5252)
+        event.contains("heal", ignoreCase = true) || event.contains("restore", ignoreCase = true) -> Color(0xFF4CAF50)
+        event.contains("cast", ignoreCase = true) || event.contains("spell", ignoreCase = true) -> Color(0xFF2196F3)
+        event.contains("miss", ignoreCase = true) || event.contains("dodge", ignoreCase = true) -> Color(0xFF757575)
+        event.contains("critical", ignoreCase = true) || event.contains("crit", ignoreCase = true) -> Color(0xFFFFD700)
+        event.contains("enter", ignoreCase = true) || event.contains("leave", ignoreCase = true) -> Color(0xFF9C27B0)
+        event.contains("death", ignoreCase = true) || event.contains("die", ignoreCase = true) -> Color(0xFF8B0000)
+        event.contains("level", ignoreCase = true) || event.contains("experience", ignoreCase = true) -> Color(0xFFFFD700)
+        event.contains("gold", ignoreCase = true) || event.contains("coin", ignoreCase = true) -> Color(0xFFFFD700)
+        else -> Color.White
+    }
+}
+
+private fun getEventIcon(event: String): String {
+    return when {
+        event.contains("damage", ignoreCase = true) || event.contains("hit", ignoreCase = true) -> "⚔️"
+        event.contains("heal", ignoreCase = true) || event.contains("restore", ignoreCase = true) -> "💚"
+        event.contains("cast", ignoreCase = true) || event.contains("spell", ignoreCase = true) -> "🔮"
+        event.contains("miss", ignoreCase = true) || event.contains("dodge", ignoreCase = true) -> "💨"
+        event.contains("critical", ignoreCase = true) || event.contains("crit", ignoreCase = true) -> "💥"
+        event.contains("enter", ignoreCase = true) || event.contains("leave", ignoreCase = true) -> "🚶"
+        event.contains("death", ignoreCase = true) || event.contains("die", ignoreCase = true) -> "💀"
+        event.contains("level", ignoreCase = true) || event.contains("experience", ignoreCase = true) -> "⭐"
+        event.contains("gold", ignoreCase = true) || event.contains("coin", ignoreCase = true) -> "💰"
+        else -> "📝"
+    }
+}
                             offset = Offset(0.5f, 0.5f),
                             blurRadius = 1f
                         )
