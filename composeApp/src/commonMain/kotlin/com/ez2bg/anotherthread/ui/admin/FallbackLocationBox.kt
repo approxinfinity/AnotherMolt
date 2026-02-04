@@ -9,50 +9,75 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.remember
-import androidx.compose.ui.Alignment
-import androidx.compose.ui.Modifier
-import androidx.compose.ui.geometry.Offset
-import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.Path
-import androidx.compose.ui.graphics.StrokeCap
-import androidx.compose.ui.graphics.drawscope.Stroke
-import androidx.compose.ui.text.style.TextAlign
-import androidx.compose.ui.text.style.TextOverflow
-import androidx.compose.ui.unit.dp
-import com.ez2bg.anotherthread.api.LocationDto
-
-/**
- * Fallback location box displayed when no image is available.
- * Shows terrain background, mystery icon (question mark), and name at bottom.
- */
 @Composable
-internal fun FallbackLocationBox(location: LocationDto) {
-    // Mimic the look of a real location image: terrain background, mystery icon, name at bottom
+fun FallbackLocationBox(
+    location: LocationDto,
+    modifier: Modifier = Modifier
+) {
+    // Get terrain-based color and description for enhanced fallback
     val terrainColor = remember(location) { getTerrainColor(location.desc, location.name) }
-
-    Box(
-        modifier = Modifier
-            .fillMaxSize()
-            .background(terrainColor.copy(alpha = 0.7f))
+    val terrainDescription = remember(location) { getPrimaryTerrainDescription(location.desc, location.name) }
+    
+    Surface(
+        modifier = modifier,
+        color = terrainColor.copy(alpha = 0.3f),
+        shape = RoundedCornerShape(8.dp)
     ) {
-        // Draw a simple hill silhouette with question mark
-        Canvas(modifier = Modifier.fillMaxSize()) {
-            val width = size.width
-            val height = size.height
-
-            // Draw rolling hills silhouette at the bottom third
-            val hillColor = Color(0xFF2A3A2A).copy(alpha = 0.6f)
-            val hillPath = Path().apply {
-                moveTo(0f, height * 0.75f)
-                // First hill
-                quadraticTo(width * 0.15f, height * 0.55f, width * 0.3f, height * 0.7f)
-                // Second hill (taller)
-                quadraticTo(width * 0.5f, height * 0.45f, width * 0.7f, height * 0.65f)
-                // Third hill
-                quadraticTo(width * 0.85f, height * 0.5f, width, height * 0.7f)
-                lineTo(width, height)
-                lineTo(0f, height)
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .background(
+                    brush = Brush.radialGradient(
+                        colors = listOf(
+                            terrainColor.copy(alpha = 0.2f),
+                            terrainColor.copy(alpha = 0.6f)
+                        )
+                    )
+                ),
+            contentAlignment = Alignment.Center
+        ) {
+            Column(
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.spacedBy(4.dp)
+            ) {
+                // Terrain-based emoji icon
+                Text(
+                    text = terrainDescription.take(2), // Extract emoji
+                    style = MaterialTheme.typography.headlineMedium,
+                    modifier = Modifier.padding(bottom = 4.dp)
+                )
+                
+                // Location name (abbreviated if long)
+                Text(
+                    text = if (location.name.length > 12) {
+                        location.name.take(10) + "..."
+                    } else {
+                        location.name
+                    },
+                    style = MaterialTheme.typography.labelMedium,
+                    color = Color.White,
+                    textAlign = TextAlign.Center,
+                    fontWeight = FontWeight.Medium,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis
+                )
+                
+                // Terrain type label
+                Surface(
+                    shape = RoundedCornerShape(4.dp),
+                    color = Color.Black.copy(alpha = 0.3f)
+                ) {
+                    Text(
+                        text = terrainDescription.drop(2).trim(), // Remove emoji, keep description
+                        style = MaterialTheme.typography.labelSmall,
+                        color = Color.White.copy(alpha = 0.9f),
+                        modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                    )
+                }
+            }
+        }
+    }
+}
                 close()
             }
             drawPath(hillPath, color = hillColor)
