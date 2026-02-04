@@ -214,32 +214,41 @@ fun calculateForceDirectedPositions(
 
     // Handle disconnected locations (not reachable from any placed location)
     locations.filter { it.id !in gridPositions }.forEachIndexed { index, loc ->
-        // Use stored coords if available, otherwise place below the main graph
-        if (loc.gridX != null && loc.gridY != null) {
-            gridPositions[loc.id] = Pair(loc.gridX, loc.gridY)
-        } else {
-            val maxY = gridPositions.values.maxOfOrNull { it.second } ?: 0
-            gridPositions[loc.id] = findNearbyFreeSpot(Pair(index, maxY + 2), gridPositions.values.toSet())
-        }
+/**
+ * Enhanced terrain color mapping for better visual distinction on the map
+ * Returns colors optimized for both collapsed dots and expanded highlights
+ */
+fun getTerrainColor(desc: String, locationName: String): Color {
+    val terrains = parseTerrainFromDescription(desc, locationName)
+    
+    // Prioritize more specific/interesting terrains first
+    return when {
+        TerrainType.VOLCANO in terrains -> Color(0xFFFF4444) // Bright red
+        TerrainType.LAVA in terrains -> Color(0xFFFF6600) // Orange-red
+        TerrainType.MOUNTAIN in terrains -> Color(0xFF8D6E63) // Mountain brown
+        TerrainType.HILLS in terrains -> Color(0xFFA1887F) // Light brown
+        TerrainType.LAKE in terrains -> Color(0xFF1976D2) // Deep blue
+        TerrainType.WATER in terrains -> Color(0xFF2196F3) // Blue
+        TerrainType.OCEAN in terrains -> Color(0xFF0277BD) // Dark blue
+        TerrainType.RIVER in terrains -> Color(0xFF03A9F4) // Light blue
+        TerrainType.STREAM in terrains -> Color(0xFF4FC3F7) // Pale blue
+        TerrainType.SWAMP in terrains -> Color(0xFF558B2F) // Dark green
+        TerrainType.FOREST in terrains -> Color(0xFF388E3C) // Forest green
+        TerrainType.JUNGLE in terrains -> Color(0xFF2E7D32) // Deep jungle green
+        TerrainType.GRASS in terrains -> Color(0xFF8BC34A) // Light green
+        TerrainType.FIELD in terrains -> Color(0xFF9CCC65) // Bright green
+        TerrainType.DESERT in terrains -> Color(0xFFFFA726) // Sandy orange
+        TerrainType.BEACH in terrains -> Color(0xFFFFCC02) // Golden yellow
+        TerrainType.CAVE in terrains -> Color(0xFF424242) // Dark gray
+        TerrainType.UNDERGROUND in terrains -> Color(0xFF616161) // Medium gray
+        TerrainType.ICE in terrains -> Color(0xFFB3E5FC) // Ice blue
+        TerrainType.SNOW in terrains -> Color(0xFFE1F5FE) // Snow white-blue
+        TerrainType.ROAD in terrains -> Color(0xFF795548) // Road brown
+        TerrainType.PATH in terrains -> Color(0xFFBCAAA4) // Light path brown
+        TerrainType.BRIDGE in terrains -> Color(0xFF6D4C41) // Dark bridge brown
+        else -> Color(0xFFD4B896) // Default tan for wilderness/undefined
     }
-
-    // Normalize grid positions to 0.0-1.0 range
-    val allPositions = gridPositions.values.toList()
-    val minX = allPositions.minOfOrNull { it.first } ?: 0
-    val maxX = allPositions.maxOfOrNull { it.first } ?: 0
-    val minY = allPositions.minOfOrNull { it.second } ?: 0
-    val maxY = allPositions.maxOfOrNull { it.second } ?: 0
-
-    val rangeX = (maxX - minX).coerceAtLeast(1)
-    val rangeY = (maxY - minY).coerceAtLeast(1)
-
-    // Add padding and convert to normalized coordinates
-    val spacingMultiplier = 1.0f
-    val padding = 0.15f
-    val availableRange = 1f - 2 * padding
-
-    val locationPositions = gridPositions.mapValues { (id, gridPos) ->
-        val normalizedX = if (rangeX == 1) 0.5f else padding + availableRange * (gridPos.first - minX).toFloat() / rangeX * spacingMultiplier
+}
         val normalizedY = if (rangeY == 1) 0.5f else padding + availableRange * (gridPos.second - minY).toFloat() / rangeY * spacingMultiplier
         LocationPosition(
             location = locationMap[id]!!,
