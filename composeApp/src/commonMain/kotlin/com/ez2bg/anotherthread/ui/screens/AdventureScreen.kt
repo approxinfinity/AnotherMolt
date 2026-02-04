@@ -1,28 +1,22 @@
 package com.ez2bg.anotherthread.ui.screens
 
-import androidx.compose.animation.core.animateFloatAsState
-import androidx.compose.animation.core.tween
-import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
-import androidx.compose.foundation.border
-import androidx.compose.foundation.clickable
-import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.ArrowBack
-import androidx.compose.material.icons.automirrored.filled.ArrowForward
-import androidx.compose.material.icons.filled.ArrowDownward
-import androidx.compose.material.icons.filled.ArrowUpward
-import androidx.compose.material.icons.filled.Dangerous
-import androidx.compose.material.icons.filled.MeetingRoom
-import androidx.compose.material.icons.filled.NorthEast
-import androidx.compose.material.icons.filled.NorthWest
-import androidx.compose.material.icons.filled.Person
-import androidx.compose.material.icons.filled.SouthEast
-import androidx.compose.material.icons.filled.SouthWest
 import androidx.compose.material3.*
+import androidx.compose.runtime.*
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
+import androidx.lifecycle.viewmodel.compose.viewModel
+import com.ez2bg.anotherthread.ui.components.*
+import com.ez2bg.anotherthread.viewmodels.AdventureViewModel
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -32,54 +26,149 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.drawscope.Stroke
-import androidx.compose.ui.graphics.graphicsLayer
-import androidx.compose.ui.input.pointer.pointerInput
-import androidx.compose.ui.layout.ContentScale
-import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.style.TextAlign
-import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
-import coil3.compose.AsyncImage
-import com.ez2bg.anotherthread.AppConfig
-import com.ez2bg.anotherthread.api.AbilityDto
-import com.ez2bg.anotherthread.api.CreatureDto
-import com.ez2bg.anotherthread.api.ExitDirection
-import com.ez2bg.anotherthread.api.ExitDto
-import com.ez2bg.anotherthread.api.ItemDto
-import com.ez2bg.anotherthread.api.LocationDto
-import com.ez2bg.anotherthread.api.UserDto
-import com.ez2bg.anotherthread.ui.CreatureStateIcon
-import com.ez2bg.anotherthread.ui.SwordIcon
-import com.ez2bg.anotherthread.ui.getBlindItemDescription
-import com.ez2bg.anotherthread.ui.getBlindPresenceDescription
-import com.ez2bg.anotherthread.ui.components.AbilityIconButton
-import com.ez2bg.anotherthread.ui.components.AbilityIconSmall
-import com.ez2bg.anotherthread.ui.components.BlindOverlay
-import com.ez2bg.anotherthread.ui.components.CombatTarget
-import com.ez2bg.anotherthread.ui.components.DisorientIndicator
-import com.ez2bg.anotherthread.ui.components.EventLog
-import com.ez2bg.anotherthread.ui.components.TargetSelectionOverlay
-import com.ez2bg.anotherthread.ui.admin.getTerrainColor
-import kotlinx.coroutines.launch
-import kotlin.math.PI
-import kotlin.math.cos
-import kotlin.math.sin
-
-// Preview imports
-import androidx.compose.ui.tooling.preview.Preview
-
-/**
- * Adventure mode screen - completely separate from Create mode.
- * Full-screen immersive experience with solid black background.
- *
- * This composable handles all adventure mode UI including:
- * - Central location thumbnail with ability ring
- * - Navigation arrows
- * - Minimap in top-right
- * - Info panel with creatures/items
- * - Detail view for inspecting creatures/items
- * - Combat integration via CombatStateHolder
- */
+    // Apply dark theme background gradient
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(
+                Brush.verticalGradient(
+                    colors = listOf(
+                        Color(0xFF0D1B2A), // Deep navy
+                        Color(0xFF1B263B), // Darker blue
+                        Color(0xFF1A1A1A)  // Near black
+                    )
+                )
+            )
+    ) {
+        Column(
+            modifier = Modifier.fillMaxSize()
+        ) {
+            // Enhanced top bar with location info
+            Card(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(8.dp),
+                colors = CardDefaults.cardColors(
+                    containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.95f)
+                ),
+                elevation = CardDefaults.cardElevation(defaultElevation = 8.dp)
+            ) {
+                Column(
+                    modifier = Modifier.padding(16.dp)
+                ) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Column(
+                            modifier = Modifier.weight(1f)
+                        ) {
+                            Text(
+                                text = uiState.currentLocation?.name ?: "Unknown Location",
+                                style = MaterialTheme.typography.titleLarge,
+                                fontWeight = FontWeight.Bold,
+                                color = MaterialTheme.colorScheme.primary
+                            )
+                            
+                            if (uiState.currentLocation?.description?.isNotEmpty() == true) {
+                                Text(
+                                    text = uiState.currentLocation.description,
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.8f),
+                                    maxLines = 2,
+                                    overflow = TextOverflow.Ellipsis
+                                )
+                            }
+                        }
+                        
+                        // Player status badges
+                        Column(
+                            horizontalAlignment = Alignment.End,
+                            verticalArrangement = Arrangement.spacedBy(4.dp)
+                        ) {
+                            uiState.player?.let { player ->
+                                Badge(
+                                    containerColor = MaterialTheme.colorScheme.primaryContainer
+                                ) {
+                                    Text(
+                                        text = "${player.name} (Lv. ${player.level})",
+                                        fontWeight = FontWeight.Bold,
+                                        fontSize = 12.sp
+                                    )
+                                }
+                                
+                                if (player.isInCombat == true) {
+                                    Badge(
+                                        containerColor = Color.Red.copy(alpha = 0.8f)
+                                    ) {
+                                        Text(
+                                            text = "⚔️ In Combat",
+                                            color = Color.White,
+                                            fontWeight = FontWeight.Bold,
+                                            fontSize = 10.sp
+                                        )
+                                    }
+                                }
+                            }
+            // Enhanced navigation tabs
+            Card(
+                modifier = Modifier.fillMaxWidth(),
+                colors = CardDefaults.cardColors(
+                    containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.9f)
+                ),
+                shape = RoundedCornerShape(0.dp) // Square edges to connect with content
+            ) {
+                TabRow(
+                    selectedTabIndex = selectedTab.ordinal,
+                    containerColor = Color.Transparent,
+                    contentColor = MaterialTheme.colorScheme.primary,
+                    indicator = { tabPositions ->
+                        TabRowDefaults.Indicator(
+                            modifier = Modifier.tabIndicatorOffset(tabPositions[selectedTab.ordinal]),
+                            color = MaterialTheme.colorScheme.primary,
+                            height = 3.dp
+                        )
+                    }
+                ) {
+                    AdventureTab.values().forEach { tab ->
+                        val isSelected = selectedTab == tab
+                        
+                        Tab(
+                            selected = isSelected,
+                            onClick = { selectedTab = tab },
+                            modifier = Modifier.padding(vertical = 8.dp)
+                        ) {
+                            Column(
+                                horizontalAlignment = Alignment.CenterHorizontally,
+                                verticalArrangement = Arrangement.spacedBy(4.dp)
+                            ) {
+                                Text(
+                                    text = when (tab) {
+                                        AdventureTab.CHAT -> "💬"
+                                        AdventureTab.COMBAT -> "⚔️"
+                                        AdventureTab.TRAVEL -> "🗺️"
+                                        AdventureTab.REST -> "💤"
+                                        AdventureTab.SPELLS -> "🔮"
+                                    },
+                                    fontSize = 20.sp,
+                                    modifier = Modifier.alpha(if (isSelected) 1.0f else 0.6f)
+                                )
+                                
+                                Text(
+                                    text = tab.name.lowercase().replaceFirstChar { it.uppercase() },
+                                    style = MaterialTheme.typography.labelMedium,
+                                    fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal,
+                                    color = if (isSelected) 
+                                        MaterialTheme.colorScheme.primary 
+                                    else 
+                                        MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f)
+                                )
+                            }
+                        }
+                    }
+                }
+            }
 @Composable
 fun AdventureScreen(
     currentUser: UserDto?,
