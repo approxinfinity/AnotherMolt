@@ -1,73 +1,185 @@
 package com.ez2bg.anotherthread.ui.components
 
 import androidx.compose.foundation.background
-import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Close
-import androidx.compose.material.icons.filled.Person
-import androidx.compose.material.icons.filled.Pets
-import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
-import androidx.compose.material3.Text
+import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.style.TextAlign
-import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.ez2bg.anotherthread.api.AbilityDto
-
-/**
- * Data class representing a potential target for an ability.
- */
-data class CombatTarget(
-    val id: String,
-    val name: String,
-    val currentHp: Int,
-    val maxHp: Int,
-    val isPlayer: Boolean,
-    val isAlive: Boolean = true
-)
-
-/**
- * Overlay for selecting a target when casting a single-target ability.
- *
- * Displays available targets as clickable cards with health information.
- */
-@Composable
-fun TargetSelectionOverlay(
-    ability: AbilityDto,
-    targets: List<CombatTarget>,
-    onTargetSelected: (String) -> Unit,
-    onCancel: () -> Unit,
-    modifier: Modifier = Modifier
-) {
+import com.ez2bg.anotherthread.models.Enemy
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
     Box(
-        modifier = modifier
+        modifier = Modifier
             .fillMaxSize()
             .background(Color.Black.copy(alpha = 0.7f))
-            .clickable { onCancel() }
+            .clickable { onCancel() },
+        contentAlignment = Alignment.Center
     ) {
-        Column(
+        Card(
             modifier = Modifier
-                .align(Alignment.Center)
-                .padding(24.dp),
-            horizontalAlignment = Alignment.CenterHorizontally
+                .fillMaxWidth(0.9f)
+                .fillMaxHeight(0.8f),
+            colors = CardDefaults.cardColors(
+                containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.98f)
+            ),
+            elevation = CardDefaults.cardElevation(defaultElevation = 12.dp),
+            shape = RoundedCornerShape(16.dp)
         ) {
-            // Header with ability name and cancel button
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
+            Column(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(20.dp)
             ) {
+                // Header with close button
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        text = "🎯 Select Target",
+                        style = MaterialTheme.typography.headlineSmall,
+                        color = MaterialTheme.colorScheme.primary,
+                        fontWeight = FontWeight.Bold
+                    )
+                    
+                    FilledIconButton(
+                        onClick = onCancel,
+                        colors = IconButtonDefaults.filledIconButtonColors(
+                            containerColor = MaterialTheme.colorScheme.errorContainer
+                        )
+                    ) {
+                        Text(
+                            text = "✕",
+                            fontSize = 16.sp,
+                            color = MaterialTheme.colorScheme.onErrorContainer
+                        )
+                    }
+                }
+                
+                Spacer(modifier = Modifier.height(16.dp))
+                
+                // Target list
+                LazyColumn(
+                    modifier = Modifier.weight(1f),
+                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    items(targets) { target ->
+                        Card(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clickable { onTargetSelected(target) },
+                            colors = CardDefaults.cardColors(
+                                containerColor = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.9f)
+                            ),
+                            shape = RoundedCornerShape(12.dp),
+                            elevation = CardDefaults.cardElevation(defaultElevation = 4.dp)
+                        ) {
+                            Column(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(16.dp)
+                            ) {
+                                // Target name and level
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Text(
+                                        text = target.name,
+                                        style = MaterialTheme.typography.titleMedium,
+                                        fontWeight = FontWeight.Bold,
+                                        color = MaterialTheme.colorScheme.onPrimaryContainer
+                                    )
+                                    
+                                    Badge(
+                                        containerColor = MaterialTheme.colorScheme.secondary
+                                    ) {
+                                        Text(
+                                            text = "Lv. ${target.level}",
+                                            fontSize = 10.sp,
+                                            fontWeight = FontWeight.Bold
+                                        )
+                                    }
+                                }
+                                
+                                Spacer(modifier = Modifier.height(8.dp))
+                                
+                                // Health information
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.SpaceBetween
+                                ) {
+                                    Text(
+                                        text = "Health",
+                                        style = MaterialTheme.typography.bodyMedium,
+                                        color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.8f)
+                                    )
+                                    
+                                    val healthPercentage = target.currentHp.toFloat() / target.maxHp.toFloat()
+                                    Text(
+                                        text = "${target.currentHp}/${target.maxHp} (${(healthPercentage * 100).toInt()}%)",
+                                        style = MaterialTheme.typography.bodyMedium,
+                                        fontWeight = FontWeight.Bold,
+                                        color = when {
+                                            healthPercentage > 0.6f -> Color(0xFF4CAF50)
+                                            healthPercentage > 0.3f -> Color(0xFFFF9800)
+                                            else -> Color(0xFFF44336)
+                                        }
+                                    )
+                                }
+                                
+                                // Health bar
+                                Box(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .height(8.dp)
+                                        .background(
+                                            Color.Black.copy(alpha = 0.2f),
+                                            RoundedCornerShape(4.dp)
+                                        )
+                                ) {
+                                    val healthPercentage = target.currentHp.toFloat() / target.maxHp.toFloat()
+                                    val healthColor = when {
+                                        healthPercentage > 0.6f -> Color(0xFF4CAF50)
+                                        healthPercentage > 0.3f -> Color(0xFFFF9800)
+                                        else -> Color(0xFFF44336)
+                                    }
+                                    
+                                    Box(
+                                        modifier = Modifier
+                                            .fillMaxHeight()
+                                            .fillMaxWidth(healthPercentage)
+                                            .background(
+                                                Brush.horizontalGradient(
+                                                    colors = listOf(
+                                                        healthColor.copy(alpha = 0.8f),
+                                                        healthColor
+                                                    )
+                                                ),
+                                                RoundedCornerShape(4.dp)
+                                            )
+                                    )
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
                 Spacer(Modifier.width(40.dp))  // Balance the close button
                 Text(
                     text = "Select Target for ${ability.name}",
