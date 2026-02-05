@@ -161,6 +161,30 @@ fun AbilityIconButton(
             }
         }
 
+        // Cost label below button
+        val costText = when {
+            ability.manaCost > 0 && ability.staminaCost > 0 -> "${ability.manaCost}M ${ability.staminaCost}S"
+            ability.manaCost > 0 -> "${ability.manaCost} MP"
+            ability.staminaCost > 0 -> "${ability.staminaCost} SP"
+            else -> null
+        }
+        if (costText != null) {
+            Text(
+                text = costText,
+                color = when {
+                    isOnCooldown || !enabled -> Color.Gray
+                    ability.manaCost > 0 -> Color(0xFF64B5F6)
+                    else -> Color(0xFFFFA726)
+                },
+                fontSize = 8.sp,
+                fontWeight = FontWeight.Medium,
+                textAlign = TextAlign.Center,
+                modifier = Modifier
+                    .align(Alignment.BottomCenter)
+                    .offset(y = 2.dp)
+            )
+        }
+
         // Name tooltip on long press
         if (showNameTooltip) {
             LaunchedEffect(Unit) {

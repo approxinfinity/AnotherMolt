@@ -126,6 +126,107 @@ fun Route.adminRoutes() {
         }
     }
 
+    // Generic image backfill - generate images for all entities missing them
+    post("/admin/backfill-images") {
+        application.launch {
+            log.info("Starting image backfill for all entity types...")
+
+            // Users
+            val users = UserRepository.findAll().filter { it.imageUrl == null }
+            log.info("Backfill: ${users.size} users missing images")
+            for (user in users) {
+                ImageGenerationService.generateImage(
+                    entityType = "user",
+                    entityId = user.id,
+                    description = user.desc.ifBlank { "Fantasy adventurer named ${user.name}" },
+                    entityName = user.name
+                ).onSuccess { imageUrl ->
+                    UserRepository.updateImageUrl(user.id, imageUrl)
+                    log.info("Backfill: Generated image for user ${user.name}")
+                }.onFailure { error ->
+                    log.warn("Backfill: Failed to generate image for user ${user.name}: ${error.message}")
+                }
+            }
+
+            // Creatures
+            val creatures = CreatureRepository.findAll().filter { it.imageUrl == null }
+            log.info("Backfill: ${creatures.size} creatures missing images")
+            for (creature in creatures) {
+                ImageGenerationService.generateImage(
+                    entityType = "creature",
+                    entityId = creature.id,
+                    description = creature.desc,
+                    entityName = creature.name
+                ).onSuccess { imageUrl ->
+                    CreatureRepository.updateImageUrl(creature.id, imageUrl)
+                    log.info("Backfill: Generated image for creature ${creature.name}")
+                }.onFailure { error ->
+                    log.warn("Backfill: Failed to generate image for creature ${creature.name}: ${error.message}")
+                }
+            }
+
+            // Items
+            val items = ItemRepository.findAll().filter { it.imageUrl == null }
+            log.info("Backfill: ${items.size} items missing images")
+            for (item in items) {
+                ImageGenerationService.generateImage(
+                    entityType = "item",
+                    entityId = item.id,
+                    description = item.desc,
+                    entityName = item.name
+                ).onSuccess { imageUrl ->
+                    ItemRepository.updateImageUrl(item.id, imageUrl)
+                    log.info("Backfill: Generated image for item ${item.name}")
+                }.onFailure { error ->
+                    log.warn("Backfill: Failed to generate image for item ${item.name}: ${error.message}")
+                }
+            }
+
+            // Locations - skip biome-generated wilderness (has biome data but not hand-crafted)
+            val locations = LocationRepository.findAll().filter { loc ->
+                loc.imageUrl == null && loc.biome == null // Only non-biome locations
+            }
+            log.info("Backfill: ${locations.size} non-biome locations missing images")
+            for (location in locations) {
+                ImageGenerationService.generateImage(
+                    entityType = "location",
+                    entityId = location.id,
+                    description = location.desc,
+                    entityName = location.name
+                ).onSuccess { imageUrl ->
+                    LocationRepository.updateImageUrl(location.id, imageUrl)
+                    log.info("Backfill: Generated image for location ${location.name}")
+                }.onFailure { error ->
+                    log.warn("Backfill: Failed to generate image for location ${location.name}: ${error.message}")
+                }
+            }
+
+            // Chests
+            val chests = ChestRepository.findAll().filter { it.imageUrl == null }
+            log.info("Backfill: ${chests.size} chests missing images")
+            for (chest in chests) {
+                ImageGenerationService.generateImage(
+                    entityType = "chest",
+                    entityId = chest.id,
+                    description = chest.desc,
+                    entityName = chest.name
+                ).onSuccess { imageUrl ->
+                    ChestRepository.updateImageUrl(chest.id, imageUrl)
+                    log.info("Backfill: Generated image for chest ${chest.name}")
+                }.onFailure { error ->
+                    log.warn("Backfill: Failed to generate image for chest ${chest.name}: ${error.message}")
+                }
+            }
+
+            log.info("Image backfill complete!")
+        }
+
+        call.respond(HttpStatusCode.Accepted, mapOf(
+            "message" to "Image backfill started for all entity types (users, creatures, items, non-biome locations, chests)",
+            "note" to "Check server logs for progress. Biome-generated map locations are skipped."
+        ))
+    }
+
     // Service health and management routes (admin only)
     route("/admin/services") {
         // Get health status of local services (Ollama, Stable Diffusion)

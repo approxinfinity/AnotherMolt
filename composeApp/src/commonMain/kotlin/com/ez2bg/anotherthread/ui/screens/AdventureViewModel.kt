@@ -487,6 +487,7 @@ class AdventureViewModel(
 
     val cooldowns = CombatStateHolder.cooldowns
     val queuedAbilityId = CombatStateHolder.queuedAbilityId
+    val playerCombatant = CombatStateHolder.playerCombatant
     val isBlinded = CombatStateHolder.isBlinded
     val blindRounds = CombatStateHolder.blindRounds
     val isDisoriented = CombatStateHolder.isDisoriented

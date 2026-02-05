@@ -106,6 +106,7 @@ fun AdventureScreen(
     val isDisoriented by viewModel.isDisoriented.collectAsState()
     val disorientRounds by viewModel.disorientRounds.collectAsState()
     val eventLogState by viewModel.eventLog.collectAsState()
+    val playerCombatant by viewModel.playerCombatant.collectAsState()
 
     // Location detail popup state
     var showLocationDetailPopup by remember { mutableStateOf(false) }
@@ -328,6 +329,19 @@ fun AdventureScreen(
                     .align(Alignment.BottomCenter)
                     .fillMaxWidth()
             ) {
+                // Player resource bars (HP/MP/SP)
+                if (!ghostMode) {
+                    PlayerResourceBar(
+                        currentHp = playerCombatant?.currentHp ?: currentUser?.currentHp ?: 0,
+                        maxHp = playerCombatant?.maxHp ?: currentUser?.maxHp ?: 0,
+                        currentMana = playerCombatant?.currentMana ?: currentUser?.currentMana ?: 0,
+                        maxMana = playerCombatant?.maxMana ?: currentUser?.maxMana ?: 0,
+                        currentStamina = playerCombatant?.currentStamina ?: currentUser?.currentStamina ?: 0,
+                        maxStamina = playerCombatant?.maxStamina ?: currentUser?.maxStamina ?: 0,
+                        modifier = Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 2.dp)
+                    )
+                }
+
                 // Abilities row (non-creature-specific actions above scroll section)
                 // Hide abilities in ghost mode since actions are disabled
                 if (uiState.playerAbilities.isNotEmpty() && !ghostMode) {
@@ -335,6 +349,8 @@ fun AdventureScreen(
                         abilities = uiState.playerAbilities,
                         cooldowns = cooldowns,
                         queuedAbilityId = queuedAbilityId,
+                        currentMana = playerCombatant?.currentMana ?: currentUser?.currentMana ?: 0,
+                        currentStamina = playerCombatant?.currentStamina ?: currentUser?.currentStamina ?: 0,
                         onAbilityClick = { viewModel.handleAbilityClick(it) },
                         modifier = Modifier
                             .fillMaxWidth()
@@ -1259,6 +1275,8 @@ private fun AbilityRow(
     abilities: List<AbilityDto>,
     cooldowns: Map<String, Int>,
     queuedAbilityId: String?,
+    currentMana: Int = 0,
+    currentStamina: Int = 0,
     onAbilityClick: (AbilityDto) -> Unit,
     modifier: Modifier = Modifier
 ) {
@@ -1276,14 +1294,64 @@ private fun AbilityRow(
         verticalAlignment = Alignment.CenterVertically
     ) {
         displayAbilities.forEach { ability ->
+            val canAfford = (ability.manaCost <= currentMana) && (ability.staminaCost <= currentStamina)
             AbilityIconButton(
                 ability = ability,
                 cooldownRounds = cooldowns[ability.id] ?: 0,
                 isQueued = ability.id == queuedAbilityId,
+                enabled = canAfford,
                 onClick = { onAbilityClick(ability) },
                 size = iconSize
             )
         }
+    }
+}
+
+// =============================================================================
+// PLAYER RESOURCE BAR
+// =============================================================================
+
+@Composable
+private fun PlayerResourceBar(
+    currentHp: Int, maxHp: Int,
+    currentMana: Int, maxMana: Int,
+    currentStamina: Int, maxStamina: Int,
+    modifier: Modifier = Modifier
+) {
+    Row(
+        modifier = modifier
+            .background(Color.Black.copy(alpha = 0.7f), RoundedCornerShape(8.dp))
+            .padding(horizontal = 8.dp, vertical = 4.dp),
+        horizontalArrangement = Arrangement.spacedBy(6.dp)
+    ) {
+        ResourceMiniBar("HP", currentHp, maxHp, Color(0xFFE53935), Modifier.weight(1f))
+        ResourceMiniBar("MP", currentMana, maxMana, Color(0xFF42A5F5), Modifier.weight(1f))
+        ResourceMiniBar("SP", currentStamina, maxStamina, Color(0xFFFFA726), Modifier.weight(1f))
+    }
+}
+
+@Composable
+private fun ResourceMiniBar(label: String, current: Int, max: Int, color: Color, modifier: Modifier) {
+    val fraction = if (max > 0) (current.toFloat() / max).coerceIn(0f, 1f) else 0f
+    Box(
+        modifier = modifier
+            .height(14.dp)
+            .clip(RoundedCornerShape(3.dp))
+            .background(Color(0xFF333333))
+    ) {
+        Box(
+            modifier = Modifier
+                .fillMaxHeight()
+                .fillMaxWidth(fraction)
+                .background(color, RoundedCornerShape(3.dp))
+        )
+        Text(
+            text = "$label $current/$max",
+            color = Color.White,
+            fontSize = 9.sp,
+            fontWeight = FontWeight.Medium,
+            modifier = Modifier.align(Alignment.Center)
+        )
     }
 }
 
