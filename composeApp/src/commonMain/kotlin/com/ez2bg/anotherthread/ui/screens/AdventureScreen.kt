@@ -9,6 +9,8 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -54,6 +56,7 @@ import com.ez2bg.anotherthread.ui.SwordIcon
 import com.ez2bg.anotherthread.ui.getBlindItemDescription
 import com.ez2bg.anotherthread.ui.getBlindPresenceDescription
 import com.ez2bg.anotherthread.ui.components.AbilityIconButton
+import com.ez2bg.anotherthread.ui.components.AbilityIconMapper
 import com.ez2bg.anotherthread.ui.components.AbilityIconSmall
 import com.ez2bg.anotherthread.ui.components.BlindOverlay
 import com.ez2bg.anotherthread.ui.components.CombatTarget
@@ -110,6 +113,9 @@ fun AdventureScreen(
 
     // Location detail popup state
     var showLocationDetailPopup by remember { mutableStateOf(false) }
+
+    // Spellbook panel state
+    var showSpellbook by remember { mutableStateOf(false) }
 
     // Convert event log entries to UI format
     val eventLogEntries = remember(eventLogState) {
@@ -352,6 +358,8 @@ fun AdventureScreen(
                         currentMana = playerCombatant?.currentMana ?: currentUser?.currentMana ?: 0,
                         currentStamina = playerCombatant?.currentStamina ?: currentUser?.currentStamina ?: 0,
                         onAbilityClick = { viewModel.handleAbilityClick(it) },
+                        onSpellbookToggle = { showSpellbook = !showSpellbook },
+                        showSpellbook = showSpellbook,
                         modifier = Modifier
                             .fillMaxWidth()
                             .padding(horizontal = 8.dp, vertical = 4.dp)
@@ -379,6 +387,22 @@ fun AdventureScreen(
                         .fillMaxWidth()
                         .height(80.dp),
                     maxVisibleEntries = 4
+                )
+            }
+
+            // === SPELLBOOK PANEL: Slides up from bottom ===
+            if (showSpellbook && uiState.playerAbilities.isNotEmpty() && !ghostMode) {
+                SpellbookPanel(
+                    abilities = uiState.playerAbilities,
+                    cooldowns = cooldowns,
+                    queuedAbilityId = queuedAbilityId,
+                    currentMana = playerCombatant?.currentMana ?: currentUser?.currentMana ?: 0,
+                    currentStamina = playerCombatant?.currentStamina ?: currentUser?.currentStamina ?: 0,
+                    onAbilityClick = { ability ->
+                        viewModel.handleAbilityClick(ability)
+                        showSpellbook = false
+                    },
+                    onDismiss = { showSpellbook = false }
                 )
             }
 
@@ -1278,6 +1302,8 @@ private fun AbilityRow(
     currentMana: Int = 0,
     currentStamina: Int = 0,
     onAbilityClick: (AbilityDto) -> Unit,
+    onSpellbookToggle: () -> Unit = {},
+    showSpellbook: Boolean = false,
     modifier: Modifier = Modifier
 ) {
     val iconSize = 32.dp
@@ -1302,6 +1328,26 @@ private fun AbilityRow(
                 enabled = canAfford,
                 onClick = { onAbilityClick(ability) },
                 size = iconSize
+            )
+        }
+
+        Spacer(Modifier.weight(1f))
+
+        // Spellbook toggle button
+        Box(
+            modifier = Modifier
+                .size(28.dp)
+                .clip(RoundedCornerShape(6.dp))
+                .background(
+                    if (showSpellbook) Color(0xFF7C4DFF).copy(alpha = 0.8f)
+                    else Color.White.copy(alpha = 0.15f)
+                )
+                .clickable { onSpellbookToggle() },
+            contentAlignment = Alignment.Center
+        ) {
+            Text(
+                text = "\uD83D\uDCD6",  // open book emoji
+                fontSize = 14.sp
             )
         }
     }
@@ -1353,6 +1399,250 @@ private fun ResourceMiniBar(label: String, current: Int, max: Int, color: Color,
             modifier = Modifier.align(Alignment.Center)
         )
     }
+}
+
+// =============================================================================
+// SPELLBOOK PANEL
+// =============================================================================
+
+/**
+ * Overlay panel showing full ability details. Appears above the ability row
+ * when the spellbook icon is toggled.
+ */
+@Composable
+private fun SpellbookPanel(
+    abilities: List<AbilityDto>,
+    cooldowns: Map<String, Int>,
+    queuedAbilityId: String?,
+    currentMana: Int,
+    currentStamina: Int,
+    onAbilityClick: (AbilityDto) -> Unit,
+    onDismiss: () -> Unit
+) {
+    // Dim backdrop
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(Color.Black.copy(alpha = 0.5f))
+            .clickable { onDismiss() }
+    )
+
+    // Panel anchored to bottom
+    Box(
+        modifier = Modifier
+            .fillMaxSize(),
+        contentAlignment = Alignment.BottomCenter
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .fillMaxHeight(0.55f)
+                .background(
+                    Color(0xFF1A1A2E),
+                    RoundedCornerShape(topStart = 16.dp, topEnd = 16.dp)
+                )
+                .clickable(enabled = false) {} // block clicks from reaching backdrop
+        ) {
+            // Header
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 16.dp, vertical = 12.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    text = "\uD83D\uDCD6 Spellbook",
+                    color = Color.White,
+                    fontSize = 18.sp,
+                    fontWeight = FontWeight.Bold
+                )
+                Spacer(Modifier.weight(1f))
+                Box(
+                    modifier = Modifier
+                        .size(28.dp)
+                        .clip(CircleShape)
+                        .background(Color.White.copy(alpha = 0.15f))
+                        .clickable { onDismiss() },
+                    contentAlignment = Alignment.Center
+                ) {
+                    Text("✕", color = Color.White, fontSize = 14.sp)
+                }
+            }
+
+            HorizontalDivider(color = Color.White.copy(alpha = 0.1f))
+
+            // Ability list
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .weight(1f)
+                    .verticalScroll(rememberScrollState())
+                    .padding(horizontal = 12.dp, vertical = 8.dp),
+                verticalArrangement = Arrangement.spacedBy(6.dp)
+            ) {
+                abilities.forEach { ability ->
+                    val cd = cooldowns[ability.id] ?: 0
+                    val isQueued = ability.id == queuedAbilityId
+                    val canAfford = (ability.manaCost <= currentMana) && (ability.staminaCost <= currentStamina)
+                    val isOnCooldown = cd > 0
+                    val canUse = canAfford && !isOnCooldown && ability.abilityType != "passive"
+
+                    SpellbookAbilityRow(
+                        ability = ability,
+                        cooldownRounds = cd,
+                        isQueued = isQueued,
+                        canUse = canUse,
+                        canAfford = canAfford,
+                        onClick = { if (canUse) onAbilityClick(ability) }
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun SpellbookAbilityRow(
+    ability: AbilityDto,
+    cooldownRounds: Int,
+    isQueued: Boolean,
+    canUse: Boolean,
+    canAfford: Boolean,
+    onClick: () -> Unit
+) {
+    val typeColor = AbilityIconMapper.getAbilityTypeColor(ability.abilityType)
+    val isOnCooldown = cooldownRounds > 0
+    val alpha = if (canUse) 1f else 0.5f
+
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(8.dp))
+            .background(
+                if (isQueued) Color(0xFF4CAF50).copy(alpha = 0.2f)
+                else Color.White.copy(alpha = 0.05f)
+            )
+            .then(
+                if (canUse) Modifier.clickable { onClick() } else Modifier
+            )
+            .padding(horizontal = 12.dp, vertical = 8.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(10.dp)
+    ) {
+        // Ability icon circle
+        Box(
+            modifier = Modifier
+                .size(36.dp)
+                .clip(CircleShape)
+                .background(typeColor.copy(alpha = alpha)),
+            contentAlignment = Alignment.Center
+        ) {
+            Text(
+                text = AbilityIconMapper.getAbbreviation(ability.name),
+                color = Color.White.copy(alpha = alpha),
+                fontSize = 10.sp,
+                fontWeight = FontWeight.Bold,
+                letterSpacing = (-0.5).sp
+            )
+        }
+
+        // Ability details
+        Column(modifier = Modifier.weight(1f)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(
+                    text = ability.name,
+                    color = Color.White.copy(alpha = alpha),
+                    fontSize = 14.sp,
+                    fontWeight = FontWeight.SemiBold
+                )
+                Spacer(Modifier.width(6.dp))
+                // Type badge
+                Text(
+                    text = ability.abilityType.uppercase(),
+                    color = typeColor.copy(alpha = alpha),
+                    fontSize = 9.sp,
+                    fontWeight = FontWeight.Bold,
+                    modifier = Modifier
+                        .background(typeColor.copy(alpha = 0.15f), RoundedCornerShape(3.dp))
+                        .padding(horizontal = 4.dp, vertical = 1.dp)
+                )
+            }
+
+            Text(
+                text = ability.description,
+                color = Color.White.copy(alpha = 0.6f * alpha),
+                fontSize = 11.sp,
+                maxLines = 2
+            )
+
+            // Stats row
+            Row(
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                modifier = Modifier.padding(top = 2.dp)
+            ) {
+                if (ability.baseDamage > 0) {
+                    SpellbookStatTag("DMG ${ability.baseDamage}", Color(0xFFE53935))
+                }
+                if (ability.manaCost > 0) {
+                    SpellbookStatTag(
+                        "${ability.manaCost} MP",
+                        if (canAfford || ability.staminaCost > 0) Color(0xFF42A5F5)
+                        else Color(0xFFE53935)
+                    )
+                }
+                if (ability.staminaCost > 0) {
+                    SpellbookStatTag(
+                        "${ability.staminaCost} SP",
+                        if (canAfford || ability.manaCost > 0) Color(0xFFFFA726)
+                        else Color(0xFFE53935)
+                    )
+                }
+                if (ability.durationRounds > 0) {
+                    SpellbookStatTag("${ability.durationRounds}rnd", Color(0xFF9E9E9E))
+                }
+                if (ability.cooldownRounds > 0) {
+                    SpellbookStatTag("CD ${ability.cooldownRounds}", Color(0xFF9E9E9E))
+                }
+                if (ability.targetType != "self") {
+                    val targetLabel = ability.targetType.replace("_", " ")
+                    SpellbookStatTag(targetLabel, Color(0xFF9E9E9E))
+                }
+            }
+        }
+
+        // Right side: status
+        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+            when {
+                isQueued -> {
+                    Text("QUEUED", color = Color(0xFF4CAF50), fontSize = 10.sp, fontWeight = FontWeight.Bold)
+                }
+                isOnCooldown -> {
+                    Text("${cooldownRounds}rd", color = Color(0xFFFF9800), fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                    Text("CD", color = Color(0xFFFF9800), fontSize = 9.sp)
+                }
+                !canAfford -> {
+                    Text("LOW", color = Color(0xFFE53935), fontSize = 10.sp, fontWeight = FontWeight.Bold)
+                    Text("RES", color = Color(0xFFE53935), fontSize = 9.sp)
+                }
+                ability.abilityType == "passive" -> {
+                    Text("PASSIVE", color = Color(0xFF388E3C), fontSize = 9.sp, fontWeight = FontWeight.Bold)
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun SpellbookStatTag(text: String, color: Color) {
+    Text(
+        text = text,
+        color = color,
+        fontSize = 9.sp,
+        fontWeight = FontWeight.Medium,
+        modifier = Modifier
+            .background(color.copy(alpha = 0.1f), RoundedCornerShape(3.dp))
+            .padding(horizontal = 4.dp, vertical = 1.dp)
+    )
 }
 
 // =============================================================================
