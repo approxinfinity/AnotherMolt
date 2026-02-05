@@ -132,15 +132,12 @@ fun AbilityIconButton(
                 ),
             contentAlignment = Alignment.Center
         ) {
-            // 4-letter abbreviation text (replaces icon)
-            val abbreviation = AbilityIconMapper.getAbbreviation(ability.name)
-            Text(
-                text = abbreviation,
-                color = if (isOnCooldown || !enabled) Color.Gray else Color.White,
-                fontSize = (size.value * 0.3f).sp,
-                fontWeight = FontWeight.Bold,
-                textAlign = TextAlign.Center,
-                letterSpacing = (-0.5).sp
+            // Material icon from AbilityIconMapper
+            Icon(
+                imageVector = icon,
+                contentDescription = ability.name,
+                tint = if (isOnCooldown || !enabled) Color.Gray else Color.White,
+                modifier = Modifier.size(size * 0.55f)
             )
 
             // Cooldown overlay
@@ -225,7 +222,7 @@ fun AbilityIconSmall(
     size: Dp = 24.dp
 ) {
     val backgroundColor = AbilityIconMapper.getAbilityTypeColor(ability.abilityType)
-    val abbreviation = AbilityIconMapper.getAbbreviation(ability.name)
+    val icon = AbilityIconMapper.getIcon(ability)
 
     Box(
         modifier = modifier
@@ -234,13 +231,11 @@ fun AbilityIconSmall(
             .background(backgroundColor, CircleShape),
         contentAlignment = Alignment.Center
     ) {
-        Text(
-            text = abbreviation,
-            color = Color.White,
-            fontSize = (size.value * 0.3f).sp,
-            fontWeight = FontWeight.Bold,
-            textAlign = TextAlign.Center,
-            letterSpacing = (-0.5).sp
+        Icon(
+            imageVector = icon,
+            contentDescription = ability.name,
+            tint = Color.White,
+            modifier = Modifier.size(size * 0.55f)
         )
     }
 }

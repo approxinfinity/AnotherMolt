@@ -1555,12 +1555,11 @@ private fun SpellbookAbilityRow(
                 .background(typeColor.copy(alpha = alpha)),
             contentAlignment = Alignment.Center
         ) {
-            Text(
-                text = AbilityIconMapper.getAbbreviation(ability.name),
-                color = Color.White.copy(alpha = alpha),
-                fontSize = 10.sp,
-                fontWeight = FontWeight.Bold,
-                letterSpacing = (-0.5).sp
+            Icon(
+                imageVector = AbilityIconMapper.getIcon(ability),
+                contentDescription = ability.name,
+                tint = Color.White.copy(alpha = alpha),
+                modifier = Modifier.size(20.dp)
             )
         }
 
