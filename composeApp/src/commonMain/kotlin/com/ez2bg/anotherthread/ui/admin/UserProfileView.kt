@@ -20,9 +20,15 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
+import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.material.icons.filled.Dangerous
+import androidx.compose.material.icons.filled.Edit
 import com.ez2bg.anotherthread.api.*
 import com.ez2bg.anotherthread.ui.BackgroundImageGenerationManager
 import com.ez2bg.anotherthread.ui.EntityImage
+import com.ez2bg.anotherthread.ui.components.AbilityIconMapper
 import kotlinx.coroutines.launch
 
 @Composable
@@ -58,6 +64,13 @@ fun UserProfileView(
     var characterClassId by remember(user.id) { mutableStateOf(user.characterClassId) }
     var classAbilities by remember { mutableStateOf<List<AbilityDto>>(emptyList()) }
     var abilitiesExpanded by remember { mutableStateOf(false) }
+    var iconMappingsExpanded by remember { mutableStateOf(false) }
+    var iconMappings by remember { mutableStateOf<Map<String, String>>(emptyMap()) }
+    var iconPickerAbilityId by remember { mutableStateOf<String?>(null) }
+    var encountersExpanded by remember { mutableStateOf(false) }
+    var encounters by remember { mutableStateOf<List<PlayerEncounterDto>>(emptyList()) }
+    var encounterFilter by remember { mutableStateOf("all") } // "all", "friend", "enemy"
+    var selectedEncounter by remember { mutableStateOf<PlayerEncounterDto?>(null) }
     var showRerollConfirmDialog by remember { mutableStateOf(false) }
 
     // Collect class generation status from the repository
@@ -106,6 +119,20 @@ fun UserProfileView(
         } else {
             assignedClass = null
             classAbilities = emptyList()
+        }
+    }
+
+    // Load icon mappings for this user
+    LaunchedEffect(user.id) {
+        ApiClient.getIconMappings(user.id).onSuccess { mappings ->
+            iconMappings = mappings.associate { it.abilityId to it.iconName }
+        }
+    }
+
+    // Load encounters for this user
+    LaunchedEffect(user.id) {
+        ApiClient.getEncounters(user.id).onSuccess { result ->
+            encounters = result
         }
     }
 
@@ -537,6 +564,357 @@ fun UserProfileView(
                         Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                             classAbilities.forEach { ability ->
                                 AbilityDisplayCard(ability)
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        // Configure Action Mappings section - only for own profile with abilities
+        if (isOwnProfile && classAbilities.isNotEmpty()) {
+            Spacer(modifier = Modifier.height(8.dp))
+            Card(modifier = Modifier.fillMaxWidth()) {
+                Column(modifier = Modifier.padding(16.dp)) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clickable { iconMappingsExpanded = !iconMappingsExpanded },
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(
+                            text = "Configure Action Icons",
+                            style = MaterialTheme.typography.titleMedium
+                        )
+                        Icon(
+                            imageVector = if (iconMappingsExpanded) Icons.Filled.ExpandLess else Icons.Filled.ExpandMore,
+                            contentDescription = if (iconMappingsExpanded) "Collapse" else "Expand"
+                        )
+                    }
+
+                    if (iconMappingsExpanded) {
+                        Spacer(modifier = Modifier.height(12.dp))
+                        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                            classAbilities.filter { it.abilityType != "passive" }.forEach { ability ->
+                                val currentIconName = iconMappings[ability.id]
+                                val currentIcon = AbilityIconMapper.getIcon(ability, currentIconName)
+                                val typeColor = AbilityIconMapper.getAbilityTypeColor(ability.abilityType)
+
+                                Card(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    colors = CardDefaults.cardColors(
+                                        containerColor = MaterialTheme.colorScheme.surfaceVariant
+                                    )
+                                ) {
+                                    Row(
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .padding(12.dp),
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        horizontalArrangement = Arrangement.spacedBy(12.dp)
+                                    ) {
+                                        // Current icon
+                                        Surface(
+                                            shape = CircleShape,
+                                            color = typeColor.copy(alpha = 0.2f),
+                                            modifier = Modifier.size(40.dp)
+                                        ) {
+                                            Box(contentAlignment = Alignment.Center) {
+                                                Icon(
+                                                    imageVector = currentIcon,
+                                                    contentDescription = ability.name,
+                                                    tint = typeColor,
+                                                    modifier = Modifier.size(24.dp)
+                                                )
+                                            }
+                                        }
+
+                                        // Ability name
+                                        Text(
+                                            text = ability.name,
+                                            style = MaterialTheme.typography.bodyMedium,
+                                            modifier = Modifier.weight(1f)
+                                        )
+
+                                        // Edit button
+                                        IconButton(
+                                            onClick = {
+                                                iconPickerAbilityId = if (iconPickerAbilityId == ability.id) null else ability.id
+                                            }
+                                        ) {
+                                            Icon(Icons.Filled.Edit, "Change icon")
+                                        }
+                                    }
+
+                                    // Icon picker grid (expanded inline)
+                                    if (iconPickerAbilityId == ability.id) {
+                                        val availableIcons = AbilityIconMapper.getAllAvailableIcons()
+                                        Column(
+                                            modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp)
+                                        ) {
+                                            // Grid of icons
+                                            val chunked = availableIcons.chunked(7)
+                                            chunked.forEach { row ->
+                                                Row(
+                                                    horizontalArrangement = Arrangement.spacedBy(4.dp),
+                                                    modifier = Modifier.padding(vertical = 2.dp)
+                                                ) {
+                                                    row.forEach { (name, icon) ->
+                                                        val isSelected = currentIconName == name
+                                                        Surface(
+                                                            shape = CircleShape,
+                                                            color = if (isSelected) typeColor.copy(alpha = 0.3f)
+                                                                    else MaterialTheme.colorScheme.surface,
+                                                            modifier = Modifier
+                                                                .size(36.dp)
+                                                                .then(
+                                                                    if (isSelected) Modifier.border(2.dp, typeColor, CircleShape)
+                                                                    else Modifier
+                                                                )
+                                                                .clickable {
+                                                                    scope.launch {
+                                                                        ApiClient.setIconMapping(user.id, ability.id, name)
+                                                                            .onSuccess {
+                                                                                iconMappings = iconMappings + (ability.id to name)
+                                                                                iconPickerAbilityId = null
+                                                                            }
+                                                                    }
+                                                                }
+                                                        ) {
+                                                            Box(contentAlignment = Alignment.Center) {
+                                                                Icon(
+                                                                    imageVector = icon,
+                                                                    contentDescription = name,
+                                                                    tint = MaterialTheme.colorScheme.onSurface,
+                                                                    modifier = Modifier.size(20.dp)
+                                                                )
+                                                            }
+                                                        }
+                                                    }
+                                                }
+                                            }
+
+                                            // Reset to default button
+                                            if (currentIconName != null) {
+                                                TextButton(
+                                                    onClick = {
+                                                        scope.launch {
+                                                            ApiClient.deleteIconMapping(user.id, ability.id)
+                                                                .onSuccess {
+                                                                    iconMappings = iconMappings - ability.id
+                                                                    iconPickerAbilityId = null
+                                                                }
+                                                        }
+                                                    },
+                                                    modifier = Modifier.padding(top = 4.dp)
+                                                ) {
+                                                    Text("Reset to Default")
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        // Encounters section - only for own profile with encounters
+        if (isOwnProfile && encounters.isNotEmpty()) {
+            Spacer(modifier = Modifier.height(8.dp))
+            Card(modifier = Modifier.fillMaxWidth()) {
+                Column(modifier = Modifier.padding(16.dp)) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clickable { encountersExpanded = !encountersExpanded },
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(
+                            text = "Encounters (${encounters.size})",
+                            style = MaterialTheme.typography.titleMedium
+                        )
+                        Icon(
+                            imageVector = if (encountersExpanded) Icons.Filled.ExpandLess else Icons.Filled.ExpandMore,
+                            contentDescription = if (encountersExpanded) "Collapse" else "Expand"
+                        )
+                    }
+
+                    if (encountersExpanded) {
+                        Spacer(modifier = Modifier.height(8.dp))
+
+                        // Filter tabs
+                        Row(
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            listOf("all" to "All", "friend" to "Friends", "enemy" to "Enemies").forEach { (key, label) ->
+                                FilterChip(
+                                    selected = encounterFilter == key,
+                                    onClick = { encounterFilter = key },
+                                    label = {
+                                        val count = when (key) {
+                                            "friend" -> encounters.count { it.classification == "friend" }
+                                            "enemy" -> encounters.count { it.classification == "enemy" }
+                                            else -> encounters.size
+                                        }
+                                        Text("$label ($count)")
+                                    }
+                                )
+                            }
+                        }
+
+                        Spacer(modifier = Modifier.height(8.dp))
+
+                        val filtered = when (encounterFilter) {
+                            "friend" -> encounters.filter { it.classification == "friend" }
+                            "enemy" -> encounters.filter { it.classification == "enemy" }
+                            else -> encounters
+                        }
+
+                        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                            filtered.forEach { encounter ->
+                                Card(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .clickable {
+                                            selectedEncounter = if (selectedEncounter?.encounteredUserId == encounter.encounteredUserId) null
+                                                                else encounter
+                                        },
+                                    colors = CardDefaults.cardColors(
+                                        containerColor = when (encounter.classification) {
+                                            "friend" -> MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.3f)
+                                            "enemy" -> MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.3f)
+                                            else -> MaterialTheme.colorScheme.surfaceVariant
+                                        }
+                                    )
+                                ) {
+                                    Column(modifier = Modifier.padding(12.dp)) {
+                                        Row(
+                                            verticalAlignment = Alignment.CenterVertically,
+                                            horizontalArrangement = Arrangement.spacedBy(12.dp)
+                                        ) {
+                                            // Avatar
+                                            Surface(
+                                                shape = CircleShape,
+                                                color = MaterialTheme.colorScheme.surfaceVariant,
+                                                modifier = Modifier.size(40.dp)
+                                            ) {
+                                                if (encounter.lastKnownImageUrl != null) {
+                                                    EntityImage(
+                                                        imageUrl = encounter.lastKnownImageUrl,
+                                                        contentDescription = encounter.lastKnownName,
+                                                        modifier = Modifier.size(40.dp)
+                                                    )
+                                                } else {
+                                                    Box(contentAlignment = Alignment.Center) {
+                                                        Icon(Icons.Filled.Person, "Player", modifier = Modifier.size(24.dp))
+                                                    }
+                                                }
+                                            }
+
+                                            Column(modifier = Modifier.weight(1f)) {
+                                                Text(
+                                                    text = encounter.lastKnownName,
+                                                    style = MaterialTheme.typography.titleSmall
+                                                )
+                                                Text(
+                                                    text = "Seen ${encounter.encounterCount}x",
+                                                    style = MaterialTheme.typography.labelSmall,
+                                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                                )
+                                            }
+
+                                            // Classification badge
+                                            Surface(
+                                                shape = RoundedCornerShape(4.dp),
+                                                color = when (encounter.classification) {
+                                                    "friend" -> MaterialTheme.colorScheme.primary
+                                                    "enemy" -> MaterialTheme.colorScheme.error
+                                                    else -> MaterialTheme.colorScheme.outline
+                                                }
+                                            ) {
+                                                Text(
+                                                    text = encounter.classification.replaceFirstChar { it.uppercase() },
+                                                    style = MaterialTheme.typography.labelSmall,
+                                                    color = MaterialTheme.colorScheme.onPrimary,
+                                                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 2.dp)
+                                                )
+                                            }
+                                        }
+
+                                        // Expanded detail view
+                                        if (selectedEncounter?.encounteredUserId == encounter.encounteredUserId) {
+                                            Spacer(modifier = Modifier.height(8.dp))
+                                            if (encounter.lastKnownDesc.isNotEmpty()) {
+                                                Text(
+                                                    text = encounter.lastKnownDesc,
+                                                    style = MaterialTheme.typography.bodySmall,
+                                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                                )
+                                                Spacer(modifier = Modifier.height(8.dp))
+                                            }
+
+                                            // Friend/Enemy toggle buttons
+                                            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                                OutlinedButton(
+                                                    onClick = {
+                                                        scope.launch {
+                                                            val newClass = if (encounter.classification == "friend") "neutral" else "friend"
+                                                            ApiClient.classifyEncounter(user.id, encounter.encounteredUserId, newClass)
+                                                                .onSuccess {
+                                                                    encounters = encounters.map { e ->
+                                                                        if (e.encounteredUserId == encounter.encounteredUserId)
+                                                                            e.copy(classification = newClass)
+                                                                        else e
+                                                                    }
+                                                                    selectedEncounter = selectedEncounter?.copy(classification = newClass)
+                                                                }
+                                                        }
+                                                    },
+                                                    modifier = Modifier.weight(1f)
+                                                ) {
+                                                    Icon(Icons.Filled.Star, null, modifier = Modifier.size(16.dp))
+                                                    Spacer(Modifier.width(4.dp))
+                                                    Text(if (encounter.classification == "friend") "Remove Friend" else "Add Friend")
+                                                }
+                                                OutlinedButton(
+                                                    onClick = {
+                                                        scope.launch {
+                                                            val newClass = if (encounter.classification == "enemy") "neutral" else "enemy"
+                                                            ApiClient.classifyEncounter(user.id, encounter.encounteredUserId, newClass)
+                                                                .onSuccess {
+                                                                    encounters = encounters.map { e ->
+                                                                        if (e.encounteredUserId == encounter.encounteredUserId)
+                                                                            e.copy(classification = newClass)
+                                                                        else e
+                                                                    }
+                                                                    selectedEncounter = selectedEncounter?.copy(classification = newClass)
+                                                                }
+                                                        }
+                                                    },
+                                                    modifier = Modifier.weight(1f)
+                                                ) {
+                                                    Icon(Icons.Filled.Dangerous, null, modifier = Modifier.size(16.dp))
+                                                    Spacer(Modifier.width(4.dp))
+                                                    Text(if (encounter.classification == "enemy") "Remove Enemy" else "Mark Enemy")
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+
+                            if (filtered.isEmpty()) {
+                                Text(
+                                    text = "No ${if (encounterFilter != "all") encounterFilter + "s" else "encounters"} yet",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
                             }
                         }
                     }

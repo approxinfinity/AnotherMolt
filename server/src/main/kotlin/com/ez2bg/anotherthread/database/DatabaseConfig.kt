@@ -34,7 +34,9 @@ object DatabaseConfig {
                 LootTableTable,
                 ChestTable,
                 IdentifiedEntityTable,
-                SessionTable
+                SessionTable,
+                CustomIconMappingTable,
+                PlayerEncounterTable
             )
         }
     }

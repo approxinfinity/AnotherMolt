@@ -11,6 +11,9 @@ import io.ktor.server.routing.*
 import kotlinx.coroutines.launch
 import kotlinx.serialization.Serializable
 
+@Serializable
+data class SetIconMappingRequest(val iconName: String)
+
 /**
  * Auth routes for user registration and login.
  * Base path: /auth
@@ -315,6 +318,17 @@ fun Route.userRoutes() {
             val request = call.receive<UpdateLocationRequest>()
 
             if (UserRepository.updateCurrentLocation(id, request.locationId)) {
+                // Record encounters with other players at this location
+                request.locationId?.let { locationId ->
+                    val otherUsers = UserRepository.findActiveUsersAtLocation(locationId)
+                    otherUsers.filter { it.id != id }.forEach { otherUser ->
+                        val currentUser = UserRepository.findById(id)
+                        if (currentUser != null) {
+                            PlayerEncounterRepository.recordEncounter(id, otherUser, locationId)
+                        }
+                    }
+                }
+
                 // Check for aggressive creatures at the new location
                 val combatSession = request.locationId?.let { locationId ->
                     CombatService.checkAggressiveCreatures(id, locationId)
@@ -540,6 +554,30 @@ fun Route.userRoutes() {
             } else {
                 call.respond(HttpStatusCode.InternalServerError, mapOf("error" to "Failed to commit attributes"))
             }
+        }
+
+        // Get custom icon mappings for a user
+        get("/{id}/icon-mappings") {
+            val id = call.parameters["id"] ?: return@get call.respond(HttpStatusCode.BadRequest)
+            val mappings = CustomIconMappingRepository.findByUser(id)
+            call.respond(mappings.map { CustomIconMappingResponse(abilityId = it.abilityId, iconName = it.iconName) })
+        }
+
+        // Set custom icon mapping for an ability
+        put("/{id}/icon-mappings/{abilityId}") {
+            val userId = call.parameters["id"] ?: return@put call.respond(HttpStatusCode.BadRequest)
+            val abilityId = call.parameters["abilityId"] ?: return@put call.respond(HttpStatusCode.BadRequest)
+            val request = call.receive<SetIconMappingRequest>()
+            CustomIconMappingRepository.setMapping(userId, abilityId, request.iconName)
+            call.respond(HttpStatusCode.OK, CustomIconMappingResponse(abilityId = abilityId, iconName = request.iconName))
+        }
+
+        // Delete custom icon mapping (reset to default)
+        delete("/{id}/icon-mappings/{abilityId}") {
+            val userId = call.parameters["id"] ?: return@delete call.respond(HttpStatusCode.BadRequest)
+            val abilityId = call.parameters["abilityId"] ?: return@delete call.respond(HttpStatusCode.BadRequest)
+            CustomIconMappingRepository.deleteMapping(userId, abilityId)
+            call.respond(HttpStatusCode.OK)
         }
 
         // Assign class to user (either autoassign from existing or generate new)

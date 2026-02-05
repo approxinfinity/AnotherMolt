@@ -8,6 +8,7 @@ import com.ez2bg.anotherthread.api.ExitDto
 import com.ez2bg.anotherthread.api.ItemDto
 import com.ez2bg.anotherthread.api.LocationDto
 import com.ez2bg.anotherthread.api.ShopActionResponse
+import com.ez2bg.anotherthread.api.TeleportDestinationDto
 import com.ez2bg.anotherthread.api.UserDto
 import com.ez2bg.anotherthread.data.AdventureRepository
 import com.ez2bg.anotherthread.state.AdventureStateHolder
@@ -44,7 +45,11 @@ data class AdventureLocalState(
     val playerGold: Int = 0,
     val shopItems: List<ItemDto> = emptyList(),
     val isShopLocation: Boolean = false,
-    val isInnLocation: Boolean = false
+    val isInnLocation: Boolean = false,
+    // Teleport state
+    val showMapSelection: Boolean = false,
+    val teleportDestinations: List<TeleportDestinationDto> = emptyList(),
+    val teleportAbilityId: String? = null
 )
 
 /**
@@ -82,7 +87,11 @@ data class AdventureUiState(
     val playerGold: Int = 0,
     val shopItems: List<ItemDto> = emptyList(),
     val isShopLocation: Boolean = false,
-    val isInnLocation: Boolean = false
+    val isInnLocation: Boolean = false,
+    // Teleport state
+    val showMapSelection: Boolean = false,
+    val teleportDestinations: List<TeleportDestinationDto> = emptyList(),
+    val teleportAbilityId: String? = null
 ) {
     // Derived properties
     val currentLocation: LocationDto?
@@ -178,7 +187,10 @@ class AdventureViewModel(
             playerGold = local.playerGold,
             shopItems = local.shopItems,
             isShopLocation = local.isShopLocation,
-            isInnLocation = local.isInnLocation
+            isInnLocation = local.isInnLocation,
+            showMapSelection = local.showMapSelection,
+            teleportDestinations = local.teleportDestinations,
+            teleportAbilityId = local.teleportAbilityId
         )
     }.stateIn(
         scope = scope,
@@ -211,14 +223,24 @@ class AdventureViewModel(
         // The repository will:
         // 1. Load all world data from the server
         // 2. Subscribe to WebSocket events for real-time updates
+        // 3. Fall back to (0,0) origin if location is invalid
         AdventureRepository.initialize(currentUser?.currentLocationId)
 
         // Sync with AdventureStateHolder for event log filtering
+        // Also update server if location was changed due to fallback
         scope.launch {
+            var firstLocationUpdate = true
             AdventureRepository.currentLocationId.collect { locationId ->
                 if (locationId != null) {
                     val location = AdventureRepository.getLocation(locationId)
                     location?.let { AdventureStateHolder.setCurrentLocationDirect(it) }
+
+                    // If this is the first update and it differs from user's stored location,
+                    // update the server (this handles the fallback case)
+                    if (firstLocationUpdate && currentUser != null && locationId != currentUser.currentLocationId) {
+                        ApiClient.updateUserLocation(currentUser.id, locationId)
+                    }
+                    firstLocationUpdate = false
                 }
             }
         }
@@ -230,16 +252,42 @@ class AdventureViewModel(
     }
 
     private fun loadPlayerAbilities() {
-        val classId = currentUser?.characterClassId ?: return
         scope.launch {
-            ApiClient.getAbilitiesByClass(classId).onSuccess { abilities ->
-                val filtered = abilities.filter { it.abilityType != "passive" }
-                    .sortedBy { it.name.lowercase() }
-                _localState.update { it.copy(playerAbilities = filtered) }
+            val classAbilities = mutableListOf<AbilityDto>()
+            val itemAbilities = mutableListOf<AbilityDto>()
+
+            // 1. Load class abilities
+            val classId = currentUser?.characterClassId
+            if (classId != null) {
+                ApiClient.getAbilitiesByClass(classId).onSuccess { abilities ->
+                    classAbilities.addAll(abilities)
+                }
+                ApiClient.getCharacterClass(classId).onSuccess { characterClass ->
+                    _localState.update { it.copy(playerCharacterClass = characterClass) }
+                }
             }
-            ApiClient.getCharacterClass(classId).onSuccess { characterClass ->
-                _localState.update { it.copy(playerCharacterClass = characterClass) }
+
+            // 2. Load item abilities from equipped items
+            val equippedItemIds = currentUser?.equippedItemIds ?: emptyList()
+            if (equippedItemIds.isNotEmpty()) {
+                ApiClient.getItems().onSuccess { allItems ->
+                    val equippedItems = allItems.filter { it.id in equippedItemIds }
+                    val abilityIdsFromItems = equippedItems.flatMap { it.abilityIds }.distinct()
+                    for (abilityId in abilityIdsFromItems) {
+                        ApiClient.getAbility(abilityId).onSuccess { ability ->
+                            if (ability != null) {
+                                itemAbilities.add(ability)
+                            }
+                        }
+                    }
+                }
             }
+
+            // 3. Combine class + item abilities
+            val allAbilities = (classAbilities + itemAbilities)
+                .filter { it.abilityType != "passive" }
+                .sortedBy { it.name.lowercase() }
+            _localState.update { it.copy(playerAbilities = allAbilities) }
         }
     }
 
@@ -396,9 +444,27 @@ class AdventureViewModel(
     fun handleAbilityClick(ability: AbilityDto) {
         val state = uiState.value
 
-        if (!CombatStateHolder.isInCombat) {
-            showSnackbar("Not in combat")
+        // Handle map_select abilities (teleport) — works outside combat
+        if (ability.targetType == "map_select") {
+            handleTeleportAbility(ability)
             return
+        }
+
+        if (!CombatStateHolder.isInCombat) {
+            // AoE abilities can initiate combat with all hostiles
+            if (ability.targetType in listOf("area", "all_enemies")) {
+                val creatureIds = state.creaturesHere.map { it.id }
+                if (creatureIds.isNotEmpty()) {
+                    CombatStateHolder.joinCombat(creatureIds)
+                    showSnackbar("Engaging all enemies with ${ability.name}!")
+                } else {
+                    showSnackbar("No enemies nearby")
+                    return
+                }
+            } else {
+                showSnackbar("Not in combat")
+                return
+            }
         }
 
         when (ability.targetType) {
@@ -445,6 +511,86 @@ class AdventureViewModel(
 
     fun cancelAbilityTargeting() {
         _localState.update { it.copy(pendingAbility = null) }
+    }
+
+    // =========================================================================
+    // TELEPORT
+    // =========================================================================
+
+    private fun handleTeleportAbility(ability: AbilityDto) {
+        if (CombatStateHolder.isInCombat) {
+            showSnackbar("Cannot teleport during combat!")
+            return
+        }
+
+        scope.launch {
+            ApiClient.getTeleportDestinations().onSuccess { destinations ->
+                _localState.update {
+                    it.copy(
+                        showMapSelection = true,
+                        teleportDestinations = destinations,
+                        teleportAbilityId = ability.id
+                    )
+                }
+            }.onFailure {
+                showSnackbar("Failed to load destinations")
+            }
+        }
+    }
+
+    fun selectTeleportDestination(destination: TeleportDestinationDto) {
+        val userId = currentUser?.id ?: return
+        val abilityId = _localState.value.teleportAbilityId ?: return
+
+        scope.launch {
+            // Dismiss overlay immediately
+            _localState.update { it.copy(showMapSelection = false) }
+
+            // Departure message
+            val userName = currentUser?.name ?: "Unknown"
+            CombatStateHolder.addEventLogEntry(
+                "With a soft pop $userName dematerializes.",
+                EventLogType.NAVIGATION
+            )
+
+            // Call teleport API
+            ApiClient.teleport(userId, destination.areaId, abilityId).onSuccess { response ->
+                if (response.success && response.newLocationId != null) {
+                    // Update location
+                    AdventureRepository.setCurrentLocation(response.newLocationId)
+
+                    // Arrival message
+                    CombatStateHolder.addEventLogEntry(
+                        response.arrivalMessage ?: "$userName materializes with a loud bang!",
+                        EventLogType.NAVIGATION
+                    )
+
+                    showSnackbar("Teleported to ${response.newLocationName ?: destination.locationName}")
+                } else {
+                    showSnackbar(response.message)
+                }
+            }.onFailure {
+                showSnackbar("Teleport failed: ${it.message}")
+            }
+
+            // Clear teleport state
+            _localState.update {
+                it.copy(
+                    teleportDestinations = emptyList(),
+                    teleportAbilityId = null
+                )
+            }
+        }
+    }
+
+    fun dismissMapSelection() {
+        _localState.update {
+            it.copy(
+                showMapSelection = false,
+                teleportDestinations = emptyList(),
+                teleportAbilityId = null
+            )
+        }
     }
 
     /**

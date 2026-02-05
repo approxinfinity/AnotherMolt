@@ -21,6 +21,8 @@ import com.ez2bg.anotherthread.routes.pdfRoutes
 import com.ez2bg.anotherthread.routes.spellRoutes
 import com.ez2bg.anotherthread.routes.userRoutes
 import com.ez2bg.anotherthread.routes.shopRoutes
+import com.ez2bg.anotherthread.routes.encounterRoutes
+import com.ez2bg.anotherthread.routes.teleportRoutes
 import com.ez2bg.anotherthread.routes.worldGenRoutes
 import com.ez2bg.anotherthread.spell.*
 import com.ez2bg.anotherthread.SimpleGoldBalancer
@@ -1050,6 +1052,7 @@ fun Application.module() {
     SimpleGoldBalancer.addMissingGoldDrops()
     FungusForestSeed.seedIfEmpty()
     TunDuLacSeed.seedIfEmpty()
+    WayfarerStaveSeed.seedIfEmpty()
 
     // Auto-balance ability costs on startup
     val abilityCostBalancer = AbilityCostBalancer()
@@ -2062,6 +2065,8 @@ fun Application.module() {
         // Class generation and nerf request routes
         classGenerationRoutes()
         nerfRequestRoutes()
+        encounterRoutes()
+        teleportRoutes()
     }
 }
 

@@ -105,6 +105,7 @@ data class Ability(
             "combat" -> 0 to cost
             "utility" -> if (manaCost > 0 || staminaCost > 0) manaCost to staminaCost else 0 to (cost / 2)
             "passive" -> 0 to 0
+            "item" -> manaCost to staminaCost
             else -> 0 to cost
         }
         return copy(powerCost = cost, manaCost = mana, staminaCost = stamina)

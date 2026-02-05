@@ -96,6 +96,7 @@ data class ItemDto(
     val name: String,
     val desc: String,
     val featureIds: List<String> = emptyList(),
+    val abilityIds: List<String> = emptyList(),
     val imageUrl: String? = null,
     val lockedBy: String? = null,
     // Equipment fields
@@ -207,6 +208,59 @@ data class CommitAttributesRequestDto(
     val wisdom: Int,
     val charisma: Int,
     val qualityBonus: Int
+)
+
+@Serializable
+data class IconMappingDto(
+    val abilityId: String,
+    val iconName: String
+)
+
+@Serializable
+data class SetIconMappingRequestDto(
+    val iconName: String
+)
+
+@Serializable
+data class PlayerEncounterDto(
+    val encounteredUserId: String,
+    val classification: String,
+    val lastKnownName: String,
+    val lastKnownDesc: String,
+    val lastKnownImageUrl: String? = null,
+    val lastLocationId: String? = null,
+    val firstEncounteredAt: Long,
+    val lastEncounteredAt: Long,
+    val encounterCount: Int
+)
+
+@Serializable
+data class ClassifyEncounterRequestDto(
+    val classification: String
+)
+
+@Serializable
+data class TeleportDestinationDto(
+    val areaId: String,
+    val locationId: String,
+    val locationName: String
+)
+
+@Serializable
+data class TeleportRequestDto(
+    val userId: String,
+    val targetAreaId: String,
+    val abilityId: String = "weapon-wayfarer-teleport"
+)
+
+@Serializable
+data class TeleportResponseDto(
+    val success: Boolean,
+    val message: String,
+    val departureMessage: String? = null,
+    val arrivalMessage: String? = null,
+    val newLocationId: String? = null,
+    val newLocationName: String? = null
 )
 
 @Serializable
@@ -989,6 +1043,55 @@ object ApiClient {
 
     suspend fun getActiveUsersAtLocation(locationId: String): Result<List<UserDto>> = runCatching {
         client.get("$baseUrl/users/at-location/$locationId").body()
+    }
+
+    // =========================================================================
+    // ICON MAPPINGS
+    // =========================================================================
+
+    suspend fun getIconMappings(userId: String): Result<List<IconMappingDto>> = runCatching {
+        client.get("$baseUrl/users/$userId/icon-mappings").body()
+    }
+
+    suspend fun setIconMapping(userId: String, abilityId: String, iconName: String): Result<IconMappingDto> = runCatching {
+        client.put("$baseUrl/users/$userId/icon-mappings/$abilityId") {
+            contentType(ContentType.Application.Json)
+            setBody(SetIconMappingRequestDto(iconName = iconName))
+        }.body()
+    }
+
+    suspend fun deleteIconMapping(userId: String, abilityId: String): Result<Unit> = runCatching {
+        client.delete("$baseUrl/users/$userId/icon-mappings/$abilityId")
+    }
+
+    // =========================================================================
+    // ENCOUNTERS
+    // =========================================================================
+
+    suspend fun getEncounters(userId: String): Result<List<PlayerEncounterDto>> = runCatching {
+        client.get("$baseUrl/users/$userId/encounters").body()
+    }
+
+    suspend fun classifyEncounter(userId: String, encounteredUserId: String, classification: String): Result<Unit> = runCatching {
+        client.put("$baseUrl/users/$userId/encounters/$encounteredUserId/classify") {
+            contentType(ContentType.Application.Json)
+            setBody(ClassifyEncounterRequestDto(classification = classification))
+        }
+    }
+
+    // =========================================================================
+    // TELEPORT
+    // =========================================================================
+
+    suspend fun getTeleportDestinations(): Result<List<TeleportDestinationDto>> = runCatching {
+        client.get("$baseUrl/teleport/destinations").body()
+    }
+
+    suspend fun teleport(userId: String, targetAreaId: String, abilityId: String): Result<TeleportResponseDto> = runCatching {
+        client.post("$baseUrl/teleport") {
+            contentType(ContentType.Application.Json)
+            setBody(TeleportRequestDto(userId = userId, targetAreaId = targetAreaId, abilityId = abilityId))
+        }.body()
     }
 
     // =========================================================================

@@ -11,9 +11,12 @@ import com.ez2bg.anotherthread.api.AbilityDto
 object AbilityIconMapper {
 
     /**
-     * Get the appropriate icon for an ability based on its effects and type.
+     * Get the appropriate icon for an ability, with optional custom icon override.
      */
-    fun getIcon(ability: AbilityDto): ImageVector {
+    fun getIcon(ability: AbilityDto, customIconName: String? = null): ImageVector {
+        // Check custom mapping first
+        customIconName?.let { iconNameToVector(it)?.let { icon -> return icon } }
+
         // Check if imageUrl contains an icon reference (format: "icon:IconName")
         ability.imageUrl?.let { url ->
             if (url.startsWith("icon:")) {
@@ -26,9 +29,44 @@ object AbilityIconMapper {
     }
 
     /**
+     * Get all available icons as name-vector pairs for the icon picker.
+     */
+    fun getAllAvailableIcons(): List<Pair<String, ImageVector>> = listOf(
+        "bolt" to Icons.Filled.Bolt,
+        "sword" to Icons.Filled.Gavel,
+        "target" to Icons.Filled.GpsFixed,
+        "fire" to Icons.Filled.Whatshot,
+        "shield" to Icons.Filled.Shield,
+        "security" to Icons.Filled.Security,
+        "heart" to Icons.Filled.Favorite,
+        "healing" to Icons.Filled.Healing,
+        "spa" to Icons.Filled.Spa,
+        "buff" to Icons.Filled.TrendingUp,
+        "debuff" to Icons.Filled.TrendingDown,
+        "star" to Icons.Filled.Star,
+        "lock" to Icons.Filled.Lock,
+        "anchor" to Icons.Filled.Anchor,
+        "pause" to Icons.Filled.Pause,
+        "run" to Icons.Filled.DirectionsRun,
+        "flash" to Icons.Filled.FlashOn,
+        "reflect" to Icons.Filled.Replay,
+        "bloodtype" to Icons.Filled.Bloodtype,
+        "science" to Icons.Filled.Science,
+        "blur" to Icons.Filled.BlurCircular,
+        "groups" to Icons.Filled.Groups,
+        "build" to Icons.Filled.Build,
+        "auto" to Icons.Filled.AutoAwesome,
+        "visibility_off" to Icons.Filled.VisibilityOff,
+        "screen_rotation" to Icons.Filled.ScreenRotation,
+        "psychology" to Icons.Filled.Psychology,
+        "dangerous" to Icons.Filled.Dangerous,
+        "staff" to Icons.Filled.FlashOn,
+    )
+
+    /**
      * Get icon by explicit name mapping.
      */
-    private fun iconNameToVector(name: String): ImageVector? = when (name.lowercase()) {
+    fun iconNameToVector(name: String): ImageVector? = when (name.lowercase()) {
         // Damage/Attack
         "bolt", "lightning" -> Icons.Filled.Bolt
         "sword", "attack" -> Icons.Filled.Gavel
@@ -56,7 +94,7 @@ object AbilityIconMapper {
 
         // Movement
         "run", "dash" -> Icons.Filled.DirectionsRun
-        "flash", "teleport" -> Icons.Filled.FlashOn
+        "flash", "teleport", "staff", "stave" -> Icons.Filled.FlashOn
 
         // Special Effects
         "reflect", "mirror", "replay" -> Icons.Filled.Replay
@@ -197,6 +235,7 @@ object AbilityIconMapper {
         "combat" -> androidx.compose.ui.graphics.Color(0xFFD32F2F)     // Red for combat
         "utility" -> androidx.compose.ui.graphics.Color(0xFF1976D2)    // Blue for utility
         "passive" -> androidx.compose.ui.graphics.Color(0xFF388E3C)    // Green for passive
+        "item" -> androidx.compose.ui.graphics.Color(0xFF4CAF50)       // Bright green for item abilities
         else -> androidx.compose.ui.graphics.Color(0xFF616161)         // Gray default
     }
 

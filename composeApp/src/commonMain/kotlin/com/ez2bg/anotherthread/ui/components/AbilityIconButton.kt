@@ -49,7 +49,8 @@ fun AbilityIconButton(
     enabled: Boolean = true,
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
-    size: Dp = 36.dp
+    size: Dp = 36.dp,
+    customIconName: String? = null
 ) {
     val isOnCooldown = cooldownRounds > 0
     val canUse = enabled && !isOnCooldown
@@ -77,7 +78,7 @@ fun AbilityIconButton(
         else -> AbilityIconMapper.getAbilityTypeColor(ability.abilityType)
     }
 
-    val icon = AbilityIconMapper.getIcon(ability)
+    val icon = AbilityIconMapper.getIcon(ability, customIconName)
 
     Box(
         modifier = modifier.size(size + 8.dp),  // Extra space for glow

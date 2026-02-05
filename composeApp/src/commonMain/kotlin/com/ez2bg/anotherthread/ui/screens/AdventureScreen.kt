@@ -18,6 +18,7 @@ import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.ArrowForward
 import androidx.compose.material.icons.filled.ArrowDownward
 import androidx.compose.material.icons.filled.ArrowUpward
+import androidx.compose.material.icons.filled.AutoStories
 import androidx.compose.material.icons.filled.Dangerous
 import androidx.compose.material.icons.filled.MeetingRoom
 import androidx.compose.material.icons.filled.NorthEast
@@ -62,8 +63,10 @@ import com.ez2bg.anotherthread.ui.components.BlindOverlay
 import com.ez2bg.anotherthread.ui.components.CombatTarget
 import com.ez2bg.anotherthread.ui.components.DisorientIndicator
 import com.ez2bg.anotherthread.ui.components.EventLog
+import com.ez2bg.anotherthread.ui.components.MapSelectionOverlay
 import com.ez2bg.anotherthread.ui.components.TargetSelectionOverlay
 import com.ez2bg.anotherthread.ui.admin.getTerrainColor
+import com.ez2bg.anotherthread.ui.admin.UserProfileView
 import kotlinx.coroutines.launch
 import kotlin.math.PI
 import kotlin.math.abs
@@ -116,6 +119,19 @@ fun AdventureScreen(
 
     // Spellbook panel state
     var showSpellbook by remember { mutableStateOf(false) }
+
+    // Character sheet overlay state
+    var showCharacterSheet by remember { mutableStateOf(false) }
+
+    // Custom icon mappings
+    var iconMappings by remember { mutableStateOf<Map<String, String>>(emptyMap()) }
+    LaunchedEffect(currentUser?.id) {
+        currentUser?.id?.let { userId ->
+            com.ez2bg.anotherthread.api.ApiClient.getIconMappings(userId).onSuccess { mappings ->
+                iconMappings = mappings.associate { it.abilityId to it.iconName }
+            }
+        }
+    }
 
     // Convert event log entries to UI format
     val eventLogEntries = remember(eventLogState) {
@@ -277,6 +293,37 @@ fun AdventureScreen(
                 }
             }
 
+            // === TOP-RIGHT: Player avatar → character sheet ===
+            if (!uiState.isDetailViewVisible && currentUser != null && !ghostMode) {
+                Box(
+                    modifier = Modifier
+                        .align(Alignment.TopEnd)
+                        .padding(top = 8.dp, end = 8.dp)
+                        .size(40.dp)
+                        .clip(CircleShape)
+                        .background(Color.Black.copy(alpha = 0.6f))
+                        .border(1.5.dp, Color.White.copy(alpha = 0.5f), CircleShape)
+                        .clickable { showCharacterSheet = true },
+                    contentAlignment = Alignment.Center
+                ) {
+                    if (currentUser.imageUrl != null) {
+                        AsyncImage(
+                            model = "${AppConfig.api.baseUrl}${currentUser.imageUrl}",
+                            contentDescription = "Player avatar",
+                            modifier = Modifier.fillMaxSize().clip(CircleShape),
+                            contentScale = ContentScale.Crop
+                        )
+                    } else {
+                        Icon(
+                            Icons.Filled.Person,
+                            contentDescription = "Player",
+                            tint = Color.White,
+                            modifier = Modifier.size(24.dp)
+                        )
+                    }
+                }
+            }
+
             // === CENTER SECTION: Minimap with directional ring ===
             Box(
                 modifier = Modifier.fillMaxSize(),
@@ -360,6 +407,7 @@ fun AdventureScreen(
                         onAbilityClick = { viewModel.handleAbilityClick(it) },
                         onSpellbookToggle = { showSpellbook = !showSpellbook },
                         showSpellbook = showSpellbook,
+                        iconMappings = iconMappings,
                         modifier = Modifier
                             .fillMaxWidth()
                             .padding(horizontal = 8.dp, vertical = 4.dp)
@@ -402,8 +450,29 @@ fun AdventureScreen(
                         viewModel.handleAbilityClick(ability)
                         showSpellbook = false
                     },
-                    onDismiss = { showSpellbook = false }
+                    onDismiss = { showSpellbook = false },
+                    iconMappings = iconMappings
                 )
+            }
+
+            // === CHARACTER SHEET: Full-screen overlay ===
+            if (showCharacterSheet && currentUser != null && !ghostMode) {
+                Box(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .background(Color(0xFF1A1A2E))
+                ) {
+                    UserProfileView(
+                        user = currentUser,
+                        currentUser = currentUser,
+                        isAdmin = false,
+                        onUserUpdated = { },
+                        onLogout = { },
+                        onNavigateToItem = { },
+                        onBack = { showCharacterSheet = false },
+                        onNavigateToAdmin = null
+                    )
+                }
             }
 
             // === DETAIL VIEW: Slides in from right ===
@@ -451,6 +520,16 @@ fun AdventureScreen(
                     targets = targets,
                     onTargetSelected = { targetId -> viewModel.selectAbilityTarget(targetId) },
                     onCancel = { viewModel.cancelAbilityTargeting() }
+                )
+            }
+
+            // === MAP SELECTION OVERLAY: For teleport abilities ===
+            if (uiState.showMapSelection) {
+                MapSelectionOverlay(
+                    destinations = uiState.teleportDestinations,
+                    currentAreaId = uiState.currentLocation?.areaId,
+                    onDestinationSelected = { viewModel.selectTeleportDestination(it) },
+                    onCancel = { viewModel.dismissMapSelection() }
                 )
             }
 
@@ -1304,6 +1383,7 @@ private fun AbilityRow(
     onAbilityClick: (AbilityDto) -> Unit,
     onSpellbookToggle: () -> Unit = {},
     showSpellbook: Boolean = false,
+    iconMappings: Map<String, String> = emptyMap(),
     modifier: Modifier = Modifier
 ) {
     val iconSize = 32.dp
@@ -1344,7 +1424,8 @@ private fun AbilityRow(
                     isQueued = ability.id == queuedAbilityId,
                     enabled = canAfford,
                     onClick = { onAbilityClick(ability) },
-                    size = iconSize
+                    size = iconSize,
+                    customIconName = iconMappings[ability.id]
                 )
             }
         }
@@ -1363,9 +1444,11 @@ private fun AbilityRow(
                 .clickable { onSpellbookToggle() },
             contentAlignment = Alignment.Center
         ) {
-            Text(
-                text = "\uD83D\uDCD6",  // open book emoji
-                fontSize = 14.sp
+            Icon(
+                imageVector = Icons.Filled.AutoStories,
+                contentDescription = "Spellbook",
+                tint = Color.White,
+                modifier = Modifier.size(16.dp)
             )
         }
     }
@@ -1435,7 +1518,8 @@ private fun SpellbookPanel(
     currentMana: Int,
     currentStamina: Int,
     onAbilityClick: (AbilityDto) -> Unit,
-    onDismiss: () -> Unit
+    onDismiss: () -> Unit,
+    iconMappings: Map<String, String> = emptyMap()
 ) {
     // Dim backdrop
     Box(
@@ -1460,6 +1544,18 @@ private fun SpellbookPanel(
                     RoundedCornerShape(topStart = 16.dp, topEnd = 16.dp)
                 )
                 .clickable(enabled = false) {} // block clicks from reaching backdrop
+                .pointerInput(Unit) {
+                    var totalDrag = 0f
+                    detectDragGestures(
+                        onDragStart = { totalDrag = 0f },
+                        onDrag = { _, dragAmount ->
+                            totalDrag += dragAmount.y
+                            if (totalDrag > 60f) {
+                                onDismiss()
+                            }
+                        }
+                    )
+                }
         ) {
             // Header
             Row(
@@ -1468,8 +1564,15 @@ private fun SpellbookPanel(
                     .padding(horizontal = 16.dp, vertical = 12.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
+                Icon(
+                    imageVector = Icons.Filled.AutoStories,
+                    contentDescription = null,
+                    tint = Color.White,
+                    modifier = Modifier.size(20.dp)
+                )
+                Spacer(Modifier.width(8.dp))
                 Text(
-                    text = "\uD83D\uDCD6 Spellbook",
+                    text = "Spellbook",
                     color = Color.White,
                     fontSize = 18.sp,
                     fontWeight = FontWeight.Bold
@@ -1511,7 +1614,8 @@ private fun SpellbookPanel(
                         isQueued = isQueued,
                         canUse = canUse,
                         canAfford = canAfford,
-                        onClick = { if (canUse) onAbilityClick(ability) }
+                        onClick = { if (canUse) onAbilityClick(ability) },
+                        customIconName = iconMappings[ability.id]
                     )
                 }
             }
@@ -1526,7 +1630,8 @@ private fun SpellbookAbilityRow(
     isQueued: Boolean,
     canUse: Boolean,
     canAfford: Boolean,
-    onClick: () -> Unit
+    onClick: () -> Unit,
+    customIconName: String? = null
 ) {
     val typeColor = AbilityIconMapper.getAbilityTypeColor(ability.abilityType)
     val isOnCooldown = cooldownRounds > 0
@@ -1556,7 +1661,7 @@ private fun SpellbookAbilityRow(
             contentAlignment = Alignment.Center
         ) {
             Icon(
-                imageVector = AbilityIconMapper.getIcon(ability),
+                imageVector = AbilityIconMapper.getIcon(ability, customIconName),
                 contentDescription = ability.name,
                 tint = Color.White.copy(alpha = alpha),
                 modifier = Modifier.size(20.dp)

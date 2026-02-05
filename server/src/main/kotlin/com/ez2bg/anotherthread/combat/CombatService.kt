@@ -493,87 +493,109 @@ object CombatService {
                 }
             }
 
-            // Execute the ability
-            val result = executeAbility(actor, ability, target, currentCombatants)
-
-            // Update combatants based on result
-            currentCombatants = applyActionResult(currentCombatants, action, result).toMutableList()
-
-            // Create log entry
-            val logEntry = CombatLogEntry(
-                round = roundNumber,
-                actorId = actor.id,
-                actorName = actor.name,
-                targetId = target?.id,
-                targetName = target?.name,
-                abilityName = ability.name,
-                damage = result.damage,
-                healing = result.healing,
-                message = result.message
-            )
-            logEntries.add(logEntry)
-
-            // Broadcast ability resolution
-            broadcastToSession(session.id, AbilityResolvedMessage(
-                sessionId = session.id,
-                result = result,
-                actorName = actor.name,
-                targetName = target?.name,
-                abilityName = ability.name
-            ))
-
-            // Broadcast health updates for affected combatants
-            if (result.damage > 0 && target != null) {
-                val updatedTarget = currentCombatants.find { it.id == target.id }
-                if (updatedTarget != null) {
-                    broadcastToSession(session.id, HealthUpdateMessage(
-                        sessionId = session.id,
-                        combatantId = target.id,
-                        currentHp = updatedTarget.currentHp,
-                        maxHp = updatedTarget.maxHp,
-                        changeAmount = result.damage,
-                        sourceId = actor.id,
-                        sourceName = actor.name
-                    ))
+            // Determine targets based on ability targetType
+            val targets: List<Combatant> = when (ability.targetType) {
+                "area", "all_enemies" -> {
+                    if (actor.type == CombatantType.PLAYER) {
+                        currentCombatants.filter { it.type == CombatantType.CREATURE && it.isAlive }
+                    } else {
+                        currentCombatants.filter { it.type == CombatantType.PLAYER && it.isAlive }
+                    }
+                }
+                "all_allies" -> {
+                    currentCombatants.filter { it.type == actor.type && it.isAlive }
+                }
+                else -> {
+                    listOfNotNull(target)
                 }
             }
 
-            // Broadcast health updates for healing
-            if (result.healing > 0) {
-                // Determine who was healed - self or target
-                val healTargetId = if (ability.targetType == "self" || action.targetId == null) {
-                    actor.id
-                } else {
-                    action.targetId
-                }
-                val updatedHealTarget = currentCombatants.find { it.id == healTargetId }
-                if (updatedHealTarget != null) {
-                    broadcastToSession(session.id, HealthUpdateMessage(
-                        sessionId = session.id,
-                        combatantId = healTargetId,
-                        currentHp = updatedHealTarget.currentHp,
-                        maxHp = updatedHealTarget.maxHp,
-                        changeAmount = -result.healing, // Negative = healing
-                        sourceId = actor.id,
-                        sourceName = actor.name
-                    ))
-                }
-            }
+            // Execute ability for each target
+            for (currentTarget in targets.ifEmpty { listOf(null) }) {
+                val result = executeAbility(actor, ability, currentTarget, currentCombatants)
 
-            // Broadcast status effect applications
-            if (result.appliedEffects.isNotEmpty()) {
-                val effectTargetId = if (ability.targetType == "self" || action.targetId == null) {
-                    actor.id
-                } else {
-                    action.targetId
+                // Update combatants based on result
+                currentCombatants = applyActionResult(
+                    currentCombatants,
+                    action.copy(targetId = currentTarget?.id),
+                    result
+                ).toMutableList()
+
+                // Create log entry
+                val logEntry = CombatLogEntry(
+                    round = roundNumber,
+                    actorId = actor.id,
+                    actorName = actor.name,
+                    targetId = currentTarget?.id,
+                    targetName = currentTarget?.name,
+                    abilityName = ability.name,
+                    damage = result.damage,
+                    healing = result.healing,
+                    message = result.message
+                )
+                logEntries.add(logEntry)
+
+                // Broadcast ability resolution
+                broadcastToSession(session.id, AbilityResolvedMessage(
+                    sessionId = session.id,
+                    result = result,
+                    actorName = actor.name,
+                    targetName = currentTarget?.name,
+                    abilityName = ability.name
+                ))
+
+                // Broadcast health updates for affected combatants
+                if (result.damage > 0 && currentTarget != null) {
+                    val updatedTarget = currentCombatants.find { it.id == currentTarget.id }
+                    if (updatedTarget != null) {
+                        broadcastToSession(session.id, HealthUpdateMessage(
+                            sessionId = session.id,
+                            combatantId = currentTarget.id,
+                            currentHp = updatedTarget.currentHp,
+                            maxHp = updatedTarget.maxHp,
+                            changeAmount = result.damage,
+                            sourceId = actor.id,
+                            sourceName = actor.name
+                        ))
+                    }
                 }
-                for (effect in result.appliedEffects) {
-                    broadcastToSession(session.id, StatusEffectMessage(
-                        sessionId = session.id,
-                        combatantId = effectTargetId,
-                        effect = effect,
-                        applied = true
-                    ))
+
+                // Broadcast health updates for healing
+                if (result.healing > 0) {
+                    val healTargetId = if (ability.targetType == "self" || currentTarget == null) {
+                        actor.id
+                    } else {
+                        currentTarget.id
+                    }
+                    val updatedHealTarget = currentCombatants.find { it.id == healTargetId }
+                    if (updatedHealTarget != null) {
+                        broadcastToSession(session.id, HealthUpdateMessage(
+                            sessionId = session.id,
+                            combatantId = healTargetId,
+                            currentHp = updatedHealTarget.currentHp,
+                            maxHp = updatedHealTarget.maxHp,
+                            changeAmount = -result.healing,
+                            sourceId = actor.id,
+                            sourceName = actor.name
+                        ))
+                    }
+                }
+
+                // Broadcast status effect applications
+                if (result.appliedEffects.isNotEmpty()) {
+                    val effectTargetId = if (ability.targetType == "self" || currentTarget == null) {
+                        actor.id
+                    } else {
+                        currentTarget.id
+                    }
+                    for (effect in result.appliedEffects) {
+                        broadcastToSession(session.id, StatusEffectMessage(
+                            sessionId = session.id,
+                            combatantId = effectTargetId,
+                            effect = effect,
+                            applied = true
+                        ))
+                    }
                 }
             }
         }

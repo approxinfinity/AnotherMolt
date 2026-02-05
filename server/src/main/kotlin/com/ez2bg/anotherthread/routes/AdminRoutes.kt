@@ -227,6 +227,43 @@ fun Route.adminRoutes() {
         ))
     }
 
+    // Ensure every area has a gateway location at (0,0)
+    post("/admin/ensure-origin-locations") {
+        val allLocations = LocationRepository.findAll()
+        val areaIds = allLocations.mapNotNull { it.areaId }.distinct()
+        val created = mutableListOf<String>()
+
+        for (areaId in areaIds) {
+            val origin = LocationRepository.findByCoordinates(0, 0, areaId)
+            if (origin == null) {
+                val areaName = areaId.split("-", "_")
+                    .joinToString(" ") { it.replaceFirstChar { c -> c.uppercase() } }
+                LocationRepository.create(
+                    Location(
+                        name = "Gateway of $areaName",
+                        desc = "A shimmering nexus point where travelers materialize, marked by ancient runestones.",
+                        itemIds = emptyList(),
+                        creatureIds = emptyList(),
+                        exits = emptyList(),
+                        featureIds = emptyList(),
+                        gridX = 0,
+                        gridY = 0,
+                        areaId = areaId,
+                        locationType = LocationType.OUTDOOR_GROUND
+                    )
+                )
+                created.add(areaId)
+                log.info("Created gateway location at (0,0) for area: $areaId")
+            }
+        }
+
+        call.respond(mapOf(
+            "message" to "Ensured origin locations for ${areaIds.size} areas",
+            "areasChecked" to areaIds,
+            "areasCreated" to created
+        ))
+    }
+
     // Service health and management routes (admin only)
     route("/admin/services") {
         // Get health status of local services (Ollama, Stable Diffusion)

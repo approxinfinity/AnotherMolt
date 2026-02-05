@@ -23,9 +23,12 @@ class AbilityCostBalancer {
         var abilitiesModified = 0
         
         for (ability in abilities) {
+            // Item abilities use explicit costs — skip balancing
+            if (ability.abilityType == "item") continue
+
             val originalManaCost = ability.manaCost.toLong()
             val originalStaminaCost = ability.staminaCost.toLong()
-            
+
             // Calculate balanced costs based on ability type and name
             val newManaCost = calculateBalancedManaCost(originalManaCost, ability.name, ability.abilityType)
             val newStaminaCost = calculateBalancedStaminaCost(originalStaminaCost, ability.name, ability.abilityType)
