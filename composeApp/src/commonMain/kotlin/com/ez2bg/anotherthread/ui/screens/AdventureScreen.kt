@@ -1482,7 +1482,7 @@ private fun ResourceMiniBar(label: String, current: Int, max: Int, color: Color,
     val fraction = if (max > 0) (current.toFloat() / max).coerceIn(0f, 1f) else 0f
     Box(
         modifier = modifier
-            .height(14.dp)
+            .height(18.dp)
             .clip(RoundedCornerShape(3.dp))
             .background(Color(0xFF333333))
     ) {
