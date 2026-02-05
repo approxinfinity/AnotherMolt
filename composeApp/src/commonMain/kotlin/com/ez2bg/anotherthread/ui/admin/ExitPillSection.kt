@@ -150,8 +150,12 @@ fun ExitPillSection(
         // Filter out already selected locations from available options
         val existingLocationIds = exits.map { it.locationId }.toSet()
 
+        // Track whether we're adding a cross-area exit (ENTER only)
+        var isCrossArea by remember { mutableStateOf(false) }
+
         // Filter locations: exclude non-adjacent locations that have coordinates
         // A location with coordinates is only valid if it's exactly 1 cell away from current location
+        // Cross-area locations are allowed (they will use ENTER direction)
         val unselectedOptions = availableOptions.filter { option ->
             if (option.id in existingLocationIds) return@filter false
 
@@ -163,37 +167,56 @@ fun ExitPillSection(
             // If source has no coordinates, allow all targets
             if (currentLocation?.gridX == null) return@filter true
 
-            // Both have coordinates - check if adjacent (exactly 1 cell away)
+            val sameArea = (targetLoc.areaId ?: "overworld") == (currentLocation?.areaId ?: "overworld")
+
+            // Cross-area locations are allowed (will use ENTER direction)
+            if (!sameArea) return@filter true
+
+            // Both have coordinates in same area - check if adjacent (exactly 1 cell away)
             val dx = kotlin.math.abs(targetLoc.gridX!! - currentLocation.gridX!!)
             val dy = kotlin.math.abs((targetLoc.gridY ?: 0) - (currentLocation.gridY ?: 0))
-            val sameArea = (targetLoc.areaId ?: "overworld") == (currentLocation.areaId ?: "overworld")
 
             // Adjacent means max 1 step in any direction (including diagonals), same area, not same cell
-            sameArea && dx <= 1 && dy <= 1 && !(dx == 0 && dy == 0)
+            dx <= 1 && dy <= 1 && !(dx == 0 && dy == 0)
         }
 
         // Filter out already used directions (max 1 exit per direction)
         val usedDirections = exits.map { it.direction }.toSet()
 
+        // Detect cross-area selection
+        LaunchedEffect(selectedLocationId) {
+            val targetLoc = allLocations.find { it.id == selectedLocationId }
+            isCrossArea = if (targetLoc != null && currentLocation != null) {
+                (targetLoc.areaId ?: "overworld") != (currentLocation.areaId ?: "overworld")
+            } else false
+        }
+
         // When a location is selected, validate exit and get available directions
-        LaunchedEffect(selectedLocationId, currentLocationId) {
+        LaunchedEffect(selectedLocationId, currentLocationId, isCrossArea) {
             if (selectedLocationId != null && currentLocationId != null) {
-                isValidating = true
-                try {
-                    ApiClient.validateExit(currentLocationId, selectedLocationId!!)
-                        .onSuccess { result ->
-                            validationResult = result
-                            // Auto-select direction if fixed
-                            if (result.validDirections.isNotEmpty()) {
-                                val firstValid = result.validDirections.first()
-                                selectedDirection = firstValid.direction
-                            }
-                        }
-                        .onFailure {
-                            validationResult = null
-                        }
-                } finally {
+                if (isCrossArea) {
+                    // Cross-area exits skip validation - always use ENTER
+                    validationResult = null
+                    selectedDirection = ExitDirection.ENTER
                     isValidating = false
+                } else {
+                    isValidating = true
+                    try {
+                        ApiClient.validateExit(currentLocationId, selectedLocationId!!)
+                            .onSuccess { result ->
+                                validationResult = result
+                                // Auto-select direction if fixed
+                                if (result.validDirections.isNotEmpty()) {
+                                    val firstValid = result.validDirections.first()
+                                    selectedDirection = firstValid.direction
+                                }
+                            }
+                            .onFailure {
+                                validationResult = null
+                            }
+                    } finally {
+                        isValidating = false
+                    }
                 }
             } else {
                 validationResult = null
@@ -201,7 +224,10 @@ fun ExitPillSection(
         }
 
         // Compute available directions based on validation result
-        val availableDirections = if (validationResult != null && validationResult!!.canCreateExit) {
+        val availableDirections = if (isCrossArea) {
+            // Cross-area exits must use ENTER direction
+            listOf(ExitDirection.ENTER).filter { it !in usedDirections }
+        } else if (validationResult != null && validationResult!!.canCreateExit) {
             validationResult!!.validDirections.map { it.direction }.filter { it !in usedDirections }
         } else if (currentLocationId == null || currentLocation?.gridX == null) {
             // Source doesn't have coordinates - use old behavior
@@ -210,8 +236,8 @@ fun ExitPillSection(
             emptyList()
         }
 
-        // Check if selected direction is fixed (target already has coordinates)
-        val isDirectionFixed = validationResult?.validDirections?.firstOrNull()?.isFixed == true
+        // Check if selected direction is fixed (target already has coordinates or cross-area)
+        val isDirectionFixed = isCrossArea || validationResult?.validDirections?.firstOrNull()?.isFixed == true
 
         AlertDialog(
             onDismissRequest = {
@@ -219,6 +245,7 @@ fun ExitPillSection(
                 selectedLocationId = null
                 selectedDirection = ExitDirection.UNKNOWN
                 validationResult = null
+                isCrossArea = false
             },
             title = { Text("Add Exit") },
             text = {
@@ -269,6 +296,8 @@ fun ExitPillSection(
                                         verticalAlignment = Alignment.CenterVertically
                                     ) {
                                         Column(modifier = Modifier.weight(1f)) {
+                                            val targetIsCrossArea = targetLoc != null &&
+                                                (targetLoc.areaId ?: "overworld") != (currentLocation?.areaId ?: "overworld")
                                             Text(
                                                 text = option.name.ifBlank { "(No name)" },
                                                 style = MaterialTheme.typography.bodyLarge,
@@ -276,7 +305,13 @@ fun ExitPillSection(
                                                 maxLines = 1,
                                                 overflow = TextOverflow.Ellipsis
                                             )
-                                            if (hasCoords && targetLoc != null) {
+                                            if (targetIsCrossArea && targetLoc != null) {
+                                                Text(
+                                                    text = "Area: ${targetLoc.areaId ?: "overworld"} (ENTER)",
+                                                    style = MaterialTheme.typography.bodySmall,
+                                                    color = if (isSelected) MaterialTheme.colorScheme.tertiary else MaterialTheme.colorScheme.tertiary.copy(alpha = 0.7f)
+                                                )
+                                            } else if (hasCoords && targetLoc != null) {
                                                 Text(
                                                     text = "(${targetLoc.gridX}, ${targetLoc.gridY})",
                                                     style = MaterialTheme.typography.bodySmall,
@@ -422,6 +457,7 @@ fun ExitPillSection(
                             selectedLocationId = null
                             selectedDirection = ExitDirection.UNKNOWN
                             validationResult = null
+                            isCrossArea = false
                         }
                     },
                     enabled = selectedLocationId != null && availableDirections.isNotEmpty() && !isValidating
@@ -435,6 +471,7 @@ fun ExitPillSection(
                     selectedLocationId = null
                     selectedDirection = ExitDirection.UNKNOWN
                     validationResult = null
+                    isCrossArea = false
                 }) {
                     Text("Cancel")
                 }

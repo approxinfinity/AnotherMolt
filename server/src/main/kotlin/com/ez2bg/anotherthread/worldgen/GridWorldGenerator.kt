@@ -23,7 +23,8 @@ import kotlin.random.Random
  * 8. Generate names/descriptions via Ollama
  */
 class GridWorldGenerator(
-    private val params: WorldGenParams
+    private val params: WorldGenParams,
+    private val onProgress: ((phase: String, current: Int, total: Int, message: String) -> Unit)? = null
 ) {
     private val random = Random(params.seed)
     private lateinit var grid: Array<Array<GridCell>>
@@ -46,21 +47,27 @@ class GridWorldGenerator(
     suspend fun generate(): WorldGenerationResult {
         return try {
             // Step 1: Initialize grid
+            onProgress?.invoke("terrain", 1, 6, "Initializing grid...")
             initializeGrid()
 
             // Step 2: Determine land vs water
+            onProgress?.invoke("terrain", 2, 6, "Calculating land and water...")
             assignLandWater()
 
             // Step 3: Calculate elevation
+            onProgress?.invoke("terrain", 3, 6, "Calculating elevation...")
             calculateElevation()
 
             // Step 4: Calculate moisture
+            onProgress?.invoke("terrain", 4, 6, "Calculating moisture...")
             calculateMoisture()
 
             // Step 5: Assign biomes
+            onProgress?.invoke("terrain", 5, 6, "Assigning biomes...")
             assignBiomes()
 
             // Step 6: Generate rivers
+            onProgress?.invoke("terrain", 6, 6, "Generating rivers...")
             generateRivers()
 
             // Step 7-8: Create locations and save
@@ -362,6 +369,10 @@ class GridWorldGenerator(
     private suspend fun createLocations(): WorldGenerationResult = coroutineScope {
         val createdIds = mutableListOf<String>()
 
+        // Count land cells for progress
+        val landCellCount = grid.flatMap { it.toList() }.count { it.isLand || params.connectWaterCells }
+        var createdCount = 0
+
         // First pass: Create all locations without exits
         for (x in 0 until params.width) {
             for (y in 0 until params.height) {
@@ -376,6 +387,17 @@ class GridWorldGenerator(
                 val gridX = x + params.gridOffsetX
                 val gridY = y + params.gridOffsetY
 
+                // Build terrain features list from cell properties
+                val features = buildList {
+                    if (cell.isRiver) add("river")
+                    if (cell.isCoast) add("coast")
+                    if (cell.elevation > 0.7) add("high_elevation")
+                    if (cell.elevation < 0.2) add("low_elevation")
+                    if (cell.moisture > 0.7) add("wet")
+                    if (cell.moisture < 0.3) add("dry")
+                    if (cell.biome == Biome.MARSH) add("marsh")
+                }
+
                 val location = Location(
                     id = locationId,
                     name = generateBasicName(cell),
@@ -386,15 +408,32 @@ class GridWorldGenerator(
                     featureIds = emptyList(),
                     gridX = gridX,
                     gridY = gridY,
-                    areaId = params.areaId
+                    areaId = params.areaId,
+                    biome = cell.biome.name,
+                    elevation = cell.elevation.toFloat(),
+                    moisture = cell.moisture.toFloat(),
+                    isRiver = cell.isRiver,
+                    isCoast = cell.isCoast,
+                    terrainFeatures = features.ifEmpty { null },
+                    isOriginalTerrain = true
                 )
 
                 LocationRepository.create(location)
                 createdIds.add(locationId)
+                createdCount++
+
+                // Report progress every 10 locations
+                if (createdCount % 10 == 0 || createdCount == landCellCount) {
+                    onProgress?.invoke("locations", createdCount, landCellCount, "Creating locations: $createdCount / $landCellCount")
+                }
             }
         }
 
         // Second pass: Add exits to each location
+        var exitCount = 0
+        val totalLocations = createdIds.size
+        onProgress?.invoke("exits", 0, totalLocations, "Adding exits...")
+
         for (x in 0 until params.width) {
             for (y in 0 until params.height) {
                 val cell = grid[x][y]
@@ -426,6 +465,11 @@ class GridWorldGenerator(
                         LocationRepository.update(location.copy(exits = exits))
                     }
                 }
+
+                exitCount++
+                if (exitCount % 20 == 0 || exitCount == totalLocations) {
+                    onProgress?.invoke("exits", exitCount, totalLocations, "Adding exits: $exitCount / $totalLocations")
+                }
             }
         }
 
@@ -433,12 +477,19 @@ class GridWorldGenerator(
         if (params.generateNames || params.generateDescriptions) {
             try {
                 val batchSize = 5
+                var nameCount = 0
+                val totalNames = createdIds.size
+                onProgress?.invoke("names", 0, totalNames, "Generating names with AI...")
+
                 createdIds.chunked(batchSize).forEach { batch ->
                     batch.map { locationId ->
                         async {
                             generateLocationContent(locationId)
                         }
                     }.awaitAll()
+
+                    nameCount += batch.size
+                    onProgress?.invoke("names", nameCount, totalNames, "Generating names: $nameCount / $totalNames")
                 }
             } catch (e: Exception) {
                 // Log but don't fail - basic names are already there

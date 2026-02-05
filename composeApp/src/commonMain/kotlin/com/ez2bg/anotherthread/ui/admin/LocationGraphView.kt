@@ -23,6 +23,7 @@ import com.ez2bg.anotherthread.ui.GameMode
 import com.ez2bg.anotherthread.ui.admin.LocationGraph
 import com.ez2bg.anotherthread.ui.components.EventLogEntry
 import com.ez2bg.anotherthread.ui.components.EventType
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
 @Composable
@@ -42,6 +43,13 @@ fun LocationGraphView(
     var error by remember(refreshKey) { mutableStateOf<String?>(null) }
     val scope = rememberCoroutineScope()
 
+    // Area filtering state
+    var areas by remember { mutableStateOf<List<AreaInfoDto>>(emptyList()) }
+    var selectedAreaId by remember { mutableStateOf("overworld") }
+    var areaDropdownExpanded by remember { mutableStateOf(false) }
+    // Pending location to focus on after area switch (for cross-area navigation)
+    var pendingFocusLocationId by remember { mutableStateOf<String?>(null) }
+
     // Terrain override state
     var terrainOverridesMap by remember(refreshKey) { mutableStateOf<Map<String, TerrainOverridesDto>>(emptyMap()) }
     var selectedLocationForSettings by remember { mutableStateOf<LocationDto?>(null) }
@@ -57,6 +65,23 @@ fun LocationGraphView(
             println("DEBUG: Loaded ${it.size} locations")
             locations = it
         }.onFailure { error = it.message }
+    }
+
+    // Fetch world areas for dropdown
+    LaunchedEffect(refreshKey) {
+        ApiClient.getWorldAreas().onSuccess { areaList ->
+            areas = areaList
+            // If selectedAreaId isn't in the area list, pick a valid one
+            val areaIds = areaList.map { it.areaId } + listOf("overworld")
+            if (selectedAreaId !in areaIds) {
+                selectedAreaId = "overworld"
+            }
+        }
+    }
+
+    // Filter locations by selected area
+    val filteredLocations = remember(locations, selectedAreaId) {
+        locations.filter { (it.areaId ?: "overworld") == selectedAreaId }
     }
 
     // Combat client state - persisted across recompositions
@@ -373,7 +398,15 @@ fun LocationGraphView(
             }
             else -> {
                 LocationGraph(
-                    locations = locations,
+                    locations = filteredLocations,
+                    allLocations = locations,
+                    selectedAreaId = selectedAreaId,
+                    onAreaNavigate = { areaId, locationId ->
+                        selectedAreaId = areaId
+                        pendingFocusLocationId = locationId
+                    },
+                    pendingFocusLocationId = pendingFocusLocationId,
+                    onPendingFocusConsumed = { pendingFocusLocationId = null },
                     onLocationClick = onLocationClick,
                     modifier = Modifier.fillMaxSize(),
                     isAdmin = isAdmin,
@@ -394,6 +427,66 @@ fun LocationGraphView(
                     combatDisorientRounds = combatDisorientRounds,
                     eventLogEntries = eventLogEntries
                 )
+            }
+        }
+
+        // Area dropdown selector (CREATE mode only, when multiple areas exist)
+        if (gameMode.isCreate && areas.isNotEmpty()) {
+            Box(
+                modifier = Modifier
+                    .align(Alignment.TopStart)
+                    .padding(8.dp)
+            ) {
+                Surface(
+                    modifier = Modifier.clickable { areaDropdownExpanded = true },
+                    shape = RoundedCornerShape(8.dp),
+                    color = MaterialTheme.colorScheme.surface.copy(alpha = 0.9f),
+                    tonalElevation = 2.dp,
+                    shadowElevation = 2.dp
+                ) {
+                    Row(
+                        modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(4.dp)
+                    ) {
+                        Text(
+                            text = selectedAreaId,
+                            style = MaterialTheme.typography.labelLarge,
+                            color = MaterialTheme.colorScheme.onSurface
+                        )
+                        Text(
+                            text = if (areaDropdownExpanded) "\u25B2" else "\u25BC",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                }
+                DropdownMenu(
+                    expanded = areaDropdownExpanded,
+                    onDismissRequest = { areaDropdownExpanded = false }
+                ) {
+                    val allAreaIds = (listOf("overworld") + areas.map { it.areaId }).distinct()
+                    allAreaIds.forEach { areaId ->
+                        val info = areas.find { it.areaId == areaId }
+                        val count = info?.locationCount ?: locations.count { (it.areaId ?: "overworld") == areaId }
+                        DropdownMenuItem(
+                            text = {
+                                Column {
+                                    Text(areaId)
+                                    Text(
+                                        text = "$count locations",
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                }
+                            },
+                            onClick = {
+                                selectedAreaId = areaId
+                                areaDropdownExpanded = false
+                            }
+                        )
+                    }
+                }
             }
         }
 

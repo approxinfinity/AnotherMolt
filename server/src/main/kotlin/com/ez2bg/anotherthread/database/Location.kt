@@ -54,7 +54,15 @@ data class Location(
     // Stored as LocalDateTime internally but serialized as ISO string
     val lastEditedAt: String? = null,
     // Location type for determining behavior
-    val locationType: LocationType? = null
+    val locationType: LocationType? = null,
+    // Biome metadata from world generation
+    val biome: String? = null,
+    val elevation: Float? = null,
+    val moisture: Float? = null,
+    val isRiver: Boolean? = null,
+    val isCoast: Boolean? = null,
+    val terrainFeatures: List<String>? = null,
+    val isOriginalTerrain: Boolean? = null
 )
 
 object LocationRepository {
@@ -111,7 +119,14 @@ object LocationRepository {
         lastEditedAt = this[LocationTable.lastEditedAt],
         locationType = this[LocationTable.locationType]?.let {
             try { LocationType.valueOf(it) } catch (e: Exception) { null }
-        }
+        },
+        biome = this[LocationTable.biome],
+        elevation = this[LocationTable.elevation],
+        moisture = this[LocationTable.moisture],
+        isRiver = this[LocationTable.isRiver],
+        isCoast = this[LocationTable.isCoast],
+        terrainFeatures = this[LocationTable.terrainFeatures]?.let { jsonToList(it) }?.ifEmpty { null },
+        isOriginalTerrain = this[LocationTable.isOriginalTerrain]
     )
 
     fun create(location: Location): Location = transaction {
@@ -131,6 +146,13 @@ object LocationRepository {
             it[lastEditedBy] = location.lastEditedBy
             it[lastEditedAt] = location.lastEditedAt
             it[locationType] = location.locationType?.name
+            it[biome] = location.biome
+            it[elevation] = location.elevation
+            it[moisture] = location.moisture
+            it[isRiver] = location.isRiver
+            it[isCoast] = location.isCoast
+            it[terrainFeatures] = location.terrainFeatures?.let { listToJson(it) }
+            it[isOriginalTerrain] = location.isOriginalTerrain
         }
         location
     }
@@ -162,6 +184,13 @@ object LocationRepository {
             it[lastEditedBy] = location.lastEditedBy
             it[lastEditedAt] = location.lastEditedAt
             it[locationType] = location.locationType?.name
+            it[biome] = location.biome
+            it[elevation] = location.elevation
+            it[moisture] = location.moisture
+            it[isRiver] = location.isRiver
+            it[isCoast] = location.isCoast
+            it[terrainFeatures] = location.terrainFeatures?.let { listToJson(it) }
+            it[isOriginalTerrain] = location.isOriginalTerrain
         } > 0
     }
 

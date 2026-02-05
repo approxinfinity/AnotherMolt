@@ -24,6 +24,14 @@ object LocationTable : Table("location") {
     val lastEditedAt = text("last_edited_at").nullable() // ISO datetime string
     // Location type for determining behavior (e.g., wilderness generation)
     val locationType = varchar("location_type", 50).nullable()
+    // Biome metadata from world generation (nullable for backward compatibility)
+    val biome = varchar("biome", 50).nullable()
+    val elevation = float("elevation").nullable()
+    val moisture = float("moisture").nullable()
+    val isRiver = bool("is_river").nullable()
+    val isCoast = bool("is_coast").nullable()
+    val terrainFeatures = text("terrain_features").nullable() // JSON string list
+    val isOriginalTerrain = bool("is_original_terrain").nullable()
 
     override val primaryKey = PrimaryKey(id)
 }

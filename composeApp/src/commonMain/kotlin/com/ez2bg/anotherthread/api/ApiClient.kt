@@ -54,7 +54,15 @@ data class LocationDto(
     val lastEditedBy: String? = null,
     val lastEditedAt: String? = null, // ISO datetime string
     // Location type for determining behavior
-    val locationType: LocationType? = null
+    val locationType: LocationType? = null,
+    // Biome metadata from world generation
+    val biome: String? = null,
+    val elevation: Float? = null,
+    val moisture: Float? = null,
+    val isRiver: Boolean? = null,
+    val isCoast: Boolean? = null,
+    val terrainFeatures: List<String>? = null,
+    val isOriginalTerrain: Boolean? = null
 )
 
 @Serializable
@@ -592,6 +600,99 @@ data class TerrainOverrideDto(
     val overrides: TerrainOverridesDto,
     val updatedBy: String? = null,
     val updatedAt: Long? = null
+)
+
+// World Generation DTOs
+@Serializable
+data class WorldGenParamsDto(
+    val width: Int = 20,
+    val height: Int = 20,
+    val seed: Long? = null,
+    val islandFactor: Double = 1.2,
+    val noiseFactor: Double = 0.5,
+    val landThreshold: Double = 0.3,
+    val elevationNoiseScale: Double = 0.08,
+    val elevationNoiseWeight: Double = 0.3,
+    val moistureNoiseScale: Double = 0.1,
+    val moistureDecay: Double = 0.85,
+    val moistureNoiseWeight: Double = 0.4,
+    val riverDensity: Double = 0.25,
+    val riverMinLength: Int = 3,
+    val areaId: String = "",
+    val areaName: String = "Generated World",
+    val gridOffsetX: Int = 0,
+    val gridOffsetY: Int = 0,
+    val generateNames: Boolean = true,
+    val generateDescriptions: Boolean = true,
+    val connectWaterCells: Boolean = false
+)
+
+@Serializable
+data class WorldGenJobResponseDto(
+    val success: Boolean,
+    val jobId: String? = null,
+    val message: String
+)
+
+@Serializable
+data class WorldGenStatsDto(
+    val totalCells: Int,
+    val landCells: Int,
+    val waterCells: Int,
+    val coastalCells: Int,
+    val riverCells: Int,
+    val biomeDistribution: Map<String, Int>
+)
+
+@Serializable
+data class WorldGenerationResultDto(
+    val success: Boolean,
+    val locationIds: List<String> = emptyList(),
+    val areaId: String,
+    val stats: WorldGenStatsDto? = null,
+    val errorMessage: String? = null
+)
+
+@Serializable
+data class WorldGenJobStatusDto(
+    val jobId: String,
+    val status: String,
+    val startedAt: Long,
+    val completedAt: Long? = null,
+    val result: WorldGenerationResultDto? = null,
+    val error: String? = null,
+    val progress: WorldGenProgressDto? = null
+)
+
+@Serializable
+data class WorldGenProgressDto(
+    val phase: String,
+    val current: Int = 0,
+    val total: Int = 0,
+    val message: String = ""
+)
+
+@Serializable
+data class AreaInfoDto(
+    val areaId: String,
+    val locationCount: Int,
+    val hasCoordinates: Boolean
+)
+
+@Serializable
+data class BiomeInfoDto(
+    val name: String,
+    val displayName: String,
+    val terrainWords: List<String>,
+    val featureWords: List<String>,
+    val colorHex: String
+)
+
+@Serializable
+data class AreaDeleteResponseDto(
+    val success: Boolean,
+    val deleted: Int,
+    val areaId: String
 )
 
 object ApiClient {
@@ -1188,6 +1289,47 @@ object ApiClient {
 
     suspend fun getLlmStatus(): Result<LlmStatusResponse> = runCatching {
         client.get("$baseUrl/class-generation/status").body()
+    }
+
+    // World Generation methods
+    suspend fun generateWorld(params: WorldGenParamsDto): Result<WorldGenJobResponseDto> = runCatching {
+        val response = client.post("$baseUrl/world/generate") {
+            contentType(ContentType.Application.Json)
+            setBody(params)
+        }
+        // Handle non-success responses that still have a body
+        if (!response.status.isSuccess()) {
+            val errorBody: WorldGenJobResponseDto = response.body()
+            return@runCatching errorBody
+        }
+        response.body()
+    }
+
+    suspend fun generateWorldSync(params: WorldGenParamsDto): Result<WorldGenerationResultDto> = runCatching {
+        client.post("$baseUrl/world/generate/sync") {
+            contentType(ContentType.Application.Json)
+            setBody(params)
+        }.body()
+    }
+
+    suspend fun getWorldGenJobStatus(jobId: String): Result<WorldGenJobStatusDto> = runCatching {
+        client.get("$baseUrl/world/generate/$jobId/status").body()
+    }
+
+    suspend fun getWorldAreas(): Result<List<AreaInfoDto>> = runCatching {
+        client.get("$baseUrl/world/areas").body()
+    }
+
+    suspend fun deleteWorldArea(areaId: String): Result<AreaDeleteResponseDto> = runCatching {
+        client.delete("$baseUrl/world/area/$areaId").body()
+    }
+
+    suspend fun getWorldBiomes(): Result<List<BiomeInfoDto>> = runCatching {
+        client.get("$baseUrl/world/biomes").body()
+    }
+
+    suspend fun getWorldGenDefaults(): Result<WorldGenParamsDto> = runCatching {
+        client.get("$baseUrl/world/params/defaults").body()
     }
 
     // Nerf Request methods

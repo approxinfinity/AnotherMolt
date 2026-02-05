@@ -5,6 +5,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.safeContentPadding
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
+import androidx.compose.material3.darkColorScheme
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -49,7 +50,19 @@ fun App() {
     // Dark theme background color matching onboarding
     val darkBackground = Color(0xFF1A1A2E)
 
-    MaterialTheme {
+    MaterialTheme(colorScheme = darkColorScheme(
+        background = darkBackground,
+        surface = Color(0xFF1E1E32),
+        onBackground = Color.White,
+        onSurface = Color.White,
+        onSurfaceVariant = Color(0xFFCAC4D0),
+        primary = Color(0xFFD0BCFF),
+        onPrimary = Color(0xFF381E72),
+        secondary = Color(0xFFCCC2DC),
+        onSecondary = Color(0xFF332D41),
+        error = Color(0xFFF2B8B5),
+        onError = Color(0xFF601410)
+    )) {
         Surface(
             modifier = Modifier
                 .background(darkBackground)

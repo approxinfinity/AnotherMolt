@@ -93,13 +93,15 @@ import com.ez2bg.anotherthread.ui.components.CombatTarget
 import com.ez2bg.anotherthread.ui.components.DisorientIndicator
 import com.ez2bg.anotherthread.ui.components.EventLogEntry
 import com.ez2bg.anotherthread.ui.components.TargetSelectionOverlay
-import com.ez2bg.anotherthread.ui.terrain.NeighborElevations
-import com.ez2bg.anotherthread.ui.terrain.NeighborRivers
-import com.ez2bg.anotherthread.ui.terrain.PassThroughFeatures
 import com.ez2bg.anotherthread.ui.terrain.TerrainType
-import com.ez2bg.anotherthread.ui.terrain.calculateElevationFromTerrain
-import com.ez2bg.anotherthread.ui.terrain.drawLocationTerrain
+import com.ez2bg.anotherthread.ui.terrain.computeContinuousTerrain
+import com.ez2bg.anotherthread.ui.terrain.drawElevationGradients
+import com.ez2bg.anotherthread.ui.terrain.drawForestRegions
+import com.ez2bg.anotherthread.ui.terrain.drawLakeRegions
+import com.ez2bg.anotherthread.ui.terrain.drawMountainRidges
 import com.ez2bg.anotherthread.ui.terrain.drawParchmentBackground
+import com.ez2bg.anotherthread.ui.terrain.drawPointFeatures
+import com.ez2bg.anotherthread.ui.terrain.drawRiverPaths
 import com.ez2bg.anotherthread.ui.terrain.drawTerrainAwarePath
 import com.ez2bg.anotherthread.ui.terrain.parseTerrainFromDescription
 import com.ez2bg.anotherthread.updateUrlWithCacheBuster
@@ -116,6 +118,11 @@ import kotlinx.coroutines.launch
 @Composable
 fun LocationGraph(
     locations: List<LocationDto>,
+    allLocations: List<LocationDto> = locations,
+    selectedAreaId: String = "overworld",
+    onAreaNavigate: (areaId: String, locationId: String) -> Unit = { _, _ -> },
+    pendingFocusLocationId: String? = null,
+    onPendingFocusConsumed: () -> Unit = {},
     onLocationClick: (LocationDto) -> Unit,
     modifier: Modifier = Modifier,
     isAdmin: Boolean = false,
@@ -202,6 +209,14 @@ fun LocationGraph(
         if (currentUser != null && expandedLocationId != null) {
             ApiClient.updateUserLocation(currentUser.id, expandedLocationId)
         }
+    }
+
+    // Handle pending focus after area navigation
+    LaunchedEffect(pendingFocusLocationId, locations) {
+        val focusId = pendingFocusLocationId ?: return@LaunchedEffect
+        val targetLoc = locations.find { it.id == focusId } ?: return@LaunchedEffect
+        expandedLocationId = targetLoc.id
+        onPendingFocusConsumed()
     }
 
     // Pan offset state with animation support
@@ -336,195 +351,53 @@ fun LocationGraph(
                     translationY = offset.value.y
                 }
         ) {
-            // LAYER 2: Terrain for each location
-            // Pre-compute elevations and terrain types for all locations
-            val locationElevations = locations.associate { loc ->
-                val terrains = parseTerrainFromDescription(loc.desc, loc.name)
-                val override = terrainOverridesMap[loc.id]?.elevation
-                loc.id to calculateElevationFromTerrain(terrains, override)
-            }
-            val locationTerrains = locations.associate { loc ->
-                loc.id to parseTerrainFromDescription(loc.desc, loc.name)
-            }
-            val locationHasRiver = locations.associate { loc ->
-                val terrains = locationTerrains[loc.id] ?: emptySet()
-                loc.id to (TerrainType.RIVER in terrains || TerrainType.STREAM in terrains)
-            }
-
-            // Build a map of location ID to location for quick lookup
-            val locationById = locations.associateBy { it.id }
-
-            // Function to find all directions where a terrain type exists within maxDepth steps
-            // Uses BFS to explore all paths, not just straight lines
-            // Returns the general direction (N/S/E/W/NE/NW/SE/SW) from start to each found feature
-            fun findFeatureDirections(startId: String, terrainType: TerrainType, maxDepth: Int = 4): Set<ExitDirection> {
-                val foundDirections = mutableSetOf<ExitDirection>()
-                val visited = mutableSetOf<String>()
-                // Queue entries: (locationId, cumulativeX, cumulativeY, depth)
-                // We track cumulative position to determine overall direction
-                val queue = ArrayDeque<Triple<String, Pair<Int, Int>, Int>>()
-
-                val startLoc = locationById[startId] ?: return emptySet()
-                visited.add(startId)
-
-                // Add all direct neighbors to queue
-                for (exit in startLoc.exits) {
-                    val (dx, dy) = when (exit.direction) {
-                        ExitDirection.NORTH -> Pair(0, -1)
-                        ExitDirection.SOUTH -> Pair(0, 1)
-                        ExitDirection.EAST -> Pair(1, 0)
-                        ExitDirection.WEST -> Pair(-1, 0)
-                        ExitDirection.NORTHEAST -> Pair(1, -1)
-                        ExitDirection.NORTHWEST -> Pair(-1, -1)
-                        ExitDirection.SOUTHEAST -> Pair(1, 1)
-                        ExitDirection.SOUTHWEST -> Pair(-1, 1)
-                        else -> Pair(0, 0)
-                    }
-                    queue.addLast(Triple(exit.locationId, Pair(dx, dy), 1))
-                }
-
-                while (queue.isNotEmpty()) {
-                    val (currentId, pos, depth) = queue.removeFirst()
-                    if (currentId in visited) continue
-                    visited.add(currentId)
-
-                    val terrains = locationTerrains[currentId] ?: emptySet()
-                    val hasFeature = terrainType in terrains ||
-                        (terrainType == TerrainType.RIVER && TerrainType.STREAM in terrains)
-
-                    if (hasFeature) {
-                        // Determine direction from cumulative position
-                        val (cx, cy) = pos
-                        val dir = when {
-                            cx > 0 && cy < 0 -> ExitDirection.NORTHEAST
-                            cx < 0 && cy < 0 -> ExitDirection.NORTHWEST
-                            cx > 0 && cy > 0 -> ExitDirection.SOUTHEAST
-                            cx < 0 && cy > 0 -> ExitDirection.SOUTHWEST
-                            cx > 0 -> ExitDirection.EAST
-                            cx < 0 -> ExitDirection.WEST
-                            cy < 0 -> ExitDirection.NORTH
-                            cy > 0 -> ExitDirection.SOUTH
-                            else -> null
-                        }
-                        if (dir != null) foundDirections.add(dir)
-                    }
-
-                    // Continue exploring if under max depth
-                    if (depth < maxDepth) {
-                        val currentLoc = locationById[currentId] ?: continue
-                        for (exit in currentLoc.exits) {
-                            if (exit.locationId !in visited) {
-                                val (dx, dy) = when (exit.direction) {
-                                    ExitDirection.NORTH -> Pair(0, -1)
-                                    ExitDirection.SOUTH -> Pair(0, 1)
-                                    ExitDirection.EAST -> Pair(1, 0)
-                                    ExitDirection.WEST -> Pair(-1, 0)
-                                    ExitDirection.NORTHEAST -> Pair(1, -1)
-                                    ExitDirection.NORTHWEST -> Pair(-1, -1)
-                                    ExitDirection.SOUTHEAST -> Pair(1, 1)
-                                    ExitDirection.SOUTHWEST -> Pair(-1, 1)
-                                    else -> Pair(0, 0)
-                                }
-                                queue.addLast(Triple(exit.locationId, Pair(pos.first + dx, pos.second + dy), depth + 1))
-                            }
-                        }
-                    }
-                }
-
-                return foundDirections
-            }
-
-            // Pre-compute pass-through features for each location
-            val locationPassThrough = locations.associate { loc ->
-                val myTerrains = locationTerrains[loc.id] ?: emptySet()
-
-                // Only compute pass-through if this tile doesn't already have the feature
-                val riverDirs = if (TerrainType.RIVER !in myTerrains && TerrainType.STREAM !in myTerrains) {
-                    findFeatureDirections(loc.id, TerrainType.RIVER)
-                } else emptySet()
-
-                val forestDirs = if (TerrainType.FOREST !in myTerrains) {
-                    findFeatureDirections(loc.id, TerrainType.FOREST)
-                } else emptySet()
-
-                val mountainDirs = if (TerrainType.MOUNTAIN !in myTerrains) {
-                    findFeatureDirections(loc.id, TerrainType.MOUNTAIN)
-                } else emptySet()
-
-                val hillsDirs = if (TerrainType.HILLS !in myTerrains) {
-                    findFeatureDirections(loc.id, TerrainType.HILLS)
-                } else emptySet()
-
-                val lakeDirs = if (TerrainType.LAKE !in myTerrains) {
-                    findFeatureDirections(loc.id, TerrainType.LAKE)
-                } else emptySet()
-
-                val swampDirs = if (TerrainType.SWAMP !in myTerrains) {
-                    findFeatureDirections(loc.id, TerrainType.SWAMP)
-                } else emptySet()
-
-                loc.id to PassThroughFeatures(
-                    riverDirections = riverDirs,
-                    forestDirections = forestDirs,
-                    mountainDirections = mountainDirs,
-                    hillsDirections = hillsDirs,
-                    lakeDirections = lakeDirs,
-                    swampDirections = swampDirs
+            // LAYER 2: Continuous terrain rendering
+            // Pre-compute continuous terrain data (memoized per location list)
+            val continuousTerrainData = remember(locations, terrainOverridesMap) {
+                computeContinuousTerrain(
+                    locations = locations,
+                    locationPositions = locationPositions.mapValues { it.value as Any },
+                    getScreenPos = { pos -> getLocationScreenPos(pos as LocationPosition) },
+                    terrainSize = terrainSize,
+                    overridesMap = terrainOverridesMap
                 )
             }
 
-            // Only render terrain tiles when NOT in exploration mode
+            // Only render terrain when NOT in exploration mode
             if (gameMode.isCreate) {
                 Canvas(modifier = Modifier.fillMaxSize()) {
-                    // Render locations
-                    locations.forEach { location ->
-                        val pos = locationPositions[location.id] ?: return@forEach
-                        val screenPos = getLocationScreenPos(pos)
-
-                        // Helper to get neighbor location ID by direction
-                        fun getNeighborId(vararg directions: ExitDirection): String? {
-                            for (dir in directions) {
-                                location.exits.find { it.direction == dir }?.let { return it.locationId }
-                            }
-                        return null
-                    }
-
-                    // Compute neighbor elevations from exits (including diagonals mapped to cardinals)
-                    val northId = getNeighborId(ExitDirection.NORTH, ExitDirection.NORTHEAST, ExitDirection.NORTHWEST)
-                    val southId = getNeighborId(ExitDirection.SOUTH, ExitDirection.SOUTHEAST, ExitDirection.SOUTHWEST)
-                    val eastId = getNeighborId(ExitDirection.EAST, ExitDirection.NORTHEAST, ExitDirection.SOUTHEAST)
-                    val westId = getNeighborId(ExitDirection.WEST, ExitDirection.NORTHWEST, ExitDirection.SOUTHWEST)
-
-                    val neighborElevs = NeighborElevations(
-                        north = northId?.let { locationElevations[it] },
-                        south = southId?.let { locationElevations[it] },
-                        east = eastId?.let { locationElevations[it] },
-                        west = westId?.let { locationElevations[it] }
+                    // Layer 2A: Elevation gradients (continuous radial gradients)
+                    drawElevationGradients(
+                        locations = locations,
+                        terrainData = continuousTerrainData,
+                        locationPositions = locationPositions.mapValues { it.value as Any },
+                        getScreenPos = { pos -> getLocationScreenPos(pos as LocationPosition) },
+                        terrainSize = terrainSize
                     )
 
-                    val passThrough = locationPassThrough[location.id] ?: PassThroughFeatures()
+                    // Layer 2B: Lakes (filled polygons spanning tiles)
+                    drawLakeRegions(continuousTerrainData, terrainSize)
 
-                    // Check if neighbor has river OR is a pass-through river tile
-                    // This ensures rivers connect through intermediate tiles
-                    // Simple river neighbor check - only direct neighbors with rivers
-                    val neighborRivs = NeighborRivers(
-                        north = northId?.let { locationHasRiver[it] } ?: false,
-                        south = southId?.let { locationHasRiver[it] } ?: false,
-                        east = eastId?.let { locationHasRiver[it] } ?: false,
-                        west = westId?.let { locationHasRiver[it] } ?: false
-                    )
+                    // Layer 2C: Rivers (Bezier curves flowing across tiles)
+                    drawRiverPaths(continuousTerrainData)
 
-                    drawLocationTerrain(
-                        location = location,
-                        center = screenPos,
+                    // Layer 2D: Forests (trees scattered across regions, no tile boundaries)
+                    drawForestRegions(continuousTerrainData)
+
+                    // Layer 2E: Mountains (connected ridgelines with peaks)
+                    drawMountainRidges(continuousTerrainData, terrainSize)
+
+                    // Layer 2F: Point features per-tile (buildings, castles, churches, caves,
+                    // ruins, roads, grass, desert, swamp, hills, coast, stream)
+                    drawPointFeatures(
+                        locations = locations,
+                        terrainData = continuousTerrainData,
+                        locationPositions = locationPositions.mapValues { it.value as Any },
+                        getScreenPos = { pos -> getLocationScreenPos(pos as LocationPosition) },
                         terrainSize = terrainSize,
-                        overrides = terrainOverridesMap[location.id],
-                        neighborElevations = neighborElevs,
-                        neighborRivers = neighborRivs,
-                        passThrough = passThrough
+                        overridesMap = terrainOverridesMap
                     )
                 }
-            }
             } // End of terrain rendering conditional
 
             // LAYER 2.5: Connection lines between exits
@@ -766,15 +639,21 @@ fun LocationGraph(
                         },
                         onSettingsClick = { onSettingsClick(location) },
                         onExitClick = { targetLocation ->
-                            // Navigate to the target location: expand it and center the map
-                            expandedLocationId = targetLocation.id
-                            centerOnLocation(targetLocation)
+                            val targetArea = targetLocation.areaId ?: "overworld"
+                            if (targetArea != selectedAreaId) {
+                                // Cross-area navigation: switch area and focus on target
+                                onAreaNavigate(targetArea, targetLocation.id)
+                            } else {
+                                // Same area: expand and center
+                                expandedLocationId = targetLocation.id
+                                centerOnLocation(targetLocation)
+                            }
                         },
                         onDotClick = {
                             // Tapping the orange dot collapses the expanded view
                             expandedLocationId = null
                         },
-                        allLocations = locations,
+                        allLocations = allLocations,
                         gameMode = GameMode.CREATE
                     )
                 }

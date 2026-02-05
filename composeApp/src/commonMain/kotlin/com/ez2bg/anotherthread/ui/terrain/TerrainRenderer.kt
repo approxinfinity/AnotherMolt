@@ -1,7 +1,6 @@
 package com.ez2bg.anotherthread.ui.terrain
 
 import androidx.compose.ui.geometry.Offset
-import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
@@ -25,9 +24,7 @@ import com.ez2bg.anotherthread.api.TerrainOverridesDto
 import com.ez2bg.anotherthread.util.SimplexNoise
 import com.ez2bg.anotherthread.util.VoronoiNoise
 import kotlin.math.PI
-import kotlin.math.abs
 import kotlin.math.cos
-import kotlin.math.max
 import kotlin.math.min
 import kotlin.math.sin
 import kotlin.math.sqrt
@@ -304,12 +301,14 @@ fun calculateElevationFromTerrain(terrains: Set<TerrainType>, overrideElevation:
     return elevation
 }
 
-// Draw parchment background with texture
+// Draw parchment background with noise-based aging stains
 fun DrawScope.drawParchmentBackground(seed: Int) {
     val random = kotlin.random.Random(seed)
 
+    // Base parchment fill
     drawRect(color = ParchmentColors.base)
 
+    // Edge darkening
     val edgeWidth = size.width * 0.15f
     val edgeHeight = size.height * 0.15f
 
@@ -334,19 +333,50 @@ fun DrawScope.drawParchmentBackground(seed: Int) {
         size = Size(edgeWidth, size.height)
     )
 
-    repeat(20) {
-        val spotColor = if (random.nextBoolean()) {
-            ParchmentColors.darkSpot.copy(alpha = random.nextFloat() * 0.15f)
-        } else {
-            ParchmentColors.lightSpot.copy(alpha = random.nextFloat() * 0.1f)
+    // Noise-based organic staining using SimplexNoise
+    val noiseScale = 0.008f
+    val stainCount = 40
+    for (i in 0 until stainCount) {
+        val x = random.nextFloat() * size.width
+        val y = random.nextFloat() * size.height
+        val noiseVal = com.ez2bg.anotherthread.util.SimplexNoise.noise2DNormalized(
+            x * noiseScale + seed * 0.1f,
+            y * noiseScale + seed * 0.07f
+        )
+
+        if (noiseVal > 0.55f) {
+            val intensity = (noiseVal - 0.55f) * 2.2f
+            val stainRadius = 12f + intensity * 35f
+            drawCircle(
+                brush = Brush.radialGradient(
+                    colors = listOf(
+                        ParchmentColors.stain.copy(alpha = intensity * 0.1f),
+                        Color.Transparent
+                    ),
+                    center = Offset(x, y),
+                    radius = stainRadius
+                ),
+                radius = stainRadius,
+                center = Offset(x, y)
+            )
         }
-        val spotX = random.nextFloat() * size.width
-        val spotY = random.nextFloat() * size.height
-        val spotRadius = random.nextFloat() * 30f + 10f
-        drawCircle(
-            color = ParchmentColors.stain.copy(alpha = random.nextFloat() * 0.08f),
-            radius = spotRadius,
-            center = Offset(spotX, spotY)
+    }
+
+    // Faint fiber/grain lines for paper texture
+    val grainCount = 8
+    for (i in 0 until grainCount) {
+        val y = random.nextFloat() * size.height
+        val startX = random.nextFloat() * size.width * 0.3f
+        val endX = startX + size.width * (0.3f + random.nextFloat() * 0.4f)
+        val grainPath = wobbleLine(
+            Offset(startX, y),
+            Offset(endX, y + (random.nextFloat() - 0.5f) * 5f),
+            WobbleConfig(roughness = 0.4f, bowing = 0.3f, strokeWidth = 0.5f, seed = seed + i * 71)
+        )
+        drawPath(
+            grainPath,
+            ParchmentColors.darkSpot.copy(alpha = 0.04f),
+            style = Stroke(width = 0.5f, cap = StrokeCap.Round)
         )
     }
 }
@@ -579,7 +609,7 @@ fun DrawScope.drawRoadTerrain(center: Offset, terrainSize: Float, seed: Int, has
     }
 }
 
-// Draw forest terrain
+// Draw forest terrain - scattered ink tree icons
 fun DrawScope.drawForestTerrain(center: Offset, terrainSize: Float, seed: Int, params: ForestParamsDto? = null) {
     val random = kotlin.random.Random(seed)
 
@@ -617,84 +647,63 @@ fun DrawScope.drawForestTerrain(center: Offset, terrainSize: Float, seed: Int, p
     }
 }
 
+// Draw single tree as ink icon - wobbly trunk + wobbly circle canopy
 private fun DrawScope.drawTree(x: Float, y: Float, treeSize: Float, seed: Int, depth: Int = 1) {
-    val random = kotlin.random.Random(seed)
+    val ink = TerrainColors.ink
+    val depthAlpha = 0.25f + depth * 0.1f
 
-    val trunkWidth = treeSize * 0.15f
     val trunkHeight = treeSize * 0.4f
-    val trunkColor = TerrainColors.treeTrunk.copy(alpha = 0.7f + depth * 0.3f)
 
-    drawLine(
-        color = trunkColor,
-        start = Offset(x, y),
-        end = Offset(x, y - trunkHeight),
-        strokeWidth = trunkWidth,
-        cap = StrokeCap.Round
+    // Trunk - simple wobbly line
+    drawWobblyLine(
+        Offset(x, y), Offset(x, y - trunkHeight),
+        ink.copy(alpha = depthAlpha),
+        WobbleConfig(roughness = 0.4f, bowing = 0.3f, doubleStroke = false, strokeWidth = 1.2f, seed = seed)
     )
 
-    val foliageColor = TerrainColors.tree.copy(alpha = 0.6f + depth * 0.2f)
-    val shadowColor = TerrainColors.treeDark.copy(alpha = 0.4f + depth * 0.2f)
-
-    val layers = 3
-    for (layer in 0 until layers) {
-        val layerY = y - trunkHeight - (layer * treeSize * 0.2f)
-        val layerSize = treeSize * (0.9f - layer * 0.2f)
-
-        val path = Path()
-        val points = 8
-        for (i in 0..points) {
-            val angle = (i.toFloat() / points) * 2f * PI.toFloat() - PI.toFloat() / 2
-            val wobble = 1f + random.nextFloat() * 0.15f - 0.075f
-            val px = x + cos(angle) * layerSize * 0.5f * wobble
-            val py = layerY + sin(angle) * layerSize * 0.3f * wobble
-            if (i == 0) path.moveTo(px, py) else path.lineTo(px, py)
-        }
-        path.close()
-
-        drawPath(path, color = shadowColor)
-        val highlightPath = Path()
-        for (i in 0..points) {
-            val angle = (i.toFloat() / points) * 2f * PI.toFloat() - PI.toFloat() / 2
-            val wobble = 1f + random.nextFloat() * 0.1f - 0.05f
-            val px = x + cos(angle) * layerSize * 0.45f * wobble - 1f
-            val py = layerY + sin(angle) * layerSize * 0.27f * wobble - 1f
-            if (i == 0) highlightPath.moveTo(px, py) else highlightPath.lineTo(px, py)
-        }
-        highlightPath.close()
-        drawPath(highlightPath, color = foliageColor)
-    }
-}
-
-// Draw water terrain (generic water features)
-fun DrawScope.drawWaterTerrain(center: Offset, terrainSize: Float, seed: Int) {
-    val random = kotlin.random.Random(seed)
-
-    val waterColor = TerrainColors.water.copy(alpha = 0.6f)
-    val highlightColor = TerrainColors.waterHighlight.copy(alpha = 0.4f)
-
-    val poolRadius = terrainSize * 0.2f
-
-    drawCircle(
-        color = waterColor,
-        radius = poolRadius,
-        center = center
-    )
-
-    repeat(3) {
-        val waveOffset = random.nextFloat() * poolRadius * 0.5f
-        drawCircle(
-            color = highlightColor.copy(alpha = 0.2f),
-            radius = poolRadius * 0.3f + waveOffset,
-            center = Offset(
-                center.x + random.nextFloat() * 4f - 2f,
-                center.y + random.nextFloat() * 4f - 2f
-            ),
-            style = Stroke(width = 1f)
+    // Canopy - wobbly circle outline (no fill, ink outline only)
+    val canopyY = y - trunkHeight - treeSize * 0.15f
+    val canopyRadius = treeSize * 0.3f
+    val canopyPoints = (0..9).map { i ->
+        val angle = (i / 10f) * 2f * PI.toFloat()
+        Offset(
+            x + cos(angle) * canopyRadius,
+            canopyY + sin(angle) * canopyRadius * 0.8f
         )
     }
+    drawWobblyPath(
+        points = canopyPoints, closed = true,
+        color = ink.copy(alpha = depthAlpha),
+        config = WobbleConfig(roughness = 0.7f, bowing = 0.5f, doubleStroke = false, strokeWidth = 1f, seed = seed + 50)
+    )
 }
 
-// Draw lake terrain
+// Draw water terrain (generic water features) - wobbly circle with hachure
+fun DrawScope.drawWaterTerrain(center: Offset, terrainSize: Float, seed: Int) {
+    val ink = TerrainColors.ink
+    val poolRadius = terrainSize * 0.2f
+
+    // Water pool as wobbly circle with hachure
+    val poolPoints = (0..11).map { i ->
+        val angle = (i / 12f) * 2f * PI.toFloat()
+        Offset(
+            center.x + cos(angle) * poolRadius,
+            center.y + sin(angle) * poolRadius * 0.8f
+        )
+    }
+
+    drawWobblyPolygon(
+        points = poolPoints,
+        strokeColor = ink.copy(alpha = 0.4f),
+        config = WobbleConfig(roughness = 0.7f, bowing = 0.5f, doubleStroke = true, strokeWidth = 1f, seed = seed),
+        hachureConfig = HachureConfig(
+            angle = -45f, gap = 4f,
+            wobbleConfig = WobbleConfig(roughness = 0.4f, doubleStroke = false, strokeWidth = 0.6f, seed = seed + 100)
+        )
+    )
+}
+
+// Draw lake terrain - hachure fill + wobbly boundary + coast hatching
 fun DrawScope.drawLakeTerrain(
     center: Offset,
     terrainSize: Float,
@@ -702,62 +711,48 @@ fun DrawScope.drawLakeTerrain(
     neighborElevations: NeighborElevations? = null
 ) {
     val random = kotlin.random.Random(seed)
-
-    val waterColor = TerrainColors.water
-    val deepColor = Color(0xFF4A7080)
-    val shoreColor = TerrainColors.coast.copy(alpha = 0.4f)
-
+    val ink = TerrainColors.ink
     val baseRadius = terrainSize * 0.38f
 
-    val path = Path()
-    val points = 16
-    for (i in 0..points) {
-        val angle = (i.toFloat() / points) * 2f * PI.toFloat()
+    // Lake boundary as wobbly polygon
+    val lakePoints = (0..15).map { i ->
+        val angle = (i / 16f) * 2f * PI.toFloat()
         val wobble = 0.85f + random.nextFloat() * 0.3f
-        val x = center.x + cos(angle) * baseRadius * wobble
-        val y = center.y + sin(angle) * baseRadius * wobble * 0.8f
-        if (i == 0) path.moveTo(x, y) else path.lineTo(x, y)
-    }
-    path.close()
-
-    drawPath(path, color = shoreColor)
-
-    val innerPath = Path()
-    for (i in 0..points) {
-        val angle = (i.toFloat() / points) * 2f * PI.toFloat()
-        val wobble = 0.8f + random.nextFloat() * 0.25f
-        val x = center.x + cos(angle) * baseRadius * 0.9f * wobble
-        val y = center.y + sin(angle) * baseRadius * 0.9f * wobble * 0.8f
-        if (i == 0) innerPath.moveTo(x, y) else innerPath.lineTo(x, y)
-    }
-    innerPath.close()
-
-    drawPath(innerPath, color = waterColor)
-
-    val deepPath = Path()
-    for (i in 0..points) {
-        val angle = (i.toFloat() / points) * 2f * PI.toFloat()
-        val wobble = 0.7f + random.nextFloat() * 0.2f
-        val x = center.x + cos(angle) * baseRadius * 0.5f * wobble
-        val y = center.y + sin(angle) * baseRadius * 0.5f * wobble * 0.8f
-        if (i == 0) deepPath.moveTo(x, y) else deepPath.lineTo(x, y)
-    }
-    deepPath.close()
-
-    drawPath(deepPath, color = deepColor.copy(alpha = 0.6f))
-
-    repeat(4) { i ->
-        val waveRadius = baseRadius * (0.3f + i * 0.15f)
-        drawCircle(
-            color = TerrainColors.waterHighlight.copy(alpha = 0.15f - i * 0.03f),
-            radius = waveRadius,
-            center = Offset(center.x - 2f, center.y - 2f),
-            style = Stroke(width = 1f)
+        Offset(
+            center.x + cos(angle) * baseRadius * wobble,
+            center.y + sin(angle) * baseRadius * wobble * 0.8f
         )
     }
+
+    // Hachure fill for water
+    drawHachureFill(
+        boundary = lakePoints,
+        color = ink.copy(alpha = 0.12f),
+        config = HachureConfig(
+            angle = -45f, gap = 5f,
+            wobbleConfig = WobbleConfig(roughness = 0.4f, doubleStroke = false, strokeWidth = 0.7f, seed = seed + 100)
+        )
+    )
+
+    // Wobbly boundary outline
+    drawWobblyPath(
+        points = lakePoints, closed = true,
+        color = ink.copy(alpha = 0.4f),
+        config = WobbleConfig(roughness = 0.7f, bowing = 0.5f, doubleStroke = true, strokeWidth = 1.2f, seed = seed)
+    )
+
+    // Coast hatching around outer edge
+    drawCoastHatching(
+        shoreline = lakePoints,
+        layers = 3,
+        maxDistance = terrainSize * 0.1f,
+        color = ink.copy(alpha = 0.15f),
+        inward = false,
+        seed = seed + 200
+    )
 }
 
-// Draw river terrain
+// Draw river terrain - ink double-line with wobble
 fun DrawScope.drawRiverTerrain(
     center: Offset,
     terrainSize: Float,
@@ -769,53 +764,32 @@ fun DrawScope.drawRiverTerrain(
     neighborRivers: NeighborRivers? = null
 ) {
     val random = kotlin.random.Random(seed)
-
-    val widthMultiplier = params?.widthMultiplier ?: 1.0f
-    val width = 0.15f * terrainSize * widthMultiplier
-    val waterColor = TerrainColors.water
-    val bankColor = TerrainColors.coast.copy(alpha = 0.5f)
+    val ink = TerrainColors.ink
 
     val (flowDirX, flowDirY) = calculateFlowDirection(currentElevation, neighborElevations)
 
     val startX = center.x - flowDirX * terrainSize * 0.45f
     val startY = center.y - flowDirY * terrainSize * 0.45f
+    val midX = center.x + random.nextFloat() * 15f - 7.5f
+    val midY = center.y + random.nextFloat() * 15f - 7.5f
     val endX = center.x + flowDirX * terrainSize * 0.45f
     val endY = center.y + flowDirY * terrainSize * 0.45f
 
-    val path = Path()
-    path.moveTo(startX, startY)
+    val riverPoints = listOf(
+        Offset(startX, startY),
+        Offset(midX, midY),
+        Offset(endX, endY)
+    )
 
-    val midX = center.x + random.nextFloat() * 15f - 7.5f
-    val midY = center.y + random.nextFloat() * 15f - 7.5f
-    path.quadraticTo(midX, midY, endX, endY)
-
-    drawPath(path, color = bankColor, style = Stroke(width = width + 6f, cap = StrokeCap.Round))
-    drawPath(path, color = waterColor, style = Stroke(width = width, cap = StrokeCap.Round))
-
-    val flowLines = 3
-    repeat(flowLines) { i ->
-        val offset = (i - flowLines / 2) * width * 0.2f
-        val perpX = -flowDirY
-        val perpY = flowDirX
-
-        val flowPath = Path()
-        flowPath.moveTo(startX + perpX * offset, startY + perpY * offset)
-        flowPath.quadraticTo(
-            midX + perpX * offset + random.nextFloat() * 3f,
-            midY + perpY * offset + random.nextFloat() * 3f,
-            endX + perpX * offset,
-            endY + perpY * offset
-        )
-
-        drawPath(
-            flowPath,
-            color = TerrainColors.waterHighlight.copy(alpha = 0.3f),
-            style = Stroke(width = 1f, cap = StrokeCap.Round)
-        )
-    }
+    // Ink double-line river
+    drawWobblyPath(
+        points = riverPoints, closed = false,
+        color = ink.copy(alpha = 0.45f),
+        config = HandDrawnDefaults.RIVERS.copy(seed = seed)
+    )
 }
 
-// Draw stream terrain
+// Draw stream terrain - thin wobbly ink double-line
 fun DrawScope.drawStreamTerrain(
     center: Offset,
     terrainSize: Float,
@@ -827,27 +801,27 @@ fun DrawScope.drawStreamTerrain(
     neighborRivers: NeighborRivers? = null
 ) {
     val random = kotlin.random.Random(seed)
-
-    val widthMultiplier = params?.widthMultiplier ?: 1.0f
-    val width = 0.06f * terrainSize * widthMultiplier
-    val waterColor = TerrainColors.water.copy(alpha = 0.7f)
+    val ink = TerrainColors.ink
 
     val (flowDirX, flowDirY) = calculateFlowDirection(currentElevation, neighborElevations)
 
-    val path = Path()
     val startX = center.x - flowDirX * terrainSize * 0.4f
     val startY = center.y - flowDirY * terrainSize * 0.4f
-    path.moveTo(startX, startY)
 
+    val streamPoints = mutableListOf(Offset(startX, startY))
     val segments = 4
     for (i in 1..segments) {
         val t = i.toFloat() / segments
         val x = center.x + flowDirX * terrainSize * (t - 0.5f) * 0.8f + random.nextFloat() * 8f - 4f
         val y = center.y + flowDirY * terrainSize * (t - 0.5f) * 0.8f + random.nextFloat() * 8f - 4f
-        path.lineTo(x, y)
+        streamPoints.add(Offset(x, y))
     }
 
-    drawPath(path, color = waterColor, style = Stroke(width = width, cap = StrokeCap.Round))
+    drawWobblyPath(
+        points = streamPoints, closed = false,
+        color = ink.copy(alpha = 0.35f),
+        config = WobbleConfig(roughness = 0.8f, bowing = 0.6f, doubleStroke = true, strokeWidth = 1f, seed = seed)
+    )
 }
 
 // Calculate flow direction based on elevation
@@ -866,184 +840,188 @@ private fun calculateFlowDirection(elevation: Float, neighbors: NeighborElevatio
     return if (length > 0.01f) Pair(dx / length, dy / length) else Pair(1f, 0f)
 }
 
-// Draw foothills terrain
+// Draw foothills terrain - small wobbly ink hill arcs
 fun DrawScope.drawFoothillsTerrain(center: Offset, terrainSize: Float, seed: Int) {
     val random = kotlin.random.Random(seed)
+    val ink = TerrainColors.ink
 
-    val hillColor = Color(0xFF8B9A6B)
-    val shadowColor = Color(0xFF6B7A5B)
-
-    repeat(5) {
+    repeat(5) { i ->
         val hillX = center.x + random.nextFloat() * terrainSize * 0.6f - terrainSize * 0.3f
         val hillY = center.y + random.nextFloat() * terrainSize * 0.6f - terrainSize * 0.3f
         val hillWidth = terrainSize * (0.15f + random.nextFloat() * 0.1f)
         val hillHeight = terrainSize * (0.08f + random.nextFloat() * 0.05f)
 
-        val path = Path()
-        path.moveTo(hillX - hillWidth, hillY)
-        path.quadraticTo(hillX, hillY - hillHeight, hillX + hillWidth, hillY)
-        path.close()
-
-        drawPath(path, color = shadowColor.copy(alpha = 0.4f))
-        drawPath(path, color = hillColor.copy(alpha = 0.6f), style = Stroke(width = 2f))
+        // Simple arc as wobbly open path
+        val arcPoints = listOf(
+            Offset(hillX - hillWidth, hillY),
+            Offset(hillX - hillWidth * 0.3f, hillY - hillHeight * 0.7f),
+            Offset(hillX, hillY - hillHeight),
+            Offset(hillX + hillWidth * 0.3f, hillY - hillHeight * 0.7f),
+            Offset(hillX + hillWidth, hillY)
+        )
+        drawWobblyPath(
+            points = arcPoints, closed = false,
+            color = ink.copy(alpha = 0.25f),
+            config = WobbleConfig(roughness = 0.5f, bowing = 0.3f, doubleStroke = false, strokeWidth = 1f, seed = seed + i * 53)
+        )
     }
 }
 
-// Draw mountain terrain
+// Draw mountain terrain - watabou-style ink peaks with shadow hatching
 fun DrawScope.drawMountainTerrain(center: Offset, terrainSize: Float, seed: Int, params: MountainParamsDto? = null) {
     val random = kotlin.random.Random(seed)
+    val ink = TerrainColors.ink
 
     val heightMultiplier = params?.heightMultiplier ?: 1.0f
     val peakHeight = 0.8f * terrainSize * 0.5f * heightMultiplier
     val peakCount = params?.peakCount ?: (2 + random.nextInt(2))
-    val rockColor = TerrainColors.mountain
-    val snowColor = TerrainColors.mountainSnow
-    val shadowColor = Color(0xFF5A5448)
 
     repeat(peakCount) { i ->
         val peakX = center.x + (i - peakCount / 2f) * terrainSize * 0.2f + random.nextFloat() * 10f - 5f
         val baseY = center.y + terrainSize * 0.15f
-        val peakY = baseY - peakHeight * (0.8f + random.nextFloat() * 0.4f)
+        val thisHeight = peakHeight * (0.8f + random.nextFloat() * 0.4f)
+        val peakY = baseY - thisHeight
         val baseWidth = terrainSize * (0.2f + random.nextFloat() * 0.1f)
 
-        val path = Path()
-        path.moveTo(peakX - baseWidth, baseY)
+        val baseLeft = Offset(peakX - baseWidth, baseY)
+        val apex = Offset(peakX + random.nextFloat() * 3f - 1.5f, peakY)
+        val baseRight = Offset(peakX + baseWidth, baseY)
 
-        val leftRidgeX = peakX - baseWidth * 0.3f
-        val leftRidgeY = peakY + peakHeight * 0.4f
-        path.lineTo(leftRidgeX, leftRidgeY)
-        path.lineTo(peakX + random.nextFloat() * 3f - 1.5f, peakY)
+        // Full triangle outline
+        val triangle = listOf(baseLeft, apex, baseRight)
+        drawWobblyPolygon(
+            points = triangle,
+            strokeColor = ink.copy(alpha = 0.5f),
+            config = HandDrawnDefaults.MOUNTAINS.copy(seed = seed + i * 100)
+        )
 
-        val rightRidgeX = peakX + baseWidth * 0.3f
-        val rightRidgeY = peakY + peakHeight * 0.3f
-        path.lineTo(rightRidgeX, rightRidgeY)
-        path.lineTo(peakX + baseWidth, baseY)
-        path.close()
+        // Left-side shadow hachure (watabou style)
+        val leftShadow = listOf(baseLeft, apex, Offset(peakX, baseY))
+        drawHachureFill(
+            boundary = leftShadow,
+            color = ink.copy(alpha = 0.15f),
+            config = HachureConfig(
+                angle = 60f, gap = 3f,
+                wobbleConfig = WobbleConfig(roughness = 0.5f, doubleStroke = false, strokeWidth = 0.7f, seed = seed + i * 100 + 50)
+            )
+        )
 
-        drawPath(path, color = shadowColor.copy(alpha = 0.5f))
-        drawPath(path, color = rockColor, style = Stroke(width = 2f))
-
-        // Draw snow cap on peaks
-        val snowPath = Path()
-        snowPath.moveTo(peakX, peakY)
-        snowPath.lineTo(leftRidgeX + baseWidth * 0.1f, leftRidgeY - peakHeight * 0.1f)
-        snowPath.lineTo(peakX, peakY + peakHeight * 0.2f)
-        snowPath.lineTo(rightRidgeX - baseWidth * 0.1f, rightRidgeY - peakHeight * 0.05f)
-        snowPath.close()
-
-        drawPath(snowPath, color = snowColor.copy(alpha = 0.8f))
+        // Snow cap as small wobbly triangle at top 15%
+        if (thisHeight > terrainSize * 0.15f) {
+            val snowT = 0.15f
+            val snowLeft = Offset(apex.x + (baseLeft.x - apex.x) * snowT, apex.y + (baseLeft.y - apex.y) * snowT)
+            val snowRight = Offset(apex.x + (baseRight.x - apex.x) * snowT, apex.y + (baseRight.y - apex.y) * snowT)
+            val snowTriangle = listOf(snowLeft, apex, snowRight)
+            val snowPath = buildWobblyPath(snowTriangle, closed = true, HandDrawnDefaults.MOUNTAINS.copy(seed = seed + i * 100 + 80))
+            drawPath(snowPath, ParchmentColors.lightSpot.copy(alpha = 0.6f))
+        }
     }
 }
 
-// Draw grass terrain
+// Draw grass terrain - wobbly ink blade tufts
 fun DrawScope.drawGrassTerrain(center: Offset, terrainSize: Float, seed: Int, params: GrassParamsDto? = null) {
     val random = kotlin.random.Random(seed)
+    val ink = TerrainColors.ink
 
     val tuftCount = params?.tuftCount ?: 12
-    val grassColor = TerrainColors.grass
-    val darkGrass = Color(0xFF5A7A4D)
-
     val clumpCount = tuftCount.coerceAtLeast(4)
 
-    repeat(clumpCount) {
+    repeat(clumpCount) { clumpIdx ->
         val clumpX = center.x + random.nextFloat() * terrainSize * 0.7f - terrainSize * 0.35f
         val clumpY = center.y + random.nextFloat() * terrainSize * 0.7f - terrainSize * 0.35f
 
         val bladesInClump = 3 + random.nextInt(4)
-        repeat(bladesInClump) {
+        repeat(bladesInClump) { bladeIdx ->
             val bladeX = clumpX + random.nextFloat() * 6f - 3f
             val bladeY = clumpY
             val bladeHeight = terrainSize * (0.03f + random.nextFloat() * 0.02f)
             val bladeTilt = random.nextFloat() * 4f - 2f
 
-            val color = if (random.nextBoolean()) grassColor else darkGrass
-
-            drawLine(
-                color = color.copy(alpha = 0.5f + random.nextFloat() * 0.3f),
-                start = Offset(bladeX, bladeY),
-                end = Offset(bladeX + bladeTilt, bladeY - bladeHeight),
-                strokeWidth = 1f,
-                cap = StrokeCap.Round
+            val path = wobbleLine(
+                Offset(bladeX, bladeY),
+                Offset(bladeX + bladeTilt, bladeY - bladeHeight),
+                WobbleConfig(roughness = 0.6f, bowing = 0.4f, doubleStroke = false, strokeWidth = 0.8f, seed = seed + clumpIdx * 31 + bladeIdx)
+            )
+            drawPath(
+                path, ink.copy(alpha = 0.2f + random.nextFloat() * 0.15f),
+                style = Stroke(width = 0.8f, cap = StrokeCap.Round)
             )
         }
     }
-
-    if (random.nextFloat() < 0.3f) {
-        val flowerX = center.x + random.nextFloat() * terrainSize * 0.4f - terrainSize * 0.2f
-        val flowerY = center.y + random.nextFloat() * terrainSize * 0.4f - terrainSize * 0.2f
-        val flowerColor = listOf(
-            Color(0xFFE8D44D),
-            Color(0xFFE87D4D),
-            Color(0xFF8B4DE8)
-        ).random()
-
-        drawCircle(
-            color = flowerColor.copy(alpha = 0.7f),
-            radius = 2f,
-            center = Offset(flowerX, flowerY)
-        )
-    }
 }
 
-// Draw building terrain
+// Draw building terrain - wobbly ink house with hatched roof
 fun DrawScope.drawBuildingTerrain(center: Offset, terrainSize: Float, seed: Int) {
-    val random = kotlin.random.Random(seed)
-
     val buildingWidth = terrainSize * 0.2f
     val buildingHeight = terrainSize * 0.15f
     val roofHeight = terrainSize * 0.1f
+    val ink = TerrainColors.ink
 
-    val wallColor = TerrainColors.building
-    val roofColor = Color(0xFF6B4A35)
-
-    val housePath = Path()
     val left = center.x - buildingWidth / 2
     val right = center.x + buildingWidth / 2
     val bottom = center.y + buildingHeight / 2
     val top = center.y - buildingHeight / 2
 
-    housePath.moveTo(left, bottom)
-    housePath.lineTo(left, top)
-    housePath.lineTo(center.x, top - roofHeight)
-    housePath.lineTo(right, top)
-    housePath.lineTo(right, bottom)
-    housePath.close()
+    // House shape with wobbly outline
+    val houseShape = listOf(
+        Offset(left, bottom), Offset(left, top),
+        Offset(center.x, top - roofHeight),
+        Offset(right, top), Offset(right, bottom)
+    )
+    drawWobblyPolygon(
+        points = houseShape,
+        strokeColor = ink.copy(alpha = 0.6f),
+        config = HandDrawnDefaults.BUILDINGS.copy(seed = seed),
+        hachureConfig = HachureConfig(
+            angle = 45f, gap = 3f,
+            wobbleConfig = WobbleConfig(roughness = 0.4f, doubleStroke = false, strokeWidth = 0.8f, seed = seed + 100)
+        )
+    )
 
-    drawPath(housePath, color = TerrainColors.building)
-    drawPath(housePath, color = roofColor, style = Stroke(width = 2f))
-
+    // Door
     val doorWidth = buildingWidth * 0.2f
     val doorHeight = buildingHeight * 0.4f
-    drawRect(
-        color = roofColor,
-        topLeft = Offset(center.x - doorWidth / 2, bottom - doorHeight),
-        size = Size(doorWidth, doorHeight)
+    drawWobblyRect(
+        centerX = center.x, centerY = bottom - doorHeight / 2,
+        width = doorWidth, height = doorHeight,
+        strokeColor = ink.copy(alpha = 0.7f),
+        fillColor = ink.copy(alpha = 0.4f),
+        config = HandDrawnDefaults.BUILDINGS.copy(seed = seed + 50)
     )
 }
 
-// Draw cave terrain
+// Draw cave terrain - wobbly arch with hachure darkness
 fun DrawScope.drawCaveTerrain(center: Offset, terrainSize: Float, seed: Int) {
-    val random = kotlin.random.Random(seed)
-
-    val caveColor = TerrainColors.cave
+    val ink = TerrainColors.ink
     val entranceWidth = terrainSize * 0.15f
     val entranceHeight = terrainSize * 0.12f
 
-    val path = Path()
-    path.moveTo(center.x - entranceWidth, center.y + entranceHeight / 2)
-    path.quadraticTo(center.x, center.y - entranceHeight, center.x + entranceWidth, center.y + entranceHeight / 2)
-    path.close()
+    // Arch shape
+    val archPoints = (0..8).map { i ->
+        val t = i / 8f
+        val angle = PI.toFloat() * t
+        Offset(
+            center.x + cos(angle) * entranceWidth,
+            center.y + entranceHeight / 2 - sin(angle) * entranceHeight
+        )
+    } + listOf(Offset(center.x + entranceWidth, center.y + entranceHeight / 2))
 
-    drawPath(path, color = caveColor)
-    drawPath(path, color = Color.Black.copy(alpha = 0.6f), style = Stroke(width = 2f))
+    // Draw arch with hachure for cave darkness
+    drawWobblyPolygon(
+        points = archPoints,
+        strokeColor = ink.copy(alpha = 0.7f),
+        config = WobbleConfig(roughness = 0.8f, bowing = 0.5f, doubleStroke = true, strokeWidth = 1.5f, seed = seed),
+        hachureConfig = HachureConfig(
+            angle = 80f, gap = 3f,
+            wobbleConfig = WobbleConfig(roughness = 0.5f, doubleStroke = false, strokeWidth = 0.8f, seed = seed + 200)
+        )
+    )
 }
 
-// Draw desert terrain
+// Draw desert terrain - wobbly ink dune curves + wobbly cactus
 fun DrawScope.drawDesertTerrain(center: Offset, terrainSize: Float, seed: Int, params: DesertParamsDto? = null) {
     val random = kotlin.random.Random(seed)
-
-    val sandColor = TerrainColors.sand
-    val shadowColor = Color(0xFFB8A080)
+    val ink = TerrainColors.ink
     val duneCount = (params?.duneCount ?: 3).coerceIn(1, 6)
 
     repeat(duneCount) { i ->
@@ -1052,67 +1030,71 @@ fun DrawScope.drawDesertTerrain(center: Offset, terrainSize: Float, seed: Int, p
         val duneWidth = terrainSize * (0.2f + random.nextFloat() * 0.1f)
         val duneHeight = terrainSize * (0.05f + random.nextFloat() * 0.03f)
 
-        val dunePath = Path()
-        dunePath.moveTo(duneX - duneWidth, duneY)
-        dunePath.quadraticTo(duneX - duneWidth * 0.3f, duneY - duneHeight, duneX, duneY - duneHeight * 0.5f)
-        dunePath.quadraticTo(duneX + duneWidth * 0.3f, duneY - duneHeight * 0.8f, duneX + duneWidth, duneY)
-        dunePath.close()
-
-        drawPath(dunePath, color = shadowColor.copy(alpha = 0.3f))
-        drawPath(dunePath, color = sandColor.copy(alpha = 0.6f), style = Stroke(width = 1f))
+        // Dune curve as wobbly open path
+        val dunePoints = listOf(
+            Offset(duneX - duneWidth, duneY),
+            Offset(duneX - duneWidth * 0.3f, duneY - duneHeight),
+            Offset(duneX, duneY - duneHeight * 0.5f),
+            Offset(duneX + duneWidth * 0.3f, duneY - duneHeight * 0.8f),
+            Offset(duneX + duneWidth, duneY)
+        )
+        drawWobblyPath(
+            points = dunePoints, closed = false,
+            color = ink.copy(alpha = 0.25f),
+            config = WobbleConfig(roughness = 0.5f, bowing = 0.3f, doubleStroke = false, strokeWidth = 1f, seed = seed + i * 41)
+        )
     }
 
+    // Cactus
     if (random.nextFloat() < 0.2f) {
         val cactusX = center.x + random.nextFloat() * terrainSize * 0.4f - terrainSize * 0.2f
         val cactusY = center.y + random.nextFloat() * terrainSize * 0.2f
         val cactusHeight = terrainSize * 0.08f
 
-        drawLine(
-            color = Color(0xFF4A7A4A),
-            start = Offset(cactusX, cactusY),
-            end = Offset(cactusX, cactusY - cactusHeight),
-            strokeWidth = 3f,
-            cap = StrokeCap.Round
+        // Trunk
+        drawWobblyLine(
+            Offset(cactusX, cactusY), Offset(cactusX, cactusY - cactusHeight),
+            ink.copy(alpha = 0.4f),
+            WobbleConfig(roughness = 0.5f, doubleStroke = false, strokeWidth = 2f, seed = seed + 700)
         )
-        drawLine(
-            color = Color(0xFF4A7A4A),
-            start = Offset(cactusX - 4f, cactusY - cactusHeight * 0.6f),
-            end = Offset(cactusX - 4f, cactusY - cactusHeight * 0.8f),
-            strokeWidth = 2f,
-            cap = StrokeCap.Round
+        // Arm
+        drawWobblyLine(
+            Offset(cactusX - 4f, cactusY - cactusHeight * 0.6f),
+            Offset(cactusX - 4f, cactusY - cactusHeight * 0.8f),
+            ink.copy(alpha = 0.4f),
+            WobbleConfig(roughness = 0.5f, doubleStroke = false, strokeWidth = 1.5f, seed = seed + 710)
         )
     }
 }
 
-// Draw boulder
+// Draw boulder - wobbly ink outline
 fun DrawScope.drawBoulder(x: Float, y: Float, boulderSize: Float, seed: Int) {
     val random = kotlin.random.Random(seed)
-    val rockColor = TerrainColors.mountain.copy(alpha = 0.7f)
-    val shadowColor = Color(0xFF4A4A3A).copy(alpha = 0.5f)
+    val ink = TerrainColors.ink
 
-    val path = Path()
-    val points = 6
-    for (i in 0..points) {
-        val angle = (i.toFloat() / points) * 2f * PI.toFloat()
+    val points = (0..5).map { i ->
+        val angle = (i.toFloat() / 6f) * 2f * PI.toFloat()
         val wobble = 0.7f + random.nextFloat() * 0.3f
-        val px = x + cos(angle) * boulderSize * wobble
-        val py = y + sin(angle) * boulderSize * 0.6f * wobble
-        if (i == 0) path.moveTo(px, py) else path.lineTo(px, py)
+        Offset(
+            x + cos(angle) * boulderSize * wobble,
+            y + sin(angle) * boulderSize * 0.6f * wobble
+        )
     }
-    path.close()
 
-    drawPath(path, color = shadowColor)
-    drawPath(path, color = rockColor, style = Stroke(width = 1f))
+    drawWobblyPolygon(
+        points = points,
+        strokeColor = ink.copy(alpha = 0.4f),
+        config = WobbleConfig(roughness = 0.8f, bowing = 0.5f, doubleStroke = false, strokeWidth = 1f, seed = seed)
+    )
 }
 
-// Draw hills terrain
+// Draw hills terrain - wobbly ink hill curves
 fun DrawScope.drawHillsTerrain(center: Offset, terrainSize: Float, seed: Int, params: HillsParamsDto? = null) {
     val random = kotlin.random.Random(seed)
+    val ink = TerrainColors.ink
 
     val heightMultiplier = params?.heightMultiplier ?: 1.0f
     val hillCount = (4 * heightMultiplier).toInt().coerceIn(2, 8)
-    val hillColor = Color(0xFF7A9A6B)
-    val shadowColor = Color(0xFF5A7A4B)
 
     data class HillInfo(val x: Float, val y: Float, val width: Float, val height: Float)
 
@@ -1125,270 +1107,302 @@ fun DrawScope.drawHillsTerrain(center: Offset, terrainSize: Float, seed: Int, pa
         hills.add(HillInfo(hillX, hillY, hillWidth, hillHeight))
     }
 
-    hills.sortedBy { it.y }.forEach { hill ->
-        val path = Path()
-        path.moveTo(hill.x - hill.width, hill.y)
-        path.quadraticTo(hill.x - hill.width * 0.5f, hill.y - hill.height * 0.7f, hill.x, hill.y - hill.height)
-        path.quadraticTo(hill.x + hill.width * 0.5f, hill.y - hill.height * 0.7f, hill.x + hill.width, hill.y)
-        path.close()
-
-        drawPath(path, color = shadowColor.copy(alpha = 0.4f))
-        drawPath(path, color = hillColor.copy(alpha = 0.5f), style = Stroke(width = 1.5f))
+    hills.sortedBy { it.y }.forEachIndexed { idx, hill ->
+        // Hill as wobbly open arc
+        val hillPoints = listOf(
+            Offset(hill.x - hill.width, hill.y),
+            Offset(hill.x - hill.width * 0.5f, hill.y - hill.height * 0.7f),
+            Offset(hill.x, hill.y - hill.height),
+            Offset(hill.x + hill.width * 0.5f, hill.y - hill.height * 0.7f),
+            Offset(hill.x + hill.width, hill.y)
+        )
+        drawWobblyPath(
+            points = hillPoints, closed = false,
+            color = ink.copy(alpha = 0.3f),
+            config = WobbleConfig(roughness = 0.6f, bowing = 0.4f, doubleStroke = false, strokeWidth = 1.2f, seed = seed + idx * 47)
+        )
     }
 }
 
-// Draw coast terrain
+// Draw coast terrain - ink coastline hatching + wobbly shore
 fun DrawScope.drawCoastTerrain(center: Offset, terrainSize: Float, seed: Int) {
-    val random = kotlin.random.Random(seed)
+    val ink = TerrainColors.ink
 
-    val sandColor = TerrainColors.sand.copy(alpha = 0.7f)
-    val waterColor = TerrainColors.coast.copy(alpha = 0.5f)
-    val foamColor = Color.White.copy(alpha = 0.4f)
-
-    drawRect(
-        color = sandColor,
-        topLeft = Offset(center.x - terrainSize * 0.4f, center.y - terrainSize * 0.2f),
-        size = Size(terrainSize * 0.8f, terrainSize * 0.4f)
-    )
-
-    val waterY = center.y + terrainSize * 0.1f
-    repeat(3) { i ->
-        val waveY = waterY + i * 8f
-        val wavePath = Path()
-        wavePath.moveTo(center.x - terrainSize * 0.4f, waveY)
-
-        var x = center.x - terrainSize * 0.4f
-        while (x < center.x + terrainSize * 0.4f) {
-            val waveHeight = 3f + random.nextFloat() * 2f
-            wavePath.quadraticTo(x + 10f, waveY - waveHeight, x + 20f, waveY)
-            x += 20f
-        }
-
-        drawPath(wavePath, color = if (i == 0) foamColor else waterColor, style = Stroke(width = 2f))
-    }
-}
-
-// Draw ship (for port terrain)
-fun DrawScope.drawShip(center: Offset, shipSize: Float, seed: Int) {
-    val random = kotlin.random.Random(seed)
-    val hullColor = Color(0xFF5A4030)
-    val sailColor = Color(0xFFF5F0E0)
-
-    val hullPath = Path()
-    hullPath.moveTo(center.x - shipSize * 0.4f, center.y)
-    hullPath.lineTo(center.x - shipSize * 0.3f, center.y + shipSize * 0.2f)
-    hullPath.lineTo(center.x + shipSize * 0.3f, center.y + shipSize * 0.2f)
-    hullPath.lineTo(center.x + shipSize * 0.5f, center.y)
-    hullPath.close()
-
-    drawPath(hullPath, color = hullColor)
-
-    drawLine(
-        color = hullColor,
-        start = Offset(center.x, center.y),
-        end = Offset(center.x, center.y - shipSize * 0.5f),
-        strokeWidth = 2f
-    )
-
-    val sailPath = Path()
-    sailPath.moveTo(center.x, center.y - shipSize * 0.5f)
-    sailPath.lineTo(center.x + shipSize * 0.3f, center.y - shipSize * 0.3f)
-    sailPath.lineTo(center.x, center.y - shipSize * 0.1f)
-    sailPath.close()
-
-    drawPath(sailPath, color = sailColor)
-}
-
-// Draw swamp terrain
-fun DrawScope.drawSwampTerrain(center: Offset, terrainSize: Float, seed: Int, params: SwampParamsDto? = null) {
-    val random = kotlin.random.Random(seed)
-
-    val densityMultiplier = params?.densityMultiplier ?: 1.0f
-    val swampColor = TerrainColors.swamp
-    val waterColor = Color(0xFF4A5A42).copy(alpha = 0.5f * densityMultiplier)
-    val reedColor = Color(0xFF6A7A52)
-
-    drawCircle(
-        color = waterColor,
-        radius = terrainSize * 0.35f,
-        center = center
-    )
-
-    repeat(8) {
-        val mudX = center.x + random.nextFloat() * terrainSize * 0.6f - terrainSize * 0.3f
-        val mudY = center.y + random.nextFloat() * terrainSize * 0.6f - terrainSize * 0.3f
-
-        drawCircle(
-            color = swampColor.copy(alpha = 0.4f),
-            radius = terrainSize * (0.03f + random.nextFloat() * 0.02f),
-            center = Offset(mudX, mudY)
+    // Shore line as wobbly horizontal path
+    val shoreY = center.y + terrainSize * 0.05f
+    val shorePoints = (0..8).map { i ->
+        val t = i / 8f
+        Offset(
+            center.x - terrainSize * 0.4f + t * terrainSize * 0.8f,
+            shoreY
         )
     }
 
-    repeat(12) {
+    // Draw coastline hatching below the shore (water side)
+    drawCoastHatching(
+        shoreline = shorePoints,
+        layers = 3,
+        maxDistance = terrainSize * 0.15f,
+        color = ink.copy(alpha = 0.2f),
+        inward = true,
+        seed = seed
+    )
+
+    // Draw the shore line itself
+    drawWobblyPath(
+        points = shorePoints, closed = false,
+        color = ink.copy(alpha = 0.4f),
+        config = WobbleConfig(roughness = 0.7f, bowing = 0.5f, doubleStroke = true, strokeWidth = 1.2f, seed = seed + 100)
+    )
+}
+
+// Draw ship (for port terrain) - ink outline style
+fun DrawScope.drawShip(center: Offset, shipSize: Float, seed: Int) {
+    val ink = TerrainColors.ink
+
+    // Hull outline
+    val hull = listOf(
+        Offset(center.x - shipSize * 0.4f, center.y),
+        Offset(center.x - shipSize * 0.3f, center.y + shipSize * 0.2f),
+        Offset(center.x + shipSize * 0.3f, center.y + shipSize * 0.2f),
+        Offset(center.x + shipSize * 0.5f, center.y)
+    )
+    drawWobblyPath(
+        points = hull, closed = true,
+        color = ink.copy(alpha = 0.5f),
+        config = WobbleConfig(roughness = 0.6f, bowing = 0.4f, doubleStroke = false, strokeWidth = 1.2f, seed = seed + 400)
+    )
+
+    // Mast
+    drawWobblyLine(
+        Offset(center.x, center.y), Offset(center.x, center.y - shipSize * 0.5f),
+        ink.copy(alpha = 0.5f),
+        WobbleConfig(roughness = 0.3f, doubleStroke = false, strokeWidth = 1.5f, seed = seed + 500)
+    )
+
+    // Sail triangle
+    val sail = listOf(
+        Offset(center.x, center.y - shipSize * 0.5f),
+        Offset(center.x + shipSize * 0.3f, center.y - shipSize * 0.3f),
+        Offset(center.x, center.y - shipSize * 0.1f)
+    )
+    drawWobblyPath(
+        points = sail, closed = true,
+        color = ink.copy(alpha = 0.4f),
+        config = WobbleConfig(roughness = 0.5f, bowing = 0.3f, doubleStroke = false, strokeWidth = 1f, seed = seed + 600)
+    )
+}
+
+// Draw swamp terrain - hachure water pools + wobbly ink reeds
+fun DrawScope.drawSwampTerrain(center: Offset, terrainSize: Float, seed: Int, params: SwampParamsDto? = null) {
+    val random = kotlin.random.Random(seed)
+    val ink = TerrainColors.ink
+
+    // Water pools with hachure fill
+    repeat(3) { i ->
+        val poolX = center.x + random.nextFloat() * terrainSize * 0.4f - terrainSize * 0.2f
+        val poolY = center.y + random.nextFloat() * terrainSize * 0.4f - terrainSize * 0.2f
+        val poolRadius = terrainSize * (0.06f + random.nextFloat() * 0.04f)
+
+        // Small irregular pool shape
+        val poolPoints = (0..7).map { j ->
+            val angle = (j / 8f) * 2f * PI.toFloat()
+            val wobble = 0.7f + random.nextFloat() * 0.3f
+            Offset(
+                poolX + cos(angle) * poolRadius * wobble,
+                poolY + sin(angle) * poolRadius * wobble * 0.7f
+            )
+        }
+        drawHachureFill(
+            boundary = poolPoints,
+            color = ink.copy(alpha = 0.12f),
+            config = HachureConfig(
+                angle = -30f, gap = 3f,
+                wobbleConfig = WobbleConfig(roughness = 0.4f, doubleStroke = false, strokeWidth = 0.6f, seed = seed + i * 50)
+            )
+        )
+    }
+
+    // Reeds as wobbly vertical lines
+    repeat(12) { i ->
         val reedX = center.x + random.nextFloat() * terrainSize * 0.5f - terrainSize * 0.25f
         val reedY = center.y + random.nextFloat() * terrainSize * 0.5f - terrainSize * 0.25f
         val reedHeight = terrainSize * (0.04f + random.nextFloat() * 0.03f)
         val reedTilt = random.nextFloat() * 3f - 1.5f
 
-        drawLine(
-            color = reedColor.copy(alpha = 0.6f),
-            start = Offset(reedX, reedY),
-            end = Offset(reedX + reedTilt, reedY - reedHeight),
-            strokeWidth = 1.5f,
-            cap = StrokeCap.Round
+        val path = wobbleLine(
+            Offset(reedX, reedY),
+            Offset(reedX + reedTilt, reedY - reedHeight),
+            WobbleConfig(roughness = 0.5f, bowing = 0.3f, doubleStroke = false, strokeWidth = 1f, seed = seed + 300 + i)
+        )
+        drawPath(
+            path, ink.copy(alpha = 0.3f),
+            style = Stroke(width = 1f, cap = StrokeCap.Round)
         )
     }
 }
 
-// Draw castle terrain
+// Draw castle terrain - wobbly keep + towers with hachure
 fun DrawScope.drawCastleTerrain(center: Offset, terrainSize: Float, seed: Int) {
-    val random = kotlin.random.Random(seed)
-
-    val stoneColor = Color(0xFF7A7060)
-    val shadowColor = Color(0xFF5A5040)
+    val ink = TerrainColors.ink
 
     val baseWidth = terrainSize * 0.3f
     val baseHeight = terrainSize * 0.2f
     val towerWidth = terrainSize * 0.08f
     val towerHeight = terrainSize * 0.15f
 
-    drawRect(
-        color = stoneColor,
-        topLeft = Offset(center.x - baseWidth / 2, center.y - baseHeight / 2),
-        size = Size(baseWidth, baseHeight)
+    // Central keep
+    drawWobblyRect(
+        centerX = center.x, centerY = center.y,
+        width = baseWidth, height = baseHeight,
+        strokeColor = ink.copy(alpha = 0.6f),
+        config = HandDrawnDefaults.BUILDINGS.copy(seed = seed),
+        hachureConfig = HachureConfig(
+            angle = 30f, gap = 4f,
+            wobbleConfig = WobbleConfig(roughness = 0.4f, doubleStroke = false, strokeWidth = 0.7f, seed = seed + 100)
+        )
     )
 
+    // Towers
     listOf(-1f, 1f).forEach { side ->
         val towerX = center.x + side * (baseWidth / 2 - towerWidth / 2)
-        drawRect(
-            color = shadowColor,
-            topLeft = Offset(towerX - towerWidth / 2, center.y - baseHeight / 2 - towerHeight),
-            size = Size(towerWidth, towerHeight + baseHeight / 2)
+        val towerY = center.y - baseHeight / 2 - towerHeight / 2
+        drawWobblyRect(
+            centerX = towerX, centerY = towerY,
+            width = towerWidth, height = towerHeight,
+            strokeColor = ink.copy(alpha = 0.7f),
+            config = HandDrawnDefaults.BUILDINGS.copy(seed = seed + (side * 200).toInt())
         )
 
-        repeat(3) { i ->
-            val crenelX = towerX - towerWidth / 2 + i * towerWidth / 3
-            drawRect(
-                color = stoneColor,
-                topLeft = Offset(crenelX, center.y - baseHeight / 2 - towerHeight - 4f),
-                size = Size(towerWidth / 4, 4f)
+        // Crenellations as small wobbly marks on top
+        for (i in 0..2) {
+            val crenelX = towerX - towerWidth / 2 + i * towerWidth / 3 + towerWidth / 6
+            val crenelY = towerY - towerHeight / 2 - 3f
+            drawWobblyLine(
+                Offset(crenelX - 2f, crenelY), Offset(crenelX + 2f, crenelY),
+                ink.copy(alpha = 0.5f),
+                WobbleConfig(roughness = 0.5f, doubleStroke = false, strokeWidth = 2f, seed = seed + i + (side * 300).toInt())
             )
         }
     }
 }
 
-// Draw church terrain
+// Draw church terrain - wobbly building + steeple + ink cross
 fun DrawScope.drawChurchTerrain(center: Offset, terrainSize: Float, seed: Int) {
-    val random = kotlin.random.Random(seed)
-
-    val wallColor = Color(0xFFF0E8D8)
-    val roofColor = Color(0xFF6B4A35)
+    val ink = TerrainColors.ink
 
     val width = terrainSize * 0.15f
     val height = terrainSize * 0.12f
     val steepleHeight = terrainSize * 0.15f
 
-    drawRect(
-        color = wallColor,
-        topLeft = Offset(center.x - width / 2, center.y - height / 2),
-        size = Size(width, height)
+    // Building body
+    drawWobblyRect(
+        centerX = center.x, centerY = center.y,
+        width = width, height = height,
+        strokeColor = ink.copy(alpha = 0.6f),
+        config = HandDrawnDefaults.BUILDINGS.copy(seed = seed)
     )
 
-    val roofPath = Path()
-    roofPath.moveTo(center.x - width / 2 - 2f, center.y - height / 2)
-    roofPath.lineTo(center.x, center.y - height / 2 - steepleHeight)
-    roofPath.lineTo(center.x + width / 2 + 2f, center.y - height / 2)
-    roofPath.close()
+    // Steeple roof
+    val roofShape = listOf(
+        Offset(center.x - width / 2 - 2f, center.y - height / 2),
+        Offset(center.x, center.y - height / 2 - steepleHeight),
+        Offset(center.x + width / 2 + 2f, center.y - height / 2)
+    )
+    drawWobblyPath(
+        points = roofShape, closed = true,
+        color = ink.copy(alpha = 0.6f),
+        config = HandDrawnDefaults.BUILDINGS.copy(seed = seed + 100)
+    )
 
-    drawPath(roofPath, color = roofColor)
-
+    // Cross - two wobbly lines
     val crossSize = terrainSize * 0.03f
     val crossY = center.y - height / 2 - steepleHeight - crossSize
-    drawLine(
-        color = Color(0xFF4A3A2A),
-        start = Offset(center.x, crossY - crossSize),
-        end = Offset(center.x, crossY + crossSize),
-        strokeWidth = 2f
+    drawWobblyLine(
+        Offset(center.x, crossY - crossSize), Offset(center.x, crossY + crossSize),
+        ink.copy(alpha = 0.7f),
+        WobbleConfig(roughness = 0.5f, doubleStroke = false, strokeWidth = 1.5f, seed = seed + 200)
     )
-    drawLine(
-        color = Color(0xFF4A3A2A),
-        start = Offset(center.x - crossSize * 0.6f, crossY),
-        end = Offset(center.x + crossSize * 0.6f, crossY),
-        strokeWidth = 2f
+    drawWobblyLine(
+        Offset(center.x - crossSize * 0.6f, crossY), Offset(center.x + crossSize * 0.6f, crossY),
+        ink.copy(alpha = 0.7f),
+        WobbleConfig(roughness = 0.5f, doubleStroke = false, strokeWidth = 1.5f, seed = seed + 300)
     )
 }
 
-// Draw port terrain
+// Draw port terrain - hachure water + wobbly dock + ink ship
 fun DrawScope.drawPortTerrain(center: Offset, terrainSize: Float, seed: Int) {
-    val random = kotlin.random.Random(seed)
+    val ink = TerrainColors.ink
 
-    val waterColor = TerrainColors.water.copy(alpha = 0.6f)
-    val woodColor = Color(0xFF6B5030)
-
-    drawRect(
-        color = waterColor,
-        topLeft = Offset(center.x - terrainSize * 0.35f, center.y),
-        size = Size(terrainSize * 0.7f, terrainSize * 0.25f)
+    // Water area with hachure
+    val waterRect = rectPoints(center.x, center.y + terrainSize * 0.125f, terrainSize * 0.7f, terrainSize * 0.25f)
+    drawHachureFill(
+        boundary = waterRect,
+        color = ink.copy(alpha = 0.12f),
+        config = HachureConfig(
+            angle = -30f, gap = 5f,
+            wobbleConfig = WobbleConfig(roughness = 0.5f, doubleStroke = false, strokeWidth = 0.7f, seed = seed)
+        )
     )
 
+    // Dock - wobbly horizontal line
     val dockY = center.y + terrainSize * 0.05f
-    drawRect(
-        color = woodColor,
-        topLeft = Offset(center.x - terrainSize * 0.2f, dockY - 3f),
-        size = Size(terrainSize * 0.4f, 6f)
+    drawWobblyLine(
+        Offset(center.x - terrainSize * 0.2f, dockY), Offset(center.x + terrainSize * 0.2f, dockY),
+        ink.copy(alpha = 0.6f),
+        WobbleConfig(roughness = 0.6f, bowing = 0.4f, doubleStroke = true, strokeWidth = 2f, seed = seed + 100)
     )
 
-    repeat(4) { i ->
+    // Dock posts
+    for (i in 0..3) {
         val postX = center.x - terrainSize * 0.15f + i * terrainSize * 0.1f
-        drawLine(
-            color = woodColor,
-            start = Offset(postX, dockY),
-            end = Offset(postX, dockY + terrainSize * 0.08f),
-            strokeWidth = 3f
+        drawWobblyLine(
+            Offset(postX, dockY), Offset(postX, dockY + terrainSize * 0.08f),
+            ink.copy(alpha = 0.5f),
+            WobbleConfig(roughness = 0.3f, doubleStroke = false, strokeWidth = 1.5f, seed = seed + 200 + i)
         )
     }
 
+    // Ship - wobbly hull + mast + sail
     drawShip(Offset(center.x + terrainSize * 0.15f, center.y + terrainSize * 0.12f), terrainSize * 0.15f, seed)
 }
 
-// Draw ruins terrain
+// Draw ruins terrain - wobbly scattered blocks + broken pillars
 fun DrawScope.drawRuinsTerrain(center: Offset, terrainSize: Float, seed: Int) {
     val random = kotlin.random.Random(seed)
+    val ink = TerrainColors.ink
 
-    val stoneColor = TerrainColors.ruins
-    val shadowColor = Color(0xFF6A5B4A)
-
-    repeat(5) {
+    // Scattered stone blocks as wobbly rectangles
+    repeat(5) { i ->
         val blockX = center.x + random.nextFloat() * terrainSize * 0.5f - terrainSize * 0.25f
         val blockY = center.y + random.nextFloat() * terrainSize * 0.4f - terrainSize * 0.2f
         val blockWidth = terrainSize * (0.05f + random.nextFloat() * 0.04f)
         val blockHeight = terrainSize * (0.03f + random.nextFloat() * 0.03f)
 
-        val tilt = random.nextFloat() * 0.3f - 0.15f
-
-        drawRect(
-            color = shadowColor.copy(alpha = 0.5f),
-            topLeft = Offset(blockX + 2f, blockY + 2f),
-            size = Size(blockWidth, blockHeight)
-        )
-        drawRect(
-            color = stoneColor.copy(alpha = 0.7f),
-            topLeft = Offset(blockX, blockY),
-            size = Size(blockWidth, blockHeight)
+        drawWobblyRect(
+            centerX = blockX + blockWidth / 2, centerY = blockY + blockHeight / 2,
+            width = blockWidth, height = blockHeight,
+            strokeColor = ink.copy(alpha = 0.4f + random.nextFloat() * 0.2f),
+            config = WobbleConfig(roughness = 0.9f, bowing = 0.6f, doubleStroke = false, strokeWidth = 1f, seed = seed + i * 37)
         )
     }
 
-    repeat(2) {
-        val pillarX = center.x + (it - 0.5f) * terrainSize * 0.3f + random.nextFloat() * 5f - 2.5f
+    // Broken pillars as short wobbly vertical lines
+    repeat(2) { i ->
+        val pillarX = center.x + (i - 0.5f) * terrainSize * 0.3f + random.nextFloat() * 5f - 2.5f
         val pillarY = center.y + random.nextFloat() * terrainSize * 0.2f - terrainSize * 0.1f
         val pillarHeight = terrainSize * (0.08f + random.nextFloat() * 0.04f)
-        val pillarWidth = terrainSize * 0.025f
 
-        drawRect(
-            color = stoneColor,
-            topLeft = Offset(pillarX - pillarWidth / 2, pillarY - pillarHeight),
-            size = Size(pillarWidth, pillarHeight)
+        drawWobblyLine(
+            Offset(pillarX, pillarY), Offset(pillarX, pillarY - pillarHeight),
+            ink.copy(alpha = 0.5f),
+            WobbleConfig(roughness = 0.7f, bowing = 0.4f, doubleStroke = true, strokeWidth = 2f, seed = seed + 500 + i)
+        )
+        // Broken top - small horizontal wobbly mark
+        drawWobblyLine(
+            Offset(pillarX - 3f, pillarY - pillarHeight), Offset(pillarX + 3f, pillarY - pillarHeight),
+            ink.copy(alpha = 0.4f),
+            WobbleConfig(roughness = 1.0f, bowing = 0.3f, doubleStroke = false, strokeWidth = 1.5f, seed = seed + 600 + i)
         )
     }
 }

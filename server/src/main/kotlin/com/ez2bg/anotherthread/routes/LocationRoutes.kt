@@ -155,7 +155,16 @@ fun Route.locationRoutes() {
                 lastEditedBy = userId,
                 lastEditedAt = LocalDateTime.now().toString(),
                 // Preserve location type (or default to OUTDOOR_GROUND if not set)
-                locationType = existingLocation?.locationType ?: LocationType.OUTDOOR_GROUND
+                locationType = existingLocation?.locationType ?: LocationType.OUTDOOR_GROUND,
+                // Preserve biome metadata
+                biome = existingLocation?.biome,
+                elevation = existingLocation?.elevation,
+                moisture = existingLocation?.moisture,
+                isRiver = existingLocation?.isRiver,
+                isCoast = existingLocation?.isCoast,
+                terrainFeatures = existingLocation?.terrainFeatures,
+                // Mark terrain as no longer original if description was edited
+                isOriginalTerrain = if (descChanged) false else existingLocation?.isOriginalTerrain
             )
 
             if (LocationRepository.update(location)) {

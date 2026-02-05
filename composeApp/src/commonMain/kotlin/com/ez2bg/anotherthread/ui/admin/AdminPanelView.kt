@@ -101,6 +101,9 @@ fun AdminPanelView(
             }
         }
 
+        // World Generation Panel
+        WorldGenerationPanel()
+
         // Service Health Panel
         ServiceHealthPanel()
 

@@ -68,7 +68,10 @@ fun Route.worldGenRoutes() {
 
             application.launch {
                 try {
-                    val generator = GridWorldGenerator(params)
+                    val progressCallback: (String, Int, Int, String) -> Unit = { phase, current, total, message ->
+                        WorldGenJobManager.updateProgress(jobId, phase, current, total, message)
+                    }
+                    val generator = GridWorldGenerator(params, progressCallback)
                     val result = generator.generate()
                     WorldGenJobManager.completeJob(jobId, result)
 
@@ -328,8 +331,25 @@ object WorldGenJobManager {
         jobs[jobId] = WorldGenJobStatus(
             jobId = jobId,
             status = "running",
-            startedAt = System.currentTimeMillis()
+            startedAt = System.currentTimeMillis(),
+            progress = WorldGenProgress(
+                phase = "initializing",
+                message = "Starting world generation..."
+            )
         )
+    }
+
+    fun updateProgress(jobId: String, phase: String, current: Int, total: Int, message: String) {
+        jobs[jobId]?.let {
+            jobs[jobId] = it.copy(
+                progress = WorldGenProgress(
+                    phase = phase,
+                    current = current,
+                    total = total,
+                    message = message
+                )
+            )
+        }
     }
 
     fun completeJob(jobId: String, result: WorldGenerationResult) {
@@ -338,7 +358,8 @@ object WorldGenJobManager {
                 status = if (result.success) "completed" else "failed",
                 completedAt = System.currentTimeMillis(),
                 result = result,
-                error = result.errorMessage
+                error = result.errorMessage,
+                progress = null
             )
         }
     }
@@ -348,7 +369,8 @@ object WorldGenJobManager {
             jobs[jobId] = it.copy(
                 status = "failed",
                 completedAt = System.currentTimeMillis(),
-                error = error
+                error = error,
+                progress = null
             )
         }
     }
@@ -363,5 +385,14 @@ data class WorldGenJobStatus(
     val startedAt: Long,
     val completedAt: Long? = null,
     val result: WorldGenerationResult? = null,
-    val error: String? = null
+    val error: String? = null,
+    val progress: WorldGenProgress? = null
+)
+
+@Serializable
+data class WorldGenProgress(
+    val phase: String,           // "grid", "terrain", "locations", "exits", "names"
+    val current: Int = 0,
+    val total: Int = 0,
+    val message: String = ""
 )
