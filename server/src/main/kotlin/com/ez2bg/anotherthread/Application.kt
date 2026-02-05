@@ -20,6 +20,7 @@ import com.ez2bg.anotherthread.routes.nerfRequestRoutes
 import com.ez2bg.anotherthread.routes.pdfRoutes
 import com.ez2bg.anotherthread.routes.spellRoutes
 import com.ez2bg.anotherthread.routes.userRoutes
+import com.ez2bg.anotherthread.routes.worldGenRoutes
 import com.ez2bg.anotherthread.spell.*
 import com.ez2bg.anotherthread.SimpleGoldBalancer
 import io.ktor.server.request.header
@@ -1232,6 +1233,9 @@ fun Application.module() {
 
         // PDF analysis routes (LLM-based)
         pdfRoutes()
+
+        // World generation routes
+        worldGenRoutes()
 
         // Content generation routes (LLM-based)
         contentGenerationRoutes()
