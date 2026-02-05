@@ -376,29 +376,25 @@ fun AdventureScreen(
 
             }
 
-            // === PLAYER RESOURCE BAR: Positioned above bottom section ===
-            if (!ghostMode) {
-                PlayerResourceBar(
-                    currentHp = playerCombatant?.currentHp ?: currentUser?.currentHp ?: 0,
-                    maxHp = playerCombatant?.maxHp ?: currentUser?.maxHp ?: 0,
-                    currentMana = playerCombatant?.currentMana ?: currentUser?.currentMana ?: 0,
-                    maxMana = playerCombatant?.maxMana ?: currentUser?.maxMana ?: 0,
-                    currentStamina = playerCombatant?.currentStamina ?: currentUser?.currentStamina ?: 0,
-                    maxStamina = playerCombatant?.maxStamina ?: currentUser?.maxStamina ?: 0,
-                    modifier = Modifier
-                        .align(Alignment.BottomCenter)
-                        .fillMaxWidth()
-                        .padding(horizontal = 8.dp)
-                        .padding(bottom = 140.dp) // Above: AbilityRow (~50dp) + ModeToggle (~30dp) + EventLog (80dp)
-                )
-            }
-
             // === BOTTOM SECTION: Abilities row, mode toggle, and event log ===
             Column(
                 modifier = Modifier
                     .align(Alignment.BottomCenter)
                     .fillMaxWidth()
             ) {
+                // Player resource bars (HP/MP/SP)
+                if (!ghostMode) {
+                    PlayerResourceBar(
+                        currentHp = playerCombatant?.currentHp ?: currentUser?.currentHp ?: 0,
+                        maxHp = playerCombatant?.maxHp ?: currentUser?.maxHp ?: 0,
+                        currentMana = playerCombatant?.currentMana ?: currentUser?.currentMana ?: 0,
+                        maxMana = playerCombatant?.maxMana ?: currentUser?.maxMana ?: 0,
+                        currentStamina = playerCombatant?.currentStamina ?: currentUser?.currentStamina ?: 0,
+                        maxStamina = playerCombatant?.maxStamina ?: currentUser?.maxStamina ?: 0,
+                        modifier = Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 2.dp)
+                    )
+                }
+
                 // Abilities row (non-creature-specific actions above scroll section)
                 // Hide abilities in ghost mode since actions are disabled
                 if (uiState.playerAbilities.isNotEmpty() && !ghostMode) {
