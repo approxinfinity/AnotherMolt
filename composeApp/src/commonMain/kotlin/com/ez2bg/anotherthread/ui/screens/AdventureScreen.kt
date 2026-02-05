@@ -298,20 +298,6 @@ fun AdventureScreen(
                     )
                 }
 
-                // Coordinates below minimap
-                val gridX = currentLocation.gridX ?: 0
-                val gridY = currentLocation.gridY ?: 0
-                Text(
-                    text = "($gridX, $gridY)",
-                    color = Color.White,
-                    fontSize = 12.sp,
-                    fontWeight = FontWeight.Medium,
-                    modifier = Modifier
-                        .align(Alignment.Center)
-                        .offset(y = 70.dp)
-                        .background(Color.Black.copy(alpha = 0.7f), RoundedCornerShape(4.dp))
-                        .padding(horizontal = 8.dp, vertical = 2.dp)
-                )
             }
 
             // === BOTTOM SECTION: Abilities row, mode toggle, and event log ===
@@ -460,14 +446,26 @@ private fun LocationInfoPanel(
         modifier = modifier,
         horizontalAlignment = Alignment.Start
     ) {
-        // Location name
-        Text(
-            text = location.name,
-            color = Color.White,
-            fontSize = 18.sp,
-            fontWeight = FontWeight.Bold,
+        // Location name with coordinates
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
             modifier = Modifier.padding(bottom = 12.dp)
-        )
+        ) {
+            Text(
+                text = location.name,
+                color = Color.White,
+                fontSize = 18.sp,
+                fontWeight = FontWeight.Bold
+            )
+            Spacer(modifier = Modifier.width(8.dp))
+            val gridX = location.gridX ?: 0
+            val gridY = location.gridY ?: 0
+            Text(
+                text = "($gridX, $gridY)",
+                color = Color.Gray,
+                fontSize = 12.sp
+            )
+        }
 
         // Creatures section
         Text(
