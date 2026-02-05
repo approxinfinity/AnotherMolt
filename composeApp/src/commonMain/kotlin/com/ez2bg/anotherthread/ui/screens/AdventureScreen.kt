@@ -6,6 +6,7 @@ import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.CircleShape
@@ -62,8 +63,11 @@ import com.ez2bg.anotherthread.ui.components.TargetSelectionOverlay
 import com.ez2bg.anotherthread.ui.admin.getTerrainColor
 import kotlinx.coroutines.launch
 import kotlin.math.PI
+import kotlin.math.abs
+import kotlin.math.atan2
 import kotlin.math.cos
 import kotlin.math.sin
+import kotlin.math.sqrt
 
 // Preview imports
 import androidx.compose.ui.tooling.preview.Preview
@@ -84,7 +88,9 @@ import androidx.compose.ui.tooling.preview.Preview
 fun AdventureScreen(
     currentUser: UserDto?,
     onSwitchToCreate: () -> Unit,
-    onViewLocationDetails: (LocationDto) -> Unit
+    onViewLocationDetails: (LocationDto) -> Unit,
+    ghostMode: Boolean = false,
+    onGhostModeBack: (() -> Unit)? = null
 ) {
     // Create ViewModel scoped to this composable
     val viewModel = remember(currentUser?.id) { AdventureViewModel(currentUser) }
@@ -128,11 +134,68 @@ fun AdventureScreen(
         label = "detailSlide"
     )
 
+    // Swipe gesture state
+    var swipeTotalX by remember { mutableStateOf(0f) }
+    var swipeTotalY by remember { mutableStateOf(0f) }
+
+    // Helper to determine direction from swipe angle
+    fun getSwipeDirection(dx: Float, dy: Float): ExitDirection? {
+        val distance = sqrt(dx * dx + dy * dy)
+        if (distance < 50f) return null  // Minimum swipe distance
+
+        // Calculate angle in degrees (0 = right, 90 = down, -90 = up, 180/-180 = left)
+        val angle = atan2(dy.toDouble(), dx.toDouble()) * 180.0 / PI
+
+        // Map to 8 directions with 45-degree sectors
+        return when {
+            angle >= -22.5 && angle < 22.5 -> ExitDirection.EAST
+            angle >= 22.5 && angle < 67.5 -> ExitDirection.SOUTHEAST
+            angle >= 67.5 && angle < 112.5 -> ExitDirection.SOUTH
+            angle >= 112.5 && angle < 157.5 -> ExitDirection.SOUTHWEST
+            angle >= 157.5 || angle < -157.5 -> ExitDirection.WEST
+            angle >= -157.5 && angle < -112.5 -> ExitDirection.NORTHWEST
+            angle >= -112.5 && angle < -67.5 -> ExitDirection.NORTH
+            angle >= -67.5 && angle < -22.5 -> ExitDirection.NORTHEAST
+            else -> null
+        }
+    }
+
     // Main UI
     Box(
         modifier = Modifier
             .fillMaxSize()
             .background(Color.Black)
+            .pointerInput(uiState.currentLocation?.id, ghostMode) {
+                if (!ghostMode && uiState.currentLocation != null) {
+                    detectDragGestures(
+                        onDragStart = {
+                            swipeTotalX = 0f
+                            swipeTotalY = 0f
+                        },
+                        onDrag = { change, dragAmount ->
+                            change.consume()
+                            swipeTotalX += dragAmount.x
+                            swipeTotalY += dragAmount.y
+                        },
+                        onDragEnd = {
+                            val direction = getSwipeDirection(swipeTotalX, swipeTotalY)
+                            if (direction != null) {
+                                // Find exit in that direction
+                                val exit = uiState.currentLocation?.exits?.find { it.direction == direction }
+                                if (exit != null) {
+                                    viewModel.navigateToExit(exit)
+                                }
+                            }
+                            swipeTotalX = 0f
+                            swipeTotalY = 0f
+                        },
+                        onDragCancel = {
+                            swipeTotalX = 0f
+                            swipeTotalY = 0f
+                        }
+                    )
+                }
+            }
     ) {
         if (uiState.isLoading) {
             CircularProgressIndicator(
@@ -142,67 +205,62 @@ fun AdventureScreen(
         } else if (uiState.currentLocation != null) {
             val currentLocation = uiState.currentLocation!!
 
-            // === TOP SECTION: Full-width black panel with info, minimap, and coordinates ===
-            Box(
-                modifier = Modifier
-                    .align(Alignment.TopStart)
-                    .fillMaxWidth()
-                    .background(Color.Black)
-            ) {
-                // Location info on the left
-                if (!uiState.isDetailViewVisible) {
+            // === BACKGROUND: Location image fills the entire screen ===
+            if (!isBlinded && currentLocation.imageUrl != null) {
+                AsyncImage(
+                    model = "${AppConfig.api.baseUrl}${currentLocation.imageUrl}",
+                    contentDescription = currentLocation.name,
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .graphicsLayer { alpha = 0.6f },  // Semi-transparent so UI is readable
+                    contentScale = ContentScale.Crop
+                )
+                // Dark gradient overlay for better text readability
+                Box(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .background(
+                            Brush.verticalGradient(
+                                colors = listOf(
+                                    Color.Black.copy(alpha = 0.7f),
+                                    Color.Black.copy(alpha = 0.3f),
+                                    Color.Black.copy(alpha = 0.3f),
+                                    Color.Black.copy(alpha = 0.8f)
+                                )
+                            )
+                        )
+                )
+            }
+
+            // === TOP SECTION: Location info panel ===
+            if (!uiState.isDetailViewVisible) {
+                Box(
+                    modifier = Modifier
+                        .align(Alignment.TopStart)
+                        .fillMaxWidth()
+                        .background(Color.Black.copy(alpha = 0.6f))
+                ) {
                     LocationInfoPanel(
                         location = currentLocation,
                         creaturesHere = uiState.creaturesHere,
                         itemsHere = uiState.itemsHere,
                         creatureStates = uiState.creatureStates,
                         isBlinded = isBlinded,
-                        onCreatureClick = { viewModel.selectCreature(it) },
-                        onItemClick = { viewModel.selectItem(it) },
+                        onCreatureClick = { if (!ghostMode) viewModel.selectCreature(it) },
+                        onItemClick = { if (!ghostMode) viewModel.selectItem(it) },
                         modifier = Modifier
-                            .fillMaxWidth(0.55f)
+                            .fillMaxWidth()
                             .padding(16.dp)
                     )
                 }
-
-                // Minimap and coordinates on the right (floating over black background)
-                Column(
-                    modifier = Modifier
-                        .align(Alignment.TopEnd)
-                        .padding(12.dp),
-                    horizontalAlignment = Alignment.CenterHorizontally
-                ) {
-                    if (!uiState.isDetailViewVisible) {
-                        Minimap(
-                            locations = uiState.locations,
-                            currentLocation = currentLocation,
-                            isRanger = uiState.isRanger,
-                            modifier = Modifier.size(105.dp)
-                        )
-
-                        // Coordinates below minimap
-                        val gridX = currentLocation.gridX ?: 0
-                        val gridY = currentLocation.gridY ?: 0
-                        Text(
-                            text = "($gridX, $gridY)",
-                            color = Color.White,
-                            fontSize = 12.sp,
-                            fontWeight = FontWeight.Medium,
-                            modifier = Modifier
-                                .padding(top = 6.dp)
-                                .background(Color.Black.copy(alpha = 0.7f), RoundedCornerShape(4.dp))
-                                .padding(horizontal = 8.dp, vertical = 2.dp)
-                        )
-                    }
-                }
             }
 
-            // === CENTER SECTION: Location thumbnail with directional ring ===
+            // === CENTER SECTION: Minimap with directional ring ===
             Box(
                 modifier = Modifier.fillMaxSize(),
                 contentAlignment = Alignment.Center
             ) {
-                // Disorient indicator below thumbnail
+                // Disorient indicator below minimap
                 if (isDisoriented && disorientRounds > 0) {
                     DisorientIndicator(
                         roundsRemaining = disorientRounds,
@@ -212,7 +270,7 @@ fun AdventureScreen(
                     )
                 }
 
-                // Container for thumbnail + directionals (rotates when disoriented)
+                // Container for minimap + directionals (rotates when disoriented)
                 Box(
                     modifier = Modifier
                         .graphicsLayer {
@@ -222,23 +280,38 @@ fun AdventureScreen(
                         },
                     contentAlignment = Alignment.Center
                 ) {
-                    // Directional navigation ring (innermost, around thumbnail)
+                    // Directional navigation ring (around minimap)
                     DirectionalRing(
                         exits = currentLocation.exits,
                         locations = uiState.locations,
                         onNavigate = { viewModel.navigateToExit(it) }
                     )
 
-                    // Location thumbnail (with Ranger minimap overlay if applicable)
-                    LocationThumbnail(
-                        location = currentLocation,
+                    // Centered minimap (replaces location thumbnail)
+                    CenterMinimap(
                         locations = uiState.locations,
+                        currentLocation = currentLocation,
+                        isRanger = uiState.isRanger,
                         isBlinded = isBlinded,
                         blindRounds = blindRounds,
-                        isRanger = uiState.isRanger,
                         onClick = { showLocationDetailPopup = true }
                     )
                 }
+
+                // Coordinates below minimap
+                val gridX = currentLocation.gridX ?: 0
+                val gridY = currentLocation.gridY ?: 0
+                Text(
+                    text = "($gridX, $gridY)",
+                    color = Color.White,
+                    fontSize = 12.sp,
+                    fontWeight = FontWeight.Medium,
+                    modifier = Modifier
+                        .align(Alignment.Center)
+                        .offset(y = 70.dp)
+                        .background(Color.Black.copy(alpha = 0.7f), RoundedCornerShape(4.dp))
+                        .padding(horizontal = 8.dp, vertical = 2.dp)
+                )
             }
 
             // === BOTTOM SECTION: Abilities row, mode toggle, and event log ===
@@ -248,7 +321,8 @@ fun AdventureScreen(
                     .fillMaxWidth()
             ) {
                 // Abilities row (non-creature-specific actions above scroll section)
-                if (uiState.playerAbilities.isNotEmpty()) {
+                // Hide abilities in ghost mode since actions are disabled
+                if (uiState.playerAbilities.isNotEmpty() && !ghostMode) {
                     AbilityRow(
                         abilities = uiState.playerAbilities,
                         cooldowns = cooldowns,
@@ -260,16 +334,18 @@ fun AdventureScreen(
                     )
                 }
 
-                // Mode toggle - bottom right of middle section
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.End
-                ) {
-                    ModeToggle(
-                        isCreateMode = false,
-                        onToggle = onSwitchToCreate,
-                        modifier = Modifier.padding(end = 8.dp, bottom = 4.dp)
-                    )
+                // Mode toggle - bottom right of middle section (hidden in ghost mode)
+                if (!ghostMode) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.End
+                    ) {
+                        ModeToggle(
+                            isCreateMode = false,
+                            onToggle = onSwitchToCreate,
+                            modifier = Modifier.padding(end = 8.dp, bottom = 4.dp)
+                        )
+                    }
                 }
 
                 // Event log at very bottom (always visible)
@@ -345,6 +421,22 @@ fun AdventureScreen(
                 color = Color.White,
                 modifier = Modifier.align(Alignment.Center)
             )
+        }
+
+        // Ghost mode back button (minimal, just navigation)
+        if (ghostMode && onGhostModeBack != null) {
+            IconButton(
+                onClick = onGhostModeBack,
+                modifier = Modifier
+                    .align(Alignment.TopStart)
+                    .padding(8.dp)
+            ) {
+                Icon(
+                    imageVector = Icons.AutoMirrored.Filled.ArrowBack,
+                    contentDescription = "Back to character creation",
+                    tint = Color.White.copy(alpha = 0.7f)
+                )
+            }
         }
     }
 }
@@ -644,12 +736,225 @@ private fun Minimap(
 }
 
 // =============================================================================
-// DIRECTIONAL RING (innermost ring around location thumbnail)
+// CENTER MINIMAP (replaces location thumbnail in center of screen)
 // =============================================================================
 
 /**
- * Directional navigation buttons arranged in a ring around the location thumbnail.
- * This is now the innermost ring, replacing the ability ring.
+ * Centered minimap that replaces the location thumbnail.
+ * 100x100 size, shows the map with current position highlighted.
+ */
+@Composable
+private fun CenterMinimap(
+    locations: List<LocationDto>,
+    currentLocation: LocationDto,
+    isRanger: Boolean,
+    isBlinded: Boolean,
+    blindRounds: Int,
+    onClick: () -> Unit
+) {
+    val currentGridX = currentLocation.gridX ?: 0
+    val currentGridY = currentLocation.gridY ?: 0
+
+    // Animated position
+    val animatedGridX by animateFloatAsState(
+        targetValue = currentGridX.toFloat(),
+        animationSpec = tween(durationMillis = 300),
+        label = "centerMinimapX"
+    )
+    val animatedGridY by animateFloatAsState(
+        targetValue = currentGridY.toFloat(),
+        animationSpec = tween(durationMillis = 300),
+        label = "centerMinimapY"
+    )
+
+    Box(
+        modifier = Modifier
+            .size(100.dp)
+            .clip(CircleShape)
+            .background(Color.Black.copy(alpha = 0.8f))
+            .border(2.dp, if (isRanger) Color(0xFF4CAF50) else Color(0xFF4A4A4A), CircleShape)
+            .clickable(onClick = onClick)
+    ) {
+        if (isBlinded && blindRounds > 0) {
+            BlindOverlay(
+                roundsRemaining = blindRounds,
+                modifier = Modifier.fillMaxSize()
+            )
+        } else {
+            Canvas(modifier = Modifier.fillMaxSize()) {
+                val centerX = size.width / 2
+                val centerY = size.height / 2
+                val gridSpacingPx = 28.dp.toPx()
+                val dotRadius = 6.dp.toPx()
+                val highlightRadius = 9.dp.toPx()
+                val lineColor = if (isRanger) Color(0xFF4CAF50) else Color(0xFFFF9800)
+                val lineWidth = 2.dp.toPx()
+                val highlightStrokeWidth = 2.5f.dp.toPx()
+                val dotOutlineWidth = 1.dp.toPx()
+
+                // Vignette function
+                val vignetteRadius = minOf(size.width, size.height) / 2
+                fun vignetteAlpha(x: Float, y: Float): Float {
+                    val dx = x - centerX
+                    val dy = y - centerY
+                    val dist = kotlin.math.sqrt(dx * dx + dy * dy)
+                    val fadeStart = vignetteRadius * 0.5f
+                    val fadeEnd = vignetteRadius * 0.95f
+                    return when {
+                        dist <= fadeStart -> 1f
+                        dist >= fadeEnd -> 0f
+                        else -> 1f - ((dist - fadeStart) / (fadeEnd - fadeStart))
+                    }
+                }
+
+                val locationById = locations.associateBy { it.id }
+                val drawnConnections = mutableSetOf<Pair<String, String>>()
+                val visited = mutableSetOf<String>()
+                val queue = ArrayDeque<Pair<String, Int>>()
+
+                queue.add(currentLocation.id to 0)
+                visited.add(currentLocation.id)
+
+                // Draw connections via BFS
+                while (queue.isNotEmpty()) {
+                    val (locId, depth) = queue.removeFirst()
+                    if (depth >= 2) continue
+
+                    val loc = locationById[locId] ?: continue
+                    val locGridX = loc.gridX ?: continue
+                    val locGridY = loc.gridY ?: continue
+                    val locRelX = locGridX - animatedGridX
+                    val locRelY = locGridY - animatedGridY
+
+                    loc.exits.forEach { exit ->
+                        val targetLoc = locationById[exit.locationId] ?: return@forEach
+                        val targetGridX = targetLoc.gridX ?: return@forEach
+                        val targetGridY = targetLoc.gridY ?: return@forEach
+                        val targetRelX = targetGridX - animatedGridX
+                        val targetRelY = targetGridY - animatedGridY
+
+                        val connKey = if (locId < exit.locationId) locId to exit.locationId else exit.locationId to locId
+
+                        if (kotlin.math.abs(locRelX) <= 2 && kotlin.math.abs(locRelY) <= 2 &&
+                            kotlin.math.abs(targetRelX) <= 2 && kotlin.math.abs(targetRelY) <= 2 &&
+                            !drawnConnections.contains(connKey)) {
+
+                            drawnConnections.add(connKey)
+
+                            val fromX = centerX + locRelX * gridSpacingPx
+                            val fromY = centerY + locRelY * gridSpacingPx
+                            val toX = centerX + targetRelX * gridSpacingPx
+                            val toY = centerY + targetRelY * gridSpacingPx
+
+                            val depthAlpha = when (depth) {
+                                0 -> 0.9f
+                                else -> 0.5f
+                            }
+
+                            val fromVignette = vignetteAlpha(fromX, fromY)
+                            val toVignette = vignetteAlpha(toX, toY)
+                            val vignetteMultiplier = minOf(fromVignette, toVignette)
+                            val finalAlpha = depthAlpha * vignetteMultiplier
+
+                            if (finalAlpha > 0.01f) {
+                                val dx = toX - fromX
+                                val dy = toY - fromY
+                                val length = kotlin.math.sqrt(dx * dx + dy * dy)
+                                if (length > dotRadius * 2) {
+                                    val shortenAmount = dotRadius + 1.dp.toPx()
+                                    val ratio = shortenAmount / length
+                                    val adjustedFromX = fromX + dx * ratio
+                                    val adjustedFromY = fromY + dy * ratio
+                                    val adjustedToX = toX - dx * ratio
+                                    val adjustedToY = toY - dy * ratio
+
+                                    drawLine(
+                                        color = lineColor.copy(alpha = finalAlpha),
+                                        start = Offset(adjustedFromX, adjustedFromY),
+                                        end = Offset(adjustedToX, adjustedToY),
+                                        strokeWidth = lineWidth
+                                    )
+                                }
+                            }
+                        }
+
+                        if (!visited.contains(exit.locationId)) {
+                            visited.add(exit.locationId)
+                            queue.add(exit.locationId to depth + 1)
+                        }
+                    }
+                }
+
+                // Draw dots
+                locations.forEach { location ->
+                    val locGridX = location.gridX ?: return@forEach
+                    val locGridY = location.gridY ?: return@forEach
+
+                    val relX = locGridX - animatedGridX
+                    val relY = locGridY - animatedGridY
+
+                    if (kotlin.math.abs(relX) <= 2 && kotlin.math.abs(relY) <= 2) {
+                        val dotX = centerX + relX * gridSpacingPx
+                        val dotY = centerY + relY * gridSpacingPx
+                        val isCurrentLoc = location.id == currentLocation.id
+
+                        val dotVignetteAlpha = if (isCurrentLoc) 1f else vignetteAlpha(dotX, dotY)
+
+                        if (dotVignetteAlpha > 0.01f) {
+                            if (isCurrentLoc) {
+                                drawCircle(
+                                    color = lineColor,
+                                    radius = highlightRadius,
+                                    center = Offset(dotX, dotY),
+                                    style = Stroke(width = highlightStrokeWidth)
+                                )
+                            }
+
+                            val terrainColor = getTerrainColor(location.desc, location.name)
+                            drawCircle(
+                                color = terrainColor.copy(alpha = terrainColor.alpha * dotVignetteAlpha),
+                                radius = dotRadius,
+                                center = Offset(dotX, dotY)
+                            )
+
+                            drawCircle(
+                                color = lineColor.copy(alpha = 0.6f * dotVignetteAlpha),
+                                radius = dotRadius,
+                                center = Offset(dotX, dotY),
+                                style = Stroke(width = dotOutlineWidth)
+                            )
+                        }
+                    }
+                }
+
+                // Fog of war
+                val fogRadius = size.minDimension / 2
+                drawCircle(
+                    brush = Brush.radialGradient(
+                        colors = listOf(
+                            Color.Transparent,
+                            Color.Transparent,
+                            Color.Black.copy(alpha = 0.2f),
+                            Color.Black.copy(alpha = 0.5f),
+                            Color.Black.copy(alpha = 0.8f)
+                        ),
+                        center = Offset(centerX, centerY),
+                        radius = fogRadius
+                    ),
+                    radius = fogRadius,
+                    center = Offset(centerX, centerY)
+                )
+            }
+        }
+    }
+}
+
+// =============================================================================
+// DIRECTIONAL RING (innermost ring around minimap)
+// =============================================================================
+
+/**
+ * Directional navigation buttons arranged in a ring around the center minimap.
  */
 @Composable
 private fun DirectionalRing(
