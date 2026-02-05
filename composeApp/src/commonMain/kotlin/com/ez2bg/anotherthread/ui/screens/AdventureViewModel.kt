@@ -7,6 +7,7 @@ import com.ez2bg.anotherthread.api.CreatureDto
 import com.ez2bg.anotherthread.api.ExitDto
 import com.ez2bg.anotherthread.api.ItemDto
 import com.ez2bg.anotherthread.api.LocationDto
+import com.ez2bg.anotherthread.api.ShopActionResponse
 import com.ez2bg.anotherthread.api.UserDto
 import com.ez2bg.anotherthread.data.AdventureRepository
 import com.ez2bg.anotherthread.state.AdventureStateHolder
@@ -38,7 +39,12 @@ data class AdventureLocalState(
     val snackbarMessage: String? = null,
     val playerAbilities: List<AbilityDto> = emptyList(),
     val playerCharacterClass: CharacterClassDto? = null,
-    val allAbilitiesMap: Map<String, AbilityDto> = emptyMap()
+    val allAbilitiesMap: Map<String, AbilityDto> = emptyMap(),
+    // Shop state
+    val playerGold: Int = 0,
+    val shopItems: List<ItemDto> = emptyList(),
+    val isShopLocation: Boolean = false,
+    val isInnLocation: Boolean = false
 )
 
 /**
@@ -71,7 +77,12 @@ data class AdventureUiState(
     val selectedItem: ItemDto? = null,
     val showDescriptionPopup: Boolean = false,
     val pendingAbility: AbilityDto? = null,
-    val snackbarMessage: String? = null
+    val snackbarMessage: String? = null,
+    // Shop state
+    val playerGold: Int = 0,
+    val shopItems: List<ItemDto> = emptyList(),
+    val isShopLocation: Boolean = false,
+    val isInnLocation: Boolean = false
 ) {
     // Derived properties
     val currentLocation: LocationDto?
@@ -163,7 +174,11 @@ class AdventureViewModel(
             selectedItem = local.selectedItem,
             showDescriptionPopup = local.showDescriptionPopup,
             pendingAbility = local.pendingAbility,
-            snackbarMessage = local.snackbarMessage
+            snackbarMessage = local.snackbarMessage,
+            playerGold = local.playerGold,
+            shopItems = local.shopItems,
+            isShopLocation = local.isShopLocation,
+            isInnLocation = local.isInnLocation
         )
     }.stateIn(
         scope = scope,
@@ -171,11 +186,20 @@ class AdventureViewModel(
         initialValue = AdventureUiState(currentLocationId = currentUser?.currentLocationId)
     )
 
+    // Known shop location IDs
+    private val shopLocationIds = setOf(
+        "tun-du-lac-magic-shop",
+        "tun-du-lac-armor-shop",
+        "tun-du-lac-weapons-shop"
+    )
+    private val innLocationId = "tun-du-lac-inn"
+
     init {
         initializeRepository()
         connectCombatWebSocket()
         loadPlayerAbilities()
         loadAbilitiesMap()
+        loadPlayerGold()
     }
 
     // =========================================================================
@@ -227,6 +251,18 @@ class AdventureViewModel(
         }
     }
 
+    private fun loadPlayerGold() {
+        val userId = currentUser?.id ?: return
+        _localState.update { it.copy(playerGold = currentUser.gold) }
+        scope.launch {
+            ApiClient.getUser(userId).onSuccess { user ->
+                if (user != null) {
+                    _localState.update { it.copy(playerGold = user.gold) }
+                }
+            }
+        }
+    }
+
     // =========================================================================
     // NAVIGATION
     // =========================================================================
@@ -236,18 +272,42 @@ class AdventureViewModel(
             // Update repository's current location
             AdventureRepository.setCurrentLocation(exit.locationId)
 
-            // Clear selection
+            // Clear selection and update shop state
+            val isShop = exit.locationId in shopLocationIds
+            val isInn = exit.locationId == innLocationId
             _localState.update {
                 it.copy(
                     selectedCreature = null,
                     selectedItem = null,
-                    showDescriptionPopup = false
+                    showDescriptionPopup = false,
+                    isShopLocation = isShop,
+                    isInnLocation = isInn,
+                    shopItems = emptyList()
                 )
+            }
+
+            // Load shop items if at a shop location
+            if (isShop) {
+                loadShopItems(exit.locationId)
             }
 
             // Update user presence on server
             currentUser?.let { user ->
                 ApiClient.updateUserLocation(user.id, exit.locationId)
+            }
+        }
+    }
+
+    private fun loadShopItems(locationId: String) {
+        scope.launch {
+            val location = AdventureRepository.getLocation(locationId) ?: return@launch
+            val itemIds = location.itemIds
+            if (itemIds.isEmpty()) return@launch
+
+            // Load each item's details
+            ApiClient.getItems().onSuccess { allItems ->
+                val shopItems = allItems.filter { it.id in itemIds }
+                _localState.update { it.copy(shopItems = shopItems) }
             }
         }
     }
@@ -284,6 +344,49 @@ class AdventureViewModel(
 
     fun hideDescriptionPopup() {
         _localState.update { it.copy(showDescriptionPopup = false) }
+    }
+
+    // =========================================================================
+    // SHOP ACTIONS
+    // =========================================================================
+
+    fun buyItem(itemId: String) {
+        val userId = currentUser?.id ?: return
+        val locationId = uiState.value.currentLocationId ?: return
+        scope.launch {
+            ApiClient.buyItem(locationId, userId, itemId).onSuccess { response ->
+                if (response.success) {
+                    // Update gold from response
+                    response.user?.let { user ->
+                        _localState.update { it.copy(playerGold = user.gold) }
+                    }
+                    showSnackbar(response.message)
+                } else {
+                    showSnackbar(response.message)
+                }
+            }.onFailure {
+                showSnackbar("Purchase failed: ${it.message}")
+            }
+        }
+    }
+
+    fun restAtInn() {
+        val userId = currentUser?.id ?: return
+        val locationId = uiState.value.currentLocationId ?: return
+        scope.launch {
+            ApiClient.restAtInn(locationId, userId).onSuccess { response ->
+                if (response.success) {
+                    response.user?.let { user ->
+                        _localState.update { it.copy(playerGold = user.gold) }
+                    }
+                    showSnackbar(response.message)
+                } else {
+                    showSnackbar(response.message)
+                }
+            }.onFailure {
+                showSnackbar("Rest failed: ${it.message}")
+            }
+        }
     }
 
     // =========================================================================

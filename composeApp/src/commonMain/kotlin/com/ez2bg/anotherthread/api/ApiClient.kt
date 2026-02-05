@@ -164,7 +164,10 @@ data class UserDto(
     val currentMana: Int = 10,
     val maxStamina: Int = 10,
     val currentStamina: Int = 10,
-    val currentCombatSessionId: String? = null
+    val currentCombatSessionId: String? = null,
+    // Economy and equipment
+    val gold: Int = 0,
+    val equippedItemIds: List<String> = emptyList()
 )
 
 @Serializable
@@ -925,6 +928,24 @@ object ApiClient {
 
     suspend fun getActiveUsersAtLocation(locationId: String): Result<List<UserDto>> = runCatching {
         client.get("$baseUrl/users/at-location/$locationId").body()
+    }
+
+    // =========================================================================
+    // SHOP
+    // =========================================================================
+
+    suspend fun buyItem(locationId: String, userId: String, itemId: String): Result<ShopActionResponse> = runCatching {
+        client.post("$baseUrl/shop/$locationId/buy") {
+            contentType(ContentType.Application.Json)
+            setBody(BuyItemRequest(userId = userId, itemId = itemId))
+        }.body()
+    }
+
+    suspend fun restAtInn(locationId: String, userId: String): Result<ShopActionResponse> = runCatching {
+        client.post("$baseUrl/shop/$locationId/rest") {
+            contentType(ContentType.Application.Json)
+            setBody(RestAtInnRequest(userId = userId))
+        }.body()
     }
 
     // Entity identification
@@ -1715,4 +1736,21 @@ data class PlayerDeathResponse(
     val respawnLocationName: String,
     val itemsDropped: Int,
     val goldLost: Int
+)
+
+// ============================================================================
+// Shop DTOs
+// ============================================================================
+
+@Serializable
+data class BuyItemRequest(val userId: String, val itemId: String)
+
+@Serializable
+data class RestAtInnRequest(val userId: String)
+
+@Serializable
+data class ShopActionResponse(
+    val success: Boolean,
+    val message: String,
+    val user: UserDto? = null
 )

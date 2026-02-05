@@ -232,7 +232,7 @@ fun AdventureScreen(
                 )
             }
 
-            // === TOP SECTION: Location info panel ===
+            // === TOP SECTION: Location info panel or Shop panel ===
             if (!uiState.isDetailViewVisible) {
                 Box(
                     modifier = Modifier
@@ -240,18 +240,33 @@ fun AdventureScreen(
                         .fillMaxWidth()
                         .background(Color.Black.copy(alpha = 0.6f))
                 ) {
-                    LocationInfoPanel(
-                        location = currentLocation,
-                        creaturesHere = uiState.creaturesHere,
-                        itemsHere = uiState.itemsHere,
-                        creatureStates = uiState.creatureStates,
-                        isBlinded = isBlinded,
-                        onCreatureClick = { if (!ghostMode) viewModel.selectCreature(it) },
-                        onItemClick = { if (!ghostMode) viewModel.selectItem(it) },
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(16.dp)
-                    )
+                    if ((uiState.isShopLocation || uiState.isInnLocation) && !ghostMode) {
+                        ShopPanel(
+                            location = currentLocation,
+                            shopItems = uiState.shopItems,
+                            playerGold = uiState.playerGold,
+                            isInn = uiState.isInnLocation,
+                            innCost = 25,
+                            onBuyItem = { viewModel.buyItem(it.id) },
+                            onRest = { viewModel.restAtInn() },
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(16.dp)
+                        )
+                    } else {
+                        LocationInfoPanel(
+                            location = currentLocation,
+                            creaturesHere = uiState.creaturesHere,
+                            itemsHere = uiState.itemsHere,
+                            creatureStates = uiState.creatureStates,
+                            isBlinded = isBlinded,
+                            onCreatureClick = { if (!ghostMode) viewModel.selectCreature(it) },
+                            onItemClick = { if (!ghostMode) viewModel.selectItem(it) },
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(16.dp)
+                        )
+                    }
                 }
             }
 
@@ -281,15 +296,22 @@ fun AdventureScreen(
                     contentAlignment = Alignment.Center
                 ) {
                     // Directional navigation ring (around minimap)
+                    // DirectionalRing needs all locations to resolve cross-area exits (e.g. ENTER)
                     DirectionalRing(
                         exits = currentLocation.exits,
                         locations = uiState.locations,
                         onNavigate = { viewModel.navigateToExit(it) }
                     )
 
+                    // Filter to only show locations in the same area for minimap
+                    val currentAreaId = currentLocation.areaId
+                    val areaLocations = remember(uiState.locations, currentAreaId) {
+                        uiState.locations.filter { it.areaId == currentAreaId }
+                    }
+
                     // Centered minimap (replaces location thumbnail)
                     CenterMinimap(
-                        locations = uiState.locations,
+                        locations = areaLocations,
                         currentLocation = currentLocation,
                         isRanger = uiState.isRanger,
                         isBlinded = isBlinded,
@@ -529,6 +551,180 @@ private fun LocationInfoPanel(
                         .padding(vertical = 2.dp)
                 )
             }
+        }
+    }
+}
+
+// =============================================================================
+// SHOP PANEL
+// =============================================================================
+
+@Composable
+private fun ShopPanel(
+    location: LocationDto,
+    shopItems: List<ItemDto>,
+    playerGold: Int,
+    isInn: Boolean,
+    innCost: Int,
+    onBuyItem: (ItemDto) -> Unit,
+    onRest: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    Column(modifier = modifier) {
+        // Shop name and gold display
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(bottom = 8.dp)
+        ) {
+            Text(
+                text = location.name,
+                color = Color.White,
+                fontSize = 18.sp,
+                fontWeight = FontWeight.Bold,
+                modifier = Modifier.weight(1f)
+            )
+            // Gold display
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(
+                    text = "$playerGold",
+                    color = Color(0xFFFFD700),
+                    fontSize = 16.sp,
+                    fontWeight = FontWeight.Bold
+                )
+                Spacer(modifier = Modifier.width(4.dp))
+                Text(
+                    text = "gold",
+                    color = Color(0xFFFFD700).copy(alpha = 0.7f),
+                    fontSize = 12.sp
+                )
+            }
+        }
+
+        // Description
+        Text(
+            text = location.desc,
+            color = Color(0xFFCCCCCC),
+            fontSize = 12.sp,
+            lineHeight = 16.sp,
+            modifier = Modifier.padding(bottom = 8.dp)
+        )
+
+        if (isInn) {
+            // Inn: rest button
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .background(
+                        if (playerGold >= innCost) Color(0xFF2E7D32).copy(alpha = 0.3f)
+                        else Color.Gray.copy(alpha = 0.2f),
+                        RoundedCornerShape(8.dp)
+                    )
+                    .border(
+                        1.dp,
+                        if (playerGold >= innCost) Color(0xFF4CAF50) else Color.Gray,
+                        RoundedCornerShape(8.dp)
+                    )
+                    .clickable(enabled = playerGold >= innCost) { onRest() }
+                    .padding(12.dp)
+            ) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            text = "Rest for the Night",
+                            color = Color.White,
+                            fontSize = 16.sp,
+                            fontWeight = FontWeight.Bold
+                        )
+                        Text(
+                            text = "Fully restores HP, mana, and stamina",
+                            color = Color(0xFFAAAAAA),
+                            fontSize = 12.sp
+                        )
+                    }
+                    Text(
+                        text = "${innCost}g",
+                        color = if (playerGold >= innCost) Color(0xFFFFD700) else Color.Gray,
+                        fontSize = 16.sp,
+                        fontWeight = FontWeight.Bold
+                    )
+                }
+            }
+        } else {
+            // Shop: item list
+            shopItems.forEach { item ->
+                ShopItemRow(
+                    item = item,
+                    canAfford = playerGold >= item.value,
+                    onBuy = { onBuyItem(item) }
+                )
+                Spacer(modifier = Modifier.height(4.dp))
+            }
+        }
+    }
+}
+
+@Composable
+private fun ShopItemRow(
+    item: ItemDto,
+    canAfford: Boolean,
+    onBuy: () -> Unit
+) {
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        modifier = Modifier
+            .fillMaxWidth()
+            .background(Color.White.copy(alpha = 0.05f), RoundedCornerShape(6.dp))
+            .padding(8.dp)
+    ) {
+        // Item info
+        Column(modifier = Modifier.weight(1f)) {
+            Text(
+                text = item.name,
+                color = Color(0xFFFFD54F),
+                fontSize = 14.sp,
+                fontWeight = FontWeight.Medium
+            )
+            // Stats row
+            val statParts = mutableListOf<String>()
+            item.statBonuses?.let { stats ->
+                if (stats.attack != 0) statParts.add("ATK +${stats.attack}")
+                if (stats.defense != 0) statParts.add("DEF +${stats.defense}")
+                if (stats.maxHp != 0) statParts.add("HP +${stats.maxHp}")
+            }
+            item.equipmentType?.let { type ->
+                statParts.add(0, type.replaceFirstChar { it.uppercase() })
+            }
+            if (statParts.isNotEmpty()) {
+                Text(
+                    text = statParts.joinToString(" \u2022 "),
+                    color = Color(0xFF90CAF9),
+                    fontSize = 11.sp
+                )
+            }
+        }
+
+        // Price and buy button
+        Box(
+            modifier = Modifier
+                .background(
+                    if (canAfford) Color(0xFF1B5E20).copy(alpha = 0.5f)
+                    else Color.Gray.copy(alpha = 0.2f),
+                    RoundedCornerShape(4.dp)
+                )
+                .clickable(enabled = canAfford) { onBuy() }
+                .padding(horizontal = 10.dp, vertical = 6.dp)
+        ) {
+            Text(
+                text = "${item.value}g",
+                color = if (canAfford) Color(0xFFFFD700) else Color.Gray,
+                fontSize = 13.sp,
+                fontWeight = FontWeight.Bold
+            )
         }
     }
 }
@@ -1967,8 +2163,10 @@ private fun LocationDetailPopup(
                     color = Color.Gray,
                     fontSize = 10.sp
                 )
-                Row(
+                @OptIn(ExperimentalLayoutApi::class)
+                FlowRow(
                     horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalArrangement = Arrangement.spacedBy(4.dp),
                     modifier = Modifier.padding(top = 4.dp)
                 ) {
                     location.exits.forEach { exit ->

@@ -400,6 +400,18 @@ object UserRepository {
     }
 
     /**
+     * Spend gold (returns false if insufficient)
+     */
+    fun spendGold(id: String, amount: Int): Boolean = transaction {
+        val user = findById(id) ?: return@transaction false
+        if (user.gold < amount) return@transaction false
+        UserTable.update({ UserTable.id eq id }) {
+            it[gold] = user.gold - amount
+            it[lastActiveAt] = System.currentTimeMillis()
+        } > 0
+    }
+
+    /**
      * Spend mana (returns false if insufficient)
      */
     fun spendMana(id: String, amount: Int): Boolean = transaction {
