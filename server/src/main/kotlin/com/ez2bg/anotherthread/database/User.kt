@@ -35,6 +35,15 @@ data class User(
     val maxStamina: Int = 10,
     val currentStamina: Int = 10,
     val currentCombatSessionId: String? = null,
+    // D&D Attributes
+    val strength: Int = 10,
+    val dexterity: Int = 10,
+    val constitution: Int = 10,
+    val intelligence: Int = 10,
+    val wisdom: Int = 10,
+    val charisma: Int = 10,
+    val attributeQualityBonus: Int = 0,
+    val attributesGeneratedAt: Long? = null,
     // Economy and equipment
     val gold: Int = 0,
     val equippedItemIds: List<String> = emptyList()
@@ -66,6 +75,15 @@ data class UserResponse(
     val maxStamina: Int,
     val currentStamina: Int,
     val currentCombatSessionId: String?,
+    // D&D Attributes
+    val strength: Int,
+    val dexterity: Int,
+    val constitution: Int,
+    val intelligence: Int,
+    val wisdom: Int,
+    val charisma: Int,
+    val attributeQualityBonus: Int,
+    val attributesGeneratedAt: Long?,
     // Economy and equipment
     val gold: Int,
     val equippedItemIds: List<String>
@@ -92,6 +110,14 @@ fun User.toResponse(): UserResponse = UserResponse(
     maxStamina = maxStamina,
     currentStamina = currentStamina,
     currentCombatSessionId = currentCombatSessionId,
+    strength = strength,
+    dexterity = dexterity,
+    constitution = constitution,
+    intelligence = intelligence,
+    wisdom = wisdom,
+    charisma = charisma,
+    attributeQualityBonus = attributeQualityBonus,
+    attributesGeneratedAt = attributesGeneratedAt,
     gold = gold,
     equippedItemIds = equippedItemIds
 )
@@ -133,6 +159,14 @@ object UserRepository {
         maxStamina = this[UserTable.maxStamina],
         currentStamina = this[UserTable.currentStamina],
         currentCombatSessionId = this[UserTable.currentCombatSessionId],
+        strength = this[UserTable.strength],
+        dexterity = this[UserTable.dexterity],
+        constitution = this[UserTable.constitution],
+        intelligence = this[UserTable.intelligence],
+        wisdom = this[UserTable.wisdom],
+        charisma = this[UserTable.charisma],
+        attributeQualityBonus = this[UserTable.attributeQualityBonus],
+        attributesGeneratedAt = this[UserTable.attributesGeneratedAt],
         gold = this[UserTable.gold],
         equippedItemIds = jsonToList(this[UserTable.equippedItemIds])
     )
@@ -160,6 +194,14 @@ object UserRepository {
             it[maxStamina] = user.maxStamina
             it[currentStamina] = user.currentStamina
             it[currentCombatSessionId] = user.currentCombatSessionId
+            it[strength] = user.strength
+            it[dexterity] = user.dexterity
+            it[constitution] = user.constitution
+            it[intelligence] = user.intelligence
+            it[wisdom] = user.wisdom
+            it[charisma] = user.charisma
+            it[attributeQualityBonus] = user.attributeQualityBonus
+            it[attributesGeneratedAt] = user.attributesGeneratedAt
             it[gold] = user.gold
             it[equippedItemIds] = listToJson(user.equippedItemIds)
         }
@@ -202,6 +244,14 @@ object UserRepository {
             it[maxStamina] = user.maxStamina
             it[currentStamina] = user.currentStamina
             it[currentCombatSessionId] = user.currentCombatSessionId
+            it[strength] = user.strength
+            it[dexterity] = user.dexterity
+            it[constitution] = user.constitution
+            it[intelligence] = user.intelligence
+            it[wisdom] = user.wisdom
+            it[charisma] = user.charisma
+            it[attributeQualityBonus] = user.attributeQualityBonus
+            it[attributesGeneratedAt] = user.attributesGeneratedAt
             it[gold] = user.gold
             it[equippedItemIds] = listToJson(user.equippedItemIds)
         } > 0
@@ -484,13 +534,102 @@ object UserRepository {
         } > 0
     }
 
+    /**
+     * Update D&D attributes and recalculate max resources
+     */
+    fun updateAttributes(
+        id: String,
+        strength: Int, dexterity: Int, constitution: Int,
+        intelligence: Int, wisdom: Int, charisma: Int,
+        qualityBonus: Int
+    ): Boolean = transaction {
+        val user = findById(id) ?: return@transaction false
+        val characterClass = user.characterClassId?.let { CharacterClassRepository.findById(it) }
+
+        val updatedUser = user.copy(
+            strength = strength, dexterity = dexterity, constitution = constitution,
+            intelligence = intelligence, wisdom = wisdom, charisma = charisma
+        )
+        val newMaxHp = calculateMaxHp(updatedUser, characterClass)
+        val newMaxMana = calculateMaxMana(updatedUser, characterClass)
+        val newMaxStamina = calculateMaxStamina(updatedUser, characterClass)
+
+        UserTable.update({ UserTable.id eq id }) {
+            it[UserTable.strength] = strength
+            it[UserTable.dexterity] = dexterity
+            it[UserTable.constitution] = constitution
+            it[UserTable.intelligence] = intelligence
+            it[UserTable.wisdom] = wisdom
+            it[UserTable.charisma] = charisma
+            it[attributeQualityBonus] = qualityBonus
+            it[attributesGeneratedAt] = System.currentTimeMillis()
+            it[maxHp] = newMaxHp
+            it[currentHp] = newMaxHp // Full heal on attribute assignment
+            it[maxMana] = newMaxMana
+            it[currentMana] = newMaxMana
+            it[maxStamina] = newMaxStamina
+            it[currentStamina] = newMaxStamina
+            it[lastActiveAt] = System.currentTimeMillis()
+        } > 0
+    }
+
     // Level calculation: every 100 exp = 1 level
     private fun calculateLevel(experience: Int): Int = (experience / 100) + 1
 
-    // HP calculation: base 10 + (level * hitDie average)
+    // D&D attribute modifier: (stat - 10) / 2
+    fun attributeModifier(stat: Int): Int = (stat - 10) / 2
+
+    // Max HP: (hitDie + CON mod) at level 1, then (hitDie/2+1 + CON mod) per level
+    fun calculateMaxHp(user: User, characterClass: CharacterClass?): Int {
+        val conMod = attributeModifier(user.constitution)
+        val hitDie = characterClass?.hitDie ?: 8
+        val baseHp = hitDie + conMod
+        val perLevelHp = (hitDie / 2 + 1) + conMod
+        return (baseHp + (user.level - 1) * perLevelHp).coerceAtLeast(1)
+    }
+
+    // Max Mana: baseMana + spellcastingMod*2 + level*2
+    fun calculateMaxMana(user: User, characterClass: CharacterClass?): Int {
+        val baseMana = characterClass?.baseMana ?: 10
+        val spellMod = when (characterClass?.primaryAttribute) {
+            "intelligence" -> attributeModifier(user.intelligence)
+            "wisdom" -> attributeModifier(user.wisdom)
+            "charisma" -> attributeModifier(user.charisma)
+            else -> 0
+        }
+        return (baseMana + (spellMod * 2) + (user.level * 2)).coerceAtLeast(0)
+    }
+
+    // Max Stamina: baseStamina + avgPhysicalMod*2 + level*2
+    fun calculateMaxStamina(user: User, characterClass: CharacterClass?): Int {
+        val strMod = attributeModifier(user.strength)
+        val dexMod = attributeModifier(user.dexterity)
+        val conMod = attributeModifier(user.constitution)
+        val avgPhysicalMod = (strMod + dexMod + conMod) / 3
+        val baseStamina = characterClass?.baseStamina ?: 10
+        return (baseStamina + (avgPhysicalMod * 2) + (user.level * 2)).coerceAtLeast(0)
+    }
+
+    // Combat stat calculations (used by CombatService.toCombatant)
+    fun calculateAccuracy(user: User, equipmentAttackBonus: Int = 0): Int {
+        return attributeModifier(user.dexterity) + user.level / 2 + equipmentAttackBonus
+    }
+
+    fun calculateEvasion(user: User, equipmentDefenseBonus: Int = 0): Int {
+        return attributeModifier(user.dexterity) + equipmentDefenseBonus
+    }
+
+    fun calculateCritBonus(user: User): Int {
+        return attributeModifier(user.charisma) + user.level / 5
+    }
+
+    fun calculateBaseDamage(user: User, equipmentAttackBonus: Int = 0): Int {
+        return (5 + user.level + attributeModifier(user.strength) + equipmentAttackBonus).coerceAtLeast(1)
+    }
+
+    // Legacy HP calculation for backward compat
     private fun calculateMaxHp(level: Int, classId: String?): Int {
-        // Default to d8 (4.5 average) if no class
-        val hitDieAverage = 5 // Simplified for now, should look up class hitDie
+        val hitDieAverage = 5
         return 10 + (level * hitDieAverage)
     }
 

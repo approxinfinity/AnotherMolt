@@ -165,9 +165,48 @@ data class UserDto(
     val maxStamina: Int = 10,
     val currentStamina: Int = 10,
     val currentCombatSessionId: String? = null,
+    // D&D Attributes
+    val strength: Int = 10,
+    val dexterity: Int = 10,
+    val constitution: Int = 10,
+    val intelligence: Int = 10,
+    val wisdom: Int = 10,
+    val charisma: Int = 10,
+    val attributeQualityBonus: Int = 0,
+    val attributesGeneratedAt: Long? = null,
     // Economy and equipment
     val gold: Int = 0,
     val equippedItemIds: List<String> = emptyList()
+)
+
+@Serializable
+data class DerivedAttributesDto(
+    val strength: Int,
+    val dexterity: Int,
+    val constitution: Int,
+    val intelligence: Int,
+    val wisdom: Int,
+    val charisma: Int,
+    val qualityBonus: Int,
+    val reasoning: String,
+    val missingAreas: List<String> = emptyList()
+)
+
+@Serializable
+data class DeriveAttributesRequestDto(
+    val description: String,
+    val followUpAnswers: Map<String, String> = emptyMap()
+)
+
+@Serializable
+data class CommitAttributesRequestDto(
+    val strength: Int,
+    val dexterity: Int,
+    val constitution: Int,
+    val intelligence: Int,
+    val wisdom: Int,
+    val charisma: Int,
+    val qualityBonus: Int
 )
 
 @Serializable
@@ -923,6 +962,28 @@ object ApiClient {
         client.put("$baseUrl/users/$id/class") {
             contentType(ContentType.Application.Json)
             setBody(UpdateUserClassRequest(classId))
+        }.body()
+    }
+
+    suspend fun deriveAttributes(userId: String, description: String, followUpAnswers: Map<String, String> = emptyMap()): Result<DerivedAttributesDto> = runCatching {
+        client.post("$baseUrl/users/$userId/derive-attributes") {
+            contentType(ContentType.Application.Json)
+            setBody(DeriveAttributesRequestDto(description, followUpAnswers))
+        }.body()
+    }
+
+    suspend fun commitAttributes(userId: String, attributes: DerivedAttributesDto): Result<UserDto> = runCatching {
+        client.post("$baseUrl/users/$userId/commit-attributes") {
+            contentType(ContentType.Application.Json)
+            setBody(CommitAttributesRequestDto(
+                strength = attributes.strength,
+                dexterity = attributes.dexterity,
+                constitution = attributes.constitution,
+                intelligence = attributes.intelligence,
+                wisdom = attributes.wisdom,
+                charisma = attributes.charisma,
+                qualityBonus = attributes.qualityBonus
+            ))
         }.body()
     }
 

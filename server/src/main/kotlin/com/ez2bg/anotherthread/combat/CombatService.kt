@@ -1653,21 +1653,23 @@ object CombatService {
 
     /**
      * Extension: Convert User to Combatant.
-     * Includes combat stats from class and level for RNG calculations.
+     * Derives combat stats from D&D attributes, level, and equipment bonuses.
      */
     private fun User.toCombatant(): Combatant {
         val classAbilities = characterClassId?.let {
             AbilityRepository.findByClassId(it).map { a -> a.id }
         } ?: emptyList()
 
-        // Get class data for base stats
-        val characterClass = characterClassId?.let { CharacterClassRepository.findById(it) }
+        // Sum equipment bonuses from equipped items
+        val equippedItems = equippedItemIds.mapNotNull { ItemRepository.findById(it) }
+        val equipAttack = equippedItems.sumOf { it.statBonuses?.attack ?: 0 }
+        val equipDefense = equippedItems.sumOf { it.statBonuses?.defense ?: 0 }
 
-        // Calculate combat stats based on level and class
-        // Players get +1 accuracy per 2 levels, +1 crit per 5 levels
-        val playerAccuracy = level / 2
-        val playerCritBonus = level / 5
-        val playerBaseDamage = 5 + level // Base unarmed damage
+        // Calculate combat stats from D&D attributes + level + equipment
+        val playerAccuracy = UserRepository.calculateAccuracy(this, equipAttack)
+        val playerEvasion = UserRepository.calculateEvasion(this, equipDefense)
+        val playerCritBonus = UserRepository.calculateCritBonus(this)
+        val playerBaseDamage = UserRepository.calculateBaseDamage(this, equipAttack)
 
         return Combatant(
             id = id,
@@ -1681,10 +1683,10 @@ object CombatService {
             currentStamina = currentStamina,
             characterClassId = characterClassId,
             abilityIds = classAbilities,
-            initiative = CombatRng.rollD20(), // D20 initiative roll
+            initiative = CombatRng.rollD20() + UserRepository.attributeModifier(dexterity),
             level = level,
             accuracy = playerAccuracy,
-            evasion = 0, // TODO: Could come from equipment/buffs
+            evasion = playerEvasion,
             critBonus = playerCritBonus,
             baseDamage = playerBaseDamage
         )

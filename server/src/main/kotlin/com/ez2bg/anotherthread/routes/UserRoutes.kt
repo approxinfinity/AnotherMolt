@@ -479,6 +479,69 @@ fun Route.userRoutes() {
             call.respond(activeUsers.map { it.toResponse() })
         }
 
+        // Derive D&D attributes from character description using LLM
+        post("/{id}/derive-attributes") {
+            val id = call.parameters["id"] ?: return@post call.respond(HttpStatusCode.BadRequest)
+            log.info("derive-attributes: Received request for user $id")
+
+            val request = call.receive<DeriveAttributesRequest>()
+            log.info("derive-attributes: Description length=${request.description.length}, followUpAnswers=${request.followUpAnswers.size}")
+
+            val existingUser = UserRepository.findById(id)
+            if (existingUser == null) {
+                call.respond(HttpStatusCode.NotFound)
+                return@post
+            }
+
+            val result = StatDerivationService.deriveAttributes(
+                description = request.description,
+                followUpAnswers = request.followUpAnswers
+            )
+
+            if (result.isSuccess) {
+                val attributes = result.getOrThrow()
+                log.info("derive-attributes: Success - STR=${attributes.strength} DEX=${attributes.dexterity} CON=${attributes.constitution} INT=${attributes.intelligence} WIS=${attributes.wisdom} CHA=${attributes.charisma} quality=${attributes.qualityBonus}")
+                call.respond(HttpStatusCode.OK, attributes)
+            } else {
+                val error = result.exceptionOrNull()
+                log.error("derive-attributes: Failed - ${error?.message}", error)
+                call.respond(HttpStatusCode.InternalServerError, mapOf("error" to "Failed to derive attributes: ${error?.message}"))
+            }
+        }
+
+        // Commit derived attributes to user (saves to DB, recalculates resources)
+        post("/{id}/commit-attributes") {
+            val id = call.parameters["id"] ?: return@post call.respond(HttpStatusCode.BadRequest)
+            log.info("commit-attributes: Received request for user $id")
+
+            val request = call.receive<CommitAttributesRequest>()
+
+            val existingUser = UserRepository.findById(id)
+            if (existingUser == null) {
+                call.respond(HttpStatusCode.NotFound)
+                return@post
+            }
+
+            val success = UserRepository.updateAttributes(
+                id = id,
+                strength = request.strength,
+                dexterity = request.dexterity,
+                constitution = request.constitution,
+                intelligence = request.intelligence,
+                wisdom = request.wisdom,
+                charisma = request.charisma,
+                qualityBonus = request.qualityBonus
+            )
+
+            if (success) {
+                val updatedUser = UserRepository.findById(id)!!
+                log.info("commit-attributes: Success - attributes saved for user $id")
+                call.respond(HttpStatusCode.OK, updatedUser.toResponse())
+            } else {
+                call.respond(HttpStatusCode.InternalServerError, mapOf("error" to "Failed to commit attributes"))
+            }
+        }
+
         // Assign class to user (either autoassign from existing or generate new)
         post("/{id}/assign-class") {
             val id = call.parameters["id"] ?: return@post call.respond(HttpStatusCode.BadRequest)

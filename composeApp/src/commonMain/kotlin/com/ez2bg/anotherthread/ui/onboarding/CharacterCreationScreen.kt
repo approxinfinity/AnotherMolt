@@ -16,6 +16,7 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import com.ez2bg.anotherthread.api.*
@@ -48,6 +49,12 @@ fun CharacterCreationScreen(
     // Generation options
     var genClassChecked by remember { mutableStateOf(true) }
     var genImageChecked by remember { mutableStateOf(true) }
+
+    // Stat derivation state
+    var derivedAttributes by remember { mutableStateOf<DerivedAttributesDto?>(null) }
+    var isDerivingStats by remember { mutableStateOf(false) }
+    var statsCommitted by remember { mutableStateOf(user.attributesGeneratedAt != null) }
+    var followUpAnswers by remember { mutableStateOf<MutableMap<String, String>>(mutableMapOf()) }
 
     // Class assignment state
     var assignedClass by remember { mutableStateOf<CharacterClassDto?>(null) }
@@ -171,12 +178,19 @@ fun CharacterCreationScreen(
                         // Description field
                         OutlinedTextField(
                             value = desc,
-                            onValueChange = { desc = it },
+                            onValueChange = {
+                                desc = it
+                                // Reset derived stats when description changes
+                                if (derivedAttributes != null) {
+                                    derivedAttributes = null
+                                    statsCommitted = false
+                                }
+                            },
                             label = { Text("Describe your character") },
-                            placeholder = { Text("A mysterious wanderer with...") },
+                            placeholder = { Text("A mysterious wanderer with keen eyes and strong arms...") },
                             modifier = Modifier.fillMaxWidth(),
-                            minLines = 3,
-                            enabled = !isLoading && !isClassGenerating,
+                            minLines = 4,
+                            enabled = !isLoading && !isClassGenerating && !isDerivingStats,
                             colors = OutlinedTextFieldDefaults.colors(
                                 unfocusedTextColor = Color.White,
                                 focusedTextColor = Color.White,
@@ -190,116 +204,234 @@ fun CharacterCreationScreen(
                             )
                         )
 
-                        // Generation checkboxes
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.spacedBy(24.dp)
-                        ) {
-                            Row(verticalAlignment = Alignment.CenterVertically) {
-                                Checkbox(
-                                    checked = genClassChecked,
-                                    onCheckedChange = { genClassChecked = it },
-                                    enabled = !isLoading && !isClassGenerating,
-                                    colors = CheckboxDefaults.colors(
-                                        checkedColor = LightBlue,
-                                        uncheckedColor = LightBlue.copy(alpha = 0.5f),
-                                        checkmarkColor = DarkBackground
-                                    )
-                                )
-                                Text(
-                                    text = "Generate Class",
-                                    color = Color.White,
-                                    modifier = Modifier.clickable(enabled = !isLoading && !isClassGenerating) {
-                                        genClassChecked = !genClassChecked
-                                    }
-                                )
-                            }
-                            Row(verticalAlignment = Alignment.CenterVertically) {
-                                Checkbox(
-                                    checked = genImageChecked,
-                                    onCheckedChange = { genImageChecked = it },
-                                    enabled = !isLoading && !isClassGenerating && !isImageGenerating,
-                                    colors = CheckboxDefaults.colors(
-                                        checkedColor = LightBlue,
-                                        uncheckedColor = LightBlue.copy(alpha = 0.5f),
-                                        checkmarkColor = DarkBackground
-                                    )
-                                )
-                                Text(
-                                    text = "Generate Image",
-                                    color = Color.White,
-                                    modifier = Modifier.clickable(enabled = !isLoading && !isClassGenerating && !isImageGenerating) {
-                                        genImageChecked = !genImageChecked
-                                    }
-                                )
-                            }
-                        }
-
                         // Helper text
                         Text(
-                            text = "A unique class with custom abilities will be created based on your description. This may take a few moments.",
+                            text = "Your description determines your D&D stats and class. Write vividly for bonus stat points!",
                             style = MaterialTheme.typography.bodySmall,
                             color = Color.White.copy(alpha = 0.6f)
                         )
 
-                        // Create button
-                        Button(
-                            onClick = {
-                                scope.launch {
-                                    isLoading = true
-                                    message = null
-
-                                    // Save profile description
-                                    val request = UpdateUserRequest(
-                                        desc = desc,
-                                        itemIds = user.itemIds,
-                                        featureIds = user.featureIds
-                                    )
-                                    ApiClient.updateUser(user.id, request).onSuccess { updatedUser ->
-                                        AuthStorage.saveUser(updatedUser)
-                                        currentUser = updatedUser
-
-                                        // Trigger image generation if checked
-                                        if (genImageChecked && desc.isNotBlank()) {
-                                            BackgroundImageGenerationManager.startGeneration(
-                                                entityType = "user",
-                                                entityId = user.id,
-                                                name = user.name,
-                                                description = desc,
-                                                featureIds = user.featureIds
-                                            )
+                        // Step 1: Derive Stats button (if no stats derived yet)
+                        if (derivedAttributes == null && !statsCommitted) {
+                            Button(
+                                onClick = {
+                                    scope.launch {
+                                        isDerivingStats = true
+                                        message = null
+                                        ApiClient.deriveAttributes(
+                                            userId = user.id,
+                                            description = desc,
+                                            followUpAnswers = followUpAnswers.toMap()
+                                        ).onSuccess { attrs ->
+                                            derivedAttributes = attrs
+                                            message = null
+                                        }.onFailure { error ->
+                                            message = "Error deriving stats: ${error.message}"
                                         }
-
-                                        // Start class generation
-                                        if (desc.isNotBlank()) {
-                                            message = "Creating your character..."
-                                            AsyncOperationRepository.startClassGeneration(
-                                                userId = user.id,
-                                                characterDescription = desc,
-                                                generateNew = genClassChecked
-                                            )
-                                        } else {
-                                            message = "Please provide a description"
-                                        }
-                                    }.onFailure { error ->
-                                        message = "Error: ${error.message}"
+                                        isDerivingStats = false
                                     }
-                                    isLoading = false
+                                },
+                                enabled = !isDerivingStats && desc.isNotBlank(),
+                                modifier = Modifier.fillMaxWidth(),
+                                colors = ButtonDefaults.buttonColors(containerColor = AccentColor)
+                            ) {
+                                if (isDerivingStats) {
+                                    CircularProgressIndicator(
+                                        modifier = Modifier.size(16.dp),
+                                        strokeWidth = 2.dp,
+                                        color = Color.White
+                                    )
+                                    Spacer(modifier = Modifier.width(8.dp))
                                 }
-                            },
-                            enabled = !isLoading && !isClassGenerating && desc.isNotBlank(),
-                            modifier = Modifier.fillMaxWidth(),
-                            colors = ButtonDefaults.buttonColors(containerColor = AccentColor)
-                        ) {
-                            if (isLoading) {
-                                CircularProgressIndicator(
-                                    modifier = Modifier.size(16.dp),
-                                    strokeWidth = 2.dp,
-                                    color = Color.White
-                                )
-                                Spacer(modifier = Modifier.width(8.dp))
+                                Text(if (isDerivingStats) "Analyzing description..." else "Derive Stats")
                             }
-                            Text(if (isLoading) "Creating..." else "Create Character")
+                        }
+
+                        // Step 2: Show derived stats preview
+                        derivedAttributes?.let { attrs ->
+                            StatPreviewCard(attrs)
+
+                            // Follow-up questions for missing areas
+                            if (attrs.missingAreas.isNotEmpty() && !statsCommitted) {
+                                Card(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    colors = CardDefaults.cardColors(containerColor = Color(0xFF2D1B69).copy(alpha = 0.5f))
+                                ) {
+                                    Column(
+                                        modifier = Modifier.padding(16.dp),
+                                        verticalArrangement = Arrangement.spacedBy(12.dp)
+                                    ) {
+                                        Text(
+                                            text = "Tell us more...",
+                                            style = MaterialTheme.typography.titleSmall,
+                                            color = LightBlue
+                                        )
+                                        attrs.missingAreas.forEach { area ->
+                                            val question = when (area) {
+                                                "physical" -> "How would you describe your character's physical build and agility?"
+                                                "mental" -> "How sharp is your character's mind? Are they scholarly, street-smart, or intuitive?"
+                                                "social" -> "How does your character interact with others? Are they charismatic, intimidating, or reserved?"
+                                                else -> return@forEach
+                                            }
+                                            OutlinedTextField(
+                                                value = followUpAnswers[area] ?: "",
+                                                onValueChange = { followUpAnswers = followUpAnswers.toMutableMap().also { m -> m[area] = it } },
+                                                label = { Text(area.replaceFirstChar { c -> c.uppercase() }) },
+                                                placeholder = { Text(question) },
+                                                modifier = Modifier.fillMaxWidth(),
+                                                minLines = 2,
+                                                colors = OutlinedTextFieldDefaults.colors(
+                                                    unfocusedTextColor = Color.White,
+                                                    focusedTextColor = Color.White,
+                                                    unfocusedBorderColor = LightBlue.copy(alpha = 0.3f),
+                                                    focusedBorderColor = LightBlue,
+                                                    unfocusedLabelColor = LightBlue.copy(alpha = 0.7f),
+                                                    focusedLabelColor = LightBlue,
+                                                    unfocusedPlaceholderColor = Color.White.copy(alpha = 0.4f),
+                                                    focusedPlaceholderColor = Color.White.copy(alpha = 0.4f),
+                                                    cursorColor = LightBlue
+                                                )
+                                            )
+                                        }
+
+                                        // Re-derive with follow-up answers
+                                        Button(
+                                            onClick = {
+                                                scope.launch {
+                                                    isDerivingStats = true
+                                                    ApiClient.deriveAttributes(
+                                                        userId = user.id,
+                                                        description = desc,
+                                                        followUpAnswers = followUpAnswers.toMap()
+                                                    ).onSuccess { newAttrs ->
+                                                        derivedAttributes = newAttrs
+                                                    }.onFailure { error ->
+                                                        message = "Error: ${error.message}"
+                                                    }
+                                                    isDerivingStats = false
+                                                }
+                                            },
+                                            enabled = !isDerivingStats && followUpAnswers.values.any { it.isNotBlank() },
+                                            modifier = Modifier.fillMaxWidth(),
+                                            colors = ButtonDefaults.buttonColors(containerColor = AccentColor.copy(alpha = 0.8f))
+                                        ) {
+                                            Text("Refine Stats")
+                                        }
+                                    }
+                                }
+                            }
+
+                            // Step 3: Confirm & Create button
+                            if (!statsCommitted) {
+                                // Generation checkboxes
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.spacedBy(24.dp)
+                                ) {
+                                    Row(verticalAlignment = Alignment.CenterVertically) {
+                                        Checkbox(
+                                            checked = genClassChecked,
+                                            onCheckedChange = { genClassChecked = it },
+                                            enabled = !isLoading && !isClassGenerating,
+                                            colors = CheckboxDefaults.colors(
+                                                checkedColor = LightBlue,
+                                                uncheckedColor = LightBlue.copy(alpha = 0.5f),
+                                                checkmarkColor = DarkBackground
+                                            )
+                                        )
+                                        Text(
+                                            text = "Generate Class",
+                                            color = Color.White,
+                                            modifier = Modifier.clickable(enabled = !isLoading && !isClassGenerating) {
+                                                genClassChecked = !genClassChecked
+                                            }
+                                        )
+                                    }
+                                    Row(verticalAlignment = Alignment.CenterVertically) {
+                                        Checkbox(
+                                            checked = genImageChecked,
+                                            onCheckedChange = { genImageChecked = it },
+                                            enabled = !isLoading && !isClassGenerating && !isImageGenerating,
+                                            colors = CheckboxDefaults.colors(
+                                                checkedColor = LightBlue,
+                                                uncheckedColor = LightBlue.copy(alpha = 0.5f),
+                                                checkmarkColor = DarkBackground
+                                            )
+                                        )
+                                        Text(
+                                            text = "Generate Image",
+                                            color = Color.White,
+                                            modifier = Modifier.clickable(enabled = !isLoading && !isClassGenerating && !isImageGenerating) {
+                                                genImageChecked = !genImageChecked
+                                            }
+                                        )
+                                    }
+                                }
+
+                                Button(
+                                    onClick = {
+                                        scope.launch {
+                                            isLoading = true
+                                            message = null
+
+                                            // Commit attributes
+                                            ApiClient.commitAttributes(user.id, attrs).onSuccess { updatedUser ->
+                                                AuthStorage.saveUser(updatedUser)
+                                                currentUser = updatedUser
+                                                statsCommitted = true
+
+                                                // Save profile description
+                                                val request = UpdateUserRequest(
+                                                    desc = desc,
+                                                    itemIds = user.itemIds,
+                                                    featureIds = user.featureIds
+                                                )
+                                                ApiClient.updateUser(user.id, request).onSuccess { u ->
+                                                    AuthStorage.saveUser(u)
+                                                    currentUser = u
+                                                }
+
+                                                // Trigger image generation
+                                                if (genImageChecked && desc.isNotBlank()) {
+                                                    BackgroundImageGenerationManager.startGeneration(
+                                                        entityType = "user",
+                                                        entityId = user.id,
+                                                        name = user.name,
+                                                        description = desc,
+                                                        featureIds = user.featureIds
+                                                    )
+                                                }
+
+                                                // Start class generation
+                                                if (desc.isNotBlank()) {
+                                                    message = "Stats confirmed! Creating your class..."
+                                                    AsyncOperationRepository.startClassGeneration(
+                                                        userId = user.id,
+                                                        characterDescription = desc,
+                                                        generateNew = genClassChecked
+                                                    )
+                                                }
+                                            }.onFailure { error ->
+                                                message = "Error: ${error.message}"
+                                            }
+                                            isLoading = false
+                                        }
+                                    },
+                                    enabled = !isLoading && !isClassGenerating,
+                                    modifier = Modifier.fillMaxWidth(),
+                                    colors = ButtonDefaults.buttonColors(containerColor = AccentColor)
+                                ) {
+                                    if (isLoading) {
+                                        CircularProgressIndicator(
+                                            modifier = Modifier.size(16.dp),
+                                            strokeWidth = 2.dp,
+                                            color = Color.White
+                                        )
+                                        Spacer(modifier = Modifier.width(8.dp))
+                                    }
+                                    Text(if (isLoading) "Creating..." else "Confirm Stats & Create Character")
+                                }
+                            }
                         }
                     }
 
@@ -465,6 +597,131 @@ fun CharacterCreationScreen(
             }
 
             Spacer(modifier = Modifier.height(32.dp))
+        }
+    }
+}
+
+@Composable
+private fun StatPreviewCard(attrs: DerivedAttributesDto) {
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        colors = CardDefaults.cardColors(containerColor = Color(0xFF1E293B))
+    ) {
+        Column(
+            modifier = Modifier.padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp)
+        ) {
+            // Header with quality bonus
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    text = "Your Attributes",
+                    style = MaterialTheme.typography.titleMedium,
+                    color = Color.White
+                )
+                val bonusColor = when {
+                    attrs.qualityBonus > 0 -> Color(0xFF4ADE80)
+                    attrs.qualityBonus < 0 -> Color(0xFFF87171)
+                    else -> Color.White.copy(alpha = 0.6f)
+                }
+                val bonusText = when {
+                    attrs.qualityBonus > 0 -> "+${attrs.qualityBonus} bonus"
+                    attrs.qualityBonus < 0 -> "${attrs.qualityBonus} penalty"
+                    else -> "standard"
+                }
+                Surface(
+                    shape = RoundedCornerShape(12.dp),
+                    color = bonusColor.copy(alpha = 0.15f)
+                ) {
+                    Text(
+                        text = bonusText,
+                        style = MaterialTheme.typography.labelMedium,
+                        color = bonusColor,
+                        fontWeight = FontWeight.Bold,
+                        modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp)
+                    )
+                }
+            }
+
+            // 2x3 stat grid
+            val stats = listOf(
+                "STR" to attrs.strength,
+                "DEX" to attrs.dexterity,
+                "CON" to attrs.constitution,
+                "INT" to attrs.intelligence,
+                "WIS" to attrs.wisdom,
+                "CHA" to attrs.charisma
+            )
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                for (row in stats.chunked(3)) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        row.forEach { (name, value) ->
+                            StatBox(name, value, Modifier.weight(1f))
+                        }
+                    }
+                }
+            }
+
+            // Total and reasoning
+            val total = attrs.strength + attrs.dexterity + attrs.constitution +
+                attrs.intelligence + attrs.wisdom + attrs.charisma
+            Text(
+                text = "Total: $total points (base 72 ${if (attrs.qualityBonus >= 0) "+" else ""}${attrs.qualityBonus})",
+                style = MaterialTheme.typography.bodySmall,
+                color = Color.White.copy(alpha = 0.5f)
+            )
+            Text(
+                text = attrs.reasoning,
+                style = MaterialTheme.typography.bodySmall,
+                color = Color.White.copy(alpha = 0.6f)
+            )
+        }
+    }
+}
+
+@Composable
+private fun StatBox(name: String, value: Int, modifier: Modifier = Modifier) {
+    val mod = (value - 10) / 2
+    val modStr = if (mod >= 0) "+$mod" else "$mod"
+    val statColor = when {
+        value >= 16 -> Color(0xFF4ADE80)
+        value >= 13 -> Color(0xFF60A5FA)
+        value >= 9 -> Color.White
+        else -> Color(0xFFF87171)
+    }
+
+    Surface(
+        modifier = modifier,
+        shape = RoundedCornerShape(8.dp),
+        color = Color.White.copy(alpha = 0.05f)
+    ) {
+        Column(
+            modifier = Modifier.padding(8.dp),
+            horizontalAlignment = Alignment.CenterHorizontally
+        ) {
+            Text(
+                text = name,
+                style = MaterialTheme.typography.labelSmall,
+                color = Color.White.copy(alpha = 0.6f),
+                fontWeight = FontWeight.Bold
+            )
+            Text(
+                text = value.toString(),
+                style = MaterialTheme.typography.headlineSmall,
+                color = statColor,
+                fontWeight = FontWeight.Bold
+            )
+            Text(
+                text = "($modStr)",
+                style = MaterialTheme.typography.bodySmall,
+                color = statColor.copy(alpha = 0.7f)
+            )
         }
     }
 }

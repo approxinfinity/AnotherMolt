@@ -25,6 +25,15 @@ object UserTable : Table("user") {
     val maxStamina = integer("max_stamina").default(10)
     val currentStamina = integer("current_stamina").default(10)
     val currentCombatSessionId = varchar("current_combat_session_id", 36).nullable()
+    // D&D Attributes
+    val strength = integer("strength").default(10)
+    val dexterity = integer("dexterity").default(10)
+    val constitution = integer("constitution").default(10)
+    val intelligence = integer("intelligence").default(10)
+    val wisdom = integer("wisdom").default(10)
+    val charisma = integer("charisma").default(10)
+    val attributeQualityBonus = integer("attribute_quality_bonus").default(0)
+    val attributesGeneratedAt = long("attributes_generated_at").nullable()
     // Economy and equipment
     val gold = integer("gold").default(0)
     val equippedItemIds = text("equipped_item_ids").default("[]")  // JSON array
