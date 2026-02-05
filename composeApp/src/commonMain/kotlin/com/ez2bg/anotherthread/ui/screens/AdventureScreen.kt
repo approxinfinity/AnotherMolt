@@ -1315,23 +1315,41 @@ private fun AbilityRow(
     Row(
         modifier = modifier
             .background(Color.Black.copy(alpha = 0.7f), RoundedCornerShape(8.dp))
-            .padding(horizontal = 8.dp, vertical = 6.dp),
-        horizontalArrangement = Arrangement.spacedBy(8.dp),
+            .padding(horizontal = 8.dp, vertical = 6.dp)
+            .pointerInput(showSpellbook) {
+                var totalDrag = 0f
+                detectDragGestures(
+                    onDragStart = { totalDrag = 0f },
+                    onDrag = { _, dragAmount ->
+                        totalDrag += dragAmount.y
+                        if (totalDrag < -60f && !showSpellbook) {
+                            onSpellbookToggle()
+                        }
+                    }
+                )
+            },
         verticalAlignment = Alignment.CenterVertically
     ) {
-        displayAbilities.forEach { ability ->
-            val canAfford = (ability.manaCost <= currentMana) && (ability.staminaCost <= currentStamina)
-            AbilityIconButton(
-                ability = ability,
-                cooldownRounds = cooldowns[ability.id] ?: 0,
-                isQueued = ability.id == queuedAbilityId,
-                enabled = canAfford,
-                onClick = { onAbilityClick(ability) },
-                size = iconSize
-            )
+        // FlowRow wraps ability buttons to multiple lines if needed
+        FlowRow(
+            modifier = Modifier.weight(1f),
+            horizontalArrangement = Arrangement.spacedBy(6.dp),
+            verticalArrangement = Arrangement.spacedBy(4.dp)
+        ) {
+            displayAbilities.forEach { ability ->
+                val canAfford = (ability.manaCost <= currentMana) && (ability.staminaCost <= currentStamina)
+                AbilityIconButton(
+                    ability = ability,
+                    cooldownRounds = cooldowns[ability.id] ?: 0,
+                    isQueued = ability.id == queuedAbilityId,
+                    enabled = canAfford,
+                    onClick = { onAbilityClick(ability) },
+                    size = iconSize
+                )
+            }
         }
 
-        Spacer(Modifier.weight(1f))
+        Spacer(Modifier.width(6.dp))
 
         // Spellbook toggle button
         Box(
