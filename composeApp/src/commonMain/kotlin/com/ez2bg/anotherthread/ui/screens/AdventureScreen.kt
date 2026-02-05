@@ -255,187 +255,189 @@ fun AdventureScreen(
                 )
             }
 
-            // === TOP SECTION: Location info panel or Shop panel ===
-            if (!uiState.isDetailViewVisible) {
-                Box(
-                    modifier = Modifier
-                        .align(Alignment.TopStart)
-                        .fillMaxWidth()
-                        .background(Color.Black.copy(alpha = 0.6f))
-                ) {
-                    if ((uiState.isShopLocation || uiState.isInnLocation) && !ghostMode) {
-                        ShopPanel(
-                            location = currentLocation,
-                            shopItems = uiState.shopItems,
-                            playerGold = uiState.playerGold,
-                            isInn = uiState.isInnLocation,
-                            innCost = 25,
-                            onBuyItem = { viewModel.buyItem(it.id) },
-                            onRest = { viewModel.restAtInn() },
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(16.dp)
-                        )
-                    } else {
-                        LocationInfoPanel(
-                            location = currentLocation,
-                            creaturesHere = uiState.creaturesHere,
-                            itemsHere = uiState.itemsHere,
-                            creatureStates = uiState.creatureStates,
-                            isBlinded = isBlinded,
-                            onCreatureClick = { if (!ghostMode) viewModel.selectCreature(it) },
-                            onItemClick = { if (!ghostMode) viewModel.selectItem(it) },
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(16.dp)
-                        )
-                    }
-                }
-            }
-
-            // === TOP-RIGHT: Player avatar → character sheet ===
-            if (!uiState.isDetailViewVisible && currentUser != null && !ghostMode) {
-                Box(
-                    modifier = Modifier
-                        .align(Alignment.TopEnd)
-                        .padding(top = 8.dp, end = 8.dp)
-                        .size(40.dp)
-                        .clip(CircleShape)
-                        .background(Color.Black.copy(alpha = 0.6f))
-                        .border(1.5.dp, Color.White.copy(alpha = 0.5f), CircleShape)
-                        .clickable { showCharacterSheet = true },
-                    contentAlignment = Alignment.Center
-                ) {
-                    if (currentUser.imageUrl != null) {
-                        AsyncImage(
-                            model = "${AppConfig.api.baseUrl}${currentUser.imageUrl}",
-                            contentDescription = "Player avatar",
-                            modifier = Modifier.fillMaxSize().clip(CircleShape),
-                            contentScale = ContentScale.Crop
-                        )
-                    } else {
-                        Icon(
-                            Icons.Filled.Person,
-                            contentDescription = "Player",
-                            tint = Color.White,
-                            modifier = Modifier.size(24.dp)
-                        )
-                    }
-                }
-            }
-
-            // === CENTER SECTION: Minimap with directional ring ===
-            Box(
-                modifier = Modifier.fillMaxSize(),
-                contentAlignment = Alignment.Center
-            ) {
-                // Disorient indicator below minimap
-                if (isDisoriented && disorientRounds > 0) {
-                    DisorientIndicator(
-                        roundsRemaining = disorientRounds,
-                        modifier = Modifier
-                            .align(Alignment.Center)
-                            .offset(y = 120.dp)
-                    )
-                }
-
-                // Container for minimap + directionals (rotates when disoriented)
-                Box(
-                    modifier = Modifier
-                        .graphicsLayer {
-                            if (isDisoriented) {
-                                rotationZ = 180f
-                            }
-                        },
-                    contentAlignment = Alignment.Center
-                ) {
-                    // Directional navigation ring (around minimap)
-                    // DirectionalRing needs all locations to resolve cross-area exits (e.g. ENTER)
-                    DirectionalRing(
-                        exits = currentLocation.exits,
-                        locations = uiState.locations,
-                        onNavigate = { viewModel.navigateToExit(it) }
-                    )
-
-                    // Filter to only show locations in the same area for minimap
-                    val currentAreaId = currentLocation.areaId
-                    val areaLocations = remember(uiState.locations, currentAreaId) {
-                        uiState.locations.filter { it.areaId == currentAreaId }
-                    }
-
-                    // Centered minimap (replaces location thumbnail)
-                    CenterMinimap(
-                        locations = areaLocations,
-                        currentLocation = currentLocation,
-                        isRanger = uiState.isRanger,
-                        isBlinded = isBlinded,
-                        blindRounds = blindRounds,
-                        onClick = { showLocationDetailPopup = true }
-                    )
-                }
-
-            }
-
-            // === BOTTOM SECTION: Abilities row, mode toggle, and event log ===
+            // === MAIN CONTENT COLUMN: Proper vertical layout ===
             Column(
-                modifier = Modifier
-                    .align(Alignment.BottomCenter)
-                    .fillMaxWidth()
+                modifier = Modifier.fillMaxSize()
             ) {
-                // Player resource bars (HP/MP/SP)
-                if (!ghostMode) {
-                    PlayerResourceBar(
-                        currentHp = playerCombatant?.currentHp ?: currentUser?.currentHp ?: 0,
-                        maxHp = playerCombatant?.maxHp ?: currentUser?.maxHp ?: 0,
-                        currentMana = playerCombatant?.currentMana ?: currentUser?.currentMana ?: 0,
-                        maxMana = playerCombatant?.maxMana ?: currentUser?.maxMana ?: 0,
-                        currentStamina = playerCombatant?.currentStamina ?: currentUser?.currentStamina ?: 0,
-                        maxStamina = playerCombatant?.maxStamina ?: currentUser?.maxStamina ?: 0,
-                        modifier = Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 2.dp)
-                    )
-                }
-
-                // Abilities row (non-creature-specific actions above scroll section)
-                // Hide abilities in ghost mode since actions are disabled
-                if (uiState.playerAbilities.isNotEmpty() && !ghostMode) {
-                    AbilityRow(
-                        abilities = uiState.playerAbilities,
-                        cooldowns = cooldowns,
-                        queuedAbilityId = queuedAbilityId,
-                        currentMana = playerCombatant?.currentMana ?: currentUser?.currentMana ?: 0,
-                        currentStamina = playerCombatant?.currentStamina ?: currentUser?.currentStamina ?: 0,
-                        onAbilityClick = { viewModel.handleAbilityClick(it) },
-                        onSpellbookToggle = { showSpellbook = !showSpellbook },
-                        showSpellbook = showSpellbook,
-                        iconMappings = iconMappings,
+                // === TOP SECTION: Location info panel or Shop panel ===
+                if (!uiState.isDetailViewVisible) {
+                    Box(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .padding(horizontal = 8.dp, vertical = 4.dp)
-                    )
+                            .background(Color.Black.copy(alpha = 0.6f))
+                    ) {
+                        if ((uiState.isShopLocation || uiState.isInnLocation) && !ghostMode) {
+                            ShopPanel(
+                                location = currentLocation,
+                                shopItems = uiState.shopItems,
+                                playerGold = uiState.playerGold,
+                                isInn = uiState.isInnLocation,
+                                innCost = 25,
+                                onBuyItem = { viewModel.buyItem(it.id) },
+                                onRest = { viewModel.restAtInn() },
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(16.dp)
+                            )
+                        } else {
+                            LocationInfoPanel(
+                                location = currentLocation,
+                                creaturesHere = uiState.creaturesHere,
+                                itemsHere = uiState.itemsHere,
+                                creatureStates = uiState.creatureStates,
+                                isBlinded = isBlinded,
+                                onCreatureClick = { if (!ghostMode) viewModel.selectCreature(it) },
+                                onItemClick = { if (!ghostMode) viewModel.selectItem(it) },
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(16.dp)
+                            )
+                        }
+
+                        // Player avatar in top-right corner (overlaid on top section)
+                        if (currentUser != null && !ghostMode) {
+                            Box(
+                                modifier = Modifier
+                                    .align(Alignment.TopEnd)
+                                    .padding(top = 8.dp, end = 8.dp)
+                                    .size(40.dp)
+                                    .clip(CircleShape)
+                                    .background(Color.Black.copy(alpha = 0.6f))
+                                    .border(1.5.dp, Color.White.copy(alpha = 0.5f), CircleShape)
+                                    .clickable { showCharacterSheet = true },
+                                contentAlignment = Alignment.Center
+                            ) {
+                                if (currentUser.imageUrl != null) {
+                                    AsyncImage(
+                                        model = "${AppConfig.api.baseUrl}${currentUser.imageUrl}",
+                                        contentDescription = "Player avatar",
+                                        modifier = Modifier.fillMaxSize().clip(CircleShape),
+                                        contentScale = ContentScale.Crop
+                                    )
+                                } else {
+                                    Icon(
+                                        Icons.Filled.Person,
+                                        contentDescription = "Player",
+                                        tint = Color.White,
+                                        modifier = Modifier.size(24.dp)
+                                    )
+                                }
+                            }
+                        }
+                    }
                 }
 
-                // Mode toggle - bottom right of middle section (hidden in ghost mode)
-                if (!ghostMode) {
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.End
+                // === CENTER SECTION: Minimap with directional ring (takes remaining space) ===
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .weight(1f),
+                    contentAlignment = Alignment.Center
+                ) {
+                    // Disorient indicator below minimap
+                    if (isDisoriented && disorientRounds > 0) {
+                        DisorientIndicator(
+                            roundsRemaining = disorientRounds,
+                            modifier = Modifier
+                                .align(Alignment.Center)
+                                .offset(y = 120.dp)
+                        )
+                    }
+
+                    // Container for minimap + directionals (rotates when disoriented)
+                    Box(
+                        modifier = Modifier
+                            .graphicsLayer {
+                                if (isDisoriented) {
+                                    rotationZ = 180f
+                                }
+                            },
+                        contentAlignment = Alignment.Center
                     ) {
-                        ModeToggle(
-                            isCreateMode = false,
-                            onToggle = onSwitchToCreate,
-                            modifier = Modifier.padding(end = 8.dp, bottom = 4.dp)
+                        // Directional navigation ring (around minimap)
+                        // DirectionalRing needs all locations to resolve cross-area exits (e.g. ENTER)
+                        DirectionalRing(
+                            exits = currentLocation.exits,
+                            locations = uiState.locations,
+                            onNavigate = { viewModel.navigateToExit(it) }
+                        )
+
+                        // Filter to only show locations in the same area for minimap
+                        val currentAreaId = currentLocation.areaId
+                        val areaLocations = remember(uiState.locations, currentAreaId) {
+                            uiState.locations.filter { it.areaId == currentAreaId }
+                        }
+
+                        // Centered minimap (replaces location thumbnail)
+                        CenterMinimap(
+                            locations = areaLocations,
+                            currentLocation = currentLocation,
+                            isRanger = uiState.isRanger,
+                            isBlinded = isBlinded,
+                            blindRounds = blindRounds,
+                            onClick = { showLocationDetailPopup = true }
                         )
                     }
                 }
 
-                // Event log at very bottom (always visible)
-                EventLog(
-                    entries = eventLogEntries,
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(80.dp),
-                    maxVisibleEntries = 4
-                )
+                // === BOTTOM SECTION: Resource bars, abilities, mode toggle, event log ===
+                Column(
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    // Player resource bars (HP/MP/SP)
+                    if (!ghostMode) {
+                        PlayerResourceBar(
+                            currentHp = playerCombatant?.currentHp ?: currentUser?.currentHp ?: 0,
+                            maxHp = playerCombatant?.maxHp ?: currentUser?.maxHp ?: 0,
+                            currentMana = playerCombatant?.currentMana ?: currentUser?.currentMana ?: 0,
+                            maxMana = playerCombatant?.maxMana ?: currentUser?.maxMana ?: 0,
+                            currentStamina = playerCombatant?.currentStamina ?: currentUser?.currentStamina ?: 0,
+                            maxStamina = playerCombatant?.maxStamina ?: currentUser?.maxStamina ?: 0,
+                            modifier = Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 4.dp)
+                        )
+                    }
+
+                    // Abilities row
+                    if (uiState.playerAbilities.isNotEmpty() && !ghostMode) {
+                        AbilityRow(
+                            abilities = uiState.playerAbilities,
+                            cooldowns = cooldowns,
+                            queuedAbilityId = queuedAbilityId,
+                            currentMana = playerCombatant?.currentMana ?: currentUser?.currentMana ?: 0,
+                            currentStamina = playerCombatant?.currentStamina ?: currentUser?.currentStamina ?: 0,
+                            onAbilityClick = { viewModel.handleAbilityClick(it) },
+                            onSpellbookToggle = { showSpellbook = !showSpellbook },
+                            showSpellbook = showSpellbook,
+                            iconMappings = iconMappings,
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(horizontal = 8.dp, vertical = 4.dp)
+                        )
+                    }
+
+                    // Mode toggle - bottom right
+                    if (!ghostMode) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.End
+                        ) {
+                            ModeToggle(
+                                isCreateMode = false,
+                                onToggle = onSwitchToCreate,
+                                modifier = Modifier.padding(end = 8.dp, bottom = 4.dp)
+                            )
+                        }
+                    }
+
+                    // Event log at very bottom
+                    EventLog(
+                        entries = eventLogEntries,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(80.dp),
+                        maxVisibleEntries = 4
+                    )
+                }
             }
 
             // === SPELLBOOK PANEL: Slides up from bottom ===
@@ -1482,22 +1484,27 @@ private fun ResourceMiniBar(label: String, current: Int, max: Int, color: Color,
     val fraction = if (max > 0) (current.toFloat() / max).coerceIn(0f, 1f) else 0f
     Box(
         modifier = modifier
-            .height(18.dp)
-            .clip(RoundedCornerShape(3.dp))
-            .background(Color(0xFF333333))
+            .height(20.dp)
+            .background(Color(0xFF333333), RoundedCornerShape(3.dp)),
+        contentAlignment = Alignment.Center
     ) {
         Box(
             modifier = Modifier
-                .fillMaxHeight()
-                .fillMaxWidth(fraction)
-                .background(color, RoundedCornerShape(3.dp))
-        )
+                .matchParentSize()
+                .clip(RoundedCornerShape(3.dp))
+        ) {
+            Box(
+                modifier = Modifier
+                    .fillMaxHeight()
+                    .fillMaxWidth(fraction)
+                    .background(color)
+            )
+        }
         Text(
             text = "$label $current/$max",
             color = Color.White,
-            fontSize = 9.sp,
-            fontWeight = FontWeight.Medium,
-            modifier = Modifier.align(Alignment.Center)
+            fontSize = 10.sp,
+            fontWeight = FontWeight.Medium
         )
     }
 }
