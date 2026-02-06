@@ -143,7 +143,7 @@ object GoodmanGearSeed {
             }
         }
 
-        // 5. Seed the Rift Portal ability (utility type so it shows in spellbook)
+        // 5. Seed the Rift Portal ability (item type - green in spellbook since it comes from Rift Ring)
         transaction {
             val existing = AbilityRepository.findById(RIFT_PORTAL_ABILITY_ID)
             if (existing == null) {
@@ -153,7 +153,7 @@ object GoodmanGearSeed {
                         name = "Open Rift",
                         description = "Tear open a permanent rift in space, creating a portal to another realm. The rift appears as a shimmering tear in reality and remains as a permanent exit from this location. Costs 10 mana.",
                         classId = null,
-                        abilityType = "utility",  // Shows in spellbook
+                        abilityType = "item",  // Item type shows as green, granted by Rift Ring
                         targetType = "rift_open",  // Custom target type for rift UI
                         range = 0,
                         cooldownType = "none",
@@ -167,16 +167,16 @@ object GoodmanGearSeed {
                     )
                 )
                 log.info("Created Open Rift ability")
-            } else if (existing.abilityType != "utility" || existing.manaCost != 10) {
-                // Fix existing ability
+            } else if (existing.abilityType != "item" || existing.manaCost != 10) {
+                // Fix existing ability to item type
                 AbilityRepository.update(existing.copy(
                     name = "Open Rift",
-                    abilityType = "utility",
+                    abilityType = "item",
                     targetType = "rift_open",
                     manaCost = 10,
                     staminaCost = 0
                 ))
-                log.info("Fixed Open Rift ability type and costs")
+                log.info("Fixed Open Rift ability type to 'item' and costs")
             }
         }
 
@@ -190,7 +190,7 @@ object GoodmanGearSeed {
                         name = "Seal Rift",
                         description = "Close a rift portal, removing the entrance to another realm from this location. Only works on ENTER exits that lead to different areas. Costs 5 mana.",
                         classId = null,
-                        abilityType = "utility",  // Shows in spellbook
+                        abilityType = "item",  // Item type shows as green, granted by Rift Ring
                         targetType = "rift_seal",  // Custom target type for seal UI
                         range = 0,
                         cooldownType = "none",
@@ -204,6 +204,10 @@ object GoodmanGearSeed {
                     )
                 )
                 log.info("Created Seal Rift ability")
+            } else if (existing.abilityType != "item") {
+                // Fix existing ability to item type
+                AbilityRepository.update(existing.copy(abilityType = "item"))
+                log.info("Fixed Seal Rift ability type to 'item'")
             }
         }
 
