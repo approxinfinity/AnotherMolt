@@ -58,6 +58,13 @@ object ContentGenerationService {
         isLenient = true
     }
 
+    // Disable Ollama calls during tests unless explicitly enabled with -PrunIntegrationTests=true
+    // This prevents expensive LLM generation from running during normal test execution
+    private val isTestMode: Boolean
+        get() = System.getProperty("runIntegrationTests")?.toBoolean() != true &&
+                (System.getProperty("org.gradle.test.worker") != null ||
+                 System.getenv("DISABLE_LLM_GENERATION") == "true")
+
     // Ollama API URL - configurable via environment variable
     private val llmApiUrl: String
         get() = System.getenv("LLM_API_URL") ?: "http://127.0.0.1:11434"
@@ -67,7 +74,10 @@ object ContentGenerationService {
         get() = System.getenv("LLM_MODEL") ?: "llama3.2:3b"
 
     /**
-     * Generate content for a location, considering adjacent locations and features for context
+     * Generate content for a location, considering adjacent locations and features for context.
+     *
+     * In test mode (unless -PrunIntegrationTests=true), returns failure to avoid
+     * expensive LLM calls during normal test execution.
      */
     suspend fun generateLocationContent(
         exitIds: List<String>,
@@ -75,6 +85,11 @@ object ContentGenerationService {
         existingName: String?,
         existingDesc: String?
     ): Result<GeneratedContent> = withContext(Dispatchers.IO) {
+        // Skip LLM calls in test mode
+        if (isTestMode) {
+            return@withContext Result.failure(Exception("LLM generation disabled in test mode"))
+        }
+
         runCatching {
             // Fetch adjacent locations for context
             val adjacentLocations: List<Location> = exitIds.mapNotNull { id ->
@@ -127,12 +142,20 @@ Respond with valid JSON only in this exact format:
     }
 
     /**
-     * Generate content for a creature
+     * Generate content for a creature.
+     *
+     * In test mode (unless -PrunIntegrationTests=true), returns failure to avoid
+     * expensive LLM calls during normal test execution.
      */
     suspend fun generateCreatureContent(
         existingName: String?,
         existingDesc: String?
     ): Result<GeneratedContent> = withContext(Dispatchers.IO) {
+        // Skip LLM calls in test mode
+        if (isTestMode) {
+            return@withContext Result.failure(Exception("LLM generation disabled in test mode"))
+        }
+
         runCatching {
             val existingContext = buildString {
                 if (!existingName.isNullOrBlank()) append("Current name: $existingName. ")
@@ -155,12 +178,20 @@ Respond with valid JSON only in this exact format:
     }
 
     /**
-     * Generate content for an item
+     * Generate content for an item.
+     *
+     * In test mode (unless -PrunIntegrationTests=true), returns failure to avoid
+     * expensive LLM calls during normal test execution.
      */
     suspend fun generateItemContent(
         existingName: String?,
         existingDesc: String?
     ): Result<GeneratedContent> = withContext(Dispatchers.IO) {
+        // Skip LLM calls in test mode
+        if (isTestMode) {
+            return@withContext Result.failure(Exception("LLM generation disabled in test mode"))
+        }
+
         runCatching {
             val existingContext = buildString {
                 if (!existingName.isNullOrBlank()) append("Current name: $existingName. ")
@@ -251,9 +282,17 @@ Respond with valid JSON only in this exact format:
     }
 
     /**
-     * Check if the LLM service is available
+     * Check if the LLM service is available.
+     *
+     * In test mode (unless -PrunIntegrationTests=true), returns false without
+     * making network calls.
      */
     suspend fun isAvailable(): Boolean = withContext(Dispatchers.IO) {
+        // Skip LLM calls in test mode
+        if (isTestMode) {
+            return@withContext false
+        }
+
         runCatching {
             val response = client.get("$llmApiUrl/api/tags")
             response.status == HttpStatusCode.OK

@@ -55,6 +55,13 @@ object ImageGenerationService {
         }
     }
 
+    // Disable SD calls during tests unless explicitly enabled with -PrunIntegrationTests=true
+    // This prevents expensive SD generation from running during normal test execution
+    private val isTestMode: Boolean
+        get() = System.getProperty("runIntegrationTests")?.toBoolean() != true &&
+                (System.getProperty("org.gradle.test.worker") != null ||
+                 System.getenv("DISABLE_SD_GENERATION") == "true")
+
     // Stable Diffusion WebUI API URL - configurable via environment variable
     private val sdApiUrl: String
         get() = System.getenv("STABLE_DIFFUSION_URL") ?: "http://127.0.0.1:7860"
@@ -70,6 +77,9 @@ object ImageGenerationService {
     /**
      * Generate an image from description text and save it locally.
      * Returns the relative URL path to the saved image.
+     *
+     * In test mode (unless -PrunIntegrationTests=true), returns failure to avoid
+     * expensive SD calls during normal test execution.
      */
     suspend fun generateImage(
         entityType: String,
@@ -77,6 +87,11 @@ object ImageGenerationService {
         description: String,
         entityName: String = ""
     ): Result<String> = withContext(Dispatchers.IO) {
+        // Skip SD calls in test mode
+        if (isTestMode) {
+            return@withContext Result.failure(Exception("SD generation disabled in test mode"))
+        }
+
         runCatching {
             // Build a prompt optimized for game entity visualization
             val prompt = buildPrompt(entityType, description, entityName)
@@ -146,8 +161,16 @@ object ImageGenerationService {
     /**
      * Check if the Stable Diffusion service is available.
      * Uses a short timeout to avoid blocking tests or slow startups.
+     *
+     * In test mode (unless -PrunIntegrationTests=true), returns false without
+     * making network calls.
      */
     suspend fun isAvailable(): Boolean = withContext(Dispatchers.IO) {
+        // Skip SD calls in test mode
+        if (isTestMode) {
+            return@withContext false
+        }
+
         withTimeoutOrNull(5000L) {
             runCatching {
                 val response = client.get("$sdApiUrl/sdapi/v1/sd-models")
