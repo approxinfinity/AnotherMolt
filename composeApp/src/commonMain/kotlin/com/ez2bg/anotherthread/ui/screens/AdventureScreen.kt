@@ -128,6 +128,9 @@ fun AdventureScreen(
     // Use reactiveUser for live updates, fall back to passed-in currentUser
     val displayUser = reactiveUser ?: currentUser
 
+    // Admin check for profile navigation
+    val isAdmin = currentUser?.featureIds?.contains(ADMIN_FEATURE_ID) == true
+
     // Location detail popup state
     var showLocationDetailPopup by remember { mutableStateOf(false) }
 
@@ -477,7 +480,6 @@ fun AdventureScreen(
                     }
 
                     // Mode toggle - bottom right (only for admin users)
-                    val isAdmin = currentUser?.featureIds?.contains(ADMIN_FEATURE_ID) == true
                     if (!ghostMode && isAdmin) {
                         Row(
                             modifier = Modifier.fillMaxWidth(),
@@ -529,7 +531,7 @@ fun AdventureScreen(
                     UserProfileView(
                         user = displayUser ?: currentUser,  // Use reactive user for live inventory updates
                         currentUser = displayUser ?: currentUser,
-                        isAdmin = false,
+                        isAdmin = isAdmin,
                         onUserUpdated = { updatedUser ->
                             // Reload phasewalk destinations when equipment changes
                             viewModel.loadPhasewalkDestinations()
@@ -537,7 +539,9 @@ fun AdventureScreen(
                         onLogout = { },
                         onNavigateToItem = { },
                         onBack = { showCharacterSheet = false },
-                        onNavigateToAdmin = null
+                        onNavigateToAdmin = if (isAdmin) {
+                            { showCharacterSheet = false; onSwitchToCreate() }
+                        } else null
                     )
                 }
             }

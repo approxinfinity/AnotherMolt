@@ -74,6 +74,7 @@ fun UserProfileView(
     var encounters by remember { mutableStateOf<List<PlayerEncounterDto>>(emptyList()) }
     var inventoryExpanded by remember { mutableStateOf(false) }
     var inventoryItems by remember { mutableStateOf<List<ItemDto>>(emptyList()) }
+    var itemAbilitiesMap by remember { mutableStateOf<Map<String, AbilityDto>>(emptyMap()) }
     var equippedItemIds by remember(user.id) { mutableStateOf(user.equippedItemIds) }
     var encounterFilter by remember { mutableStateOf("all") } // "all", "friend", "enemy"
     var selectedEncounter by remember { mutableStateOf<PlayerEncounterDto?>(null) }
@@ -150,6 +151,18 @@ fun UserProfileView(
             }
         } else {
             inventoryItems = emptyList()
+        }
+    }
+
+    // Load abilities granted by inventory items
+    LaunchedEffect(inventoryItems) {
+        val abilityIds = inventoryItems.flatMap { it.abilityIds }.distinct()
+        if (abilityIds.isNotEmpty()) {
+            ApiClient.getAbilities().onSuccess { allAbilities ->
+                itemAbilitiesMap = allAbilities.filter { it.id in abilityIds }.associateBy { it.id }
+            }
+        } else {
+            itemAbilitiesMap = emptyMap()
         }
     }
 
@@ -656,6 +669,7 @@ fun UserProfileView(
                                     InventoryItemCard(
                                         item = item,
                                         isEquipped = true,
+                                        abilities = item.abilityIds.mapNotNull { itemAbilitiesMap[it] },
                                         onEquipToggle = {
                                             scope.launch {
                                                 ApiClient.unequipItem(user.id, item.id).onSuccess { updatedUser ->
@@ -688,6 +702,7 @@ fun UserProfileView(
                                     InventoryItemCard(
                                         item = item,
                                         isEquipped = false,
+                                        abilities = item.abilityIds.mapNotNull { itemAbilitiesMap[it] },
                                         onEquipToggle = if (item.equipmentSlot != null) {
                                             {
                                                 scope.launch {
@@ -1120,6 +1135,7 @@ private fun AbilityDisplayCard(ability: AbilityDto) {
 private fun InventoryItemCard(
     item: ItemDto,
     isEquipped: Boolean,
+    abilities: List<AbilityDto> = emptyList(),
     onEquipToggle: (() -> Unit)?
 ) {
     Card(
@@ -1131,95 +1147,131 @@ private fun InventoryItemCard(
                 MaterialTheme.colorScheme.surfaceVariant
         )
     ) {
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(12.dp),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.SpaceBetween
-        ) {
+        Column(modifier = Modifier.fillMaxWidth()) {
             Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(12.dp),
                 verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(12.dp),
-                modifier = Modifier.weight(1f)
+                horizontalArrangement = Arrangement.SpaceBetween
             ) {
-                // Item image or placeholder
-                Surface(
-                    shape = RoundedCornerShape(8.dp),
-                    color = MaterialTheme.colorScheme.surface,
-                    modifier = Modifier.size(48.dp)
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(12.dp),
+                    modifier = Modifier.weight(1f)
                 ) {
-                    if (item.imageUrl != null) {
-                        EntityImage(
-                            imageUrl = item.imageUrl,
-                            contentDescription = item.name,
-                            modifier = Modifier.size(48.dp)
-                        )
-                    } else {
-                        Box(contentAlignment = Alignment.Center) {
-                            Icon(
-                                imageVector = Icons.Filled.Backpack,
-                                contentDescription = null,
-                                modifier = Modifier.size(24.dp),
-                                tint = MaterialTheme.colorScheme.onSurfaceVariant
+                    // Item image or placeholder
+                    Surface(
+                        shape = RoundedCornerShape(8.dp),
+                        color = MaterialTheme.colorScheme.surface,
+                        modifier = Modifier.size(48.dp)
+                    ) {
+                        if (item.imageUrl != null) {
+                            EntityImage(
+                                imageUrl = item.imageUrl,
+                                contentDescription = item.name,
+                                modifier = Modifier.size(48.dp)
                             )
+                        } else {
+                            Box(contentAlignment = Alignment.Center) {
+                                Icon(
+                                    imageVector = Icons.Filled.Backpack,
+                                    contentDescription = null,
+                                    modifier = Modifier.size(24.dp),
+                                    tint = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+                        }
+                    }
+
+                    Column {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            Text(
+                                text = item.name,
+                                style = MaterialTheme.typography.titleSmall
+                            )
+                            if (isEquipped) {
+                                Icon(
+                                    imageVector = Icons.Filled.CheckCircle,
+                                    contentDescription = "Equipped",
+                                    tint = MaterialTheme.colorScheme.primary,
+                                    modifier = Modifier.size(16.dp)
+                                )
+                            }
+                        }
+                        // Show slot info
+                        if (item.equipmentSlot != null) {
+                            Text(
+                                text = item.equipmentSlot.replace("_", " ").replaceFirstChar { it.uppercase() },
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                        // Show stat bonuses if any
+                        item.statBonuses?.let { bonuses ->
+                            val bonusStrings = mutableListOf<String>()
+                            if (bonuses.attack != 0) bonusStrings.add("ATK ${if (bonuses.attack > 0) "+" else ""}${bonuses.attack}")
+                            if (bonuses.defense != 0) bonusStrings.add("DEF ${if (bonuses.defense > 0) "+" else ""}${bonuses.defense}")
+                            if (bonuses.maxHp != 0) bonusStrings.add("HP ${if (bonuses.maxHp > 0) "+" else ""}${bonuses.maxHp}")
+                            if (bonusStrings.isNotEmpty()) {
+                                Text(
+                                    text = bonusStrings.joinToString(" "),
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = if (bonusStrings.any { it.contains("-") })
+                                        MaterialTheme.colorScheme.error
+                                    else
+                                        MaterialTheme.colorScheme.primary
+                                )
+                            }
                         }
                     }
                 }
 
-                Column {
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                // Equip/Unequip button
+                if (onEquipToggle != null) {
+                    OutlinedButton(
+                        onClick = onEquipToggle,
+                        modifier = Modifier.padding(start = 8.dp)
                     ) {
-                        Text(
-                            text = item.name,
-                            style = MaterialTheme.typography.titleSmall
-                        )
-                        if (isEquipped) {
-                            Icon(
-                                imageVector = Icons.Filled.CheckCircle,
-                                contentDescription = "Equipped",
-                                tint = MaterialTheme.colorScheme.primary,
-                                modifier = Modifier.size(16.dp)
-                            )
-                        }
-                    }
-                    // Show slot info
-                    if (item.equipmentSlot != null) {
-                        Text(
-                            text = item.equipmentSlot.replace("_", " ").replaceFirstChar { it.uppercase() },
-                            style = MaterialTheme.typography.labelSmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                    }
-                    // Show stat bonuses if any
-                    item.statBonuses?.let { bonuses ->
-                        val bonusStrings = mutableListOf<String>()
-                        if (bonuses.attack != 0) bonusStrings.add("ATK ${if (bonuses.attack > 0) "+" else ""}${bonuses.attack}")
-                        if (bonuses.defense != 0) bonusStrings.add("DEF ${if (bonuses.defense > 0) "+" else ""}${bonuses.defense}")
-                        if (bonuses.maxHp != 0) bonusStrings.add("HP ${if (bonuses.maxHp > 0) "+" else ""}${bonuses.maxHp}")
-                        if (bonusStrings.isNotEmpty()) {
-                            Text(
-                                text = bonusStrings.joinToString(" "),
-                                style = MaterialTheme.typography.labelSmall,
-                                color = if (bonusStrings.any { it.contains("-") })
-                                    MaterialTheme.colorScheme.error
-                                else
-                                    MaterialTheme.colorScheme.primary
-                            )
-                        }
+                        Text(if (isEquipped) "Unequip" else "Equip")
                     }
                 }
             }
 
-            // Equip/Unequip button
-            if (onEquipToggle != null) {
-                OutlinedButton(
-                    onClick = onEquipToggle,
-                    modifier = Modifier.padding(start = 8.dp)
+            // Show granted abilities
+            if (abilities.isNotEmpty()) {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(start = 72.dp, end = 12.dp, bottom = 12.dp),
+                    verticalArrangement = Arrangement.spacedBy(4.dp)
                 ) {
-                    Text(if (isEquipped) "Unequip" else "Equip")
+                    Text(
+                        text = "Grants:",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.secondary
+                    )
+                    abilities.forEach { ability ->
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(6.dp)
+                        ) {
+                            Icon(
+                                imageVector = Icons.Filled.Star,
+                                contentDescription = null,
+                                modifier = Modifier.size(12.dp),
+                                tint = MaterialTheme.colorScheme.secondary
+                            )
+                            Text(
+                                text = ability.name,
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurface
+                            )
+                        }
+                    }
                 }
             }
         }
