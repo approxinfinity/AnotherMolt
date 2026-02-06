@@ -334,7 +334,15 @@ class AdventureViewModel(
                 )
             }
 
-            // Load shop items if at a shop location
+            // Load shop items and show gold message if at a shop location
+            if (isShop || isInn) {
+                val gold = _localState.value.playerGold
+                val locationName = AdventureRepository.getLocation(exit.locationId)?.name ?: "the shop"
+                CombatStateHolder.addEventLogEntry(
+                    "You enter $locationName. You have $gold gold.",
+                    EventLogType.NAVIGATION
+                )
+            }
             if (isShop) {
                 loadShopItems(exit.locationId)
             }

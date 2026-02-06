@@ -26,6 +26,7 @@ import androidx.compose.material.icons.filled.NorthWest
 import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.SouthEast
 import androidx.compose.material.icons.filled.SouthWest
+import androidx.compose.material.icons.automirrored.filled.KeyboardReturn
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -37,10 +38,12 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import coil3.compose.AsyncImage
@@ -369,13 +372,18 @@ fun AdventureScreen(
                         }
 
                         // Centered minimap (replaces location thumbnail)
+                        // Disable click in shops/inns - no detail popup needed there
                         CenterMinimap(
                             locations = areaLocations,
                             currentLocation = currentLocation,
                             isRanger = uiState.isRanger,
                             isBlinded = isBlinded,
                             blindRounds = blindRounds,
-                            onClick = { showLocationDetailPopup = true }
+                            onClick = if (uiState.isShopLocation || uiState.isInnLocation) {
+                                {}  // No-op in shops/inns
+                            } else {
+                                { showLocationDetailPopup = true }
+                            }
                         )
                     }
                 }
@@ -384,6 +392,46 @@ fun AdventureScreen(
                 Column(
                     modifier = Modifier.fillMaxWidth()
                 ) {
+                    // Purple action buttons row - floating above resource bars, right-aligned
+                    // Shows: ENTER exits for normal locations, or back button for shops/inns
+                    if (!ghostMode) {
+                        val enterExits = currentLocation.exits.filter { it.direction == ExitDirection.ENTER }
+                        val isShopOrInn = uiState.isShopLocation || uiState.isInnLocation
+
+                        if (isShopOrInn || enterExits.isNotEmpty()) {
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(bottom = 4.dp, end = 12.dp),
+                                horizontalArrangement = Arrangement.End,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                if (isShopOrInn) {
+                                    // Shop/Inn: show back button
+                                    PurpleActionButton(
+                                        icon = Icons.AutoMirrored.Filled.KeyboardReturn,
+                                        contentDescription = "Leave",
+                                        onClick = {
+                                            currentLocation.exits.firstOrNull()?.let { exit ->
+                                                viewModel.navigateToExit(exit)
+                                            }
+                                        }
+                                    )
+                                } else {
+                                    // Normal location: show ENTER exits
+                                    enterExits.forEach { exit ->
+                                        PurpleActionButton(
+                                            icon = Icons.Filled.MeetingRoom,
+                                            contentDescription = "Enter",
+                                            onClick = { viewModel.navigateToExit(exit) }
+                                        )
+                                        Spacer(modifier = Modifier.width(8.dp))
+                                    }
+                                }
+                            }
+                        }
+                    }
+
                     // Player resource bars (HP/MP/SP)
                     if (!ghostMode) {
                         PlayerResourceBar(
@@ -692,36 +740,14 @@ private fun ShopPanel(
     modifier: Modifier = Modifier
 ) {
     Column(modifier = modifier) {
-        // Shop name and gold display
-        Row(
-            verticalAlignment = Alignment.CenterVertically,
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(bottom = 8.dp)
-        ) {
-            Text(
-                text = location.name,
-                color = Color.White,
-                fontSize = 18.sp,
-                fontWeight = FontWeight.Bold,
-                modifier = Modifier.weight(1f)
-            )
-            // Gold display
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Text(
-                    text = "$playerGold",
-                    color = Color(0xFFFFD700),
-                    fontSize = 16.sp,
-                    fontWeight = FontWeight.Bold
-                )
-                Spacer(modifier = Modifier.width(4.dp))
-                Text(
-                    text = "gold",
-                    color = Color(0xFFFFD700).copy(alpha = 0.7f),
-                    fontSize = 12.sp
-                )
-            }
-        }
+        // Shop name
+        Text(
+            text = location.name,
+            color = Color.White,
+            fontSize = 18.sp,
+            fontWeight = FontWeight.Bold,
+            modifier = Modifier.padding(bottom = 8.dp)
+        )
 
         // Description
         Text(
@@ -1270,6 +1296,7 @@ private fun CenterMinimap(
 
 /**
  * Directional navigation buttons arranged in a ring around the center minimap.
+ * ENTER exits are NOT shown here - they appear in the floating action row above status bars.
  */
 @Composable
 private fun DirectionalRing(
@@ -1280,10 +1307,14 @@ private fun DirectionalRing(
     val ringRadius = 70.dp  // Closer to thumbnail than ability ring was
     val buttonSize = 28.dp
 
+    // Only show directional exits (compass directions), not ENTER exits
+    val directionalExits = exits.filter { it.direction != ExitDirection.ENTER && it.direction != ExitDirection.UNKNOWN }
+
     Box(contentAlignment = Alignment.Center) {
-        exits.forEach { exit ->
+        // Render directional exits in their compass positions
+        directionalExits.forEach { exit ->
             val targetLocation = locations.find { it.id == exit.locationId }
-            if (targetLocation != null && exit.direction != ExitDirection.UNKNOWN) {
+            if (targetLocation != null) {
                 // Calculate position based on direction
                 val (offsetX, offsetY) = when (exit.direction) {
                     ExitDirection.NORTH -> Pair(0.dp, -ringRadius)
@@ -1306,7 +1337,6 @@ private fun DirectionalRing(
                         val diag = ringRadius.value * 0.707f
                         Pair(-diag.dp, diag.dp)
                     }
-                    ExitDirection.ENTER -> Pair(0.dp, ringRadius + 15.dp)  // Below south
                     else -> Pair(0.dp, 0.dp)
                 }
 
@@ -1319,51 +1349,109 @@ private fun DirectionalRing(
                     ExitDirection.NORTHWEST -> Icons.Filled.NorthWest
                     ExitDirection.SOUTHEAST -> Icons.Filled.SouthEast
                     ExitDirection.SOUTHWEST -> Icons.Filled.SouthWest
-                    ExitDirection.ENTER -> Icons.Filled.MeetingRoom
                     else -> Icons.Filled.ArrowUpward
                 }
 
-                var isPressed by remember { mutableStateOf(false) }
-                val navScale by animateFloatAsState(
-                    targetValue = if (isPressed) 1.2f else 1f,
-                    animationSpec = tween(durationMillis = 100),
-                    label = "dirScale"
+                DirectionalButton(
+                    exit = exit,
+                    icon = icon,
+                    color = Color(0xFF1976D2),  // Blue for directions
+                    offsetX = offsetX,
+                    offsetY = offsetY,
+                    buttonSize = buttonSize,
+                    onNavigate = onNavigate
                 )
-
-                val buttonColor = if (exit.direction == ExitDirection.ENTER) {
-                    Color(0xFF9C27B0)  // Purple for portal
-                } else {
-                    Color(0xFF1976D2)  // Blue for directions
-                }
-
-                Box(
-                    modifier = Modifier
-                        .offset(x = offsetX, y = offsetY)
-                        .size(buttonSize)
-                        .scale(navScale)
-                        .clip(CircleShape)
-                        .background(buttonColor, CircleShape)
-                        .pointerInput(targetLocation.id) {
-                            detectTapGestures(
-                                onPress = {
-                                    isPressed = true
-                                    tryAwaitRelease()
-                                    isPressed = false
-                                    onNavigate(exit)
-                                }
-                            )
-                        },
-                    contentAlignment = Alignment.Center
-                ) {
-                    Icon(
-                        imageVector = icon,
-                        contentDescription = if (exit.direction == ExitDirection.ENTER) "Enter" else exit.direction.name,
-                        tint = Color.White,
-                        modifier = Modifier.size(16.dp)
-                    )
-                }
             }
         }
+    }
+}
+
+@Composable
+private fun DirectionalButton(
+    exit: ExitDto,
+    icon: ImageVector,
+    color: Color,
+    offsetX: Dp,
+    offsetY: Dp,
+    buttonSize: Dp,
+    onNavigate: (ExitDto) -> Unit
+) {
+    var isPressed by remember { mutableStateOf(false) }
+    val navScale by animateFloatAsState(
+        targetValue = if (isPressed) 1.2f else 1f,
+        animationSpec = tween(durationMillis = 100),
+        label = "dirScale"
+    )
+
+    Box(
+        modifier = Modifier
+            .offset(x = offsetX, y = offsetY)
+            .size(buttonSize)
+            .scale(navScale)
+            .clip(CircleShape)
+            .background(color, CircleShape)
+            .pointerInput(exit.locationId) {
+                detectTapGestures(
+                    onPress = {
+                        isPressed = true
+                        tryAwaitRelease()
+                        isPressed = false
+                        onNavigate(exit)
+                    }
+                )
+            },
+        contentAlignment = Alignment.Center
+    ) {
+        Icon(
+            imageVector = icon,
+            contentDescription = if (exit.direction == ExitDirection.ENTER) "Enter" else exit.direction.name,
+            tint = Color.White,
+            modifier = Modifier.size(16.dp)
+        )
+    }
+}
+
+/**
+ * Purple floating action button for ENTER exits and shop back buttons.
+ */
+@Composable
+private fun PurpleActionButton(
+    icon: ImageVector,
+    contentDescription: String,
+    onClick: () -> Unit
+) {
+    var isPressed by remember { mutableStateOf(false) }
+    val scale by animateFloatAsState(
+        targetValue = if (isPressed) 1.15f else 1f,
+        animationSpec = tween(durationMillis = 100),
+        label = "purpleButtonScale"
+    )
+
+    Box(
+        modifier = Modifier
+            .size(32.dp)
+            .scale(scale)
+            .clip(CircleShape)
+            .background(Color(0xFF9C27B0), CircleShape)  // Purple
+            .border(1.5.dp, Color.White.copy(alpha = 0.5f), CircleShape)
+            .pointerInput(Unit) {
+                detectTapGestures(
+                    onPress = {
+                        isPressed = true
+                        tryAwaitRelease()
+                        isPressed = false
+                        onClick()
+                    }
+                )
+            },
+        contentAlignment = Alignment.Center
+    ) {
+        Icon(
+            imageVector = icon,
+            contentDescription = contentDescription,
+            tint = Color.White,
+            modifier = Modifier.size(18.dp)
+        )
     }
 }
 

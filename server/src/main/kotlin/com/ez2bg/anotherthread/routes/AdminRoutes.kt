@@ -622,6 +622,38 @@ fun Route.adminRoutes() {
         }
     }
 
+    // Fix Tun du Lac Y-coordinate inversion (NORTH=-Y, SOUTH=+Y)
+    post("/admin/fix-tun-du-lac-coords") {
+        val magicShopId = "tun-du-lac-magic-shop"
+        val innId = "tun-du-lac-inn"
+        val fixed = mutableListOf<String>()
+
+        val magicShop = LocationRepository.findById(magicShopId)
+        if (magicShop != null && magicShop.gridY == 1) {
+            LocationRepository.update(magicShop.copy(gridY = -1))
+            fixed.add("Magic Shop: gridY 1 -> -1 (north of town square)")
+        }
+
+        val inn = LocationRepository.findById(innId)
+        if (inn != null && inn.gridY == -1) {
+            LocationRepository.update(inn.copy(gridY = 1))
+            fixed.add("Inn: gridY -1 -> 1 (south of town square)")
+        }
+
+        if (fixed.isEmpty()) {
+            call.respond(mapOf(
+                "message" to "Tun du Lac coordinates already correct",
+                "fixed" to fixed
+            ))
+        } else {
+            log.info("Fixed Tun du Lac coordinates: $fixed")
+            call.respond(mapOf(
+                "message" to "Fixed ${fixed.size} Tun du Lac location coordinates",
+                "fixed" to fixed
+            ))
+        }
+    }
+
     // Admin users routes
     route("/admin/users") {
         // Get all users with activity info

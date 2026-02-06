@@ -220,7 +220,7 @@ object TunDuLacSeed {
             ),
             featureIds = emptyList(),
             gridX = 0,
-            gridY = 1,
+            gridY = -1,  // North of town square (NORTH = -Y)
             areaId = "tun-du-lac",
             locationType = LocationType.INDOOR
         )
@@ -268,7 +268,7 @@ object TunDuLacSeed {
             ),
             featureIds = emptyList(),
             gridX = 0,
-            gridY = -1,
+            gridY = 1,  // South of town square (SOUTH = +Y)
             areaId = "tun-du-lac",
             locationType = LocationType.INDOOR
         )
