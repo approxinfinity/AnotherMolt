@@ -4,7 +4,7 @@ import com.ez2bg.anotherthread.api.ApiClient
 import com.ez2bg.anotherthread.api.CreatureDto
 import com.ez2bg.anotherthread.api.ItemDto
 import com.ez2bg.anotherthread.api.LocationDto
-import com.ez2bg.anotherthread.combat.CombatEvent
+import com.ez2bg.anotherthread.combat.GlobalEvent
 import com.ez2bg.anotherthread.state.CombatStateHolder
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -96,15 +96,15 @@ object AdventureRepository {
         isSubscribedToWebSocket = true
 
         scope.launch {
-            CombatStateHolder.combatEvents.collect { event ->
-                handleCombatEvent(event)
+            CombatStateHolder.globalEvents.collect { event ->
+                handleGlobalEvent(event)
             }
         }
     }
 
-    private fun handleCombatEvent(event: CombatEvent) {
+    private fun handleGlobalEvent(event: GlobalEvent) {
         when (event) {
-            is CombatEvent.CreatureMoved -> {
+            is GlobalEvent.CreatureMoved -> {
                 // Update creature location in real-time
                 updateCreatureLocation(event.creatureId, event.toLocationId)
             }

@@ -266,6 +266,31 @@ data class TeleportResponseDto(
 )
 
 @Serializable
+data class PhasewalkDestinationDto(
+    val direction: String,
+    val locationId: String,
+    val locationName: String,
+    val gridX: Int,
+    val gridY: Int
+)
+
+@Serializable
+data class PhasewalkRequestDto(
+    val userId: String,
+    val direction: String,
+    val abilityId: String = "ability-phasewalk"
+)
+
+@Serializable
+data class PhasewalkResponseDto(
+    val success: Boolean,
+    val message: String,
+    val departureMessage: String? = null,
+    val newLocationId: String? = null,
+    val newLocationName: String? = null
+)
+
+@Serializable
 data class RegisterRequest(
     val name: String,
     val password: String
@@ -1048,6 +1073,25 @@ object ApiClient {
     }
 
     // =========================================================================
+    // EQUIPMENT
+    // =========================================================================
+
+    suspend fun equipItem(userId: String, itemId: String): Result<UserDto> = runCatching {
+        client.post("$baseUrl/users/$userId/equip/$itemId").body()
+    }
+
+    suspend fun unequipItem(userId: String, itemId: String): Result<UserDto> = runCatching {
+        client.post("$baseUrl/users/$userId/unequip/$itemId").body()
+    }
+
+    suspend fun pickupItem(userId: String, itemId: String, locationId: String): Result<UserDto> = runCatching {
+        client.post("$baseUrl/users/$userId/pickup/$itemId") {
+            contentType(ContentType.Application.Json)
+            setBody(mapOf("locationId" to locationId))
+        }.body()
+    }
+
+    // =========================================================================
     // ICON MAPPINGS
     // =========================================================================
 
@@ -1093,6 +1137,21 @@ object ApiClient {
         client.post("$baseUrl/teleport") {
             contentType(ContentType.Application.Json)
             setBody(TeleportRequestDto(userId = userId, targetAreaId = targetAreaId, abilityId = abilityId))
+        }.body()
+    }
+
+    // =========================================================================
+    // PHASEWALK
+    // =========================================================================
+
+    suspend fun getPhasewalkDestinations(userId: String): Result<List<PhasewalkDestinationDto>> = runCatching {
+        client.get("$baseUrl/phasewalk/destinations/$userId").body()
+    }
+
+    suspend fun phasewalk(userId: String, direction: String): Result<PhasewalkResponseDto> = runCatching {
+        client.post("$baseUrl/phasewalk") {
+            contentType(ContentType.Application.Json)
+            setBody(PhasewalkRequestDto(userId = userId, direction = direction))
         }.body()
     }
 
@@ -1692,6 +1751,8 @@ data class CombatantDto(
     val characterClassId: String? = null,
     val abilityIds: List<String> = emptyList(),
     val initiative: Int = 0,
+    val isDowned: Boolean = false,           // Player is unconscious but not dead
+    val deathThreshold: Int = -10,           // HP at which player truly dies
     val isAlive: Boolean = true,
     val statusEffects: List<StatusEffectDto> = emptyList(),
     val cooldowns: Map<String, Int> = emptyMap()
@@ -1889,7 +1950,41 @@ data class CreatureMovedResponse(
     val creatureId: String,
     val creatureName: String,
     val fromLocationId: String,
-    val toLocationId: String
+    val toLocationId: String,
+    val direction: String? = null  // The direction the creature moved (e.g., "north", "southeast")
+)
+
+@Serializable
+data class PlayerDownedResponse(
+    val sessionId: String,
+    val playerId: String,
+    val playerName: String,
+    val currentHp: Int,
+    val deathThreshold: Int,
+    val locationId: String
+)
+
+@Serializable
+data class PlayerStabilizedResponse(
+    val sessionId: String,
+    val playerId: String,
+    val playerName: String,
+    val currentHp: Int,
+    val healerId: String? = null,
+    val healerName: String? = null
+)
+
+@Serializable
+data class PlayerDraggedResponse(
+    val sessionId: String,
+    val draggerId: String,
+    val draggerName: String,
+    val targetId: String,
+    val targetName: String,
+    val fromLocationId: String,
+    val toLocationId: String,
+    val toLocationName: String,
+    val direction: String
 )
 
 @Serializable

@@ -20,24 +20,33 @@ enum class CombatConnectionState {
 }
 
 /**
- * Events emitted by the combat client.
+ * Events emitted by the game client (combat, creature movement, world updates).
+ * Named GlobalEvent since these events come from the global game tick,
+ * not just combat-specific actions.
  */
-sealed class CombatEvent {
-    data class ConnectionStateChanged(val state: CombatConnectionState) : CombatEvent()
-    data class CombatStarted(val session: CombatSessionDto, val yourCombatant: CombatantDto) : CombatEvent()
-    data class RoundStarted(val sessionId: String, val roundNumber: Int, val durationMs: Long, val combatants: List<CombatantDto>) : CombatEvent()
-    data class HealthUpdated(val update: HealthUpdateResponse) : CombatEvent()
-    data class ResourceUpdated(val update: ResourceUpdateResponse) : CombatEvent()
-    data class AbilityResolved(val result: AbilityResolvedResponse) : CombatEvent()
-    data class StatusEffectChanged(val effect: StatusEffectResponse) : CombatEvent()
-    data class RoundEnded(val sessionId: String, val roundNumber: Int, val combatants: List<CombatantDto>, val logEntries: List<CombatLogEntryDto>) : CombatEvent()
-    data class CombatEnded(val response: CombatEndedResponse) : CombatEvent()
-    data class FleeResult(val response: FleeResultResponse) : CombatEvent()
-    data class AbilityQueued(val abilityId: String, val targetId: String?) : CombatEvent()
-    data class CreatureMoved(val creatureId: String, val creatureName: String, val fromLocationId: String, val toLocationId: String) : CombatEvent()
-    data class PlayerDied(val response: PlayerDeathResponse) : CombatEvent()
-    data class Error(val message: String, val code: String?) : CombatEvent()
+sealed class GlobalEvent {
+    data class ConnectionStateChanged(val state: CombatConnectionState) : GlobalEvent()
+    data class CombatStarted(val session: CombatSessionDto, val yourCombatant: CombatantDto) : GlobalEvent()
+    data class RoundStarted(val sessionId: String, val roundNumber: Int, val durationMs: Long, val combatants: List<CombatantDto>) : GlobalEvent()
+    data class HealthUpdated(val update: HealthUpdateResponse) : GlobalEvent()
+    data class ResourceUpdated(val update: ResourceUpdateResponse) : GlobalEvent()
+    data class AbilityResolved(val result: AbilityResolvedResponse) : GlobalEvent()
+    data class StatusEffectChanged(val effect: StatusEffectResponse) : GlobalEvent()
+    data class RoundEnded(val sessionId: String, val roundNumber: Int, val combatants: List<CombatantDto>, val logEntries: List<CombatLogEntryDto>) : GlobalEvent()
+    data class CombatEnded(val response: CombatEndedResponse) : GlobalEvent()
+    data class FleeResult(val response: FleeResultResponse) : GlobalEvent()
+    data class AbilityQueued(val abilityId: String, val targetId: String?) : GlobalEvent()
+    data class CreatureMoved(val creatureId: String, val creatureName: String, val fromLocationId: String, val toLocationId: String, val direction: String?) : GlobalEvent()
+    data class PlayerDowned(val response: PlayerDownedResponse) : GlobalEvent()
+    data class PlayerStabilized(val response: PlayerStabilizedResponse) : GlobalEvent()
+    data class PlayerDragged(val response: PlayerDraggedResponse) : GlobalEvent()
+    data class PlayerDied(val response: PlayerDeathResponse) : GlobalEvent()
+    data class Error(val message: String, val code: String?) : GlobalEvent()
 }
+
+// Type alias for backward compatibility
+@Deprecated("Use GlobalEvent instead", ReplaceWith("GlobalEvent"))
+typealias CombatEvent = GlobalEvent
 
 /**
  * Client for managing WebSocket combat connections with automatic reconnection.
@@ -103,8 +112,8 @@ class CombatClient(
     val connectionState: StateFlow<CombatConnectionState> = _connectionState.asStateFlow()
 
     // Event stream
-    private val _events = MutableSharedFlow<CombatEvent>(replay = 0, extraBufferCapacity = 64)
-    val events: SharedFlow<CombatEvent> = _events.asSharedFlow()
+    private val _events = MutableSharedFlow<GlobalEvent>(replay = 0, extraBufferCapacity = 64)
+    val events: SharedFlow<GlobalEvent> = _events.asSharedFlow()
 
     // Current session info (for reconnection)
     private var currentSessionId: String? = null
@@ -151,7 +160,7 @@ class CombatClient(
             currentSessionId = null
             lastKnownCombatants = emptyList()
             _connectionState.value = CombatConnectionState.DISCONNECTED
-            _events.emit(CombatEvent.ConnectionStateChanged(CombatConnectionState.DISCONNECTED))
+            _events.emit(GlobalEvent.ConnectionStateChanged(CombatConnectionState.DISCONNECTED))
         }
     }
 
@@ -223,7 +232,7 @@ class CombatClient(
         connectionJob = scope.launch {
             val isReconnect = reconnectAttempts > 0
             _connectionState.value = if (isReconnect) CombatConnectionState.RECONNECTING else CombatConnectionState.CONNECTING
-            _events.emit(CombatEvent.ConnectionStateChanged(_connectionState.value))
+            _events.emit(GlobalEvent.ConnectionStateChanged(_connectionState.value))
 
             try {
                 val baseUrl = AppConfig.api.baseUrl
@@ -235,7 +244,7 @@ class CombatClient(
                 httpClient.webSocket(fullUrl) {
                     webSocketSession = this
                     _connectionState.value = CombatConnectionState.CONNECTED
-                    _events.emit(CombatEvent.ConnectionStateChanged(CombatConnectionState.CONNECTED))
+                    _events.emit(GlobalEvent.ConnectionStateChanged(CombatConnectionState.CONNECTED))
                     reconnectAttempts = 0
 
                     println("$TAG: Connected successfully")
@@ -278,7 +287,7 @@ class CombatClient(
                 println("$TAG: Will reconnect in ${delay}ms (attempt ${reconnectAttempts + 1})")
 
                 _connectionState.value = CombatConnectionState.RECONNECTING
-                _events.emit(CombatEvent.ConnectionStateChanged(CombatConnectionState.RECONNECTING))
+                _events.emit(GlobalEvent.ConnectionStateChanged(CombatConnectionState.RECONNECTING))
 
                 delay(delay)
                 reconnectAttempts++
@@ -286,11 +295,11 @@ class CombatClient(
             } else if (shouldReconnect) {
                 println("$TAG: Max reconnect attempts reached")
                 _connectionState.value = CombatConnectionState.DISCONNECTED
-                _events.emit(CombatEvent.ConnectionStateChanged(CombatConnectionState.DISCONNECTED))
-                _events.emit(CombatEvent.Error("Failed to reconnect after $MAX_RECONNECT_ATTEMPTS attempts", "MAX_RECONNECT"))
+                _events.emit(GlobalEvent.ConnectionStateChanged(CombatConnectionState.DISCONNECTED))
+                _events.emit(GlobalEvent.Error("Failed to reconnect after $MAX_RECONNECT_ATTEMPTS attempts", "MAX_RECONNECT"))
             } else {
                 _connectionState.value = CombatConnectionState.DISCONNECTED
-                _events.emit(CombatEvent.ConnectionStateChanged(CombatConnectionState.DISCONNECTED))
+                _events.emit(GlobalEvent.ConnectionStateChanged(CombatConnectionState.DISCONNECTED))
             }
         }
     }
@@ -311,46 +320,46 @@ class CombatClient(
                     val response = json.decodeFromString<CombatStartedResponse>(extractPayload(text))
                     currentSessionId = response.session.id
                     lastKnownCombatants = response.session.combatants
-                    _events.emit(CombatEvent.CombatStarted(response.session, response.yourCombatant))
+                    _events.emit(GlobalEvent.CombatStarted(response.session, response.yourCombatant))
                 }
 
                 text.contains("RoundStartMessage") || text.contains("\"roundDurationMs\"") -> {
                     val response = json.decodeFromString<RoundStartResponse>(extractPayload(text))
                     lastKnownCombatants = response.combatants
-                    _events.emit(CombatEvent.RoundStarted(response.sessionId, response.roundNumber, response.roundDurationMs, response.combatants))
+                    _events.emit(GlobalEvent.RoundStarted(response.sessionId, response.roundNumber, response.roundDurationMs, response.combatants))
                 }
 
                 text.contains("HealthUpdateMessage") || text.contains("\"changeAmount\"") -> {
                     val response = json.decodeFromString<HealthUpdateResponse>(extractPayload(text))
-                    _events.emit(CombatEvent.HealthUpdated(response))
+                    _events.emit(GlobalEvent.HealthUpdated(response))
                 }
 
                 text.contains("ResourceUpdateMessage") || (text.contains("\"manaChange\"") && text.contains("\"staminaChange\"")) -> {
                     val response = json.decodeFromString<ResourceUpdateResponse>(extractPayload(text))
-                    _events.emit(CombatEvent.ResourceUpdated(response))
+                    _events.emit(GlobalEvent.ResourceUpdated(response))
                 }
 
                 text.contains("AbilityResolvedMessage") -> {
                     val response = json.decodeFromString<AbilityResolvedResponse>(extractPayload(text))
-                    _events.emit(CombatEvent.AbilityResolved(response))
+                    _events.emit(GlobalEvent.AbilityResolved(response))
                 }
 
                 text.contains("StatusEffectMessage") -> {
                     val response = json.decodeFromString<StatusEffectResponse>(extractPayload(text))
-                    _events.emit(CombatEvent.StatusEffectChanged(response))
+                    _events.emit(GlobalEvent.StatusEffectChanged(response))
                 }
 
                 text.contains("RoundEndMessage") || text.contains("\"logEntries\"") -> {
                     val response = json.decodeFromString<RoundEndResponse>(extractPayload(text))
                     lastKnownCombatants = response.combatants
-                    _events.emit(CombatEvent.RoundEnded(response.sessionId, response.roundNumber, response.combatants, response.logEntries))
+                    _events.emit(GlobalEvent.RoundEnded(response.sessionId, response.roundNumber, response.combatants, response.logEntries))
                 }
 
                 text.contains("CombatEndedMessage") || text.contains("\"victors\"") -> {
                     val response = json.decodeFromString<CombatEndedResponse>(extractPayload(text))
                     currentSessionId = null
                     lastKnownCombatants = emptyList()
-                    _events.emit(CombatEvent.CombatEnded(response))
+                    _events.emit(GlobalEvent.CombatEnded(response))
                 }
 
                 text.contains("FleeResultMessage") -> {
@@ -359,29 +368,49 @@ class CombatClient(
                         currentSessionId = null
                         lastKnownCombatants = emptyList()
                     }
-                    _events.emit(CombatEvent.FleeResult(response))
+                    _events.emit(GlobalEvent.FleeResult(response))
                 }
 
                 text.contains("AbilityQueuedMessage") -> {
                     val response = json.decodeFromString<AbilityQueuedResponse>(extractPayload(text))
-                    _events.emit(CombatEvent.AbilityQueued(response.abilityId, response.targetId))
+                    _events.emit(GlobalEvent.AbilityQueued(response.abilityId, response.targetId))
                 }
 
                 text.contains("CombatErrorMessage") || text.contains("\"error\"") && text.contains("\"code\"") -> {
                     val response = json.decodeFromString<CombatErrorResponse>(extractPayload(text))
-                    _events.emit(CombatEvent.Error(response.error, response.code))
+                    _events.emit(GlobalEvent.Error(response.error, response.code))
                 }
 
                 text.contains("CreatureMovedMessage") || (text.contains("\"creatureId\"") && text.contains("\"fromLocationId\"")) -> {
                     val response = json.decodeFromString<CreatureMovedResponse>(extractPayload(text))
-                    _events.emit(CombatEvent.CreatureMoved(response.creatureId, response.creatureName, response.fromLocationId, response.toLocationId))
+                    _events.emit(GlobalEvent.CreatureMoved(response.creatureId, response.creatureName, response.fromLocationId, response.toLocationId, response.direction))
+                }
+
+                text.contains("PlayerDownedMessage") || (text.contains("\"deathThreshold\"") && text.contains("\"playerId\"") && !text.contains("\"respawnLocationId\"")) -> {
+                    val response = json.decodeFromString<PlayerDownedResponse>(extractPayload(text))
+                    _events.emit(GlobalEvent.PlayerDowned(response))
+                }
+
+                text.contains("PlayerStabilizedMessage") || (text.contains("\"healerId\"") && text.contains("\"playerName\"") && !text.contains("\"deathThreshold\"")) -> {
+                    val response = json.decodeFromString<PlayerStabilizedResponse>(extractPayload(text))
+                    _events.emit(GlobalEvent.PlayerStabilized(response))
+                }
+
+                text.contains("PlayerDraggedMessage") || (text.contains("\"draggerId\"") && text.contains("\"toLocationName\"")) -> {
+                    val response = json.decodeFromString<PlayerDraggedResponse>(extractPayload(text))
+                    // If I was dragged, clear combat state
+                    if (response.draggerId == userId || response.targetId == userId) {
+                        currentSessionId = null
+                        lastKnownCombatants = emptyList()
+                    }
+                    _events.emit(GlobalEvent.PlayerDragged(response))
                 }
 
                 text.contains("PlayerDeathMessage") || (text.contains("\"respawnLocationId\"") && text.contains("\"itemsDropped\"")) -> {
                     val response = json.decodeFromString<PlayerDeathResponse>(extractPayload(text))
                     currentSessionId = null
                     lastKnownCombatants = emptyList()
-                    _events.emit(CombatEvent.PlayerDied(response))
+                    _events.emit(GlobalEvent.PlayerDied(response))
                 }
 
                 else -> {

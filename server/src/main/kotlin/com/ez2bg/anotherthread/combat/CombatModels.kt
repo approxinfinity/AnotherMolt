@@ -42,6 +42,13 @@ enum class CombatEndReason {
 /**
  * Represents a participant in combat (player or creature).
  * This is runtime state, not persisted to DB.
+ *
+ * Players have a "downed" state when HP drops to 0 or below:
+ * - isDowned = true when currentHp <= 0 but above death threshold
+ * - Death threshold = -(10 + CON * 2)
+ * - While downed: lose 2 HP per round (bleeding out), cannot act
+ * - Other players can Aid (stabilize) or Drag (move) downed players
+ * - True death occurs when currentHp <= deathThreshold
  */
 @Serializable
 data class Combatant(
@@ -57,7 +64,9 @@ data class Combatant(
     val characterClassId: String? = null,     // For players
     val abilityIds: List<String> = emptyList(),
     val initiative: Int = 0,                  // Determines action order within round
-    val isAlive: Boolean = currentHp > 0,
+    val isDowned: Boolean = false,            // Player is unconscious but not dead (HP <= 0 but > deathThreshold)
+    val deathThreshold: Int = -10,            // HP at which player truly dies (calculated as -(10 + CON*2))
+    val isAlive: Boolean = currentHp > 0 || (type == CombatantType.PLAYER && isDowned),
     val statusEffects: List<StatusEffect> = emptyList(),
     val cooldowns: Map<String, Int> = emptyMap(), // abilityId -> rounds remaining
     // Combat stats for RNG mechanics
@@ -70,7 +79,8 @@ data class Combatant(
     // Resource regeneration per round (stat-based)
     val hpRegen: Int = 0,                     // HP restored per round (CON-based)
     val manaRegen: Int = 1,                   // Mana restored per round (INT/WIS-based)
-    val staminaRegen: Int = 2                 // Stamina restored per round (CON-based)
+    val staminaRegen: Int = 2,                // Stamina restored per round (CON-based)
+    val constitution: Int = 10                // CON stat for death threshold calculation
 )
 
 /**
@@ -382,13 +392,59 @@ data class AbilityQueuedMessage(
 /**
  * Sent when a creature moves between locations (wandering NPCs).
  * Allows clients to update their view without polling.
+ * Includes direction for display messages like "X wanders in from the northwest"
  */
 @Serializable
 data class CreatureMovedMessage(
     val creatureId: String,
     val creatureName: String,
     val fromLocationId: String,
-    val toLocationId: String
+    val toLocationId: String,
+    val direction: String? = null  // The direction the creature moved (e.g., "north", "southeast")
+) : ServerCombatMessage()
+
+/**
+ * Sent when a player is knocked unconscious (HP drops to 0 or below but above death threshold).
+ * Other players in the room can Aid or Drag the downed player.
+ */
+@Serializable
+data class PlayerDownedMessage(
+    val sessionId: String,
+    val playerId: String,
+    val playerName: String,
+    val currentHp: Int,
+    val deathThreshold: Int,        // HP at which they will truly die
+    val locationId: String
+) : ServerCombatMessage()
+
+/**
+ * Sent when a downed player is healed back to 0 or above HP (stabilized/revived).
+ */
+@Serializable
+data class PlayerStabilizedMessage(
+    val sessionId: String,
+    val playerId: String,
+    val playerName: String,
+    val currentHp: Int,
+    val healerId: String?,          // Who healed them (null if natural recovery)
+    val healerName: String?
+) : ServerCombatMessage()
+
+/**
+ * Sent when a player drags a downed ally to an adjacent location.
+ * Both the dragger and the target exit combat and move to the new location.
+ */
+@Serializable
+data class PlayerDraggedMessage(
+    val sessionId: String,
+    val draggerId: String,
+    val draggerName: String,
+    val targetId: String,
+    val targetName: String,
+    val fromLocationId: String,
+    val toLocationId: String,
+    val toLocationName: String,
+    val direction: String              // Direction they were dragged
 ) : ServerCombatMessage()
 
 /**

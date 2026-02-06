@@ -479,6 +479,17 @@ object CombatService {
                 "all_allies" -> {
                     currentCombatants.filter { it.type == actor.type && it.isAlive }
                 }
+                "single_ally_downed" -> {
+                    // Aid/Drag: target must be a downed player ally
+                    val downedTarget = target?.takeIf {
+                        it.type == CombatantType.PLAYER && it.isDowned && it.id != actor.id
+                    }
+                    if (downedTarget == null) {
+                        log.debug("${actor.name} tried to use ${ability.name} but target is not a downed ally")
+                        continue  // Skip this action if no valid downed target
+                    }
+                    listOf(downedTarget)
+                }
                 else -> {
                     listOfNotNull(target)
                 }
@@ -552,6 +563,78 @@ object CombatService {
                             sourceId = actor.id,
                             sourceName = actor.name
                         ))
+
+                        // Check if this was an Aid ability that stabilized a downed player
+                        val wasDownedTarget = currentTarget?.isDowned == true
+                        val isNowStabilized = updatedHealTarget.currentHp > 0 && !updatedHealTarget.isDowned
+                        if (wasDownedTarget && isNowStabilized && updatedHealTarget.type == CombatantType.PLAYER) {
+                            broadcastToSession(session.id, PlayerStabilizedMessage(
+                                sessionId = session.id,
+                                playerId = updatedHealTarget.id,
+                                playerName = updatedHealTarget.name,
+                                currentHp = updatedHealTarget.currentHp,
+                                healerId = actor.id,
+                                healerName = actor.name
+                            ))
+                        }
+                    }
+                }
+
+                // Handle Drag ability: move both players to adjacent location
+                if (ability.effects.contains("drag") && currentTarget != null && currentTarget.isDowned) {
+                    val location = LocationRepository.findById(session.locationId)
+                    if (location != null) {
+                        // Find a random adjacent exit (excluding ENTER portals)
+                        val exits = location.exits.filter { it.direction != ExitDirection.ENTER }
+                        if (exits.isNotEmpty()) {
+                            val randomExit = exits.random()
+                            val targetLocation = LocationRepository.findById(randomExit.locationId)
+                            if (targetLocation != null) {
+                                // Remove both players from combat
+                                currentCombatants = currentCombatants.filter {
+                                    it.id != actor.id && it.id != currentTarget.id
+                                }.toMutableList()
+
+                                // Update their locations in the database
+                                UserRepository.updateCurrentLocation(actor.id, targetLocation.id)
+                                UserRepository.updateCurrentLocation(currentTarget.id, targetLocation.id)
+
+                                // Clear their combat state
+                                UserRepository.updateCombatState(actor.id, actor.currentHp, null)
+                                UserRepository.updateCombatState(currentTarget.id, currentTarget.currentHp, null)
+                                playerSessions.remove(actor.id)
+                                playerSessions.remove(currentTarget.id)
+
+                                // Broadcast the drag message
+                                val directionName = randomExit.direction.name.lowercase().replace("_", "")
+                                broadcastToSession(session.id, PlayerDraggedMessage(
+                                    sessionId = session.id,
+                                    draggerId = actor.id,
+                                    draggerName = actor.name,
+                                    targetId = currentTarget.id,
+                                    targetName = currentTarget.name,
+                                    fromLocationId = session.locationId,
+                                    toLocationId = targetLocation.id,
+                                    toLocationName = targetLocation.name,
+                                    direction = directionName
+                                ))
+
+                                // Also send to the dragger and target directly (they may have left the session)
+                                sendToPlayer(actor.id, PlayerDraggedMessage(
+                                    sessionId = session.id,
+                                    draggerId = actor.id,
+                                    draggerName = actor.name,
+                                    targetId = currentTarget.id,
+                                    targetName = currentTarget.name,
+                                    fromLocationId = session.locationId,
+                                    toLocationId = targetLocation.id,
+                                    toLocationName = targetLocation.name,
+                                    direction = directionName
+                                ))
+
+                                log.info("${actor.name} dragged ${currentTarget.name} ${directionName} to ${targetLocation.name}")
+                            }
+                        }
                     }
                 }
 
@@ -657,12 +740,25 @@ object CombatService {
                 (if (wasCritical) " CRITICAL!" else ""))
         }
 
+        // Handle special effect types that bypass normal damage/healing
+        val isAidAbility = parsedEffects.any { it.effectType == "aid" }
+        val isDragAbility = parsedEffects.any { it.effectType == "drag" }
+
+        // Aid: bring downed ally to 1 HP
+        if (isAidAbility && target != null && target.isDowned) {
+            // Calculate healing needed to bring from current HP to 1
+            healing = 1 - target.currentHp  // e.g., if at -5 HP, heal 6 to reach 1
+            log.debug("${actor.name} uses Aid on ${target.name}, healing $healing to bring to 1 HP")
+        }
+
         // Filter effects to return (exclude instant heal since we handle it via healing amount)
         // Only apply effects if the attack hit (not a miss)
         val appliedEffects = if (hitResult != CombatRng.HitResult.MISS) {
             parsedEffects.filter { effect ->
                 when (effect.effectType) {
                     "heal" -> false // Instant heal is handled by healing amount
+                    "aid" -> false  // Aid is handled specially above
+                    "drag" -> false // Drag is handled in applyActionResult
                     "hot", "dot", "buff", "debuff", "stun", "root", "slow" -> true
                     else -> false
                 }
@@ -988,41 +1084,36 @@ object CombatService {
 
             // Apply damage to target (after shield absorption)
             if (combatant.id == action.targetId && actualDamage > 0) {
-                val newHp = (updated.currentHp - actualDamage).coerceAtLeast(0)
-                updated = updated.copy(
-                    currentHp = newHp,
-                    isAlive = newHp > 0
-                )
+                val (damaged, becameDowned, _) = applyDamageWithDownedState(updated, actualDamage)
+                updated = damaged
                 // Apply updated shield effects if shield was used
                 if (updatedTargetEffects != null) {
                     updated = updated.copy(statusEffects = updatedTargetEffects)
                 }
+                // Note: PlayerDowned message will be broadcast after round processing
             }
 
             // Apply reflect damage back to attacker
             if (combatant.id == action.combatantId && reflectDamage > 0) {
-                val newHp = (updated.currentHp - reflectDamage).coerceAtLeast(0)
-                updated = updated.copy(
-                    currentHp = newHp,
-                    isAlive = newHp > 0
-                )
+                val (damaged, _, _) = applyDamageWithDownedState(updated, reflectDamage)
+                updated = damaged
                 log.debug("${combatant.name} takes $reflectDamage reflected damage")
             }
 
             // Apply lifesteal healing to attacker
             if (combatant.id == action.combatantId && lifestealHealing > 0) {
-                val newHp = (updated.currentHp + lifestealHealing).coerceAtMost(updated.maxHp)
-                updated = updated.copy(currentHp = newHp)
+                val (healed, _) = applyHealingWithDownedState(updated, lifestealHealing)
+                updated = healed
                 log.debug("${combatant.name} heals $lifestealHealing from lifesteal")
             }
 
             // Apply healing to actor (self-heal) or target
             if (combatant.id == action.combatantId && result.healing > 0 && action.targetId == null) {
-                val newHp = (updated.currentHp + result.healing).coerceAtMost(updated.maxHp)
-                updated = updated.copy(currentHp = newHp)
+                val (healed, _) = applyHealingWithDownedState(updated, result.healing)
+                updated = healed
             } else if (combatant.id == action.targetId && result.healing > 0) {
-                val newHp = (updated.currentHp + result.healing).coerceAtMost(updated.maxHp)
-                updated = updated.copy(currentHp = newHp)
+                val (healed, _) = applyHealingWithDownedState(updated, result.healing)
+                updated = healed
             }
 
             // Apply status effects to target (or self for buffs)
@@ -1061,7 +1152,7 @@ object CombatService {
     }
 
     /**
-     * Process status effects and resource regeneration for all combatants.
+     * Process status effects, bleeding damage, and resource regeneration for all combatants.
      */
     private suspend fun processStatusEffects(
         combatants: List<Combatant>,
@@ -1072,12 +1163,34 @@ object CombatService {
             var mana = combatant.currentMana
             var stamina = combatant.currentStamina
             val remainingEffects = mutableListOf<StatusEffect>()
+            var wasDowned = combatant.isDowned
+
+            // Apply bleeding damage for downed players (-2 HP per round)
+            if (combatant.type == CombatantType.PLAYER && combatant.isDowned) {
+                val bleedingDamage = 2
+                hp -= bleedingDamage
+                log.debug("${combatant.name} loses $bleedingDamage HP from bleeding (now at $hp, death at ${combatant.deathThreshold})")
+                broadcastToSession(sessionId, HealthUpdateMessage(
+                    sessionId = sessionId,
+                    combatantId = combatant.id,
+                    currentHp = hp,
+                    maxHp = combatant.maxHp,
+                    changeAmount = bleedingDamage,
+                    sourceId = combatant.id,
+                    sourceName = "Bleeding"
+                ))
+            }
 
             for (effect in combatant.statusEffects) {
                 // Apply effect
                 when (effect.effectType) {
                     "dot" -> {
-                        hp = (hp - effect.value).coerceAtLeast(0)
+                        // For players, allow HP to go negative (to death threshold)
+                        hp = if (combatant.type == CombatantType.PLAYER) {
+                            hp - effect.value
+                        } else {
+                            (hp - effect.value).coerceAtLeast(0)
+                        }
                         broadcastToSession(sessionId, HealthUpdateMessage(
                             sessionId = sessionId,
                             combatantId = combatant.id,
@@ -1089,13 +1202,14 @@ object CombatService {
                         ))
                     }
                     "hot" -> {
+                        val oldHp = hp
                         hp = (hp + effect.value).coerceAtMost(combatant.maxHp)
                         broadcastToSession(sessionId, HealthUpdateMessage(
                             sessionId = sessionId,
                             combatantId = combatant.id,
                             currentHp = hp,
                             maxHp = combatant.maxHp,
-                            changeAmount = -effect.value,
+                            changeAmount = -(hp - oldHp),  // Negative = healing
                             sourceId = effect.sourceId,
                             sourceName = null
                         ))
@@ -1161,11 +1275,42 @@ object CombatService {
                 }
             }
 
+            // Calculate alive/downed state based on final HP
+            val (isAlive, isDowned) = calculateAliveState(combatant, hp)
+
+            // Check for state transitions and broadcast appropriate messages
+            if (combatant.type == CombatantType.PLAYER) {
+                // Player just became downed (wasn't downed before, now is)
+                if (!wasDowned && isDowned) {
+                    broadcastToSession(sessionId, PlayerDownedMessage(
+                        sessionId = sessionId,
+                        playerId = combatant.id,
+                        playerName = combatant.name,
+                        currentHp = hp,
+                        deathThreshold = combatant.deathThreshold,
+                        locationId = "" // Will be filled by caller if needed
+                    ))
+                }
+
+                // Player stabilized (was downed, now HP > 0)
+                if (wasDowned && !isDowned && hp > 0) {
+                    broadcastToSession(sessionId, PlayerStabilizedMessage(
+                        sessionId = sessionId,
+                        playerId = combatant.id,
+                        playerName = combatant.name,
+                        currentHp = hp,
+                        healerId = null,
+                        healerName = null
+                    ))
+                }
+            }
+
             combatant.copy(
                 currentHp = hp,
                 currentMana = mana,
                 currentStamina = stamina,
-                isAlive = hp > 0,
+                isAlive = isAlive,
+                isDowned = isDowned,
                 statusEffects = remainingEffects
             )
         }
@@ -1203,11 +1348,17 @@ object CombatService {
                 continue
             }
 
-            // Find a target (random alive player from current state)
+            // Find a target (prefer standing players over downed ones)
             val currentAlivePlayers = updatedCombatants.filter { it.type == CombatantType.PLAYER && it.isAlive }
             if (currentAlivePlayers.isEmpty()) break
 
-            val target = currentAlivePlayers.random()
+            // Prefer standing players, but attack downed players if no one else
+            val standingPlayers = currentAlivePlayers.filter { !it.isDowned }
+            val target = if (standingPlayers.isNotEmpty()) {
+                standingPlayers.random()
+            } else {
+                currentAlivePlayers.random()  // All players are downed, finish them off
+            }
             val currentTarget = updatedCombatants.find { it.id == target.id } ?: continue
 
             // Use RNG system for creature attacks
@@ -1280,37 +1431,42 @@ object CombatService {
                         lifestealHealing = (actualDamage * lifestealEffect.value / 100)
                     }
 
-                    // Apply damage to target
-                    val newHp = (currentTarget.currentHp - actualDamage).coerceAtLeast(0)
-                    updatedCombatants[targetIndex] = currentTarget.copy(
-                        currentHp = newHp,
-                        isAlive = newHp > 0,
-                        statusEffects = targetEffects
-                    )
+                    // Apply damage to target (handles player downed state)
+                    val (damagedTarget, becameDowned, _) = applyDamageWithDownedState(currentTarget, actualDamage)
+                    updatedCombatants[targetIndex] = damagedTarget.copy(statusEffects = targetEffects)
 
-                    // Apply reflect damage to creature
+                    // Broadcast PlayerDowned if player just went down
+                    if (becameDowned && damagedTarget.type == CombatantType.PLAYER) {
+                        broadcastToSession(session.id, PlayerDownedMessage(
+                            sessionId = session.id,
+                            playerId = damagedTarget.id,
+                            playerName = damagedTarget.name,
+                            currentHp = damagedTarget.currentHp,
+                            deathThreshold = damagedTarget.deathThreshold,
+                            locationId = session.locationId
+                        ))
+                    }
+
+                    // Apply reflect damage to creature (creatures don't have downed state)
                     if (reflectDamage > 0 && creatureIndex >= 0) {
                         val creatureToUpdate = updatedCombatants[creatureIndex]
-                        val creatureNewHp = (creatureToUpdate.currentHp - reflectDamage).coerceAtLeast(0)
-                        updatedCombatants[creatureIndex] = creatureToUpdate.copy(
-                            currentHp = creatureNewHp,
-                            isAlive = creatureNewHp > 0
-                        )
+                        val (damagedCreature, _, _) = applyDamageWithDownedState(creatureToUpdate, reflectDamage)
+                        updatedCombatants[creatureIndex] = damagedCreature
                         log.debug("${creature.name} takes $reflectDamage reflected damage")
                     }
 
                     // Apply lifesteal healing to creature
                     if (lifestealHealing > 0 && creatureIndex >= 0) {
                         val creatureToUpdate = updatedCombatants[creatureIndex]
-                        val creatureNewHp = (creatureToUpdate.currentHp + lifestealHealing).coerceAtMost(creatureToUpdate.maxHp)
-                        updatedCombatants[creatureIndex] = creatureToUpdate.copy(currentHp = creatureNewHp)
+                        val (healedCreature, _) = applyHealingWithDownedState(creatureToUpdate, lifestealHealing)
+                        updatedCombatants[creatureIndex] = healedCreature
                     }
 
                     // Broadcast the attack
                     broadcastToSession(session.id, HealthUpdateMessage(
                         sessionId = session.id,
                         combatantId = target.id,
-                        currentHp = newHp,
+                        currentHp = damagedTarget.currentHp,
                         maxHp = currentTarget.maxHp,
                         changeAmount = actualDamage,
                         sourceId = creature.id,
@@ -1626,7 +1782,8 @@ object CombatService {
                 creatureId = creature.id,
                 creatureName = creature.name,
                 fromLocationId = currentLocation.id,
-                toLocationId = targetLocation.id
+                toLocationId = targetLocation.id,
+                direction = randomExit.direction.name.lowercase().replace("_", "")  // e.g., "north", "southeast"
             )
             broadcastToAllPlayers(moveMessage)
 
@@ -1710,6 +1867,10 @@ object CombatService {
         // Get universal abilities (classId is null) that all players have
         val universalAbilities = AbilityRepository.findUniversal().map { it.id }
 
+        // Death threshold: -(10 + CON * 2)
+        // Higher CON = more negative threshold = harder to kill
+        val playerDeathThreshold = -(10 + constitution * 2)
+
         return Combatant(
             id = id,
             type = CombatantType.PLAYER,
@@ -1731,7 +1892,9 @@ object CombatService {
             armor = equipDefense,  // Equipment defense now provides damage reduction
             hpRegen = hpRegenRate,
             manaRegen = manaRegenRate,
-            staminaRegen = staminaRegenRate
+            staminaRegen = staminaRegenRate,
+            deathThreshold = playerDeathThreshold,
+            constitution = constitution
         )
     }
 
@@ -1760,5 +1923,93 @@ object CombatService {
             critBonus = creatureCritBonus,
             baseDamage = baseDamage
         )
+    }
+
+    /**
+     * Calculate the alive/downed state for a combatant based on their HP.
+     *
+     * For players:
+     * - HP > 0: alive, not downed
+     * - HP <= 0 but > deathThreshold: alive (can be revived), downed
+     * - HP <= deathThreshold: dead
+     *
+     * For creatures:
+     * - HP > 0: alive
+     * - HP <= 0: dead (creatures don't have a downed state)
+     *
+     * @return Pair(isAlive, isDowned)
+     */
+    private fun calculateAliveState(combatant: Combatant, newHp: Int): Pair<Boolean, Boolean> {
+        return if (combatant.type == CombatantType.PLAYER) {
+            when {
+                newHp > 0 -> Pair(true, false)  // Healthy
+                newHp > combatant.deathThreshold -> Pair(true, true)  // Downed but not dead
+                else -> Pair(false, false)  // Dead
+            }
+        } else {
+            // Creatures die at 0 HP, no downed state
+            Pair(newHp > 0, false)
+        }
+    }
+
+    /**
+     * Apply damage to a combatant, handling the downed state for players.
+     * Returns the updated combatant and whether the state changed to downed or dead.
+     *
+     * @return Triple(updatedCombatant, becameDowned, becameDead)
+     */
+    private fun applyDamageWithDownedState(
+        combatant: Combatant,
+        damage: Int
+    ): Triple<Combatant, Boolean, Boolean> {
+        val wasDowned = combatant.isDowned
+        val wasAlive = combatant.isAlive
+
+        // For players, HP can go negative (to deathThreshold)
+        // For creatures, HP floors at 0
+        val newHp = if (combatant.type == CombatantType.PLAYER) {
+            combatant.currentHp - damage
+        } else {
+            (combatant.currentHp - damage).coerceAtLeast(0)
+        }
+
+        val (isAlive, isDowned) = calculateAliveState(combatant, newHp)
+
+        val updated = combatant.copy(
+            currentHp = newHp,
+            isAlive = isAlive,
+            isDowned = isDowned
+        )
+
+        val becameDowned = !wasDowned && isDowned
+        val becameDead = wasAlive && !isAlive
+
+        return Triple(updated, becameDowned, becameDead)
+    }
+
+    /**
+     * Apply healing to a combatant, handling recovery from downed state.
+     * Returns the updated combatant and whether they recovered from downed.
+     *
+     * @return Pair(updatedCombatant, recoveredFromDowned)
+     */
+    private fun applyHealingWithDownedState(
+        combatant: Combatant,
+        healing: Int
+    ): Pair<Combatant, Boolean> {
+        val wasDowned = combatant.isDowned
+
+        val newHp = (combatant.currentHp + healing).coerceAtMost(combatant.maxHp)
+        val (isAlive, isDowned) = calculateAliveState(combatant, newHp)
+
+        val updated = combatant.copy(
+            currentHp = newHp,
+            isAlive = isAlive,
+            isDowned = isDowned
+        )
+
+        val recoveredFromDowned = wasDowned && !isDowned && newHp > 0
+
+        return Pair(updated, recoveredFromDowned)
     }
 }

@@ -39,7 +39,7 @@ fun App() {
             val savedUser = AuthStorage.getUser()
             when {
                 savedUser == null -> AppScreen.Onboarding // Need to auth again
-                savedUser.characterClassId == null -> AppScreen.CharacterCreation(savedUser)
+                savedUser.characterClassId == null -> AppScreen.GhostExploration(savedUser) // Explore while creating character
                 else -> AppScreen.Main
             }
         }
@@ -77,7 +77,8 @@ fun App() {
                             OnboardingStorage.markOnboardingSeen()
                             // After auth, check if user needs character creation
                             if (user.characterClassId == null) {
-                                currentScreen = AppScreen.CharacterCreation(user)
+                                // Go directly to ghost exploration - user can create character when ready
+                                currentScreen = AppScreen.GhostExploration(user)
                             } else {
                                 currentScreen = AppScreen.Main
                             }

@@ -9,11 +9,13 @@ import com.ez2bg.anotherthread.api.ItemDto
 import com.ez2bg.anotherthread.api.LocationDto
 import com.ez2bg.anotherthread.api.ShopActionResponse
 import com.ez2bg.anotherthread.api.TeleportDestinationDto
+import com.ez2bg.anotherthread.api.PhasewalkDestinationDto
 import com.ez2bg.anotherthread.api.UserDto
 import com.ez2bg.anotherthread.data.AdventureRepository
 import com.ez2bg.anotherthread.state.AdventureStateHolder
 import com.ez2bg.anotherthread.state.CombatStateHolder
 import com.ez2bg.anotherthread.state.EventLogType
+import com.ez2bg.anotherthread.state.UserStateHolder
 import com.ez2bg.anotherthread.ui.components.EventLogEntry
 import com.ez2bg.anotherthread.ui.components.EventType
 import kotlinx.coroutines.CoroutineScope
@@ -49,7 +51,9 @@ data class AdventureLocalState(
     // Teleport state
     val showMapSelection: Boolean = false,
     val teleportDestinations: List<TeleportDestinationDto> = emptyList(),
-    val teleportAbilityId: String? = null
+    val teleportAbilityId: String? = null,
+    // Phasewalk destinations (for directions without exits)
+    val phasewalkDestinations: List<PhasewalkDestinationDto> = emptyList()
 )
 
 /**
@@ -91,7 +95,9 @@ data class AdventureUiState(
     // Teleport state
     val showMapSelection: Boolean = false,
     val teleportDestinations: List<TeleportDestinationDto> = emptyList(),
-    val teleportAbilityId: String? = null
+    val teleportAbilityId: String? = null,
+    // Phasewalk destinations (for directions without exits)
+    val phasewalkDestinations: List<PhasewalkDestinationDto> = emptyList()
 ) {
     // Derived properties
     val currentLocation: LocationDto?
@@ -190,7 +196,8 @@ class AdventureViewModel(
             isInnLocation = local.isInnLocation,
             showMapSelection = local.showMapSelection,
             teleportDestinations = local.teleportDestinations,
-            teleportAbilityId = local.teleportAbilityId
+            teleportAbilityId = local.teleportAbilityId,
+            phasewalkDestinations = local.phasewalkDestinations
         )
     }.stateIn(
         scope = scope,
@@ -212,6 +219,7 @@ class AdventureViewModel(
         loadPlayerAbilities()
         loadAbilitiesMap()
         loadPlayerGold()
+        loadPhasewalkDestinations()
     }
 
     // =========================================================================
@@ -316,6 +324,16 @@ class AdventureViewModel(
     // =========================================================================
 
     fun navigateToExit(exit: ExitDto) {
+        // Block movement if player is downed (HP <= 0)
+        // Fall back to passed-in currentUser if UserStateHolder isn't initialized yet
+        val playerHp = UserStateHolder.currentUser.value?.currentHp
+            ?: currentUser?.currentHp
+            ?: 0
+        if (playerHp <= 0) {
+            showSnackbar("You cannot move while incapacitated")
+            return
+        }
+
         scope.launch {
             // Update repository's current location
             AdventureRepository.setCurrentLocation(exit.locationId)
@@ -350,6 +368,80 @@ class AdventureViewModel(
             // Update user presence on server
             currentUser?.let { user ->
                 ApiClient.updateUserLocation(user.id, exit.locationId)
+            }
+
+            // Load phasewalk destinations for the new location
+            loadPhasewalkDestinations()
+        }
+    }
+
+    /**
+     * Reload phasewalk destinations from server.
+     * Called on init, location change, and after equipment changes.
+     * Public so it can be triggered when user equips/unequips items.
+     */
+    fun loadPhasewalkDestinations() {
+        val userId = currentUser?.id ?: return
+        scope.launch {
+            ApiClient.getPhasewalkDestinations(userId).onSuccess { destinations ->
+                println("[Phasewalk] Loaded ${destinations.size} destinations for user $userId")
+                _localState.update { it.copy(phasewalkDestinations = destinations) }
+            }.onFailure { error ->
+                println("[Phasewalk] Failed to load destinations: ${error.message}")
+                _localState.update { it.copy(phasewalkDestinations = emptyList()) }
+            }
+        }
+    }
+
+    fun phasewalk(direction: String) {
+        // Block movement if player is downed (HP <= 0)
+        // Fall back to passed-in currentUser if UserStateHolder isn't initialized yet
+        val playerHp = UserStateHolder.currentUser.value?.currentHp
+            ?: currentUser?.currentHp
+            ?: 0
+        if (playerHp <= 0) {
+            showSnackbar("You cannot phasewalk while incapacitated")
+            return
+        }
+
+        val userId = currentUser?.id ?: return
+        scope.launch {
+            ApiClient.phasewalk(userId, direction).onSuccess { response ->
+                if (response.success && response.newLocationId != null) {
+                    // Deduct mana locally for immediate UI feedback (2 mana cost)
+                    UserStateHolder.spendManaLocally(2)
+
+                    // Add event log entries
+                    CombatStateHolder.addEventLogEntry(
+                        response.message,
+                        EventLogType.NAVIGATION
+                    )
+
+                    // Update repository's current location
+                    AdventureRepository.setCurrentLocation(response.newLocationId)
+
+                    // Clear selection state
+                    _localState.update {
+                        it.copy(
+                            selectedCreature = null,
+                            selectedItem = null,
+                            showDescriptionPopup = false,
+                            isShopLocation = false,
+                            isInnLocation = false,
+                            shopItems = emptyList()
+                        )
+                    }
+
+                    // Update user presence on server
+                    ApiClient.updateUserLocation(userId, response.newLocationId)
+
+                    // Load phasewalk destinations for the new location
+                    loadPhasewalkDestinations()
+                } else {
+                    showSnackbar(response.message)
+                }
+            }.onFailure {
+                showSnackbar("Failed to phasewalk: ${it.message}")
             }
         }
     }
@@ -441,6 +533,41 @@ class AdventureViewModel(
                 }
             }.onFailure {
                 showSnackbar("Rest failed: ${it.message}")
+            }
+        }
+    }
+
+    // =========================================================================
+    // ITEM PICKUP
+    // =========================================================================
+
+    fun pickupItem(item: ItemDto) {
+        val userId = currentUser?.id
+        if (userId == null) {
+            showSnackbar("Not logged in")
+            return
+        }
+        val locationId = uiState.value.currentLocationId
+        if (locationId == null) {
+            showSnackbar("Location not loaded")
+            return
+        }
+
+        scope.launch {
+            ApiClient.pickupItem(userId, item.id, locationId).onSuccess { updatedUser ->
+                showSnackbar("Picked up ${item.name}")
+                // Update user state with new inventory
+                UserStateHolder.updateUser(updatedUser)
+                // Refresh the location data to reflect item removal
+                AdventureRepository.refresh()
+            }.onFailure { error ->
+                val message = error.message ?: "Failed to pick up item"
+                // Parse common error messages for better UX
+                when {
+                    message.contains("Inventory full") -> showSnackbar("Inventory full!")
+                    message.contains("not at this location") -> showSnackbar("Item is no longer here")
+                    else -> showSnackbar(message)
+                }
             }
         }
     }
@@ -642,6 +769,7 @@ class AdventureViewModel(
     val cooldowns = CombatStateHolder.cooldowns
     val queuedAbilityId = CombatStateHolder.queuedAbilityId
     val playerCombatant = CombatStateHolder.playerCombatant
+    val combatants = CombatStateHolder.combatants
     val isBlinded = CombatStateHolder.isBlinded
     val blindRounds = CombatStateHolder.blindRounds
     val isDisoriented = CombatStateHolder.isDisoriented

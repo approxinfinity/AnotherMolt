@@ -48,6 +48,7 @@ object AbilityIconMapper {
         "anchor" to Icons.Filled.Anchor,
         "pause" to Icons.Filled.Pause,
         "run" to Icons.Filled.DirectionsRun,
+        "walk" to Icons.Filled.DirectionsWalk,
         "flash" to Icons.Filled.FlashOn,
         "reflect" to Icons.Filled.Replay,
         "bloodtype" to Icons.Filled.Bloodtype,
@@ -94,6 +95,7 @@ object AbilityIconMapper {
 
         // Movement
         "run", "dash" -> Icons.Filled.DirectionsRun
+        "directions_walk", "walk", "phasewalk" -> Icons.Filled.DirectionsWalk
         "flash", "teleport", "staff", "stave" -> Icons.Filled.FlashOn
 
         // Special Effects
@@ -222,6 +224,7 @@ object AbilityIconMapper {
                 "combat" -> Icons.Filled.Bolt
                 "utility" -> Icons.Filled.Build
                 "passive" -> Icons.Filled.Star
+                "navigation" -> Icons.Filled.DirectionsWalk
                 else -> Icons.Filled.HelpOutline
             }
         }
@@ -236,6 +239,7 @@ object AbilityIconMapper {
         "utility" -> androidx.compose.ui.graphics.Color(0xFF1976D2)    // Blue for utility
         "passive" -> androidx.compose.ui.graphics.Color(0xFF388E3C)    // Green for passive
         "item" -> androidx.compose.ui.graphics.Color(0xFF4CAF50)       // Bright green for item abilities
+        "navigation" -> androidx.compose.ui.graphics.Color(0xFF9C27B0) // Purple for navigation (matches direction ring)
         else -> androidx.compose.ui.graphics.Color(0xFF616161)         // Gray default
     }
 

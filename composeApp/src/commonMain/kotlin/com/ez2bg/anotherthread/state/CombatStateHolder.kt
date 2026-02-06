@@ -5,7 +5,7 @@ import com.ez2bg.anotherthread.api.CombatantDto
 import com.ez2bg.anotherthread.api.StatusEffectDto
 import com.ez2bg.anotherthread.combat.CombatClient
 import com.ez2bg.anotherthread.combat.CombatConnectionState
-import com.ez2bg.anotherthread.combat.CombatEvent
+import com.ez2bg.anotherthread.combat.GlobalEvent
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -16,30 +16,6 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
-
-/**
- * Event log entry for displaying combat/adventure events to the user.
- */
-data class EventLogEntry(
-    val id: Long,
-    val message: String,
-    val timestamp: Long = com.ez2bg.anotherthread.platform.currentTimeMillis(),
-    val type: EventLogType = EventLogType.INFO
-)
-
-enum class EventLogType {
-    INFO,
-    DAMAGE_DEALT,
-    DAMAGE_RECEIVED,
-    HEAL,
-    BUFF,
-    DEBUFF,
-    COMBAT_START,
-    COMBAT_END,
-    NAVIGATION,
-    LOOT,
-    ERROR
-}
 
 /**
  * Singleton state holder for combat-related business logic.
@@ -95,14 +71,12 @@ object CombatStateHolder {
     private val _currentRound = MutableStateFlow(0)
     val currentRound: StateFlow<Int> = _currentRound.asStateFlow()
 
-    // Event log for UI display
-    private val _eventLog = MutableStateFlow<List<EventLogEntry>>(emptyList())
-    val eventLog: StateFlow<List<EventLogEntry>> = _eventLog.asStateFlow()
-    private var eventIdCounter = 0L
+    // Event log - delegates to global GameEventLogHolder
+    val eventLog: StateFlow<List<EventLogEntry>> = GameEventLogHolder.eventLog
 
     // Combat events (for one-time event handling in UI)
-    private val _combatEvents = MutableSharedFlow<CombatEvent>(extraBufferCapacity = 64)
-    val combatEvents: SharedFlow<CombatEvent> = _combatEvents.asSharedFlow()
+    private val _globalEvents = MutableSharedFlow<GlobalEvent>(extraBufferCapacity = 64)
+    val globalEvents: SharedFlow<GlobalEvent> = _globalEvents.asSharedFlow()
 
     // Track connected user
     private var connectedUserId: String? = null
@@ -133,7 +107,7 @@ object CombatStateHolder {
         // Observe combat events
         scope.launch {
             client.events.collect { event ->
-                handleCombatEvent(event)
+                handleGlobalEvent(event)
             }
         }
 
@@ -179,36 +153,32 @@ object CombatStateHolder {
 
     /**
      * Add an entry to the event log.
+     * Delegates to global GameEventLogHolder.
      */
     fun addEventLogEntry(message: String, type: EventLogType = EventLogType.INFO) {
-        val entry = EventLogEntry(
-            id = ++eventIdCounter,
-            message = message,
-            type = type
-        )
-        // Keep last 100 entries
-        _eventLog.value = (_eventLog.value + entry).takeLast(100)
+        GameEventLogHolder.addEntry(message, type)
     }
 
     /**
      * Clear the event log.
+     * Delegates to global GameEventLogHolder.
      */
     fun clearEventLog() {
-        _eventLog.value = emptyList()
+        GameEventLogHolder.clear()
     }
 
-    private fun handleCombatEvent(event: CombatEvent) {
+    private fun handleGlobalEvent(event: GlobalEvent) {
         // Re-emit for UI listeners
         scope.launch {
-            _combatEvents.emit(event)
+            _globalEvents.emit(event)
         }
 
         when (event) {
-            is CombatEvent.ConnectionStateChanged -> {
+            is GlobalEvent.ConnectionStateChanged -> {
                 _connectionState.value = event.state
             }
 
-            is CombatEvent.CombatStarted -> {
+            is GlobalEvent.CombatStarted -> {
                 _combatSession.value = event.session
                 _playerCombatant.value = event.yourCombatant
                 _combatants.value = event.session.combatants
@@ -217,7 +187,7 @@ object CombatStateHolder {
                 addEventLogEntry("Combat started!", EventLogType.COMBAT_START)
             }
 
-            is CombatEvent.RoundStarted -> {
+            is GlobalEvent.RoundStarted -> {
                 _currentRound.value = event.roundNumber
                 _combatants.value = event.combatants
                 _queuedAbilityId.value = null // Clear queued ability for new round
@@ -233,11 +203,11 @@ object CombatStateHolder {
                 }
             }
 
-            is CombatEvent.AbilityQueued -> {
+            is GlobalEvent.AbilityQueued -> {
                 _queuedAbilityId.value = event.abilityId
             }
 
-            is CombatEvent.AbilityResolved -> {
+            is GlobalEvent.AbilityResolved -> {
                 // Log ability usage
                 val result = event.result
                 val damageMsg = if (result.result.damage > 0) " for ${result.result.damage} damage" else ""
@@ -248,7 +218,7 @@ object CombatStateHolder {
                 )
             }
 
-            is CombatEvent.StatusEffectChanged -> {
+            is GlobalEvent.StatusEffectChanged -> {
                 val response = event.effect
                 val effect: StatusEffectDto = response.effect
                 val applied = response.applied
@@ -270,7 +240,7 @@ object CombatStateHolder {
                 }
             }
 
-            is CombatEvent.RoundEnded -> {
+            is GlobalEvent.RoundEnded -> {
                 _combatants.value = event.combatants
 
                 // Update player combatant and decrement status effect counters
@@ -302,12 +272,12 @@ object CombatStateHolder {
                 }
             }
 
-            is CombatEvent.CombatEnded -> {
+            is GlobalEvent.CombatEnded -> {
                 addEventLogEntry("Combat ended!", EventLogType.COMBAT_END)
                 clearCombatState()
             }
 
-            is CombatEvent.FleeResult -> {
+            is GlobalEvent.FleeResult -> {
                 if (event.response.success) {
                     addEventLogEntry("You fled from combat!", EventLogType.INFO)
                     clearCombatState()
@@ -316,7 +286,7 @@ object CombatStateHolder {
                 }
             }
 
-            is CombatEvent.HealthUpdated -> {
+            is GlobalEvent.HealthUpdated -> {
                 val update = event.update
                 val type = if (update.changeAmount < 0) EventLogType.DAMAGE_RECEIVED else EventLogType.HEAL
                 addEventLogEntry(
@@ -325,32 +295,100 @@ object CombatStateHolder {
                 )
             }
 
-            is CombatEvent.PlayerDied -> {
+            is GlobalEvent.PlayerDowned -> {
+                val response = event.response
+                val isMe = response.playerId == connectedUserId
+                if (isMe) {
+                    addEventLogEntry(
+                        "You collapse to the ground, bleeding out! (${response.currentHp}/${response.deathThreshold} to death)",
+                        EventLogType.ERROR
+                    )
+                } else {
+                    addEventLogEntry(
+                        "${response.playerName} collapses to the ground!",
+                        EventLogType.DAMAGE_RECEIVED
+                    )
+                }
+            }
+
+            is GlobalEvent.PlayerStabilized -> {
+                val response = event.response
+                val isMe = response.playerId == connectedUserId
+                if (isMe) {
+                    val healerMsg = response.healerName?.let { " by $it" } ?: ""
+                    addEventLogEntry(
+                        "You have been stabilized$healerMsg and regain consciousness!",
+                        EventLogType.HEAL
+                    )
+                } else {
+                    val healerMsg = response.healerName?.let { " by ${response.healerName}" } ?: ""
+                    addEventLogEntry(
+                        "${response.playerName} has been stabilized$healerMsg!",
+                        EventLogType.HEAL
+                    )
+                }
+            }
+
+            is GlobalEvent.PlayerDied -> {
                 addEventLogEntry("You have died!", EventLogType.ERROR)
                 clearCombatState()
             }
 
-            is CombatEvent.CreatureMoved -> {
+            is GlobalEvent.PlayerDragged -> {
+                val response = event.response
+                val iAmDragger = response.draggerId == connectedUserId
+                val iWasDragged = response.targetId == connectedUserId
+
+                when {
+                    iAmDragger -> {
+                        addEventLogEntry(
+                            "You drag ${response.targetName} ${response.direction} to ${response.toLocationName}!",
+                            EventLogType.NAVIGATION
+                        )
+                        clearCombatState()
+                        // Navigation update will be triggered by AdventureStateHolder when it receives location change
+                    }
+                    iWasDragged -> {
+                        addEventLogEntry(
+                            "${response.draggerName} drags you ${response.direction} to ${response.toLocationName}!",
+                            EventLogType.NAVIGATION
+                        )
+                        clearCombatState()
+                    }
+                    else -> {
+                        addEventLogEntry(
+                            "${response.draggerName} drags ${response.targetName} ${response.direction}.",
+                            EventLogType.NAVIGATION
+                        )
+                    }
+                }
+            }
+
+            is GlobalEvent.CreatureMoved -> {
                 // Only show movement if creature enters or leaves the player's current room
                 val currentLocationId = AdventureStateHolder.currentLocation.value?.id
                 if (currentLocationId != null) {
                     when (currentLocationId) {
                         event.fromLocationId -> {
-                            addEventLogEntry("${event.creatureName} wandered off.", EventLogType.NAVIGATION)
+                            val directionText = event.direction?.let { " to the $it" } ?: ""
+                            addEventLogEntry("${event.creatureName} wanders off$directionText.", EventLogType.NAVIGATION)
                         }
                         event.toLocationId -> {
-                            addEventLogEntry("${event.creatureName} wandered in.", EventLogType.NAVIGATION)
+                            // Reverse the direction for "wanders in from" (if they went north, they came from the south)
+                            val oppositeDirection = event.direction?.let { getOppositeDirection(it) }
+                            val directionText = oppositeDirection?.let { " from the $it" } ?: ""
+                            addEventLogEntry("${event.creatureName} wanders in$directionText.", EventLogType.NAVIGATION)
                         }
                         // Silently ignore movement between other locations
                     }
                 }
             }
 
-            is CombatEvent.Error -> {
+            is GlobalEvent.Error -> {
                 addEventLogEntry("Error: ${event.message}", EventLogType.ERROR)
             }
 
-            is CombatEvent.ResourceUpdated -> {
+            is GlobalEvent.ResourceUpdated -> {
                 // Could log resource changes if needed
             }
         }
@@ -367,6 +405,26 @@ object CombatStateHolder {
         _isDisoriented.value = false
         _disorientRounds.value = 0
         _currentRound.value = 0
+    }
+
+    /**
+     * Get the opposite direction for "wanders in from" messages.
+     * If creature went north, they came from the south.
+     */
+    private fun getOppositeDirection(direction: String): String {
+        return when (direction.lowercase()) {
+            "north" -> "south"
+            "south" -> "north"
+            "east" -> "west"
+            "west" -> "east"
+            "northeast" -> "southwest"
+            "northwest" -> "southeast"
+            "southeast" -> "northwest"
+            "southwest" -> "northeast"
+            "up" -> "below"
+            "down" -> "above"
+            else -> direction
+        }
     }
 
     /**

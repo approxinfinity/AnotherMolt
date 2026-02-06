@@ -17,7 +17,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.ez2bg.anotherthread.api.*
 import com.ez2bg.anotherthread.combat.CombatClient
-import com.ez2bg.anotherthread.combat.CombatEvent
+import com.ez2bg.anotherthread.combat.GlobalEvent
 import com.ez2bg.anotherthread.platform.currentTimeMillis
 import com.ez2bg.anotherthread.ui.GameMode
 import com.ez2bg.anotherthread.ui.admin.LocationGraph
@@ -125,7 +125,7 @@ fun LocationGraphView(
                 try {
                     combatClient.events.collect { event ->
                         when (event) {
-                            is CombatEvent.CreatureMoved -> {
+                            is GlobalEvent.CreatureMoved -> {
                                 println("DEBUG: Creature ${event.creatureName} moved from ${event.fromLocationId} to ${event.toLocationId}")
                                 addEventLog("${event.creatureName} wandered away", EventType.MOVEMENT)
                                 // Refresh locations to pick up creature movement
@@ -135,7 +135,7 @@ fun LocationGraphView(
                                     locations = it
                                 }
                             }
-                            is CombatEvent.CombatStarted -> {
+                            is GlobalEvent.CombatStarted -> {
                                 println("DEBUG: Combat started - session ${event.session.id}")
                                 combatSession = event.session
                                 playerCombatant = event.yourCombatant
@@ -144,7 +144,7 @@ fun LocationGraphView(
                                     .joinToString(", ") { it.name }
                                 addEventLog("Combat started vs $enemyNames!", EventType.COMBAT)
                             }
-                            is CombatEvent.RoundStarted -> {
+                            is GlobalEvent.RoundStarted -> {
                                 println("DEBUG: Round ${event.roundNumber} started")
                                 combatQueuedAbilityId = null  // Clear queued ability for new round
                                 // Update combatants list and cooldowns
@@ -155,11 +155,11 @@ fun LocationGraphView(
                                 }
                                 addEventLog("Round ${event.roundNumber}", EventType.INFO)
                             }
-                            is CombatEvent.AbilityQueued -> {
+                            is GlobalEvent.AbilityQueued -> {
                                 println("DEBUG: Ability ${event.abilityId} queued")
                                 combatQueuedAbilityId = event.abilityId
                             }
-                            is CombatEvent.AbilityResolved -> {
+                            is GlobalEvent.AbilityResolved -> {
                                 println("DEBUG: Ability resolved - ${event.result.abilityName}")
                                 val r = event.result
                                 val msg = if (r.result.damage > 0) {
@@ -176,7 +176,7 @@ fun LocationGraphView(
                                 }
                                 addEventLog(msg, eventType)
                             }
-                            is CombatEvent.StatusEffectChanged -> {
+                            is GlobalEvent.StatusEffectChanged -> {
                                 val response = event.effect
                                 val effectDto = response.effect
                                 println("DEBUG: Status effect changed - ${effectDto.effectType} on ${response.combatantId}, applied=${response.applied}, rounds=${effectDto.remainingRounds}")
@@ -201,7 +201,7 @@ fun LocationGraphView(
                                 }
                                 addEventLog("${effectDto.name} $action", effectType)
                             }
-                            is CombatEvent.RoundEnded -> {
+                            is GlobalEvent.RoundEnded -> {
                                 println("DEBUG: Round ${event.roundNumber} ended")
                                 val myCombatant = event.combatants.find { it.id == userId }
                                 if (myCombatant != null) {
@@ -220,7 +220,7 @@ fun LocationGraphView(
                                     if (combatDisorientRounds <= 0) combatIsDisoriented = false
                                 }
                             }
-                            is CombatEvent.CombatEnded -> {
+                            is GlobalEvent.CombatEnded -> {
                                 println("DEBUG: Combat ended")
                                 combatSession = null
                                 playerCombatant = null
@@ -245,7 +245,7 @@ fun LocationGraphView(
                                     addEventLog("Looted: ${r.loot.itemNames.joinToString()}", EventType.LOOT)
                                 }
                             }
-                            is CombatEvent.PlayerDied -> {
+                            is GlobalEvent.PlayerDied -> {
                                 println("DEBUG: Player died - respawning at ${event.response.respawnLocationName}")
                                 combatSession = null
                                 playerCombatant = null
@@ -258,11 +258,11 @@ fun LocationGraphView(
                                 deathNotification = event.response
                                 addEventLog("You died! Dropped ${event.response.itemsDropped} items and ${event.response.goldLost} gold", EventType.DEATH)
                             }
-                            is CombatEvent.Error -> {
+                            is GlobalEvent.Error -> {
                                 println("DEBUG: Combat error - ${event.message}")
                                 addEventLog(event.message, EventType.INFO)
                             }
-                            is CombatEvent.ResourceUpdated -> {
+                            is GlobalEvent.ResourceUpdated -> {
                                 // Resource updates are handled silently for now
                                 // Could add messages like "Spent 5 mana" if desired
                             }

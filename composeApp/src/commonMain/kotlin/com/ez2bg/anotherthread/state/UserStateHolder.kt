@@ -235,13 +235,26 @@ object UserStateHolder {
     /**
      * Refresh user data from server.
      */
-    private suspend fun refreshUser(userId: String) {
+    suspend fun refreshUser() {
+        val userId = _currentUser.value?.id ?: return
         ApiClient.getUser(userId).onSuccess { freshUser ->
             if (freshUser != null) {
                 _currentUser.value = freshUser
                 AuthStorage.saveUser(freshUser)
             }
         }
+    }
+
+    /**
+     * Spend mana locally (for immediate UI feedback).
+     * Should be called when an ability is used that costs mana.
+     */
+    fun spendManaLocally(amount: Int) {
+        val current = _currentUser.value ?: return
+        val newMana = (current.currentMana - amount).coerceAtLeast(0)
+        println("[UserStateHolder] spendManaLocally: ${current.currentMana} - $amount = $newMana")
+        _currentUser.value = current.copy(currentMana = newMana)
+        AuthStorage.saveUser(_currentUser.value!!)
     }
 
     /**

@@ -410,11 +410,7 @@ fun Route.userRoutes() {
 
             if (UserRepository.equipItem(userId, itemId)) {
                 val updatedUser = UserRepository.findById(userId)!!
-                call.respond(HttpStatusCode.OK, mapOf(
-                    "success" to true,
-                    "equippedItemIds" to updatedUser.equippedItemIds,
-                    "unequipped" to existingEquipped
-                ))
+                call.respond(HttpStatusCode.OK, updatedUser.toResponse())
             } else {
                 call.respond(HttpStatusCode.InternalServerError, mapOf("error" to "Failed to equip item"))
             }
@@ -438,13 +434,65 @@ fun Route.userRoutes() {
 
             if (UserRepository.unequipItem(userId, itemId)) {
                 val updatedUser = UserRepository.findById(userId)!!
-                call.respond(HttpStatusCode.OK, mapOf(
-                    "success" to true,
-                    "equippedItemIds" to updatedUser.equippedItemIds
-                ))
+                call.respond(HttpStatusCode.OK, updatedUser.toResponse())
             } else {
                 call.respond(HttpStatusCode.InternalServerError, mapOf("error" to "Failed to unequip item"))
             }
+        }
+
+        // Pickup an item from a location
+        post("/{id}/pickup/{itemId}") {
+            val userId = call.parameters["id"] ?: return@post call.respond(HttpStatusCode.BadRequest)
+            val itemId = call.parameters["itemId"] ?: return@post call.respond(HttpStatusCode.BadRequest)
+
+            @Serializable
+            data class PickupRequest(val locationId: String)
+            val request = call.receive<PickupRequest>()
+
+            val user = UserRepository.findById(userId)
+            if (user == null) {
+                call.respond(HttpStatusCode.NotFound, mapOf("error" to "User not found"))
+                return@post
+            }
+
+            val item = ItemRepository.findById(itemId)
+            if (item == null) {
+                call.respond(HttpStatusCode.NotFound, mapOf("error" to "Item not found"))
+                return@post
+            }
+
+            val location = LocationRepository.findById(request.locationId)
+            if (location == null) {
+                call.respond(HttpStatusCode.NotFound, mapOf("error" to "Location not found"))
+                return@post
+            }
+
+            // Check item is at the location
+            if (itemId !in location.itemIds) {
+                call.respond(HttpStatusCode.BadRequest, mapOf("error" to "Item is not at this location"))
+                return@post
+            }
+
+            // Check encumbrance (based on Constitution)
+            // Each point of CON allows 2 items, base of 5 items
+            val maxItems = 5 + (user.constitution / 2)
+            if (user.itemIds.size >= maxItems) {
+                call.respond(HttpStatusCode.BadRequest, mapOf(
+                    "error" to "Inventory full (max $maxItems items based on Constitution)"
+                ))
+                return@post
+            }
+
+            // Add to user inventory
+            UserRepository.addItems(userId, listOf(itemId))
+
+            // Remove from location
+            val updatedItemIds = location.itemIds.filter { it != itemId }
+            val updatedLocation = location.copy(itemIds = updatedItemIds)
+            LocationRepository.update(updatedLocation)
+
+            val updatedUser = UserRepository.findById(userId)!!
+            call.respond(HttpStatusCode.OK, updatedUser.toResponse())
         }
 
         // Get identified entities for a user

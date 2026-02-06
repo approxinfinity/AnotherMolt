@@ -34,7 +34,8 @@ data class CombatTarget(
     val currentHp: Int,
     val maxHp: Int,
     val isPlayer: Boolean,
-    val isAlive: Boolean = true
+    val isAlive: Boolean = true,
+    val isDowned: Boolean = false  // Player is unconscious but not dead (HP <= 0 but > death threshold)
 )
 
 /**
@@ -92,6 +93,7 @@ fun TargetSelectionOverlay(
                 text = when (ability.targetType) {
                     "single_enemy" -> "Choose an enemy"
                     "single_ally" -> "Choose an ally"
+                    "single_ally_downed" -> "Choose a downed ally"
                     else -> "Choose a target"
                 },
                 color = Color.White.copy(alpha = 0.7f),
@@ -100,18 +102,25 @@ fun TargetSelectionOverlay(
 
             Spacer(Modifier.height(24.dp))
 
+            // Filter targets based on ability type
+            val validTargets = when (ability.targetType) {
+                "single_ally_downed" -> targets.filter { it.isPlayer && it.isDowned }
+                else -> targets.filter { it.isAlive }
+            }
+
             // Target cards
-            targets.filter { it.isAlive }.forEach { target ->
+            validTargets.forEach { target ->
                 TargetCard(
                     target = target,
                     isEnemy = ability.targetType == "single_enemy",
+                    isDowned = target.isDowned,
                     onClick = { onTargetSelected(target.id) },
                     modifier = Modifier.padding(vertical = 4.dp)
                 )
             }
 
             // No valid targets message
-            if (targets.none { it.isAlive }) {
+            if (validTargets.isEmpty()) {
                 Text(
                     text = "No valid targets available",
                     color = Color.White.copy(alpha = 0.5f),
@@ -129,11 +138,21 @@ fun TargetSelectionOverlay(
 fun TargetCard(
     target: CombatTarget,
     isEnemy: Boolean,
+    isDowned: Boolean = false,
     onClick: () -> Unit,
     modifier: Modifier = Modifier
 ) {
-    val borderColor = if (isEnemy) Color(0xFFD32F2F) else Color(0xFF4CAF50)
-    val iconColor = if (isEnemy) Color(0xFFD32F2F) else Color(0xFF64B5F6)
+    // Downed allies get a special amber color
+    val borderColor = when {
+        isDowned -> Color(0xFFFF9800)  // Amber for downed
+        isEnemy -> Color(0xFFD32F2F)
+        else -> Color(0xFF4CAF50)
+    }
+    val iconColor = when {
+        isDowned -> Color(0xFFFF9800)  // Amber for downed
+        isEnemy -> Color(0xFFD32F2F)
+        else -> Color(0xFF64B5F6)
+    }
 
     Row(
         modifier = modifier
@@ -167,20 +186,31 @@ fun TargetCard(
             Spacer(Modifier.width(12.dp))
 
             Column {
-                Text(
-                    text = target.name,
-                    color = Color.White,
-                    fontSize = 16.sp,
-                    fontWeight = FontWeight.Medium,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis
-                )
+                Column {
+                    Text(
+                        text = target.name,
+                        color = Color.White,
+                        fontSize = 16.sp,
+                        fontWeight = FontWeight.Medium,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                    if (isDowned) {
+                        Text(
+                            text = "DOWNED",
+                            color = Color(0xFFFF9800),
+                            fontSize = 10.sp,
+                            fontWeight = FontWeight.Bold
+                        )
+                    }
+                }
 
                 // Health bar
                 Spacer(Modifier.height(4.dp))
                 HealthBar(
                     currentHp = target.currentHp,
                     maxHp = target.maxHp,
+                    isDowned = isDowned,
                     modifier = Modifier
                         .width(120.dp)
                         .height(8.dp)
@@ -204,10 +234,17 @@ fun TargetCard(
 fun HealthBar(
     currentHp: Int,
     maxHp: Int,
+    isDowned: Boolean = false,
     modifier: Modifier = Modifier
 ) {
-    val healthPercent = if (maxHp > 0) currentHp.toFloat() / maxHp else 0f
+    // For downed players, show a pulsing/low health bar
+    val healthPercent = when {
+        isDowned -> 0.05f  // Minimal sliver for downed
+        maxHp > 0 -> (currentHp.toFloat() / maxHp).coerceIn(0f, 1f)
+        else -> 0f
+    }
     val healthColor = when {
+        isDowned -> Color(0xFFFF9800)             // Amber for downed
         healthPercent > 0.6f -> Color(0xFF4CAF50)  // Green
         healthPercent > 0.3f -> Color(0xFFFF9800)  // Orange
         else -> Color(0xFFD32F2F)                   // Red
@@ -221,7 +258,7 @@ fun HealthBar(
         Box(
             modifier = Modifier
                 .fillMaxHeight()
-                .fillMaxWidth(healthPercent)
+                .fillMaxWidth(healthPercent.coerceAtLeast(0f))
                 .background(healthColor, RoundedCornerShape(4.dp))
         )
     }

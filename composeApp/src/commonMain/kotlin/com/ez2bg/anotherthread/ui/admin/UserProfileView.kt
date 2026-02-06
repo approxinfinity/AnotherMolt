@@ -25,7 +25,10 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.filled.Dangerous
 import androidx.compose.material.icons.filled.Edit
+import androidx.compose.material.icons.filled.Backpack
+import androidx.compose.material.icons.filled.CheckCircle
 import com.ez2bg.anotherthread.api.*
+import com.ez2bg.anotherthread.state.UserStateHolder
 import com.ez2bg.anotherthread.ui.BackgroundImageGenerationManager
 import com.ez2bg.anotherthread.ui.EntityImage
 import com.ez2bg.anotherthread.ui.components.AbilityIconMapper
@@ -69,6 +72,9 @@ fun UserProfileView(
     var iconPickerAbilityId by remember { mutableStateOf<String?>(null) }
     var encountersExpanded by remember { mutableStateOf(false) }
     var encounters by remember { mutableStateOf<List<PlayerEncounterDto>>(emptyList()) }
+    var inventoryExpanded by remember { mutableStateOf(false) }
+    var inventoryItems by remember { mutableStateOf<List<ItemDto>>(emptyList()) }
+    var equippedItemIds by remember(user.id) { mutableStateOf(user.equippedItemIds) }
     var encounterFilter by remember { mutableStateOf("all") } // "all", "friend", "enemy"
     var selectedEncounter by remember { mutableStateOf<PlayerEncounterDto?>(null) }
     var showRerollConfirmDialog by remember { mutableStateOf(false) }
@@ -133,6 +139,17 @@ fun UserProfileView(
     LaunchedEffect(user.id) {
         ApiClient.getEncounters(user.id).onSuccess { result ->
             encounters = result
+        }
+    }
+
+    // Load inventory items for this user
+    LaunchedEffect(user.id, user.itemIds) {
+        if (user.itemIds.isNotEmpty()) {
+            ApiClient.getItems().onSuccess { allItems ->
+                inventoryItems = allItems.filter { it.id in user.itemIds }
+            }
+        } else {
+            inventoryItems = emptyList()
         }
     }
 
@@ -571,6 +588,128 @@ fun UserProfileView(
             }
         }
 
+        // Inventory section - show for own profile when items exist
+        if (isOwnProfile && inventoryItems.isNotEmpty()) {
+            Spacer(modifier = Modifier.height(8.dp))
+            Card(modifier = Modifier.fillMaxWidth()) {
+                Column(modifier = Modifier.padding(16.dp)) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clickable { inventoryExpanded = !inventoryExpanded },
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            Icon(
+                                imageVector = Icons.Filled.Backpack,
+                                contentDescription = null,
+                                tint = MaterialTheme.colorScheme.primary
+                            )
+                            Text(
+                                text = "Inventory (${inventoryItems.size})",
+                                style = MaterialTheme.typography.titleMedium
+                            )
+                        }
+                        Icon(
+                            imageVector = if (inventoryExpanded) Icons.Filled.ExpandLess else Icons.Filled.ExpandMore,
+                            contentDescription = if (inventoryExpanded) "Collapse" else "Expand"
+                        )
+                    }
+
+                    // Collapsed summary: comma-delimited list of items with slots
+                    if (!inventoryExpanded) {
+                        val summaryText = inventoryItems.joinToString(", ") { item ->
+                            val slotSuffix = item.equipmentSlot?.let { slot ->
+                                " (${slot.replace("_", " ")})"
+                            } ?: ""
+                            "${item.name}$slotSuffix"
+                        }
+                        Spacer(modifier = Modifier.height(8.dp))
+                        Text(
+                            text = summaryText,
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+
+                    if (inventoryExpanded) {
+                        Spacer(modifier = Modifier.height(12.dp))
+
+                        // Group items by slot
+                        val equippedItems = inventoryItems.filter { it.id in equippedItemIds }
+                        val unequippedItems = inventoryItems.filter { it.id !in equippedItemIds }
+
+                        // Equipped items section
+                        if (equippedItems.isNotEmpty()) {
+                            Text(
+                                text = "Equipped",
+                                style = MaterialTheme.typography.labelMedium,
+                                color = MaterialTheme.colorScheme.primary,
+                                modifier = Modifier.padding(bottom = 8.dp)
+                            )
+                            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                                equippedItems.forEach { item ->
+                                    InventoryItemCard(
+                                        item = item,
+                                        isEquipped = true,
+                                        onEquipToggle = {
+                                            scope.launch {
+                                                ApiClient.unequipItem(user.id, item.id).onSuccess { updatedUser ->
+                                                    equippedItemIds = updatedUser.equippedItemIds
+                                                    UserStateHolder.updateUser(updatedUser)
+                                                    onUserUpdated(updatedUser)
+                                                }.onFailure { error ->
+                                                    message = "Failed to unequip: ${error.message}"
+                                                }
+                                            }
+                                        }
+                                    )
+                                }
+                            }
+                        }
+
+                        // Unequipped items section
+                        if (unequippedItems.isNotEmpty()) {
+                            if (equippedItems.isNotEmpty()) {
+                                Spacer(modifier = Modifier.height(12.dp))
+                            }
+                            Text(
+                                text = "Inventory",
+                                style = MaterialTheme.typography.labelMedium,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                modifier = Modifier.padding(bottom = 8.dp)
+                            )
+                            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                                unequippedItems.forEach { item ->
+                                    InventoryItemCard(
+                                        item = item,
+                                        isEquipped = false,
+                                        onEquipToggle = if (item.equipmentSlot != null) {
+                                            {
+                                                scope.launch {
+                                                    ApiClient.equipItem(user.id, item.id).onSuccess { updatedUser ->
+                                                        equippedItemIds = updatedUser.equippedItemIds
+                                                        UserStateHolder.updateUser(updatedUser)
+                                                        onUserUpdated(updatedUser)
+                                                    }.onFailure { error ->
+                                                        message = "Failed to equip: ${error.message}"
+                                                    }
+                                                }
+                                            }
+                                        } else null
+                                    )
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
         // Configure Action Mappings section - only for own profile with abilities
         if (isOwnProfile && classAbilities.isNotEmpty()) {
             Spacer(modifier = Modifier.height(8.dp))
@@ -973,6 +1112,116 @@ private fun AbilityDisplayCard(ability: AbilityDto) {
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
+        }
+    }
+}
+
+@Composable
+private fun InventoryItemCard(
+    item: ItemDto,
+    isEquipped: Boolean,
+    onEquipToggle: (() -> Unit)?
+) {
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        colors = CardDefaults.cardColors(
+            containerColor = if (isEquipped)
+                MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.3f)
+            else
+                MaterialTheme.colorScheme.surfaceVariant
+        )
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(12.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.SpaceBetween
+        ) {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(12.dp),
+                modifier = Modifier.weight(1f)
+            ) {
+                // Item image or placeholder
+                Surface(
+                    shape = RoundedCornerShape(8.dp),
+                    color = MaterialTheme.colorScheme.surface,
+                    modifier = Modifier.size(48.dp)
+                ) {
+                    if (item.imageUrl != null) {
+                        EntityImage(
+                            imageUrl = item.imageUrl,
+                            contentDescription = item.name,
+                            modifier = Modifier.size(48.dp)
+                        )
+                    } else {
+                        Box(contentAlignment = Alignment.Center) {
+                            Icon(
+                                imageVector = Icons.Filled.Backpack,
+                                contentDescription = null,
+                                modifier = Modifier.size(24.dp),
+                                tint = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                    }
+                }
+
+                Column {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        Text(
+                            text = item.name,
+                            style = MaterialTheme.typography.titleSmall
+                        )
+                        if (isEquipped) {
+                            Icon(
+                                imageVector = Icons.Filled.CheckCircle,
+                                contentDescription = "Equipped",
+                                tint = MaterialTheme.colorScheme.primary,
+                                modifier = Modifier.size(16.dp)
+                            )
+                        }
+                    }
+                    // Show slot info
+                    if (item.equipmentSlot != null) {
+                        Text(
+                            text = item.equipmentSlot.replace("_", " ").replaceFirstChar { it.uppercase() },
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                    // Show stat bonuses if any
+                    item.statBonuses?.let { bonuses ->
+                        val bonusStrings = mutableListOf<String>()
+                        if (bonuses.attack != 0) bonusStrings.add("ATK ${if (bonuses.attack > 0) "+" else ""}${bonuses.attack}")
+                        if (bonuses.defense != 0) bonusStrings.add("DEF ${if (bonuses.defense > 0) "+" else ""}${bonuses.defense}")
+                        if (bonuses.maxHp != 0) bonusStrings.add("HP ${if (bonuses.maxHp > 0) "+" else ""}${bonuses.maxHp}")
+                        if (bonusStrings.isNotEmpty()) {
+                            Text(
+                                text = bonusStrings.joinToString(" "),
+                                style = MaterialTheme.typography.labelSmall,
+                                color = if (bonusStrings.any { it.contains("-") })
+                                    MaterialTheme.colorScheme.error
+                                else
+                                    MaterialTheme.colorScheme.primary
+                            )
+                        }
+                    }
+                }
+            }
+
+            // Equip/Unequip button
+            if (onEquipToggle != null) {
+                OutlinedButton(
+                    onClick = onEquipToggle,
+                    modifier = Modifier.padding(start = 8.dp)
+                ) {
+                    Text(if (isEquipped) "Unequip" else "Equip")
+                }
+            }
         }
     }
 }

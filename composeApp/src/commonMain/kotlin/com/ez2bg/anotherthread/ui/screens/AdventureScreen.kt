@@ -19,6 +19,7 @@ import androidx.compose.material.icons.automirrored.filled.ArrowForward
 import androidx.compose.material.icons.filled.ArrowDownward
 import androidx.compose.material.icons.filled.ArrowUpward
 import androidx.compose.material.icons.filled.AutoStories
+import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Dangerous
 import androidx.compose.material.icons.filled.MeetingRoom
 import androidx.compose.material.icons.filled.NorthEast
@@ -26,6 +27,7 @@ import androidx.compose.material.icons.filled.NorthWest
 import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.SouthEast
 import androidx.compose.material.icons.filled.SouthWest
+import androidx.compose.material.icons.automirrored.filled.DirectionsWalk
 import androidx.compose.material.icons.automirrored.filled.KeyboardReturn
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -54,7 +56,9 @@ import com.ez2bg.anotherthread.api.ExitDirection
 import com.ez2bg.anotherthread.api.ExitDto
 import com.ez2bg.anotherthread.api.ItemDto
 import com.ez2bg.anotherthread.api.LocationDto
+import com.ez2bg.anotherthread.api.PhasewalkDestinationDto
 import com.ez2bg.anotherthread.api.UserDto
+import com.ez2bg.anotherthread.api.ADMIN_FEATURE_ID
 import com.ez2bg.anotherthread.ui.CreatureStateIcon
 import com.ez2bg.anotherthread.ui.SwordIcon
 import com.ez2bg.anotherthread.ui.getBlindItemDescription
@@ -70,6 +74,7 @@ import com.ez2bg.anotherthread.ui.components.MapSelectionOverlay
 import com.ez2bg.anotherthread.ui.components.TargetSelectionOverlay
 import com.ez2bg.anotherthread.ui.admin.getTerrainColor
 import com.ez2bg.anotherthread.ui.admin.UserProfileView
+import com.ez2bg.anotherthread.state.UserStateHolder
 import kotlinx.coroutines.launch
 import kotlin.math.PI
 import kotlin.math.abs
@@ -116,6 +121,12 @@ fun AdventureScreen(
     val disorientRounds by viewModel.disorientRounds.collectAsState()
     val eventLogState by viewModel.eventLog.collectAsState()
     val playerCombatant by viewModel.playerCombatant.collectAsState()
+    val combatants by viewModel.combatants.collectAsState()
+
+    // Reactive user state for mana/stamina display (updates on phasewalk, etc.)
+    val reactiveUser by UserStateHolder.currentUser.collectAsState()
+    // Use reactiveUser for live updates, fall back to passed-in currentUser
+    val displayUser = reactiveUser ?: currentUser
 
     // Location detail popup state
     var showLocationDetailPopup by remember { mutableStateOf(false) }
@@ -290,7 +301,7 @@ fun AdventureScreen(
                                 creatureStates = uiState.creatureStates,
                                 isBlinded = isBlinded,
                                 onCreatureClick = { if (!ghostMode) viewModel.selectCreature(it) },
-                                onItemClick = { if (!ghostMode) viewModel.selectItem(it) },
+                                onItemClick = { if (!ghostMode) viewModel.pickupItem(it) },
                                 modifier = Modifier
                                     .fillMaxWidth()
                                     .padding(16.dp)
@@ -362,7 +373,9 @@ fun AdventureScreen(
                         DirectionalRing(
                             exits = currentLocation.exits,
                             locations = uiState.locations,
-                            onNavigate = { viewModel.navigateToExit(it) }
+                            phasewalkDestinations = uiState.phasewalkDestinations,
+                            onNavigate = { viewModel.navigateToExit(it) },
+                            onPhasewalk = { direction -> viewModel.phasewalk(direction) }
                         )
 
                         // Filter to only show locations in the same area for minimap
@@ -435,12 +448,12 @@ fun AdventureScreen(
                     // Player resource bars (HP/MP/SP)
                     if (!ghostMode) {
                         PlayerResourceBar(
-                            currentHp = playerCombatant?.currentHp ?: currentUser?.currentHp ?: 0,
-                            maxHp = playerCombatant?.maxHp ?: currentUser?.maxHp ?: 0,
-                            currentMana = playerCombatant?.currentMana ?: currentUser?.currentMana ?: 0,
-                            maxMana = playerCombatant?.maxMana ?: currentUser?.maxMana ?: 0,
-                            currentStamina = playerCombatant?.currentStamina ?: currentUser?.currentStamina ?: 0,
-                            maxStamina = playerCombatant?.maxStamina ?: currentUser?.maxStamina ?: 0,
+                            currentHp = playerCombatant?.currentHp ?: displayUser?.currentHp ?: 0,
+                            maxHp = playerCombatant?.maxHp ?: displayUser?.maxHp ?: 0,
+                            currentMana = playerCombatant?.currentMana ?: displayUser?.currentMana ?: 0,
+                            maxMana = playerCombatant?.maxMana ?: displayUser?.maxMana ?: 0,
+                            currentStamina = playerCombatant?.currentStamina ?: displayUser?.currentStamina ?: 0,
+                            maxStamina = playerCombatant?.maxStamina ?: displayUser?.maxStamina ?: 0,
                             modifier = Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 4.dp)
                         )
                     }
@@ -451,8 +464,8 @@ fun AdventureScreen(
                             abilities = uiState.playerAbilities,
                             cooldowns = cooldowns,
                             queuedAbilityId = queuedAbilityId,
-                            currentMana = playerCombatant?.currentMana ?: currentUser?.currentMana ?: 0,
-                            currentStamina = playerCombatant?.currentStamina ?: currentUser?.currentStamina ?: 0,
+                            currentMana = playerCombatant?.currentMana ?: displayUser?.currentMana ?: 0,
+                            currentStamina = playerCombatant?.currentStamina ?: displayUser?.currentStamina ?: 0,
                             onAbilityClick = { viewModel.handleAbilityClick(it) },
                             onSpellbookToggle = { showSpellbook = !showSpellbook },
                             showSpellbook = showSpellbook,
@@ -463,8 +476,9 @@ fun AdventureScreen(
                         )
                     }
 
-                    // Mode toggle - bottom right
-                    if (!ghostMode) {
+                    // Mode toggle - bottom right (only for admin users)
+                    val isAdmin = currentUser?.featureIds?.contains(ADMIN_FEATURE_ID) == true
+                    if (!ghostMode && isAdmin) {
                         Row(
                             modifier = Modifier.fillMaxWidth(),
                             horizontalArrangement = Arrangement.End
@@ -494,8 +508,8 @@ fun AdventureScreen(
                     abilities = uiState.playerAbilities,
                     cooldowns = cooldowns,
                     queuedAbilityId = queuedAbilityId,
-                    currentMana = playerCombatant?.currentMana ?: currentUser?.currentMana ?: 0,
-                    currentStamina = playerCombatant?.currentStamina ?: currentUser?.currentStamina ?: 0,
+                    currentMana = playerCombatant?.currentMana ?: displayUser?.currentMana ?: 0,
+                    currentStamina = playerCombatant?.currentStamina ?: displayUser?.currentStamina ?: 0,
                     onAbilityClick = { ability ->
                         viewModel.handleAbilityClick(ability)
                         showSpellbook = false
@@ -513,10 +527,13 @@ fun AdventureScreen(
                         .background(Color(0xFF1A1A2E))
                 ) {
                     UserProfileView(
-                        user = currentUser,
-                        currentUser = currentUser,
+                        user = displayUser ?: currentUser,  // Use reactive user for live inventory updates
+                        currentUser = displayUser ?: currentUser,
                         isAdmin = false,
-                        onUserUpdated = { },
+                        onUserUpdated = { updatedUser ->
+                            // Reload phasewalk destinations when equipment changes
+                            viewModel.loadPhasewalkDestinations()
+                        },
                         onLogout = { },
                         onNavigateToItem = { },
                         onBack = { showCharacterSheet = false },
@@ -555,15 +572,55 @@ fun AdventureScreen(
             // === TARGET SELECTION OVERLAY ===
             if (uiState.pendingAbility != null) {
                 val ability = uiState.pendingAbility!!
-                val targets = uiState.creaturesHere.map { creature ->
-                    CombatTarget(
-                        id = creature.id,
-                        name = creature.name,
-                        currentHp = creature.maxHp,
-                        maxHp = creature.maxHp,
-                        isPlayer = false,
-                        isAlive = true
-                    )
+
+                // Build target list based on ability target type
+                val targets = when (ability.targetType) {
+                    "single_ally_downed" -> {
+                        // For Aid/Drag: show downed player allies from combat
+                        combatants.filter { combatant ->
+                            combatant.id != currentUser?.id && // Not self
+                            combatant.isDowned // Only downed players
+                        }.map { combatant ->
+                            CombatTarget(
+                                id = combatant.id,
+                                name = combatant.name,
+                                currentHp = combatant.currentHp,
+                                maxHp = combatant.maxHp,
+                                isPlayer = true,
+                                isAlive = true,  // Downed but not dead
+                                isDowned = true
+                            )
+                        }
+                    }
+                    "single_ally" -> {
+                        // For ally-targeting abilities: show player allies in combat
+                        combatants.filter { combatant ->
+                            combatant.id != currentUser?.id && // Not self
+                            !combatant.isDowned // Not downed
+                        }.map { combatant ->
+                            CombatTarget(
+                                id = combatant.id,
+                                name = combatant.name,
+                                currentHp = combatant.currentHp,
+                                maxHp = combatant.maxHp,
+                                isPlayer = true,
+                                isAlive = combatant.isAlive
+                            )
+                        }
+                    }
+                    else -> {
+                        // Default: enemies (creatures)
+                        uiState.creaturesHere.map { creature ->
+                            CombatTarget(
+                                id = creature.id,
+                                name = creature.name,
+                                currentHp = creature.maxHp,
+                                maxHp = creature.maxHp,
+                                isPlayer = false,
+                                isAlive = true
+                            )
+                        }
+                    }
                 }
                 TargetSelectionOverlay(
                     ability = ability,
@@ -610,7 +667,7 @@ fun AdventureScreen(
             ) {
                 Icon(
                     imageVector = Icons.AutoMirrored.Filled.ArrowBack,
-                    contentDescription = "Back to character creation",
+                    contentDescription = "Create your character",
                     tint = Color.White.copy(alpha = 0.7f)
                 )
             }
@@ -1297,18 +1354,48 @@ private fun CenterMinimap(
 /**
  * Directional navigation buttons arranged in a ring around the center minimap.
  * ENTER exits are NOT shown here - they appear in the floating action row above status bars.
+ * Also shows phasewalk destinations (purple boot icons) for directions without exits.
  */
 @Composable
 private fun DirectionalRing(
     exits: List<ExitDto>,
     locations: List<LocationDto>,
-    onNavigate: (ExitDto) -> Unit
+    phasewalkDestinations: List<PhasewalkDestinationDto>,
+    onNavigate: (ExitDto) -> Unit,
+    onPhasewalk: (String) -> Unit
 ) {
     val ringRadius = 70.dp  // Closer to thumbnail than ability ring was
     val buttonSize = 28.dp
 
     // Only show directional exits (compass directions), not ENTER exits
     val directionalExits = exits.filter { it.direction != ExitDirection.ENTER && it.direction != ExitDirection.UNKNOWN }
+
+    // Helper to calculate offset for a direction
+    fun getDirectionOffset(direction: String): Pair<Dp, Dp> {
+        return when (direction.lowercase()) {
+            "north" -> Pair(0.dp, -ringRadius)
+            "south" -> Pair(0.dp, ringRadius)
+            "east" -> Pair(ringRadius, 0.dp)
+            "west" -> Pair(-ringRadius, 0.dp)
+            "northeast" -> {
+                val diag = ringRadius.value * 0.707f
+                Pair(diag.dp, -diag.dp)
+            }
+            "northwest" -> {
+                val diag = ringRadius.value * 0.707f
+                Pair(-diag.dp, -diag.dp)
+            }
+            "southeast" -> {
+                val diag = ringRadius.value * 0.707f
+                Pair(diag.dp, diag.dp)
+            }
+            "southwest" -> {
+                val diag = ringRadius.value * 0.707f
+                Pair(-diag.dp, diag.dp)
+            }
+            else -> Pair(0.dp, 0.dp)
+        }
+    }
 
     Box(contentAlignment = Alignment.Center) {
         // Render directional exits in their compass positions
@@ -1363,6 +1450,19 @@ private fun DirectionalRing(
                 )
             }
         }
+
+        // Render phasewalk destinations (purple boot icons with mana cost)
+        phasewalkDestinations.forEach { destination ->
+            val (offsetX, offsetY) = getDirectionOffset(destination.direction)
+            PhasewalkButton(
+                direction = destination.direction,
+                locationName = destination.locationName,
+                offsetX = offsetX,
+                offsetY = offsetY,
+                buttonSize = buttonSize,
+                onPhasewalk = onPhasewalk
+            )
+        }
     }
 }
 
@@ -1407,6 +1507,75 @@ private fun DirectionalButton(
             contentDescription = if (exit.direction == ExitDirection.ENTER) "Enter" else exit.direction.name,
             tint = Color.White,
             modifier = Modifier.size(16.dp)
+        )
+    }
+}
+
+/**
+ * Purple phasewalk button with boot icon and mana cost label inside the circle.
+ * Shows for directions without exits where phasewalk is available.
+ * Style matches AbilityIconButton with cost displayed at bottom of circle.
+ */
+@Composable
+private fun PhasewalkButton(
+    direction: String,
+    locationName: String,
+    offsetX: Dp,
+    offsetY: Dp,
+    buttonSize: Dp,
+    onPhasewalk: (String) -> Unit
+) {
+    var isPressed by remember { mutableStateOf(false) }
+    val navScale by animateFloatAsState(
+        targetValue = if (isPressed) 1.2f else 1f,
+        animationSpec = tween(durationMillis = 100),
+        label = "phasewalkScale"
+    )
+
+    Box(
+        modifier = Modifier
+            .offset(x = offsetX, y = offsetY)
+            .size(buttonSize + 8.dp),  // Extra space for cost label
+        contentAlignment = Alignment.Center
+    ) {
+        // Main button
+        Box(
+            modifier = Modifier
+                .size(buttonSize)
+                .scale(navScale)
+                .clip(CircleShape)
+                .background(Color(0xFF9C27B0), CircleShape)  // Purple
+                .border(1.dp, Color.White.copy(alpha = 0.3f), CircleShape)
+                .pointerInput(direction) {
+                    detectTapGestures(
+                        onPress = {
+                            isPressed = true
+                            tryAwaitRelease()
+                            isPressed = false
+                            onPhasewalk(direction)
+                        }
+                    )
+                },
+            contentAlignment = Alignment.Center
+        ) {
+            Icon(
+                imageVector = Icons.AutoMirrored.Filled.DirectionsWalk,
+                contentDescription = "Phasewalk $direction to $locationName",
+                tint = Color.White,
+                modifier = Modifier.size(14.dp)
+            )
+        }
+
+        // Mana cost label at bottom of circle (matching ability button style)
+        Text(
+            text = "2 MP",
+            color = Color(0xFF64B5F6),  // Blue for mana cost like ability buttons
+            fontSize = 8.sp,
+            fontWeight = FontWeight.Medium,
+            textAlign = TextAlign.Center,
+            modifier = Modifier
+                .align(Alignment.BottomCenter)
+                .offset(y = 2.dp)
         )
     }
 }
@@ -1479,8 +1648,11 @@ private fun AbilityRow(
     val iconSize = 32.dp
     val maxIcons = 10
 
-    // Filter to show non-passive abilities
-    val displayAbilities = abilities.filter { it.abilityType != "passive" }.take(maxIcons)
+    // Filter to show non-passive and non-navigation abilities
+    // Navigation abilities (like Phasewalk) are shown on the direction ring instead
+    val displayAbilities = abilities.filter {
+        it.abilityType != "passive" && it.abilityType != "navigation"
+    }.take(maxIcons)
 
     Row(
         modifier = modifier
@@ -1681,7 +1853,12 @@ private fun SpellbookPanel(
                         .clickable { onDismiss() },
                     contentAlignment = Alignment.Center
                 ) {
-                    Text("✕", color = Color.White, fontSize = 14.sp)
+                    Icon(
+                        imageVector = Icons.Filled.Close,
+                        contentDescription = "Close",
+                        tint = Color.White,
+                        modifier = Modifier.size(16.dp)
+                    )
                 }
             }
 
@@ -2918,7 +3095,12 @@ private fun DirectionalRingPreview() {
                     PreviewData.sampleLocation.copy(id = "loc-4"),
                     PreviewData.sampleLocation.copy(id = "loc-5")
                 ),
-                onNavigate = {}
+                phasewalkDestinations = listOf(
+                    PhasewalkDestinationDto("northeast", "loc-6", "Hidden Cave", 1, -1),
+                    PhasewalkDestinationDto("southwest", "loc-7", "Secret Path", -1, 1)
+                ),
+                onNavigate = {},
+                onPhasewalk = {}
             )
         }
     }
