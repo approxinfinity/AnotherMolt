@@ -657,19 +657,34 @@ fun AdventureScreen(
             )
         }
 
-        // Ghost mode back button (minimal, just navigation)
+        // Ghost mode "Create Character" button - prominent call to action
         if (ghostMode && onGhostModeBack != null) {
-            IconButton(
+            Surface(
                 onClick = onGhostModeBack,
                 modifier = Modifier
                     .align(Alignment.TopStart)
-                    .padding(8.dp)
+                    .padding(12.dp),
+                shape = RoundedCornerShape(20.dp),
+                color = Color(0xFF6366F1).copy(alpha = 0.9f),  // Accent purple matching onboarding
+                shadowElevation = 4.dp
             ) {
-                Icon(
-                    imageVector = Icons.AutoMirrored.Filled.ArrowBack,
-                    contentDescription = "Create your character",
-                    tint = Color.White.copy(alpha = 0.7f)
-                )
+                Row(
+                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    Icon(
+                        imageVector = Icons.Filled.Person,
+                        contentDescription = null,
+                        tint = Color.White,
+                        modifier = Modifier.size(18.dp)
+                    )
+                    Text(
+                        text = "Create Character",
+                        color = Color.White,
+                        style = MaterialTheme.typography.labelLarge
+                    )
+                }
             }
         }
     }
