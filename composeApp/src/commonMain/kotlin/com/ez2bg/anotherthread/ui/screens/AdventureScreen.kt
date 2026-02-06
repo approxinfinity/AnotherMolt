@@ -57,6 +57,8 @@ import com.ez2bg.anotherthread.api.ExitDto
 import com.ez2bg.anotherthread.api.ItemDto
 import com.ez2bg.anotherthread.api.LocationDto
 import com.ez2bg.anotherthread.api.PhasewalkDestinationDto
+import com.ez2bg.anotherthread.api.UnconnectedAreaDto
+import com.ez2bg.anotherthread.api.SealableRiftDto
 import com.ez2bg.anotherthread.api.UserDto
 import com.ez2bg.anotherthread.api.ADMIN_FEATURE_ID
 import com.ez2bg.anotherthread.ui.CreatureStateIcon
@@ -642,6 +644,18 @@ fun AdventureScreen(
                     currentAreaId = uiState.currentLocation?.areaId,
                     onDestinationSelected = { viewModel.selectTeleportDestination(it) },
                     onCancel = { viewModel.dismissMapSelection() }
+                )
+            }
+
+            // === RIFT SELECTION OVERLAY: For rift open/seal abilities ===
+            if (uiState.showRiftSelection) {
+                RiftSelectionOverlay(
+                    mode = uiState.riftMode ?: "open",
+                    unconnectedAreas = uiState.unconnectedAreas,
+                    sealableRifts = uiState.sealableRifts,
+                    onAreaSelected = { viewModel.selectRiftToOpen(it) },
+                    onRiftSelected = { viewModel.selectRiftToSeal(it) },
+                    onCancel = { viewModel.dismissRiftSelection() }
                 )
             }
 
@@ -1720,13 +1734,13 @@ private fun AbilityRow(
     modifier: Modifier = Modifier
 ) {
     val iconSize = 32.dp
-    val maxIcons = 10
 
     // Filter to show non-passive and non-navigation abilities
     // Navigation abilities (like Phasewalk) are shown on the direction ring instead
+    // No limit - FlowRow handles wrapping if there are many abilities
     val displayAbilities = abilities.filter {
         it.abilityType != "passive" && it.abilityType != "navigation"
-    }.take(maxIcons)
+    }
 
     Row(
         modifier = modifier
@@ -3024,6 +3038,123 @@ private fun LocationDetailPopup(
                 color = Color.Gray,
                 fontSize = 11.sp
             )
+        }
+    }
+}
+
+// =============================================================================
+// RIFT SELECTION OVERLAY
+// =============================================================================
+
+@Composable
+private fun RiftSelectionOverlay(
+    mode: String,
+    unconnectedAreas: List<UnconnectedAreaDto>,
+    sealableRifts: List<SealableRiftDto>,
+    onAreaSelected: (UnconnectedAreaDto) -> Unit,
+    onRiftSelected: (SealableRiftDto) -> Unit,
+    onCancel: () -> Unit
+) {
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(Color.Black.copy(alpha = 0.7f))
+            .clickable(onClick = onCancel),
+        contentAlignment = Alignment.Center
+    ) {
+        Surface(
+            modifier = Modifier
+                .widthIn(max = 400.dp)
+                .padding(16.dp)
+                .clickable(enabled = false) {},
+            shape = RoundedCornerShape(16.dp),
+            color = Color(0xFF1E1E2E),
+            shadowElevation = 8.dp
+        ) {
+            Column(
+                modifier = Modifier.padding(20.dp),
+                horizontalAlignment = Alignment.CenterHorizontally
+            ) {
+                // Header
+                Text(
+                    text = if (mode == "open") "Open Rift Portal" else "Seal Rift Portal",
+                    style = MaterialTheme.typography.headlineSmall,
+                    color = if (mode == "open") Color(0xFF9D4EDD) else Color(0xFFE57373),
+                    modifier = Modifier.padding(bottom = 8.dp)
+                )
+
+                Text(
+                    text = if (mode == "open")
+                        "Select a realm to open a permanent portal to:"
+                    else
+                        "Select a rift to seal:",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = Color.White.copy(alpha = 0.7f),
+                    modifier = Modifier.padding(bottom = 16.dp)
+                )
+
+                // List of options
+                Column(
+                    modifier = Modifier
+                        .heightIn(max = 300.dp)
+                        .verticalScroll(rememberScrollState()),
+                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    if (mode == "open") {
+                        unconnectedAreas.forEach { area ->
+                            Surface(
+                                onClick = { onAreaSelected(area) },
+                                modifier = Modifier.fillMaxWidth(),
+                                shape = RoundedCornerShape(8.dp),
+                                color = Color(0xFF2D2D3D)
+                            ) {
+                                Column(modifier = Modifier.padding(12.dp)) {
+                                    Text(
+                                        text = area.name,
+                                        style = MaterialTheme.typography.titleMedium,
+                                        color = Color(0xFFBB86FC)
+                                    )
+                                    Text(
+                                        text = "${area.locationCount} locations • Entry: ${area.entryLocationName ?: "Unknown"}",
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = Color.White.copy(alpha = 0.6f)
+                                    )
+                                }
+                            }
+                        }
+                    } else {
+                        sealableRifts.forEach { rift ->
+                            Surface(
+                                onClick = { onRiftSelected(rift) },
+                                modifier = Modifier.fillMaxWidth(),
+                                shape = RoundedCornerShape(8.dp),
+                                color = Color(0xFF2D2D3D)
+                            ) {
+                                Column(modifier = Modifier.padding(12.dp)) {
+                                    Text(
+                                        text = "Portal to ${rift.targetAreaName}",
+                                        style = MaterialTheme.typography.titleMedium,
+                                        color = Color(0xFFE57373)
+                                    )
+                                    Text(
+                                        text = "Leads to: ${rift.targetLocationName}",
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = Color.White.copy(alpha = 0.6f)
+                                    )
+                                }
+                            }
+                        }
+                    }
+                }
+
+                // Cancel button
+                TextButton(
+                    onClick = onCancel,
+                    modifier = Modifier.padding(top = 16.dp)
+                ) {
+                    Text("Cancel", color = Color.White.copy(alpha = 0.7f))
+                }
+            }
         }
     }
 }

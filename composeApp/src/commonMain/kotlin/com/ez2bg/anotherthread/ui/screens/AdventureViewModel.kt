@@ -10,6 +10,8 @@ import com.ez2bg.anotherthread.api.LocationDto
 import com.ez2bg.anotherthread.api.ShopActionResponse
 import com.ez2bg.anotherthread.api.TeleportDestinationDto
 import com.ez2bg.anotherthread.api.PhasewalkDestinationDto
+import com.ez2bg.anotherthread.api.UnconnectedAreaDto
+import com.ez2bg.anotherthread.api.SealableRiftDto
 import com.ez2bg.anotherthread.api.UserDto
 import com.ez2bg.anotherthread.data.AdventureRepository
 import com.ez2bg.anotherthread.state.AdventureStateHolder
@@ -53,7 +55,12 @@ data class AdventureLocalState(
     val teleportDestinations: List<TeleportDestinationDto> = emptyList(),
     val teleportAbilityId: String? = null,
     // Phasewalk destinations (for directions without exits)
-    val phasewalkDestinations: List<PhasewalkDestinationDto> = emptyList()
+    val phasewalkDestinations: List<PhasewalkDestinationDto> = emptyList(),
+    // Rift state
+    val showRiftSelection: Boolean = false,
+    val riftMode: String? = null,  // "open" or "seal"
+    val unconnectedAreas: List<UnconnectedAreaDto> = emptyList(),
+    val sealableRifts: List<SealableRiftDto> = emptyList()
 )
 
 /**
@@ -97,7 +104,12 @@ data class AdventureUiState(
     val teleportDestinations: List<TeleportDestinationDto> = emptyList(),
     val teleportAbilityId: String? = null,
     // Phasewalk destinations (for directions without exits)
-    val phasewalkDestinations: List<PhasewalkDestinationDto> = emptyList()
+    val phasewalkDestinations: List<PhasewalkDestinationDto> = emptyList(),
+    // Rift state
+    val showRiftSelection: Boolean = false,
+    val riftMode: String? = null,  // "open" or "seal"
+    val unconnectedAreas: List<UnconnectedAreaDto> = emptyList(),
+    val sealableRifts: List<SealableRiftDto> = emptyList()
 ) {
     // Derived properties
     val currentLocation: LocationDto?
@@ -197,7 +209,11 @@ class AdventureViewModel(
             showMapSelection = local.showMapSelection,
             teleportDestinations = local.teleportDestinations,
             teleportAbilityId = local.teleportAbilityId,
-            phasewalkDestinations = local.phasewalkDestinations
+            phasewalkDestinations = local.phasewalkDestinations,
+            showRiftSelection = local.showRiftSelection,
+            riftMode = local.riftMode,
+            unconnectedAreas = local.unconnectedAreas,
+            sealableRifts = local.sealableRifts
         )
     }.stateIn(
         scope = scope,
@@ -267,10 +283,12 @@ class AdventureViewModel(
             // 1. Load class abilities
             val classId = currentUser?.characterClassId
             if (classId != null) {
-                ApiClient.getAbilitiesByClass(classId).onSuccess { abilities ->
+                val classResult = ApiClient.getAbilitiesByClass(classId)
+                classResult.onSuccess { abilities ->
                     classAbilities.addAll(abilities)
                 }
-                ApiClient.getCharacterClass(classId).onSuccess { characterClass ->
+                val characterClassResult = ApiClient.getCharacterClass(classId)
+                characterClassResult.onSuccess { characterClass ->
                     _localState.update { it.copy(playerCharacterClass = characterClass) }
                 }
             }
@@ -278,11 +296,14 @@ class AdventureViewModel(
             // 2. Load item abilities from equipped items
             val equippedItemIds = currentUser?.equippedItemIds ?: emptyList()
             if (equippedItemIds.isNotEmpty()) {
-                ApiClient.getItems().onSuccess { allItems ->
+                val itemsResult = ApiClient.getItems()
+                itemsResult.onSuccess { allItems ->
                     val equippedItems = allItems.filter { it.id in equippedItemIds }
                     val abilityIdsFromItems = equippedItems.flatMap { it.abilityIds }.distinct()
+                    // Fetch each ability and collect them
                     for (abilityId in abilityIdsFromItems) {
-                        ApiClient.getAbility(abilityId).onSuccess { ability ->
+                        val abilityResult = ApiClient.getAbility(abilityId)
+                        abilityResult.onSuccess { ability ->
                             if (ability != null) {
                                 itemAbilities.add(ability)
                             }
@@ -587,6 +608,16 @@ class AdventureViewModel(
             return
         }
 
+        // Handle rift abilities — works outside combat
+        if (ability.targetType == "rift_open") {
+            handleOpenRiftAbility(ability)
+            return
+        }
+        if (ability.targetType == "rift_seal") {
+            handleSealRiftAbility(ability)
+            return
+        }
+
         if (!CombatStateHolder.isInCombat) {
             // AoE abilities can initiate combat with all hostiles
             if (ability.targetType in listOf("area", "all_enemies")) {
@@ -726,6 +757,123 @@ class AdventureViewModel(
                 showMapSelection = false,
                 teleportDestinations = emptyList(),
                 teleportAbilityId = null
+            )
+        }
+    }
+
+    // =========================================================================
+    // RIFT PORTAL
+    // =========================================================================
+
+    private fun handleOpenRiftAbility(ability: AbilityDto) {
+        if (CombatStateHolder.isInCombat) {
+            showSnackbar("Cannot open rifts during combat!")
+            return
+        }
+
+        val userId = currentUser?.id ?: return
+        scope.launch {
+            ApiClient.getUnconnectedAreas(userId).onSuccess { areas ->
+                if (areas.isEmpty()) {
+                    showSnackbar("No unconnected realms to open rifts to")
+                } else {
+                    _localState.update {
+                        it.copy(
+                            showRiftSelection = true,
+                            riftMode = "open",
+                            unconnectedAreas = areas
+                        )
+                    }
+                }
+            }.onFailure {
+                showSnackbar("Failed to find realms: ${it.message}")
+            }
+        }
+    }
+
+    private fun handleSealRiftAbility(ability: AbilityDto) {
+        if (CombatStateHolder.isInCombat) {
+            showSnackbar("Cannot seal rifts during combat!")
+            return
+        }
+
+        val userId = currentUser?.id ?: return
+        scope.launch {
+            ApiClient.getSealableRifts(userId).onSuccess { rifts ->
+                if (rifts.isEmpty()) {
+                    showSnackbar("No rifts to seal at this location")
+                } else {
+                    _localState.update {
+                        it.copy(
+                            showRiftSelection = true,
+                            riftMode = "seal",
+                            sealableRifts = rifts
+                        )
+                    }
+                }
+            }.onFailure {
+                showSnackbar("Failed to find rifts: ${it.message}")
+            }
+        }
+    }
+
+    fun selectRiftToOpen(area: UnconnectedAreaDto) {
+        val userId = currentUser?.id ?: return
+
+        scope.launch {
+            _localState.update { it.copy(showRiftSelection = false) }
+
+            ApiClient.openRift(userId, area.areaId).onSuccess { response ->
+                if (response.success) {
+                    CombatStateHolder.addEventLogEntry(response.message, EventLogType.NAVIGATION)
+                    showSnackbar(response.message)
+                    // Refresh to show new exit
+                    AdventureRepository.refresh()
+                } else {
+                    showSnackbar(response.message)
+                }
+            }.onFailure {
+                showSnackbar("Failed to open rift: ${it.message}")
+            }
+
+            _localState.update {
+                it.copy(riftMode = null, unconnectedAreas = emptyList())
+            }
+        }
+    }
+
+    fun selectRiftToSeal(rift: SealableRiftDto) {
+        val userId = currentUser?.id ?: return
+
+        scope.launch {
+            _localState.update { it.copy(showRiftSelection = false) }
+
+            ApiClient.sealRift(userId, rift.targetAreaId).onSuccess { response ->
+                if (response.success) {
+                    CombatStateHolder.addEventLogEntry(response.message, EventLogType.NAVIGATION)
+                    showSnackbar(response.message)
+                    // Refresh to remove exit
+                    AdventureRepository.refresh()
+                } else {
+                    showSnackbar(response.message)
+                }
+            }.onFailure {
+                showSnackbar("Failed to seal rift: ${it.message}")
+            }
+
+            _localState.update {
+                it.copy(riftMode = null, sealableRifts = emptyList())
+            }
+        }
+    }
+
+    fun dismissRiftSelection() {
+        _localState.update {
+            it.copy(
+                showRiftSelection = false,
+                riftMode = null,
+                unconnectedAreas = emptyList(),
+                sealableRifts = emptyList()
             )
         }
     }

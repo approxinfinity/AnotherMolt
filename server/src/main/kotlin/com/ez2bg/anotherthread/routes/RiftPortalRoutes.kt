@@ -230,6 +230,141 @@ fun Route.riftPortalRoutes() {
                 targetLocation = targetLocation
             ))
         }
+
+        /**
+         * Get sealable rifts at the current location.
+         * Returns ENTER exits that lead to different areas (created by rift ring).
+         */
+        get("/sealable-rifts") {
+            val userId = call.request.header("X-User-Id")
+            if (userId == null) {
+                call.respond(HttpStatusCode.Unauthorized, mapOf("error" to "X-User-Id header required"))
+                return@get
+            }
+
+            val user = UserRepository.findById(userId)
+            if (user == null) {
+                call.respond(HttpStatusCode.NotFound, mapOf("error" to "User not found"))
+                return@get
+            }
+
+            val currentLocationId = user.currentLocationId
+            if (currentLocationId == null) {
+                call.respond(HttpStatusCode.BadRequest, mapOf("error" to "User has no current location"))
+                return@get
+            }
+
+            val currentLocation = LocationRepository.findById(currentLocationId)
+            if (currentLocation == null) {
+                call.respond(HttpStatusCode.NotFound, mapOf("error" to "Current location not found"))
+                return@get
+            }
+
+            val currentAreaId = currentLocation.areaId ?: "overworld"
+            val allLocations = LocationRepository.findAll()
+
+            // Find ENTER exits that lead to different areas
+            val sealableRifts = currentLocation.exits
+                .filter { it.direction == ExitDirection.ENTER }
+                .mapNotNull { exit ->
+                    val targetLocation = allLocations.find { it.id == exit.locationId }
+                    if (targetLocation != null && (targetLocation.areaId ?: "overworld") != currentAreaId) {
+                        mapOf(
+                            "exitLocationId" to exit.locationId,
+                            "targetAreaId" to (targetLocation.areaId ?: "overworld"),
+                            "targetAreaName" to formatAreaName(targetLocation.areaId ?: "overworld"),
+                            "targetLocationName" to targetLocation.name
+                        )
+                    } else null
+                }
+
+            call.respond(sealableRifts)
+        }
+
+        /**
+         * Seal a rift portal (remove an ENTER exit to another area).
+         */
+        post("/seal") {
+            val userId = call.request.header("X-User-Id")
+            if (userId == null) {
+                call.respond(HttpStatusCode.Unauthorized, mapOf("error" to "X-User-Id header required"))
+                return@post
+            }
+
+            val user = UserRepository.findById(userId)
+            if (user == null) {
+                call.respond(HttpStatusCode.NotFound, mapOf("error" to "User not found"))
+                return@post
+            }
+
+            val currentLocationId = user.currentLocationId
+            if (currentLocationId == null) {
+                call.respond(HttpStatusCode.BadRequest, mapOf("error" to "User has no current location"))
+                return@post
+            }
+
+            val currentLocation = LocationRepository.findById(currentLocationId)
+            if (currentLocation == null) {
+                call.respond(HttpStatusCode.NotFound, mapOf("error" to "Current location not found"))
+                return@post
+            }
+
+            // Check if user has the Rift Ring equipped
+            val hasRiftRing = user.equippedItemIds.contains(GoodmanGearSeed.RIFT_RING_ITEM_ID)
+            if (!hasRiftRing) {
+                call.respond(HttpStatusCode.Forbidden, CreateRiftResponse(
+                    success = false,
+                    message = "You need the Rift Ring equipped to seal portals"
+                ))
+                return@post
+            }
+
+            // Check mana cost (5 mana to seal)
+            if (user.currentMana < 5) {
+                call.respond(HttpStatusCode.BadRequest, CreateRiftResponse(
+                    success = false,
+                    message = "Not enough mana (need 5, have ${user.currentMana})"
+                ))
+                return@post
+            }
+
+            val request = call.receive<CreateRiftRequest>()
+            val targetAreaId = request.targetAreaId
+
+            val currentAreaId = currentLocation.areaId ?: "overworld"
+            val allLocations = LocationRepository.findAll()
+
+            // Find the ENTER exit to seal
+            val exitToSeal = currentLocation.exits.find { exit ->
+                exit.direction == ExitDirection.ENTER &&
+                    allLocations.find { it.id == exit.locationId }?.let { target ->
+                        (target.areaId ?: "overworld") == targetAreaId
+                    } == true
+            }
+
+            if (exitToSeal == null) {
+                call.respond(HttpStatusCode.NotFound, CreateRiftResponse(
+                    success = false,
+                    message = "No rift portal to ${formatAreaName(targetAreaId)} found at this location"
+                ))
+                return@post
+            }
+
+            // Deduct mana
+            UserRepository.spendMana(userId, 5)
+
+            // Remove the exit
+            val updatedExits = currentLocation.exits.filter { it != exitToSeal }
+            val updatedLocation = currentLocation.copy(exits = updatedExits)
+            LocationRepository.update(updatedLocation)
+
+            log.info("User $userId sealed rift portal from ${currentLocation.name} to $targetAreaId")
+
+            call.respond(CreateRiftResponse(
+                success = true,
+                message = "Sealed the rift portal to ${formatAreaName(targetAreaId)}. The tear in reality closes with a soft whisper."
+            ))
+        }
     }
 }
 

@@ -18,6 +18,7 @@ object GoodmanGearSeed {
     private const val DEATH_SHROUD_ITEM_ID = "item-death-shroud"
 
     const val RIFT_PORTAL_ABILITY_ID = "ability-rift-portal"
+    const val SEAL_RIFT_ABILITY_ID = "ability-seal-rift"
     const val RIFT_RING_ITEM_ID = "item-rift-ring"
 
     fun seedIfEmpty() {
@@ -142,18 +143,18 @@ object GoodmanGearSeed {
             }
         }
 
-        // 5. Seed the Rift Portal ability
+        // 5. Seed the Rift Portal ability (utility type so it shows in spellbook)
         transaction {
             val existing = AbilityRepository.findById(RIFT_PORTAL_ABILITY_ID)
             if (existing == null) {
                 AbilityRepository.create(
                     Ability(
                         id = RIFT_PORTAL_ABILITY_ID,
-                        name = "Open Rift Portal",
-                        description = "Tear open a permanent rift in space, creating a portal to another realm. The rift appears as a shimmering tear in reality and remains as a permanent exit from this location.",
+                        name = "Open Rift",
+                        description = "Tear open a permanent rift in space, creating a portal to another realm. The rift appears as a shimmering tear in reality and remains as a permanent exit from this location. Costs 10 mana.",
                         classId = null,
-                        abilityType = "rift_portal",  // Special type for opening rifts between maps
-                        targetType = "self",
+                        abilityType = "utility",  // Shows in spellbook
+                        targetType = "rift_open",  // Custom target type for rift UI
                         range = 0,
                         cooldownType = "none",
                         cooldownRounds = 0,
@@ -165,11 +166,48 @@ object GoodmanGearSeed {
                         imageUrl = "icon:blur_on"
                     )
                 )
-                log.info("Created Rift Portal ability")
+                log.info("Created Open Rift ability")
+            } else if (existing.abilityType != "utility" || existing.manaCost != 10) {
+                // Fix existing ability
+                AbilityRepository.update(existing.copy(
+                    name = "Open Rift",
+                    abilityType = "utility",
+                    targetType = "rift_open",
+                    manaCost = 10,
+                    staminaCost = 0
+                ))
+                log.info("Fixed Open Rift ability type and costs")
             }
         }
 
-        // 6. Seed the Rift Ring item
+        // 5b. Seed the Seal Rift ability
+        transaction {
+            val existing = AbilityRepository.findById(SEAL_RIFT_ABILITY_ID)
+            if (existing == null) {
+                AbilityRepository.create(
+                    Ability(
+                        id = SEAL_RIFT_ABILITY_ID,
+                        name = "Seal Rift",
+                        description = "Close a rift portal, removing the entrance to another realm from this location. Only works on ENTER exits that lead to different areas. Costs 5 mana.",
+                        classId = null,
+                        abilityType = "utility",  // Shows in spellbook
+                        targetType = "rift_seal",  // Custom target type for seal UI
+                        range = 0,
+                        cooldownType = "none",
+                        cooldownRounds = 0,
+                        baseDamage = 0,
+                        durationRounds = 0,
+                        manaCost = 5,
+                        staminaCost = 0,
+                        effects = """["seal_rift"]""",
+                        imageUrl = "icon:blur_off"
+                    )
+                )
+                log.info("Created Seal Rift ability")
+            }
+        }
+
+        // 6. Seed the Rift Ring item (with both Open and Seal abilities)
         val riftRingCreated = transaction {
             val existing = ItemRepository.findById(RIFT_RING_ITEM_ID)
             if (existing == null) {
@@ -177,9 +215,9 @@ object GoodmanGearSeed {
                     Item(
                         id = RIFT_RING_ITEM_ID,
                         name = "Rift Ring",
-                        desc = "A band of dark metal set with a gemstone that contains a swirling fragment of the void between worlds. When activated, the wearer can tear open permanent portals to unconnected realms, allowing travel between distant places.",
+                        desc = "A band of dark metal set with a gemstone that contains a swirling fragment of the void between worlds. When activated, the wearer can tear open permanent portals to unconnected realms, or seal existing rifts.",
                         featureIds = emptyList(),
-                        abilityIds = listOf(RIFT_PORTAL_ABILITY_ID),
+                        abilityIds = listOf(RIFT_PORTAL_ABILITY_ID, SEAL_RIFT_ABILITY_ID),
                         equipmentType = "accessory",
                         equipmentSlot = "finger",
                         statBonuses = StatBonuses(attack = 0, defense = 0, maxHp = 0),
@@ -188,6 +226,14 @@ object GoodmanGearSeed {
                 )
                 log.info("Created Rift Ring item")
                 true
+            } else if (SEAL_RIFT_ABILITY_ID !in existing.abilityIds) {
+                // Update existing ring to include Seal Rift
+                ItemRepository.update(existing.copy(
+                    abilityIds = listOf(RIFT_PORTAL_ABILITY_ID, SEAL_RIFT_ABILITY_ID),
+                    desc = "A band of dark metal set with a gemstone that contains a swirling fragment of the void between worlds. When activated, the wearer can tear open permanent portals to unconnected realms, or seal existing rifts."
+                ))
+                log.info("Updated Rift Ring with Seal Rift ability")
+                false
             } else {
                 false
             }

@@ -291,6 +291,34 @@ data class PhasewalkResponseDto(
 )
 
 @Serializable
+data class UnconnectedAreaDto(
+    val areaId: String,
+    val name: String,
+    val locationCount: Int,
+    val entryLocationId: String? = null,
+    val entryLocationName: String? = null
+)
+
+@Serializable
+data class SealableRiftDto(
+    val exitLocationId: String,
+    val targetAreaId: String,
+    val targetAreaName: String,
+    val targetLocationName: String
+)
+
+@Serializable
+data class CreateRiftRequestDto(
+    val targetAreaId: String
+)
+
+@Serializable
+data class CreateRiftResponseDto(
+    val success: Boolean,
+    val message: String
+)
+
+@Serializable
 data class RegisterRequest(
     val name: String,
     val password: String
@@ -1152,6 +1180,38 @@ object ApiClient {
         client.post("$baseUrl/phasewalk") {
             contentType(ContentType.Application.Json)
             setBody(PhasewalkRequestDto(userId = userId, direction = direction))
+        }.body()
+    }
+
+    // =========================================================================
+    // RIFT PORTAL
+    // =========================================================================
+
+    suspend fun getUnconnectedAreas(userId: String): Result<List<UnconnectedAreaDto>> = runCatching {
+        client.get("$baseUrl/rift-portal/unconnected-areas") {
+            header("X-User-Id", userId)
+        }.body()
+    }
+
+    suspend fun getSealableRifts(userId: String): Result<List<SealableRiftDto>> = runCatching {
+        client.get("$baseUrl/rift-portal/sealable-rifts") {
+            header("X-User-Id", userId)
+        }.body()
+    }
+
+    suspend fun openRift(userId: String, targetAreaId: String): Result<CreateRiftResponseDto> = runCatching {
+        client.post("$baseUrl/rift-portal/create") {
+            header("X-User-Id", userId)
+            contentType(ContentType.Application.Json)
+            setBody(CreateRiftRequestDto(targetAreaId = targetAreaId))
+        }.body()
+    }
+
+    suspend fun sealRift(userId: String, targetAreaId: String): Result<CreateRiftResponseDto> = runCatching {
+        client.post("$baseUrl/rift-portal/seal") {
+            header("X-User-Id", userId)
+            contentType(ContentType.Application.Json)
+            setBody(CreateRiftRequestDto(targetAreaId = targetAreaId))
         }.body()
     }
 

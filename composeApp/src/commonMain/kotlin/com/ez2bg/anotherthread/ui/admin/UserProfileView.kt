@@ -633,12 +633,16 @@ fun UserProfileView(
                         )
                     }
 
-                    // Collapsed summary: comma-delimited list of items with slots
+                    // Collapsed summary: comma-delimited list of items with slots (only for equipped)
                     if (!inventoryExpanded) {
                         val summaryText = inventoryItems.joinToString(", ") { item ->
-                            val slotSuffix = item.equipmentSlot?.let { slot ->
-                                " (${slot.replace("_", " ")})"
-                            } ?: ""
+                            // Only show slot suffix for equipped items
+                            val isEquipped = item.id in equippedItemIds
+                            val slotSuffix = if (isEquipped) {
+                                item.equipmentSlot?.let { slot ->
+                                    " (${slot.replace("_", " ")})"
+                                } ?: ""
+                            } else ""
                             "${item.name}$slotSuffix"
                         }
                         Spacer(modifier = Modifier.height(8.dp))
