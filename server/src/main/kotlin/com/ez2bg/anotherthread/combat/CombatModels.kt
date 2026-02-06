@@ -65,7 +65,8 @@ data class Combatant(
     val accuracy: Int = 0,                    // Bonus to hit chance
     val evasion: Int = 0,                     // Bonus to avoid attacks
     val critBonus: Int = 0,                   // Bonus to critical hit chance
-    val baseDamage: Int = 5                   // Base damage for auto-attacks
+    val baseDamage: Int = 5,                  // Base damage for auto-attacks
+    val armor: Int = 0                        // Damage reduction (flat amount subtracted from incoming damage)
 )
 
 /**

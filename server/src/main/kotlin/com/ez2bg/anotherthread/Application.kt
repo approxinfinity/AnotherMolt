@@ -1042,6 +1042,9 @@ fun Application.module() {
     // Seed character classes and abilities if empty
     ClassAbilitySeed.seedIfEmpty()
 
+    // Seed universal abilities (basic attack, etc.)
+    UniversalAbilitySeed.seedIfEmpty()
+
     // Seed weapon abilities for existing items
     WeaponAbilitySeed.seedWeaponAbilities()
 

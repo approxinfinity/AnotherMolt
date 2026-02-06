@@ -177,7 +177,9 @@ data class UserDto(
     val attributesGeneratedAt: Long? = null,
     // Economy and equipment
     val gold: Int = 0,
-    val equippedItemIds: List<String> = emptyList()
+    val equippedItemIds: List<String> = emptyList(),
+    // Generated appearance based on equipment
+    val appearanceDescription: String = ""
 )
 
 @Serializable

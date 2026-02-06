@@ -172,6 +172,16 @@ object AbilityRepository {
             .map { it.toAbility() }
     }
 
+    /**
+     * Find all universal abilities (classId is null).
+     * These are available to all players regardless of class.
+     */
+    fun findUniversal(): List<Ability> = transaction {
+        AbilityTable.selectAll()
+            .where { AbilityTable.classId.isNull() }
+            .map { it.toAbility() }
+    }
+
     fun findByType(abilityType: String): List<Ability> = transaction {
         AbilityTable.selectAll()
             .where { AbilityTable.abilityType eq abilityType }

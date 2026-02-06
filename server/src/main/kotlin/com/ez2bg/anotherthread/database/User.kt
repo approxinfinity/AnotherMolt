@@ -86,7 +86,9 @@ data class UserResponse(
     val attributesGeneratedAt: Long?,
     // Economy and equipment
     val gold: Int,
-    val equippedItemIds: List<String>
+    val equippedItemIds: List<String>,
+    // Generated appearance description based on equipment
+    val appearanceDescription: String
 )
 
 fun User.toResponse(): UserResponse = UserResponse(
@@ -119,7 +121,8 @@ fun User.toResponse(): UserResponse = UserResponse(
     attributeQualityBonus = attributeQualityBonus,
     attributesGeneratedAt = attributesGeneratedAt,
     gold = gold,
-    equippedItemIds = equippedItemIds
+    equippedItemIds = equippedItemIds,
+    appearanceDescription = UserRepository.generateAppearanceDescription(this)
 )
 
 object UserRepository {
@@ -640,5 +643,56 @@ object UserRepository {
 
     fun verifyPassword(password: String, hash: String): Boolean {
         return BCrypt.verifyer().verify(password.toCharArray(), hash).verified
+    }
+
+    /**
+     * Generate an appearance description based on equipped items.
+     * Returns a phrase like "heavily armored" or "lightly equipped" based on equipment.
+     */
+    fun generateAppearanceDescription(user: User): String {
+        val equippedItems = user.equippedItemIds.mapNotNull { ItemRepository.findById(it) }
+        if (equippedItems.isEmpty()) return "unarmed and unarmored"
+
+        val descriptors = mutableListOf<String>()
+
+        // Check for weapons
+        val weapons = equippedItems.filter { it.equipmentType == "weapon" }
+        val mainHand = weapons.find { it.equipmentSlot == "main_hand" }
+        val offHand = weapons.find { it.equipmentSlot == "off_hand" }
+
+        when {
+            mainHand != null && offHand != null -> descriptors.add("dual-wielding")
+            mainHand != null -> descriptors.add("armed with ${mainHand.name.lowercase()}")
+            offHand != null -> descriptors.add("carrying ${offHand.name.lowercase()}")
+        }
+
+        // Check for armor pieces
+        val armorPieces = equippedItems.filter { it.equipmentType == "armor" }
+        val armorSlots = armorPieces.mapNotNull { it.equipmentSlot }.toSet()
+        val totalDefense = armorPieces.sumOf { it.statBonuses?.defense ?: 0 }
+
+        val armorDescription = when {
+            armorSlots.containsAll(listOf("head", "chest", "legs", "feet")) -> "fully armored"
+            totalDefense >= 15 -> "heavily armored"
+            totalDefense >= 10 -> "well-armored"
+            totalDefense >= 5 -> "lightly armored"
+            armorSlots.contains("chest") -> "wearing ${armorPieces.find { it.equipmentSlot == "chest" }?.name?.lowercase() ?: "armor"}"
+            armorPieces.isNotEmpty() -> "partially armored"
+            else -> null
+        }
+        if (armorDescription != null) descriptors.add(armorDescription)
+
+        // Check for accessories
+        val accessories = equippedItems.filter { it.equipmentType == "accessory" }
+        if (accessories.isNotEmpty()) {
+            val accessoryNames = accessories.take(2).joinToString(" and ") { it.name.lowercase() }
+            descriptors.add("adorned with $accessoryNames")
+        }
+
+        return if (descriptors.isEmpty()) {
+            "minimally equipped"
+        } else {
+            descriptors.joinToString(", ")
+        }
     }
 }

@@ -984,6 +984,13 @@ object CombatService {
                 log.debug("Shield absorbed $absorbed damage, $remainingShield shield remaining")
             }
 
+            // Apply armor damage reduction (flat reduction, after shield)
+            if (actualDamage > 0 && target.armor > 0) {
+                val armorReduction = minOf(target.armor, actualDamage - 1) // Always deal at least 1 damage
+                actualDamage -= armorReduction
+                log.debug("Armor reduced damage by $armorReduction (${target.armor} armor)")
+            }
+
             // Process reflect (applies to original damage, not post-shield)
             val reflectEffect = target.statusEffects.find { it.effectType == "reflect" }
             if (reflectEffect != null && result.damage > 0) {
@@ -1693,6 +1700,9 @@ object CombatService {
         val playerCritBonus = UserRepository.calculateCritBonus(this)
         val playerBaseDamage = UserRepository.calculateBaseDamage(this, equipAttack)
 
+        // Get universal abilities (classId is null) that all players have
+        val universalAbilities = AbilityRepository.findUniversal().map { it.id }
+
         return Combatant(
             id = id,
             type = CombatantType.PLAYER,
@@ -1704,13 +1714,14 @@ object CombatService {
             maxStamina = maxStamina,
             currentStamina = currentStamina,
             characterClassId = characterClassId,
-            abilityIds = classAbilities,
+            abilityIds = classAbilities + universalAbilities,
             initiative = CombatRng.rollD20() + UserRepository.attributeModifier(dexterity),
             level = level,
             accuracy = playerAccuracy,
             evasion = playerEvasion,
             critBonus = playerCritBonus,
-            baseDamage = playerBaseDamage
+            baseDamage = playerBaseDamage,
+            armor = equipDefense  // Equipment defense now provides damage reduction
         )
     }
 
