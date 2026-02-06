@@ -16,6 +16,17 @@ import org.slf4j.LoggerFactory
 import java.util.concurrent.ConcurrentHashMap
 
 /**
+ * Configuration for death mechanics.
+ */
+object DeathConfig {
+    /** If true, items are dropped at death location. If false, player keeps all items. */
+    var itemsDropOnDeath: Boolean = false
+
+    /** If true, gold is lost on death. If false, player keeps all gold. */
+    var goldLostOnDeath: Boolean = false
+}
+
+/**
  * CombatService manages all active combat sessions and the combat tick loop.
  *
  * MajorMUD-style combat flow:
@@ -1656,12 +1667,15 @@ object CombatService {
     }
 
     /**
-     * Handle player death: drop all items at the death location and respawn at Home.
+     * Handle player death: optionally drop items at death location and respawn at Tun du Lac.
+     * Item/gold dropping is controlled by DeathConfig flags.
      */
     private suspend fun handlePlayerDeath(session: CombatSession) {
-        val homeLocation = LocationRepository.findByCoordinates(0, 0, "overworld")
-        if (homeLocation == null) {
-            log.error("Cannot respawn players - Home location at (0,0) not found!")
+        // Respawn at Tun du Lac (the starting town)
+        val respawnLocation = LocationRepository.findById(TunDuLacSeed.TUN_DU_LAC_OVERWORLD_ID)
+            ?: LocationRepository.findByCoordinates(0, 0, "overworld")
+        if (respawnLocation == null) {
+            log.error("Cannot respawn players - Tun du Lac location not found!")
             return
         }
 
@@ -1671,26 +1685,33 @@ object CombatService {
             // Get the player's death location
             val deathLocationId = user.currentLocationId
             val deathLocation = deathLocationId?.let { LocationRepository.findById(it) }
-            val droppedItemIds = user.itemIds.toList()
-            val droppedGold = user.gold
 
-            // Drop items at the death location
-            if (droppedItemIds.isNotEmpty() && deathLocationId != null) {
-                LocationRepository.addItems(deathLocationId, droppedItemIds)
-                log.info("Player ${user.name} dropped ${droppedItemIds.size} items at location $deathLocationId")
+            var itemsDropped = 0
+            var goldLost = 0
+
+            // Only drop items if config flag is enabled
+            if (DeathConfig.itemsDropOnDeath) {
+                val droppedItemIds = user.itemIds.toList()
+                if (droppedItemIds.isNotEmpty() && deathLocationId != null) {
+                    LocationRepository.addItems(deathLocationId, droppedItemIds)
+                    log.info("Player ${user.name} dropped ${droppedItemIds.size} items at location $deathLocationId")
+                }
+                // Clear inventory (also clears equipped items)
+                UserRepository.clearInventory(playerCombatant.id)
+                itemsDropped = droppedItemIds.size
             }
 
-            // Clear inventory (also clears equipped items)
-            UserRepository.clearInventory(playerCombatant.id)
-
-            // Clear gold
-            if (droppedGold > 0) {
-                UserRepository.addGold(playerCombatant.id, -droppedGold)
-                log.info("Player ${user.name} lost $droppedGold gold")
+            // Only lose gold if config flag is enabled
+            if (DeathConfig.goldLostOnDeath) {
+                goldLost = user.gold
+                if (goldLost > 0) {
+                    UserRepository.addGold(playerCombatant.id, -goldLost)
+                    log.info("Player ${user.name} lost $goldLost gold")
+                }
             }
 
-            // Respawn at Home with full HP
-            UserRepository.updateCurrentLocation(playerCombatant.id, homeLocation.id)
+            // Respawn at Tun du Lac with full HP
+            UserRepository.updateCurrentLocation(playerCombatant.id, respawnLocation.id)
             UserRepository.healToFull(playerCombatant.id)
             UserRepository.updateCombatState(playerCombatant.id, user.maxHp, null)
             playerSessions.remove(playerCombatant.id)
@@ -1701,13 +1722,13 @@ object CombatService {
                 playerName = user.name,
                 deathLocationId = deathLocationId,
                 deathLocationName = deathLocation?.name,
-                respawnLocationId = homeLocation.id,
-                respawnLocationName = homeLocation.name,
-                itemsDropped = droppedItemIds.size,
-                goldLost = droppedGold
+                respawnLocationId = respawnLocation.id,
+                respawnLocationName = respawnLocation.name,
+                itemsDropped = itemsDropped,
+                goldLost = goldLost
             ))
 
-            log.info("Player ${user.name} died and respawned at ${homeLocation.name}")
+            log.info("Player ${user.name} died and respawned at ${respawnLocation.name}")
         }
     }
 
