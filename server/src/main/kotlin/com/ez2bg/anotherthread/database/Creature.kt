@@ -30,7 +30,8 @@ data class Creature(
     // Loot fields
     val lootTableId: String? = null,
     val minGoldDrop: Int = 0,
-    val maxGoldDrop: Int = 0
+    val maxGoldDrop: Int = 0,
+    val attribution: String? = null  // Content attribution source
 )
 
 object CreatureRepository {
@@ -65,7 +66,8 @@ object CreatureRepository {
         isAggressive = this[CreatureTable.isAggressive],
         lootTableId = this[CreatureTable.lootTableId],
         minGoldDrop = this[CreatureTable.minGoldDrop],
-        maxGoldDrop = this[CreatureTable.maxGoldDrop]
+        maxGoldDrop = this[CreatureTable.maxGoldDrop],
+        attribution = this[CreatureTable.attribution]
     )
 
     fun create(creature: Creature): Creature = transaction {
@@ -87,6 +89,7 @@ object CreatureRepository {
             it[lootTableId] = creature.lootTableId
             it[minGoldDrop] = creature.minGoldDrop
             it[maxGoldDrop] = creature.maxGoldDrop
+            it[attribution] = creature.attribution
         }
         creature
     }
@@ -120,6 +123,7 @@ object CreatureRepository {
             it[lootTableId] = creature.lootTableId
             it[minGoldDrop] = creature.minGoldDrop
             it[maxGoldDrop] = creature.maxGoldDrop
+            it[attribution] = creature.attribution
         } > 0
     }
 

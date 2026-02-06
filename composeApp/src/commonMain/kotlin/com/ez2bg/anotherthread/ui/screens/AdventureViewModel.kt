@@ -555,7 +555,9 @@ class AdventureViewModel(
 
         scope.launch {
             ApiClient.pickupItem(userId, item.id, locationId).onSuccess { updatedUser ->
-                showSnackbar("Picked up ${item.name}")
+                // Log pickup to event log with player name
+                val playerName = currentUser?.name ?: "You"
+                CombatStateHolder.addEventLogEntry("$playerName picked up ${item.name}", EventLogType.LOOT)
                 // Update user state with new inventory
                 UserStateHolder.updateUser(updatedUser)
                 // Refresh the location data to reflect item removal

@@ -45,7 +45,7 @@ data class User(
     val attributeQualityBonus: Int = 0,
     val attributesGeneratedAt: Long? = null,
     // Economy and equipment
-    val gold: Int = 0,
+    val gold: Int = 50,  // Starting gold for new characters
     val equippedItemIds: List<String> = emptyList()
 )
 
@@ -379,6 +379,40 @@ object UserRepository {
 
     fun delete(id: String): Boolean = transaction {
         UserTable.deleteWhere { UserTable.id eq id } > 0
+    }
+
+    /**
+     * Ensure all users have at least the specified minimum gold.
+     * Returns the number of users who received gold.
+     */
+    fun ensureMinimumGold(minimumGold: Int): Int = transaction {
+        val users = findAll()
+        var count = 0
+        users.filter { it.gold < minimumGold }.forEach { user ->
+            val needed = minimumGold - user.gold
+            UserTable.update({ UserTable.id eq user.id }) {
+                it[gold] = minimumGold
+            }
+            count++
+        }
+        count
+    }
+
+    /**
+     * Ensure all users have a starting location.
+     * Users without a currentLocationId are assigned the default starting location.
+     * Returns the number of users who were assigned a location.
+     */
+    fun ensureStartingLocation(defaultLocationId: String): Int = transaction {
+        val users = findAll()
+        var count = 0
+        users.filter { it.currentLocationId == null }.forEach { user ->
+            UserTable.update({ UserTable.id eq user.id }) {
+                it[currentLocationId] = defaultLocationId
+            }
+            count++
+        }
+        count
     }
 
     /**

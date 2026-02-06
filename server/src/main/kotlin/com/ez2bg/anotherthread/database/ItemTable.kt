@@ -3,7 +3,7 @@ package com.ez2bg.anotherthread.database
 import org.jetbrains.exposed.sql.Table
 
 object ItemTable : Table("item") {
-    val id = varchar("id", 36)
+    val id = varchar("id", 64)  // Extended for readable IDs
     val name = text("name")
     val desc = text("desc")
     val featureIds = text("feature_ids")
@@ -15,6 +15,7 @@ object ItemTable : Table("item") {
     val equipmentSlot = text("equipment_slot").nullable()  // "main_hand", "off_hand", "head", "chest", "legs", "feet", "ring", "amulet"
     val statBonuses = text("stat_bonuses").nullable()  // JSON: {"attack": 5, "defense": 3, "maxHp": 10}
     val value = integer("value").default(0)  // Gold value
+    val attribution = text("attribution").nullable()  // Content attribution source
 
     override val primaryKey = PrimaryKey(id)
 }

@@ -21,6 +21,25 @@ data class ShopActionResponse(
     val user: UserResponse? = null
 )
 
+/**
+ * Calculate charisma-based discount percentage.
+ * Each point of CHA modifier (above 10) gives 3% discount, max 20%.
+ * Low charisma doesn't penalize (minimum 0% discount).
+ */
+private fun calculateCharismaDiscount(charisma: Int): Int {
+    val modifier = (charisma - 10) / 2
+    return (modifier * 3).coerceIn(0, 20)  // 0-20% discount
+}
+
+/**
+ * Apply charisma discount to a price.
+ */
+private fun applyCharismaDiscount(basePrice: Int, charisma: Int): Int {
+    val discountPercent = calculateCharismaDiscount(charisma)
+    val discount = (basePrice * discountPercent) / 100
+    return (basePrice - discount).coerceAtLeast(1)  // Minimum 1g
+}
+
 fun Route.shopRoutes() {
     route("/shop") {
         // Buy an item from a shop location
@@ -29,6 +48,10 @@ fun Route.shopRoutes() {
                 ?: return@post call.respond(HttpStatusCode.BadRequest, ShopActionResponse(false, "Missing location ID"))
 
             val request = call.receive<BuyItemRequest>()
+
+            // Get the user first (needed for charisma discount)
+            val user = UserRepository.findById(request.userId)
+                ?: return@post call.respond(HttpStatusCode.NotFound, ShopActionResponse(false, "User not found"))
 
             // Validate location exists and has the item
             val location = LocationRepository.findById(locationId)
@@ -46,20 +69,30 @@ fun Route.shopRoutes() {
                 return@post call.respond(HttpStatusCode.BadRequest, ShopActionResponse(false, "Item is not for sale"))
             }
 
+            // Calculate price with charisma discount
+            val basePrice = item.value
+            val finalPrice = applyCharismaDiscount(basePrice, user.charisma)
+            val savings = basePrice - finalPrice
+
             // Spend gold
-            val goldSpent = UserRepository.spendGold(request.userId, item.value)
+            val goldSpent = UserRepository.spendGold(request.userId, finalPrice)
             if (!goldSpent) {
-                return@post call.respond(HttpStatusCode.BadRequest, ShopActionResponse(false, "Not enough gold (need ${item.value}g)"))
+                return@post call.respond(HttpStatusCode.BadRequest, ShopActionResponse(false, "Not enough gold (need ${finalPrice}g)"))
             }
 
             // Give item to user
             UserRepository.addItems(request.userId, listOf(request.itemId))
 
-            // Return updated user
+            // Return updated user with purchase message
             val updatedUser = UserRepository.findById(request.userId)
+            val message = if (savings > 0) {
+                "Purchased ${item.name} for ${finalPrice}g (saved ${savings}g with your charm!)"
+            } else {
+                "Purchased ${item.name} for ${finalPrice}g"
+            }
             call.respond(ShopActionResponse(
                 success = true,
-                message = "Purchased ${item.name} for ${item.value}g",
+                message = message,
                 user = updatedUser?.toResponse()
             ))
         }

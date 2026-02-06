@@ -17,6 +17,9 @@ object GoodmanGearSeed {
     private const val PHASEWALK_ABILITY_ID = "ability-phasewalk"
     private const val DEATH_SHROUD_ITEM_ID = "item-death-shroud"
 
+    const val RIFT_PORTAL_ABILITY_ID = "ability-rift-portal"
+    const val RIFT_RING_ITEM_ID = "item-rift-ring"
+
     fun seedIfEmpty() {
         log.info("Checking Goodman's special gear seed...")
 
@@ -135,6 +138,92 @@ object GoodmanGearSeed {
                     }
                 } catch (e: Exception) {
                     log.warn("Stable Diffusion unavailable for Death Shroud image: ${e.message}")
+                }
+            }
+        }
+
+        // 5. Seed the Rift Portal ability
+        transaction {
+            val existing = AbilityRepository.findById(RIFT_PORTAL_ABILITY_ID)
+            if (existing == null) {
+                AbilityRepository.create(
+                    Ability(
+                        id = RIFT_PORTAL_ABILITY_ID,
+                        name = "Open Rift Portal",
+                        description = "Tear open a permanent rift in space, creating a portal to another realm. The rift appears as a shimmering tear in reality and remains as a permanent exit from this location.",
+                        classId = null,
+                        abilityType = "rift_portal",  // Special type for opening rifts between maps
+                        targetType = "self",
+                        range = 0,
+                        cooldownType = "none",
+                        cooldownRounds = 0,
+                        baseDamage = 0,
+                        durationRounds = 0,
+                        manaCost = 10,
+                        staminaCost = 0,
+                        effects = """["rift_portal"]""",
+                        imageUrl = "icon:blur_on"
+                    )
+                )
+                log.info("Created Rift Portal ability")
+            }
+        }
+
+        // 6. Seed the Rift Ring item
+        val riftRingCreated = transaction {
+            val existing = ItemRepository.findById(RIFT_RING_ITEM_ID)
+            if (existing == null) {
+                ItemRepository.create(
+                    Item(
+                        id = RIFT_RING_ITEM_ID,
+                        name = "Rift Ring",
+                        desc = "A band of dark metal set with a gemstone that contains a swirling fragment of the void between worlds. When activated, the wearer can tear open permanent portals to unconnected realms, allowing travel between distant places.",
+                        featureIds = emptyList(),
+                        abilityIds = listOf(RIFT_PORTAL_ABILITY_ID),
+                        equipmentType = "accessory",
+                        equipmentSlot = "finger",
+                        statBonuses = StatBonuses(attack = 0, defense = 0, maxHp = 0),
+                        value = 0
+                    )
+                )
+                log.info("Created Rift Ring item")
+                true
+            } else {
+                false
+            }
+        }
+
+        // 7. Give Rift Ring to user "goodman"
+        if (userId != null) {
+            val needsRiftRing = transaction {
+                val user = UserRepository.findById(userId)!!
+                RIFT_RING_ITEM_ID !in user.itemIds
+            }
+            if (needsRiftRing) {
+                UserRepository.addItems(userId, listOf(RIFT_RING_ITEM_ID))
+                log.info("Added Rift Ring to goodman's inventory")
+            }
+        }
+
+        // 8. Generate Rift Ring image
+        if (riftRingCreated) {
+            runBlocking {
+                try {
+                    ImageGenerationService.generateImage(
+                        entityType = "item",
+                        entityId = RIFT_RING_ITEM_ID,
+                        description = "A dark metal ring with a gemstone containing swirling purple void energy, dimensional rift ring, fantasy RPG jewelry, arcane power, portal magic, cosmic energy, dark fantasy, ornate band",
+                        entityName = "Rift Ring"
+                    ).onSuccess { imageUrl ->
+                        transaction {
+                            ItemRepository.updateImageUrl(RIFT_RING_ITEM_ID, imageUrl)
+                        }
+                        log.info("Generated image for Rift Ring: $imageUrl")
+                    }.onFailure { error ->
+                        log.warn("Failed to generate Rift Ring image: ${error.message}")
+                    }
+                } catch (e: Exception) {
+                    log.warn("Stable Diffusion unavailable for Rift Ring image: ${e.message}")
                 }
             }
         }

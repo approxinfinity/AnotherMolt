@@ -3,7 +3,7 @@ package com.ez2bg.anotherthread.database
 import org.jetbrains.exposed.sql.Table
 
 object CreatureTable : Table("creature") {
-    val id = varchar("id", 36)
+    val id = varchar("id", 64)  // Extended for readable IDs
     val name = text("name")
     val desc = text("desc")
     val itemIds = text("item_ids")
@@ -22,6 +22,7 @@ object CreatureTable : Table("creature") {
     val lootTableId = varchar("loot_table_id", 36).nullable()
     val minGoldDrop = integer("min_gold_drop").default(0)
     val maxGoldDrop = integer("max_gold_drop").default(0)
+    val attribution = text("attribution").nullable()  // Content attribution source
 
     override val primaryKey = PrimaryKey(id)
 }

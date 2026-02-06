@@ -24,7 +24,12 @@ fun Route.itemRoutes() {
             val item = Item(
                 name = request.name,
                 desc = request.desc,
-                featureIds = request.featureIds
+                featureIds = request.featureIds,
+                abilityIds = request.abilityIds,
+                equipmentType = request.equipmentType,
+                equipmentSlot = request.equipmentSlot,
+                statBonuses = request.statBonuses,
+                value = request.value
             )
             val createdItem = ItemRepository.create(item)
 
@@ -71,8 +76,13 @@ fun Route.itemRoutes() {
                 name = request.name,
                 desc = request.desc,
                 featureIds = request.featureIds,
+                abilityIds = request.abilityIds,
                 imageUrl = existingItem?.imageUrl,
-                lockedBy = existingItem?.lockedBy // Preserve lock status
+                lockedBy = existingItem?.lockedBy, // Preserve lock status
+                equipmentType = request.equipmentType,
+                equipmentSlot = request.equipmentSlot,
+                statBonuses = request.statBonuses,
+                value = request.value
             )
 
             if (ItemRepository.update(item)) {

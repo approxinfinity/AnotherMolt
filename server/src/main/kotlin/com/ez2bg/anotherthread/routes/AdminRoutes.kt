@@ -126,6 +126,62 @@ fun Route.adminRoutes() {
         }
     }
 
+    // Classic Fantasy admin routes (D&D-inspired content)
+    route("/admin/classic-fantasy") {
+        // Trigger image generation for all Classic Fantasy entities
+        post("/generate-images") {
+            application.launch {
+                ClassicFantasySeed.generateMissingImages()
+            }
+            call.respond(HttpStatusCode.Accepted, mapOf(
+                "message" to "Image generation started for Classic Fantasy entities",
+                "note" to "Check server logs for progress"
+            ))
+        }
+    }
+
+    // Undead Crypt admin routes (D&D-inspired undead content)
+    route("/admin/undead-crypt") {
+        // Trigger image generation for all Undead Crypt entities
+        post("/generate-images") {
+            application.launch {
+                UndeadCryptSeed.generateMissingImages()
+            }
+            call.respond(HttpStatusCode.Accepted, mapOf(
+                "message" to "Image generation started for Undead Crypt entities",
+                "note" to "Check server logs for progress"
+            ))
+        }
+    }
+
+    // Elemental Chaos admin routes (D&D-inspired elemental content)
+    route("/admin/elemental-chaos") {
+        // Trigger image generation for all Elemental Chaos entities
+        post("/generate-images") {
+            application.launch {
+                ElementalChaosSeed.generateMissingImages()
+            }
+            call.respond(HttpStatusCode.Accepted, mapOf(
+                "message" to "Image generation started for Elemental Chaos entities",
+                "note" to "Check server logs for progress"
+            ))
+        }
+    }
+
+    // Classic Dungeon admin routes (iconic D&D monsters)
+    route("/admin/classic-dungeon") {
+        // Trigger image generation for all Classic Dungeon entities
+        post("/generate-images") {
+            application.launch {
+                ClassicDungeonSeed.generateMissingImages()
+            }
+            call.respond(HttpStatusCode.Accepted, mapOf(
+                "message" to "Image generation started for Classic Dungeon entities",
+                "note" to "Check server logs for progress"
+            ))
+        }
+    }
+
     // Generic image backfill - generate images for all entities missing them
     post("/admin/backfill-images") {
         application.launch {

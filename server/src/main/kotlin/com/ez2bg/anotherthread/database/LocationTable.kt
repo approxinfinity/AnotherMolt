@@ -3,7 +3,7 @@ package com.ez2bg.anotherthread.database
 import org.jetbrains.exposed.sql.Table
 
 object LocationTable : Table("location") {
-    val id = varchar("id", 36)
+    val id = varchar("id", 64)  // Extended for readable IDs like "location-classic-dungeon-mind-flayer-sanctum"
     val name = text("name")
     val desc = text("desc")
     val itemIds = text("item_ids")

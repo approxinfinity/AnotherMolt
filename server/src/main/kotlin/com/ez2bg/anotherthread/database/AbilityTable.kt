@@ -3,7 +3,7 @@ package com.ez2bg.anotherthread.database
 import org.jetbrains.exposed.sql.Table
 
 object AbilityTable : Table("ability") {
-    val id = varchar("id", 36)
+    val id = varchar("id", 64)  // Extended for readable IDs
     val name = text("name")
     val description = text("description")
     val classId = varchar("class_id", 36).nullable()
@@ -21,6 +21,7 @@ object AbilityTable : Table("ability") {
     val powerCost = integer("power_cost").default(10)            // Calculated total power cost
     val manaCost = integer("mana_cost").default(0)               // Mana cost for spells
     val staminaCost = integer("stamina_cost").default(0)         // Stamina cost for physical abilities
+    val attribution = text("attribution").nullable()             // Content attribution source
 
     override val primaryKey = PrimaryKey(id)
 }

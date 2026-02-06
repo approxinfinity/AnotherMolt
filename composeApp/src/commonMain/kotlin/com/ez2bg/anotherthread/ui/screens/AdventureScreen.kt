@@ -288,6 +288,7 @@ fun AdventureScreen(
                                 location = currentLocation,
                                 shopItems = uiState.shopItems,
                                 playerGold = uiState.playerGold,
+                                playerCharisma = currentUser?.charisma ?: 10,
                                 isInn = uiState.isInnLocation,
                                 innCost = 25,
                                 onBuyItem = { viewModel.buyItem(it.id) },
@@ -804,11 +805,26 @@ private fun LocationInfoPanel(
 // SHOP PANEL
 // =============================================================================
 
+/**
+ * Calculate charisma discount: 3% per modifier point above 10, max 20%.
+ */
+private fun calculateCharismaDiscount(charisma: Int): Int {
+    val modifier = (charisma - 10) / 2
+    return (modifier * 3).coerceIn(0, 20)
+}
+
+private fun applyCharismaDiscount(basePrice: Int, charisma: Int): Int {
+    val discountPercent = calculateCharismaDiscount(charisma)
+    val discount = (basePrice * discountPercent) / 100
+    return (basePrice - discount).coerceAtLeast(1)
+}
+
 @Composable
 private fun ShopPanel(
     location: LocationDto,
     shopItems: List<ItemDto>,
     playerGold: Int,
+    playerCharisma: Int,
     isInn: Boolean,
     innCost: Int,
     onBuyItem: (ItemDto) -> Unit,
@@ -878,14 +894,35 @@ private fun ShopPanel(
                 }
             }
         } else {
-            // Shop: item list
-            shopItems.forEach { item ->
-                ShopItemRow(
-                    item = item,
-                    canAfford = playerGold >= item.value,
-                    onBuy = { onBuyItem(item) }
+            // Show discount info if player has high charisma
+            val discountPercent = calculateCharismaDiscount(playerCharisma)
+            if (discountPercent > 0) {
+                Text(
+                    text = "Your charm grants ${discountPercent}% discount!",
+                    color = Color(0xFF81C784),
+                    fontSize = 11.sp,
+                    modifier = Modifier.padding(bottom = 4.dp)
                 )
-                Spacer(modifier = Modifier.height(4.dp))
+            }
+
+            // Shop: scrollable item list
+            val scrollState = rememberScrollState()
+            Column(
+                modifier = Modifier
+                    .heightIn(max = 300.dp)  // Limit height so it doesn't take over the screen
+                    .verticalScroll(scrollState)
+            ) {
+                shopItems.forEach { item ->
+                    val discountedPrice = applyCharismaDiscount(item.value, playerCharisma)
+                    ShopItemRow(
+                        item = item,
+                        basePrice = item.value,
+                        discountedPrice = discountedPrice,
+                        canAfford = playerGold >= discountedPrice,
+                        onBuy = { onBuyItem(item) }
+                    )
+                    Spacer(modifier = Modifier.height(4.dp))
+                }
             }
         }
     }
@@ -894,9 +931,13 @@ private fun ShopPanel(
 @Composable
 private fun ShopItemRow(
     item: ItemDto,
+    basePrice: Int,
+    discountedPrice: Int,
     canAfford: Boolean,
     onBuy: () -> Unit
 ) {
+    val hasDiscount = discountedPrice < basePrice
+
     Row(
         verticalAlignment = Alignment.CenterVertically,
         modifier = Modifier
@@ -942,12 +983,26 @@ private fun ShopItemRow(
                 .clickable(enabled = canAfford) { onBuy() }
                 .padding(horizontal = 10.dp, vertical = 6.dp)
         ) {
-            Text(
-                text = "${item.value}g",
-                color = if (canAfford) Color(0xFFFFD700) else Color.Gray,
-                fontSize = 13.sp,
-                fontWeight = FontWeight.Bold
-            )
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                if (hasDiscount) {
+                    // Show original price struck through
+                    Text(
+                        text = "${basePrice}g",
+                        color = Color.Gray,
+                        fontSize = 10.sp,
+                        textDecoration = androidx.compose.ui.text.style.TextDecoration.LineThrough,
+                        modifier = Modifier.padding(end = 4.dp)
+                    )
+                }
+                Text(
+                    text = "${discountedPrice}g",
+                    color = if (canAfford) {
+                        if (hasDiscount) Color(0xFF81C784) else Color(0xFFFFD700)
+                    } else Color.Gray,
+                    fontSize = 13.sp,
+                    fontWeight = FontWeight.Bold
+                )
+            }
         }
     }
 }

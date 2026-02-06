@@ -25,6 +25,7 @@ import com.ez2bg.anotherthread.routes.shopRoutes
 import com.ez2bg.anotherthread.routes.encounterRoutes
 import com.ez2bg.anotherthread.routes.teleportRoutes
 import com.ez2bg.anotherthread.routes.phasewalkRoutes
+import com.ez2bg.anotherthread.routes.riftPortalRoutes
 import com.ez2bg.anotherthread.routes.worldGenRoutes
 import com.ez2bg.anotherthread.spell.*
 import com.ez2bg.anotherthread.SimpleGoldBalancer
@@ -174,7 +175,12 @@ data class CreateCreatureRequest(
 data class CreateItemRequest(
     val name: String,
     val desc: String,
-    val featureIds: List<String> = emptyList()
+    val featureIds: List<String> = emptyList(),
+    val abilityIds: List<String> = emptyList(),
+    val equipmentType: String? = null,
+    val equipmentSlot: String? = null,
+    val statBonuses: StatBonuses? = null,
+    val value: Int = 0
 )
 
 @Serializable
@@ -1053,12 +1059,34 @@ fun Application.module() {
     // Seed spell categories and example utility spells
     SpellFeatureSeed.seedIfEmpty()
 
+    // Ensure existing users have starting gold
+    val usersGivenGold = UserRepository.ensureMinimumGold(100)
+    if (usersGivenGold > 0) {
+        log.info("Gave 100g to $usersGivenGold existing users who had less")
+    }
+
+    // Ensure existing users have a starting location (fallback for users with null location)
+    val usersGivenLocation = UserRepository.ensureStartingLocation(TunDuLacSeed.TUN_DU_LAC_OVERWORLD_ID)
+    if (usersGivenLocation > 0) {
+        log.info("Assigned starting location to $usersGivenLocation users who had none")
+    }
+
     // Seed Fungus Forest content (creatures, items, loot tables, chest)
     SimpleGoldBalancer.addMissingGoldDrops()
     FungusForestSeed.seedIfEmpty()
     TunDuLacSeed.seedIfEmpty()
+    ForestShopSeed.seedIfEmpty()
     WayfarerStaveSeed.seedIfEmpty()
     GoodmanGearSeed.seedIfEmpty()
+    ClassicFantasySeed.seedIfEmpty()
+    UndeadCryptSeed.seedIfEmpty()
+    ElementalChaosSeed.seedIfEmpty()
+    ClassicDungeonSeed.seedIfEmpty()
+
+    // Seed dungeon location modules (adventure modules)
+    UndeadCryptLocationsSeed.seedIfEmpty()
+    GoblinWarrenLocationsSeed.seedIfEmpty()
+    ClassicDungeonLocationsSeed.seedIfEmpty()
 
     // Auto-balance ability costs on startup
     val abilityCostBalancer = AbilityCostBalancer()
@@ -2074,6 +2102,7 @@ fun Application.module() {
         encounterRoutes()
         teleportRoutes()
         phasewalkRoutes()
+        riftPortalRoutes()
     }
 }
 

@@ -55,10 +55,11 @@ fun Route.authRoutes() {
                 return@post
             }
 
-            // Create user with hashed password
+            // Create user with hashed password and starting location
             val user = User(
                 name = request.name,
-                passwordHash = UserRepository.hashPassword(request.password)
+                passwordHash = UserRepository.hashPassword(request.password),
+                currentLocationId = TunDuLacSeed.TUN_DU_LAC_OVERWORLD_ID  // Default starting location
             )
             val createdUser = UserRepository.create(user)
 
@@ -105,6 +106,11 @@ fun Route.authRoutes() {
 
             // Update last active timestamp
             UserRepository.updateLastActiveAt(user.id)
+
+            // Ensure user has a starting location (fallback for users created before this fix)
+            if (user.currentLocationId == null) {
+                UserRepository.updateCurrentLocation(user.id, TunDuLacSeed.TUN_DU_LAC_OVERWORLD_ID)
+            }
 
             // Create session
             val session = SessionRepository.create(
@@ -400,12 +406,15 @@ fun Route.userRoutes() {
             }
 
             // Unequip any existing item in the same slot
-            val existingEquipped = user.equippedItemIds.find { equippedId ->
+            // Special case: allow 2 rings (finger slot)
+            val maxItemsInSlot = if (item.equipmentSlot == "finger") 2 else 1
+            val existingInSlot = user.equippedItemIds.filter { equippedId ->
                 ItemRepository.findById(equippedId)?.equipmentSlot == item.equipmentSlot
             }
 
-            if (existingEquipped != null) {
-                UserRepository.unequipItem(userId, existingEquipped)
+            // If we're at capacity for this slot, unequip the oldest one
+            if (existingInSlot.size >= maxItemsInSlot) {
+                UserRepository.unequipItem(userId, existingInSlot.first())
             }
 
             if (UserRepository.equipItem(userId, itemId)) {

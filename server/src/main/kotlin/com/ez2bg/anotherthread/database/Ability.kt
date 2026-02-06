@@ -28,7 +28,8 @@ data class Ability(
     val durationRounds: Int = 0,
     val powerCost: Int = 10,    // Calculated total, default to average
     val manaCost: Int = 0,      // Mana cost for spells
-    val staminaCost: Int = 0    // Stamina cost for physical abilities
+    val staminaCost: Int = 0,   // Stamina cost for physical abilities
+    val attribution: String? = null  // Content attribution source
 ) {
     /**
      * Calculate the power cost based on ability attributes.
@@ -129,7 +130,8 @@ object AbilityRepository {
         durationRounds = this[AbilityTable.durationRounds],
         powerCost = this[AbilityTable.powerCost],
         manaCost = this[AbilityTable.manaCost],
-        staminaCost = this[AbilityTable.staminaCost]
+        staminaCost = this[AbilityTable.staminaCost],
+        attribution = this[AbilityTable.attribution]
     )
 
     fun create(ability: Ability): Ability = transaction {
@@ -151,6 +153,7 @@ object AbilityRepository {
             it[powerCost] = abilityWithCost.powerCost
             it[manaCost] = abilityWithCost.manaCost
             it[staminaCost] = abilityWithCost.staminaCost
+            it[attribution] = abilityWithCost.attribution
         }
         abilityWithCost
     }
@@ -210,6 +213,7 @@ object AbilityRepository {
             it[powerCost] = abilityWithCost.powerCost
             it[manaCost] = abilityWithCost.manaCost
             it[staminaCost] = abilityWithCost.staminaCost
+            it[attribution] = abilityWithCost.attribution
         } > 0
     }
 

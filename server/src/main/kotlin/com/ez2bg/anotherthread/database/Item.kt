@@ -30,9 +30,14 @@ data class Item(
     val lockedBy: String? = null,
     // Equipment fields
     val equipmentType: String? = null,  // "weapon", "armor", "accessory", or null
-    val equipmentSlot: String? = null,  // "main_hand", "off_hand", "head", "chest", "legs", "feet", "ring", "amulet"
+    // Equipment slots (only one item per slot except finger which allows 2 rings):
+    // Weapons: "main_hand", "off_hand"
+    // Armor: "head", "chest", "legs", "feet", "hands"
+    // Accessories: "finger" (x2 rings), "amulet", "back" (cloaks), "wrists" (bracers)
+    val equipmentSlot: String? = null,
     val statBonuses: StatBonuses? = null,
-    val value: Int = 0  // Gold value
+    val value: Int = 0,  // Gold value
+    val attribution: String? = null  // Content attribution source
 )
 
 object ItemRepository {
@@ -71,7 +76,8 @@ object ItemRepository {
         equipmentType = this[ItemTable.equipmentType],
         equipmentSlot = this[ItemTable.equipmentSlot],
         statBonuses = jsonToStatBonuses(this[ItemTable.statBonuses]),
-        value = this[ItemTable.value]
+        value = this[ItemTable.value],
+        attribution = this[ItemTable.attribution]
     )
 
     fun create(item: Item): Item = transaction {
@@ -87,6 +93,7 @@ object ItemRepository {
             it[equipmentSlot] = item.equipmentSlot
             it[statBonuses] = statBonusesToJson(item.statBonuses)
             it[value] = item.value
+            it[attribution] = item.attribution
         }
         item
     }
@@ -114,6 +121,7 @@ object ItemRepository {
             it[equipmentSlot] = item.equipmentSlot
             it[statBonuses] = statBonusesToJson(item.statBonuses)
             it[value] = item.value
+            it[attribution] = item.attribution
         } > 0
     }
 
