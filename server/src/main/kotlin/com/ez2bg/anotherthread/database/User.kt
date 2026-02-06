@@ -366,6 +366,17 @@ object UserRepository {
             .map { it.toUser() }
     }
 
+    /**
+     * Find all users who have been active within the specified time window.
+     * @param withinMs Maximum milliseconds since last activity
+     */
+    fun findRecentlyActive(withinMs: Long): List<User> = transaction {
+        val cutoffTime = System.currentTimeMillis() - withinMs
+        UserTable.selectAll()
+            .where { UserTable.lastActiveAt greater cutoffTime }
+            .map { it.toUser() }
+    }
+
     fun delete(id: String): Boolean = transaction {
         UserTable.deleteWhere { UserTable.id eq id } > 0
     }

@@ -52,38 +52,8 @@ object CombatService {
     private val wanderingCreatures = mutableSetOf<String>()
     private var lastWanderTick = 0L
 
-    // Combat tick job
-    private var tickJob: Job? = null
-    private val tickScope = CoroutineScope(Dispatchers.Default + SupervisorJob())
-
-    /**
-     * Start the combat tick loop. Called once when server starts.
-     */
-    fun startTickLoop() {
-        if (tickJob?.isActive == true) return
-
-        tickJob = tickScope.launch {
-            log.info("Combat tick loop started")
-            while (isActive) {
-                try {
-                    processTick()
-                    processCreatureWandering()
-                } catch (e: Exception) {
-                    log.error("Error in combat tick: ${e.message}", e)
-                }
-                delay(CombatConfig.ROUND_DURATION_MS)
-            }
-        }
-    }
-
-    /**
-     * Stop the combat tick loop. Called on server shutdown.
-     */
-    fun stopTickLoop() {
-        tickJob?.cancel()
-        tickJob = null
-        log.info("Combat tick loop stopped")
-    }
+    // Note: Tick loop is now managed by GameTickService
+    // CombatService.processTick() and processCreatureWandering() are called from there
 
     /**
      * Register a player's WebSocket connection.
@@ -397,7 +367,11 @@ object CombatService {
     /**
      * Process a combat tick - resolve all pending actions and advance the round.
      */
-    private suspend fun processTick() = sessionMutex.withLock {
+    /**
+     * Process combat tick for all active sessions.
+     * Called by GameTickService on the global tick.
+     */
+    suspend fun processTick() = sessionMutex.withLock {
         val now = System.currentTimeMillis()
 
         for ((sessionId, session) in sessions) {
@@ -1588,7 +1562,11 @@ object CombatService {
      * Aggressive CR2+ creatures (bosses) stay put.
      * Creatures wander every 3-5 ticks (~9-15 seconds) to make the world feel alive.
      */
-    private suspend fun processCreatureWandering() {
+    /**
+     * Process creature wandering between locations.
+     * Called by GameTickService on the global tick.
+     */
+    suspend fun processCreatureWandering() {
         val now = System.currentTimeMillis()
 
         // Only wander every 3 ticks (roughly every 9 seconds)
