@@ -283,12 +283,10 @@ class AdventureViewModel(
             // 1. Load class abilities
             val classId = currentUser?.characterClassId
             if (classId != null) {
-                val classResult = ApiClient.getAbilitiesByClass(classId)
-                classResult.onSuccess { abilities ->
+                ApiClient.getAbilitiesByClass(classId).getOrNull()?.let { abilities ->
                     classAbilities.addAll(abilities)
                 }
-                val characterClassResult = ApiClient.getCharacterClass(classId)
-                characterClassResult.onSuccess { characterClass ->
+                ApiClient.getCharacterClass(classId).getOrNull()?.let { characterClass ->
                     _localState.update { it.copy(playerCharacterClass = characterClass) }
                 }
             }
@@ -296,18 +294,13 @@ class AdventureViewModel(
             // 2. Load item abilities from equipped items
             val equippedItemIds = currentUser?.equippedItemIds ?: emptyList()
             if (equippedItemIds.isNotEmpty()) {
-                val itemsResult = ApiClient.getItems()
-                itemsResult.onSuccess { allItems ->
-                    val equippedItems = allItems.filter { it.id in equippedItemIds }
-                    val abilityIdsFromItems = equippedItems.flatMap { it.abilityIds }.distinct()
-                    // Fetch each ability and collect them
-                    for (abilityId in abilityIdsFromItems) {
-                        val abilityResult = ApiClient.getAbility(abilityId)
-                        abilityResult.onSuccess { ability ->
-                            if (ability != null) {
-                                itemAbilities.add(ability)
-                            }
-                        }
+                val allItems = ApiClient.getItems().getOrNull() ?: emptyList()
+                val equippedItems = allItems.filter { it.id in equippedItemIds }
+                val abilityIdsFromItems = equippedItems.flatMap { it.abilityIds }.distinct()
+                // Fetch each ability sequentially to ensure all complete
+                for (abilityId in abilityIdsFromItems) {
+                    ApiClient.getAbility(abilityId).getOrNull()?.let { ability ->
+                        itemAbilities.add(ability)
                     }
                 }
             }
