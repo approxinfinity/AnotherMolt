@@ -17,19 +17,21 @@ object UniversalAbilitySeed {
         }
 
         // Basic melee attack - available to everyone
+        // Using "item" abilityType to preserve manual cost (combat type auto-calculates)
         AbilityRepository.create(
             Ability(
                 id = BASIC_ATTACK_ID,
                 name = "Attack",
                 description = "A basic melee attack using your equipped weapon or bare hands. Deals damage based on your strength and weapon.",
                 classId = null,  // Universal - available to all classes
-                abilityType = "combat",
+                abilityType = "item",  // Use "item" to preserve manual stamina cost
                 targetType = "single_enemy",
                 range = 5,  // Melee range
                 cooldownType = "none",
                 cooldownRounds = 0,
                 baseDamage = 0,  // Damage comes from player's baseDamage stat (calculated from STR + weapon)
                 effects = """[{"type":"damage","source":"baseDamage"}]""",
+                powerCost = 2,
                 staminaCost = 2  // Low stamina cost for basic attack
             )
         )
