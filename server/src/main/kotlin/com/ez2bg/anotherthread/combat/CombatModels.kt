@@ -66,7 +66,11 @@ data class Combatant(
     val evasion: Int = 0,                     // Bonus to avoid attacks
     val critBonus: Int = 0,                   // Bonus to critical hit chance
     val baseDamage: Int = 5,                  // Base damage for auto-attacks
-    val armor: Int = 0                        // Damage reduction (flat amount subtracted from incoming damage)
+    val armor: Int = 0,                       // Damage reduction (flat amount subtracted from incoming damage)
+    // Resource regeneration per round (stat-based)
+    val hpRegen: Int = 0,                     // HP restored per round (CON-based)
+    val manaRegen: Int = 1,                   // Mana restored per round (INT/WIS-based)
+    val staminaRegen: Int = 2                 // Stamina restored per round (CON-based)
 )
 
 /**
@@ -276,10 +280,13 @@ data class HealthUpdateMessage(
 data class ResourceUpdateMessage(
     val sessionId: String,
     val combatantId: String,
+    val currentHp: Int = 0,
+    val maxHp: Int = 0,
     val currentMana: Int,
     val maxMana: Int,
     val currentStamina: Int,
     val maxStamina: Int,
+    val hpChange: Int = 0,           // Positive = healed/regen, negative = damage
     val manaChange: Int = 0,         // Positive = restored, negative = spent
     val staminaChange: Int = 0       // Positive = restored, negative = spent
 ) : ServerCombatMessage()

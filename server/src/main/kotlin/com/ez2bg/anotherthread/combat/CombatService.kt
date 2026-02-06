@@ -1143,30 +1143,44 @@ object CombatService {
                 }
             }
 
-            // Resource regeneration for players
+            // Resource regeneration for players (stat-based)
             if (combatant.type == CombatantType.PLAYER && combatant.isAlive) {
+                val oldHp = hp
                 val oldMana = mana
                 val oldStamina = stamina
 
-                mana = (mana + CombatConfig.MANA_REGEN_PER_ROUND).coerceAtMost(combatant.maxMana)
-                stamina = (stamina + CombatConfig.STAMINA_REGEN_PER_ROUND).coerceAtMost(combatant.maxStamina)
+                // HP regen based on CON (only if positive CON modifier)
+                if (combatant.hpRegen > 0 && hp < combatant.maxHp) {
+                    hp = (hp + combatant.hpRegen).coerceAtMost(combatant.maxHp)
+                }
 
+                // Mana regen based on INT/WIS
+                mana = (mana + combatant.manaRegen).coerceAtMost(combatant.maxMana)
+
+                // Stamina regen based on CON
+                stamina = (stamina + combatant.staminaRegen).coerceAtMost(combatant.maxStamina)
+
+                val hpChange = hp - oldHp
                 val manaChange = mana - oldMana
                 val staminaChange = stamina - oldStamina
 
                 // Sync to User record immediately
-                if (manaChange > 0 || staminaChange > 0) {
-                    UserRepository.restoreMana(combatant.id, manaChange)
-                    UserRepository.restoreStamina(combatant.id, staminaChange)
+                if (hpChange > 0 || manaChange > 0 || staminaChange > 0) {
+                    if (hpChange > 0) UserRepository.heal(combatant.id, hpChange)
+                    if (manaChange > 0) UserRepository.restoreMana(combatant.id, manaChange)
+                    if (staminaChange > 0) UserRepository.restoreStamina(combatant.id, staminaChange)
 
                     // Notify clients of resource change
                     broadcastToSession(sessionId, ResourceUpdateMessage(
                         sessionId = sessionId,
                         combatantId = combatant.id,
+                        currentHp = hp,
+                        maxHp = combatant.maxHp,
                         currentMana = mana,
                         maxMana = combatant.maxMana,
                         currentStamina = stamina,
                         maxStamina = combatant.maxStamina,
+                        hpChange = hpChange,
                         manaChange = manaChange,
                         staminaChange = staminaChange
                     ))
@@ -1700,6 +1714,21 @@ object CombatService {
         val playerCritBonus = UserRepository.calculateCritBonus(this)
         val playerBaseDamage = UserRepository.calculateBaseDamage(this, equipAttack)
 
+        // Calculate resource regeneration based on stats
+        val conMod = UserRepository.attributeModifier(constitution)
+        val intMod = UserRepository.attributeModifier(intelligence)
+        val wisMod = UserRepository.attributeModifier(wisdom)
+
+        // HP regen: base 0 + CON modifier (min 0) - only positive CON gives regen
+        val hpRegenRate = conMod.coerceAtLeast(0)
+
+        // Mana regen: base 1 + higher of INT or WIS modifier (for both arcane and divine casters)
+        val spellMod = maxOf(intMod, wisMod)
+        val manaRegenRate = (1 + spellMod).coerceAtLeast(1)
+
+        // Stamina regen: base 2 + CON modifier (martial classes benefit from constitution)
+        val staminaRegenRate = (2 + conMod).coerceAtLeast(1)
+
         // Get universal abilities (classId is null) that all players have
         val universalAbilities = AbilityRepository.findUniversal().map { it.id }
 
@@ -1721,7 +1750,10 @@ object CombatService {
             evasion = playerEvasion,
             critBonus = playerCritBonus,
             baseDamage = playerBaseDamage,
-            armor = equipDefense  // Equipment defense now provides damage reduction
+            armor = equipDefense,  // Equipment defense now provides damage reduction
+            hpRegen = hpRegenRate,
+            manaRegen = manaRegenRate,
+            staminaRegen = staminaRegenRate
         )
     }
 

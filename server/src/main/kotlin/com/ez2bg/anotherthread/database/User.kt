@@ -489,6 +489,18 @@ object UserRepository {
     }
 
     /**
+     * Heal HP (capped at max)
+     */
+    fun heal(id: String, amount: Int): Boolean = transaction {
+        val user = findById(id) ?: return@transaction false
+        val newHp = (user.currentHp + amount).coerceAtMost(user.maxHp)
+        UserTable.update({ UserTable.id eq id }) {
+            it[currentHp] = newHp
+            it[lastActiveAt] = System.currentTimeMillis()
+        } > 0
+    }
+
+    /**
      * Restore mana (capped at max)
      */
     fun restoreMana(id: String, amount: Int): Boolean = transaction {
