@@ -32,6 +32,8 @@ object LocationTable : Table("location") {
     val isCoast = bool("is_coast").nullable()
     val terrainFeatures = text("terrain_features").nullable() // JSON string list
     val isOriginalTerrain = bool("is_original_terrain").nullable()
+    // Shop layout direction (VERTICAL or HORIZONTAL) - null defaults to VERTICAL
+    val shopLayoutDirection = varchar("shop_layout_direction", 20).nullable()
 
     override val primaryKey = PrimaryKey(id)
 }

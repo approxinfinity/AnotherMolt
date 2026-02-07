@@ -26,6 +26,12 @@ enum class LocationType {
     AERIAL           // Sky/aerial locations
 }
 
+// Shop layout direction for shop locations
+enum class ShopLayoutDirection {
+    VERTICAL,    // Default - items displayed in a vertical list
+    HORIZONTAL   // Items displayed in a horizontal scrolling row
+}
+
 @Serializable
 data class Exit(
     val locationId: String,
@@ -62,7 +68,9 @@ data class Location(
     val isRiver: Boolean? = null,
     val isCoast: Boolean? = null,
     val terrainFeatures: List<String>? = null,
-    val isOriginalTerrain: Boolean? = null
+    val isOriginalTerrain: Boolean? = null,
+    // Shop layout direction (default VERTICAL)
+    val shopLayoutDirection: ShopLayoutDirection? = null
 )
 
 object LocationRepository {
@@ -126,7 +134,10 @@ object LocationRepository {
         isRiver = this[LocationTable.isRiver],
         isCoast = this[LocationTable.isCoast],
         terrainFeatures = this[LocationTable.terrainFeatures]?.let { jsonToList(it) }?.ifEmpty { null },
-        isOriginalTerrain = this[LocationTable.isOriginalTerrain]
+        isOriginalTerrain = this[LocationTable.isOriginalTerrain],
+        shopLayoutDirection = this[LocationTable.shopLayoutDirection]?.let {
+            try { ShopLayoutDirection.valueOf(it) } catch (e: Exception) { null }
+        }
     )
 
     fun create(location: Location): Location = transaction {
@@ -153,6 +164,7 @@ object LocationRepository {
             it[isCoast] = location.isCoast
             it[terrainFeatures] = location.terrainFeatures?.let { listToJson(it) }
             it[isOriginalTerrain] = location.isOriginalTerrain
+            it[shopLayoutDirection] = location.shopLayoutDirection?.name
         }
         location
     }
@@ -191,6 +203,7 @@ object LocationRepository {
             it[isCoast] = location.isCoast
             it[terrainFeatures] = location.terrainFeatures?.let { listToJson(it) }
             it[isOriginalTerrain] = location.isOriginalTerrain
+            it[shopLayoutDirection] = location.shopLayoutDirection?.name
         } > 0
     }
 
