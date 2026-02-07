@@ -612,6 +612,15 @@ class AdventureViewModel(
     // =========================================================================
 
     fun pickupItem(item: ItemDto) {
+        // Block actions if player is downed (HP <= 0)
+        val playerHp = UserStateHolder.currentUser.value?.currentHp
+            ?: currentUser?.currentHp
+            ?: 0
+        if (playerHp <= 0) {
+            showSnackbar("You cannot act while incapacitated")
+            return
+        }
+
         val userId = currentUser?.id
         if (userId == null) {
             showSnackbar("Not logged in")
@@ -649,6 +658,15 @@ class AdventureViewModel(
     // =========================================================================
 
     fun handleAbilityClick(ability: AbilityDto) {
+        // Block actions if player is downed (HP <= 0)
+        val playerHp = UserStateHolder.currentUser.value?.currentHp
+            ?: currentUser?.currentHp
+            ?: 0
+        if (playerHp <= 0) {
+            showSnackbar("You cannot act while incapacitated")
+            return
+        }
+
         val state = uiState.value
 
         // Handle map_select abilities (teleport) — works outside combat

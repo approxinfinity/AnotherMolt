@@ -486,7 +486,7 @@ fun AdventureScreen(
                     modifier = Modifier.fillMaxWidth()
                 ) {
 
-                    // Player resource bars (HP/MP/SP)
+                    // Player resource bars (HP/MP/SP) and gold
                     if (!ghostMode) {
                         PlayerResourceBar(
                             currentHp = playerCombatant?.currentHp ?: displayUser?.currentHp ?: 0,
@@ -495,6 +495,7 @@ fun AdventureScreen(
                             maxMana = playerCombatant?.maxMana ?: displayUser?.maxMana ?: 0,
                             currentStamina = playerCombatant?.currentStamina ?: displayUser?.currentStamina ?: 0,
                             maxStamina = playerCombatant?.maxStamina ?: displayUser?.maxStamina ?: 0,
+                            gold = uiState.playerGold,
                             modifier = Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 4.dp)
                         )
                     }
@@ -1973,6 +1974,7 @@ private fun PlayerResourceBar(
     currentHp: Int, maxHp: Int,
     currentMana: Int, maxMana: Int,
     currentStamina: Int, maxStamina: Int,
+    gold: Int = 0,
     modifier: Modifier = Modifier
 ) {
     Row(
@@ -1984,6 +1986,21 @@ private fun PlayerResourceBar(
         ResourceMiniBar("HP", currentHp, maxHp, Color(0xFFE53935), Modifier.weight(1f))
         ResourceMiniBar("MP", currentMana, maxMana, Color(0xFF42A5F5), Modifier.weight(1f))
         ResourceMiniBar("SP", currentStamina, maxStamina, Color(0xFFFFA726), Modifier.weight(1f))
+        // Gold display
+        Box(
+            modifier = Modifier
+                .height(20.dp)
+                .background(Color(0xFF333333), RoundedCornerShape(3.dp))
+                .padding(horizontal = 8.dp),
+            contentAlignment = Alignment.Center
+        ) {
+            Text(
+                text = "$gold g",
+                color = Color(0xFFFFD700), // Gold color
+                fontSize = 10.sp,
+                fontWeight = FontWeight.Medium
+            )
+        }
     }
 }
 

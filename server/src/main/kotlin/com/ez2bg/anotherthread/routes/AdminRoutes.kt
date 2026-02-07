@@ -42,6 +42,87 @@ fun Route.adminRoutes() {
         ))
     }
 
+    // Set user level and recalculate stats (admin only)
+    post("/admin/set-level") {
+        @kotlinx.serialization.Serializable
+        data class SetLevelRequest(
+            val username: String,
+            val level: Int
+        )
+
+        @kotlinx.serialization.Serializable
+        data class SetLevelResponse(
+            val success: Boolean,
+            val username: String,
+            val level: Int,
+            val experience: Int,
+            val maxHp: Int,
+            val maxMana: Int,
+            val maxStamina: Int
+        )
+
+        val request = call.receive<SetLevelRequest>()
+        val user = UserRepository.findByName(request.username)
+
+        if (user == null) {
+            call.respond(HttpStatusCode.NotFound, mapOf("error" to "User '${request.username}' not found"))
+            return@post
+        }
+
+        // Use the new setLevel function
+        UserRepository.setLevel(user.id, request.level)
+
+        val updatedUser = UserRepository.findById(user.id)!!
+        log.info("Set ${request.username} to level ${request.level}. New stats: HP=${updatedUser.maxHp}, Mana=${updatedUser.maxMana}, Stamina=${updatedUser.maxStamina}")
+
+        call.respond(SetLevelResponse(
+            success = true,
+            username = request.username,
+            level = updatedUser.level,
+            experience = updatedUser.experience,
+            maxHp = updatedUser.maxHp,
+            maxMana = updatedUser.maxMana,
+            maxStamina = updatedUser.maxStamina
+        ))
+    }
+
+    // Set user gold (admin only)
+    post("/admin/set-gold") {
+        @kotlinx.serialization.Serializable
+        data class SetGoldRequest(
+            val username: String,
+            val gold: Int
+        )
+
+        @kotlinx.serialization.Serializable
+        data class SetGoldResponse(
+            val success: Boolean,
+            val username: String,
+            val gold: Int
+        )
+
+        val request = call.receive<SetGoldRequest>()
+        val user = UserRepository.findByName(request.username)
+
+        if (user == null) {
+            call.respond(HttpStatusCode.NotFound, mapOf("error" to "User '${request.username}' not found"))
+            return@post
+        }
+
+        // Calculate difference and use addGold
+        val difference = request.gold - user.gold
+        UserRepository.addGold(user.id, difference)
+
+        val updatedUser = UserRepository.findById(user.id)!!
+        log.info("Set ${request.username}'s gold to ${updatedUser.gold}")
+
+        call.respond(SetGoldResponse(
+            success = true,
+            username = request.username,
+            gold = updatedUser.gold
+        ))
+    }
+
     // File upload routes (admin only)
     route("/admin/files") {
         // List all uploaded files

@@ -384,6 +384,37 @@ object UserRepository {
     }
 
     /**
+     * Set a user's level directly (admin function).
+     * Updates experience to match the level and recalculates all stats.
+     */
+    fun setLevel(id: String, newLevel: Int): Boolean = transaction {
+        val user = findById(id) ?: return@transaction false
+        val characterClass = user.characterClassId?.let { CharacterClassRepository.findById(it) }
+
+        // Calculate experience needed for this level
+        val expNeeded = (newLevel - 1) * 100
+
+        // Recalculate all max resources with new level
+        val updatedUser = user.copy(level = newLevel)
+        val newMaxHp = calculateMaxHp(updatedUser, characterClass)
+        val newMaxMana = calculateMaxMana(updatedUser, characterClass)
+        val newMaxStamina = calculateMaxStamina(updatedUser, characterClass)
+
+        UserTable.update({ UserTable.id eq id }) {
+            it[experience] = expNeeded
+            it[level] = newLevel
+            it[maxHp] = newMaxHp
+            it[maxMana] = newMaxMana
+            it[maxStamina] = newMaxStamina
+            // Full restore on level set
+            it[currentHp] = newMaxHp
+            it[currentMana] = newMaxMana
+            it[currentStamina] = newMaxStamina
+            it[lastActiveAt] = System.currentTimeMillis()
+        } > 0
+    }
+
+    /**
      * Find all users currently in a combat session
      */
     fun findByCombatSession(sessionId: String): List<User> = transaction {
