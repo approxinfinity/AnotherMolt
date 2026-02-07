@@ -31,6 +31,7 @@ enum class CombatEndReason {
     ALL_ENEMIES_DEFEATED,
     ALL_PLAYERS_DEFEATED,
     ALL_PLAYERS_FLED,
+    PLAYER_LEFT,    // Player left the location (disengaged)
     TIMEOUT,
     CANCELLED
 }
@@ -276,6 +277,7 @@ data class RoundStartMessage(
 data class HealthUpdateMessage(
     val sessionId: String,
     val combatantId: String,
+    val combatantName: String,       // Name of the combatant whose HP changed
     val currentHp: Int,
     val maxHp: Int,
     val changeAmount: Int,           // Positive = damage taken, negative = healing

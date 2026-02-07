@@ -3,6 +3,7 @@ package com.ez2bg.anotherthread.routes
 import com.ez2bg.anotherthread.*
 import com.ez2bg.anotherthread.combat.CombatService
 import com.ez2bg.anotherthread.database.*
+import com.ez2bg.anotherthread.events.LocationEventService
 import io.ktor.http.*
 import io.ktor.server.application.*
 import io.ktor.server.request.*
@@ -324,6 +325,14 @@ fun Route.userRoutes() {
             val request = call.receive<UpdateLocationRequest>()
 
             if (UserRepository.updateCurrentLocation(id, request.locationId)) {
+                // Remove player from any active combat when they change location
+                CombatService.removePlayerFromCombat(id)
+
+                // Update location tracking for WebSocket events
+                request.locationId?.let { locationId ->
+                    LocationEventService.updatePlayerLocation(id, locationId)
+                }
+
                 // Record encounters with other players at this location
                 request.locationId?.let { locationId ->
                     val otherUsers = UserRepository.findActiveUsersAtLocation(locationId)

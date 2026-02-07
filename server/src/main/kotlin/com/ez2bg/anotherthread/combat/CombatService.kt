@@ -86,6 +86,52 @@ object CombatService {
     }
 
     /**
+     * Remove a player from combat when they leave a location.
+     * Called when player navigates to a different room.
+     */
+    suspend fun removePlayerFromCombat(userId: String) = sessionMutex.withLock {
+        val sessionId = playerSessions[userId] ?: return@withLock
+
+        val session = sessions[sessionId] ?: return@withLock
+
+        val combatant = session.combatants.find { it.id == userId } ?: return@withLock
+
+        log.info("Removing $userId from combat session $sessionId (left location)")
+
+        // Remove player from session tracking
+        playerSessions.remove(userId)
+
+        // Update user's combat state in DB
+        UserRepository.updateCombatState(userId, combatant.currentHp, null)
+
+        // Mark player as no longer in combat (set isAlive false but preserve HP)
+        val updatedCombatants = session.combatants.map {
+            if (it.id == userId) {
+                it.copy(isAlive = false)
+            } else {
+                it
+            }
+        }
+
+        val updatedSession = session.copy(combatants = updatedCombatants)
+        sessions[sessionId] = updatedSession
+
+        // Notify the player they've disengaged
+        broadcastToSession(sessionId, CombatEndedMessage(
+            sessionId = sessionId,
+            reason = CombatEndReason.PLAYER_LEFT,
+            victors = emptyList(),
+            defeated = listOf(userId)
+        ))
+
+        // Check if combat should end (no players left)
+        if (updatedSession.alivePlayers.isEmpty()) {
+            log.info("All players left combat session $sessionId, ending session")
+            sessions.remove(sessionId)
+        }
+    }
+
+    /**
      * Get active session for a location, if any.
      */
     fun getSessionAtLocation(locationId: String): CombatSession? {
@@ -547,6 +593,7 @@ object CombatService {
                         broadcastToSession(session.id, HealthUpdateMessage(
                             sessionId = session.id,
                             combatantId = currentTarget.id,
+                            combatantName = currentTarget.name,
                             currentHp = updatedTarget.currentHp,
                             maxHp = updatedTarget.maxHp,
                             changeAmount = result.damage,
@@ -568,6 +615,7 @@ object CombatService {
                         broadcastToSession(session.id, HealthUpdateMessage(
                             sessionId = session.id,
                             combatantId = healTargetId,
+                            combatantName = updatedHealTarget.name,
                             currentHp = updatedHealTarget.currentHp,
                             maxHp = updatedHealTarget.maxHp,
                             changeAmount = -result.healing,
@@ -1184,6 +1232,7 @@ object CombatService {
                 broadcastToSession(sessionId, HealthUpdateMessage(
                     sessionId = sessionId,
                     combatantId = combatant.id,
+                    combatantName = combatant.name,
                     currentHp = hp,
                     maxHp = combatant.maxHp,
                     changeAmount = bleedingDamage,
@@ -1205,11 +1254,12 @@ object CombatService {
                         broadcastToSession(sessionId, HealthUpdateMessage(
                             sessionId = sessionId,
                             combatantId = combatant.id,
+                            combatantName = combatant.name,
                             currentHp = hp,
                             maxHp = combatant.maxHp,
                             changeAmount = effect.value,
                             sourceId = effect.sourceId,
-                            sourceName = null
+                            sourceName = "Damage over time"
                         ))
                     }
                     "hot" -> {
@@ -1218,11 +1268,12 @@ object CombatService {
                         broadcastToSession(sessionId, HealthUpdateMessage(
                             sessionId = sessionId,
                             combatantId = combatant.id,
+                            combatantName = combatant.name,
                             currentHp = hp,
                             maxHp = combatant.maxHp,
                             changeAmount = -(hp - oldHp),  // Negative = healing
                             sourceId = effect.sourceId,
-                            sourceName = null
+                            sourceName = "Heal over time"
                         ))
                     }
                 }
@@ -1443,7 +1494,7 @@ object CombatService {
                     }
 
                     // Apply damage to target (handles player downed state)
-                    val (damagedTarget, becameDowned, _) = applyDamageWithDownedState(currentTarget, actualDamage)
+                    val (damagedTarget, becameDowned, becameDead) = applyDamageWithDownedState(currentTarget, actualDamage)
                     updatedCombatants[targetIndex] = damagedTarget.copy(statusEffects = targetEffects)
 
                     // Broadcast PlayerDowned if player just went down
@@ -1456,6 +1507,11 @@ object CombatService {
                             deathThreshold = damagedTarget.deathThreshold,
                             locationId = session.locationId
                         ))
+                    }
+
+                    // Log if player died (for debugging - actual death handling happens at combat end)
+                    if (becameDead && damagedTarget.type == CombatantType.PLAYER) {
+                        log.info("DEATH: Player ${damagedTarget.name} died! HP=${damagedTarget.currentHp}, threshold=${damagedTarget.deathThreshold}")
                     }
 
                     // Apply reflect damage to creature (creatures don't have downed state)
@@ -1477,6 +1533,7 @@ object CombatService {
                     broadcastToSession(session.id, HealthUpdateMessage(
                         sessionId = session.id,
                         combatantId = target.id,
+                        combatantName = target.name,
                         currentHp = damagedTarget.currentHp,
                         maxHp = currentTarget.maxHp,
                         changeAmount = actualDamage,
@@ -1514,6 +1571,12 @@ object CombatService {
         val alivePlayers = session.alivePlayers
         val aliveCreatures = session.aliveCreatures
 
+        // Debug: log all player states
+        for (player in session.players) {
+            log.info("CHECK_END: Player ${player.name}: HP=${player.currentHp}, isAlive=${player.isAlive}, isDowned=${player.isDowned}, deathThreshold=${player.deathThreshold}")
+        }
+        log.info("CHECK_END: alivePlayers.size=${alivePlayers.size}, aliveCreatures.size=${aliveCreatures.size}")
+
         val (state, endReason) = when {
             alivePlayers.isEmpty() && aliveCreatures.isEmpty() ->
                 CombatState.ENDED to CombatEndReason.TIMEOUT
@@ -1524,6 +1587,10 @@ object CombatService {
             session.currentRound >= CombatConfig.MAX_COMBAT_ROUNDS ->
                 CombatState.ENDED to CombatEndReason.TIMEOUT
             else -> session.state to session.endReason
+        }
+
+        if (state == CombatState.ENDED) {
+            log.info("CHECK_END: Combat ending with reason=$endReason")
         }
 
         return session.copy(state = state, endReason = endReason)
@@ -1962,11 +2029,17 @@ object CombatService {
      */
     private fun calculateAliveState(combatant: Combatant, newHp: Int): Pair<Boolean, Boolean> {
         return if (combatant.type == CombatantType.PLAYER) {
-            when {
+            val result = when {
                 newHp > 0 -> Pair(true, false)  // Healthy
                 newHp > combatant.deathThreshold -> Pair(true, true)  // Downed but not dead
                 else -> Pair(false, false)  // Dead
             }
+            // Debug: log state calculation for players with low HP
+            if (newHp <= 0) {
+                log.info("ALIVE_STATE: ${combatant.name} HP=$newHp, deathThreshold=${combatant.deathThreshold}, " +
+                    "newHp>threshold=${newHp > combatant.deathThreshold}, result=(isAlive=${result.first}, isDowned=${result.second})")
+            }
+            result
         } else {
             // Creatures die at 0 HP, no downed state
             Pair(newHp > 0, false)
@@ -2004,6 +2077,14 @@ object CombatService {
 
         val becameDowned = !wasDowned && isDowned
         val becameDead = wasAlive && !isAlive
+
+        // Debug logging for player death tracking
+        if (combatant.type == CombatantType.PLAYER) {
+            log.info("DAMAGE: ${combatant.name} took $damage damage: HP ${combatant.currentHp} -> $newHp, " +
+                "deathThreshold=${combatant.deathThreshold}, isAlive=$wasAlive->$isAlive, isDowned=$wasDowned->$isDowned" +
+                (if (becameDowned) " [BECAME DOWNED]" else "") +
+                (if (becameDead) " [DIED]" else ""))
+        }
 
         return Triple(updated, becameDowned, becameDead)
     }
