@@ -63,6 +63,39 @@ object CombatService {
     private val wanderingCreatures = mutableSetOf<String>()
     private var lastWanderTick = 0L
 
+    /**
+     * Generate a descriptive engagement message for a creature attacking a player.
+     * Uses creature name to generate flavorful attack verbs.
+     */
+    private fun generateEngagementMessage(creatureName: String, playerName: String): String {
+        val lowerName = creatureName.lowercase()
+        val verb = when {
+            lowerName.contains("shambler") -> "shambles toward"
+            lowerName.contains("zombie") -> "lurches toward"
+            lowerName.contains("skeleton") -> "rattles toward"
+            lowerName.contains("ghost") || lowerName.contains("specter") || lowerName.contains("wraith") -> "floats menacingly toward"
+            lowerName.contains("spider") -> "skitters toward"
+            lowerName.contains("wolf") || lowerName.contains("hound") -> "growls and leaps at"
+            lowerName.contains("goblin") -> "shrieks and charges at"
+            lowerName.contains("orc") -> "roars and rushes at"
+            lowerName.contains("troll") -> "lumbers toward"
+            lowerName.contains("rat") -> "scurries toward"
+            lowerName.contains("snake") || lowerName.contains("serpent") -> "slithers toward"
+            lowerName.contains("bat") -> "swoops at"
+            lowerName.contains("slime") || lowerName.contains("ooze") -> "oozes toward"
+            lowerName.contains("golem") -> "stomps toward"
+            lowerName.contains("bandit") || lowerName.contains("thief") -> "sneaks up on"
+            lowerName.contains("dragon") -> "roars and turns its attention to"
+            lowerName.contains("demon") -> "snarls and advances on"
+            lowerName.contains("fungus") || lowerName.contains("mushroom") -> "lurches toward"
+            lowerName.contains("plant") || lowerName.contains("vine") -> "writhes toward"
+            lowerName.contains("elemental") -> "surges toward"
+            lowerName.contains("imp") -> "cackles and darts at"
+            else -> "attacks"
+        }
+        return "$creatureName $verb $playerName!"
+    }
+
     // Note: Tick loop is now managed by GameTickService
     // CombatService.processTick() and processCreatureWandering() are called from there
 
@@ -245,10 +278,15 @@ object CombatService {
         // Persist session
         CombatSessionRepository.create(session)
 
+        // Generate engagement messages for each creature attacking this player
+        val engagementMessages = session.creatures.map { creature ->
+            generateEngagementMessage(creature.name, user.name)
+        }
+
         // Send CombatStartedMessage ONLY to the joining player (not all players)
         // This prevents duplicate "Combat started!" logs for existing players
         // Existing players will see the new combatant in the next RoundStartMessage
-        sendToPlayer(userId, CombatStartedMessage(session, playerCombatant))
+        sendToPlayer(userId, CombatStartedMessage(session, playerCombatant, engagementMessages))
 
         log.info("Player $userId joined combat session ${session.id} at location $locationId")
         return Result.success(session)

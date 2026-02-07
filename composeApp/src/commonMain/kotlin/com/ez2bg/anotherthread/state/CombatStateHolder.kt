@@ -185,6 +185,10 @@ object CombatStateHolder {
                 _combatants.value = event.session.combatants
                 _cooldowns.value = event.yourCombatant.cooldowns
                 _currentRound.value = event.session.currentRound
+                // Show engagement messages BEFORE "Combat started!" so player knows who attacked
+                event.engagementMessages.forEach { message ->
+                    addEventLogEntry(message, EventLogType.DAMAGE_RECEIVED)
+                }
                 addEventLogEntry("Combat started!", EventLogType.COMBAT_START)
             }
 

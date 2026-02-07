@@ -1934,7 +1934,8 @@ data class LeaveCombatRequest(
 @Serializable
 data class CombatStartedResponse(
     val session: CombatSessionDto,
-    val yourCombatant: CombatantDto
+    val yourCombatant: CombatantDto,
+    val engagementMessages: List<String> = emptyList()
 )
 
 @Serializable

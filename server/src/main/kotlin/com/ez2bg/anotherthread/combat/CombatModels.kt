@@ -256,7 +256,8 @@ sealed class ServerCombatMessage
 @Serializable
 data class CombatStartedMessage(
     val session: CombatSession,
-    val yourCombatant: Combatant
+    val yourCombatant: Combatant,
+    val engagementMessages: List<String> = emptyList()  // Descriptive attack messages for each aggressor
 ) : ServerCombatMessage()
 
 /**

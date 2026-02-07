@@ -481,8 +481,8 @@ class AdventureViewModel(
                         )
                     }
 
-                    // Update user presence on server
-                    ApiClient.updateUserLocation(userId, response.newLocationId)
+                    // NOTE: Don't call updateUserLocation here - phasewalk already updated it on server
+                    // Calling it again would trigger checkAggressiveCreatures and send duplicate combat messages
 
                     // Load phasewalk destinations for the new location
                     loadPhasewalkDestinations()

@@ -28,7 +28,7 @@ enum class CombatConnectionState {
  */
 sealed class GlobalEvent {
     data class ConnectionStateChanged(val state: CombatConnectionState) : GlobalEvent()
-    data class CombatStarted(val session: CombatSessionDto, val yourCombatant: CombatantDto) : GlobalEvent()
+    data class CombatStarted(val session: CombatSessionDto, val yourCombatant: CombatantDto, val engagementMessages: List<String> = emptyList()) : GlobalEvent()
     data class RoundStarted(val sessionId: String, val roundNumber: Int, val durationMs: Long, val combatants: List<CombatantDto>) : GlobalEvent()
     data class HealthUpdated(val update: HealthUpdateResponse) : GlobalEvent()
     data class ResourceUpdated(val update: ResourceUpdateResponse) : GlobalEvent()
@@ -323,7 +323,7 @@ class CombatClient(
                     val response = json.decodeFromString<CombatStartedResponse>(extractPayload(text))
                     currentSessionId = response.session.id
                     lastKnownCombatants = response.session.combatants
-                    _events.emit(GlobalEvent.CombatStarted(response.session, response.yourCombatant))
+                    _events.emit(GlobalEvent.CombatStarted(response.session, response.yourCombatant, response.engagementMessages))
                 }
 
                 text.contains("RoundStartMessage") || text.contains("\"roundDurationMs\"") -> {
