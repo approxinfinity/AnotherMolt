@@ -123,6 +123,66 @@ fun Route.adminRoutes() {
         ))
     }
 
+    // Repopulate Tun du Lac shop inventories
+    post("/admin/repopulate-tun-du-lac-shops") {
+        val results = mutableListOf<String>()
+
+        // Magic Shop inventory
+        val magicShopItems = listOf(
+            TunDuLacSeed.MINOR_HEALING_POTION_ID, TunDuLacSeed.HEALING_POTION_ID, TunDuLacSeed.GREATER_HEALING_POTION_ID,
+            TunDuLacSeed.MANA_POTION_ID, TunDuLacSeed.STAMINA_POTION_ID, TunDuLacSeed.ANTIDOTE_ID,
+            TunDuLacSeed.RING_OF_PROTECTION_ID, TunDuLacSeed.AMULET_OF_VITALITY_ID, TunDuLacSeed.RING_OF_MINOR_MAGIC_ID, TunDuLacSeed.SILVER_BRACERS_ID,
+            TunDuLacSeed.APPRENTICE_STAFF_ID, TunDuLacSeed.STAFF_OF_SPARKS_ID
+        )
+
+        // Armor Shop inventory
+        val armorShopItems = listOf(
+            TunDuLacSeed.PADDED_CAP_ID, TunDuLacSeed.PADDED_TUNIC_ID, TunDuLacSeed.CLOTH_PANTS_ID, TunDuLacSeed.CLOTH_SHOES_ID, TunDuLacSeed.CLOTH_GLOVES_ID,
+            TunDuLacSeed.LEATHER_CAP_ID, TunDuLacSeed.LEATHER_ARMOR_ID, TunDuLacSeed.LEATHER_PANTS_ID, TunDuLacSeed.LEATHER_BOOTS_ID, TunDuLacSeed.LEATHER_GLOVES_ID,
+            TunDuLacSeed.CHAIN_COIF_ID, TunDuLacSeed.CHAINMAIL_ID, TunDuLacSeed.CHAIN_LEGGINGS_ID, TunDuLacSeed.CHAIN_BOOTS_ID, TunDuLacSeed.CHAIN_GAUNTLETS_ID,
+            TunDuLacSeed.BUCKLER_ID, TunDuLacSeed.ROUND_SHIELD_ID, TunDuLacSeed.KITE_SHIELD_ID
+        )
+
+        // Weapons Shop inventory
+        val weaponsShopItems = listOf(
+            TunDuLacSeed.DAGGER_ID, TunDuLacSeed.FINE_DAGGER_ID,
+            TunDuLacSeed.SHORTSWORD_ID, TunDuLacSeed.LONGSWORD_ID, TunDuLacSeed.BROADSWORD_ID,
+            TunDuLacSeed.HATCHET_ID, TunDuLacSeed.BATTLE_AXE_ID,
+            TunDuLacSeed.CLUB_ID, TunDuLacSeed.MACE_ID, TunDuLacSeed.WARHAMMER_ID,
+            TunDuLacSeed.SHORTBOW_ID, TunDuLacSeed.LONGBOW_ID, TunDuLacSeed.CROSSBOW_ID,
+            TunDuLacSeed.QUARTERSTAFF_ID, TunDuLacSeed.SPEAR_ID
+        )
+
+        // Update each shop
+        LocationRepository.findById(TunDuLacSeed.MAGIC_SHOP_ID)?.let { location ->
+            LocationRepository.update(location.copy(itemIds = magicShopItems))
+            results.add("Magic Shop: ${magicShopItems.size} items")
+        } ?: results.add("Magic Shop: NOT FOUND")
+
+        LocationRepository.findById(TunDuLacSeed.ARMOR_SHOP_ID)?.let { location ->
+            LocationRepository.update(location.copy(itemIds = armorShopItems))
+            results.add("Armor Shop: ${armorShopItems.size} items")
+        } ?: results.add("Armor Shop: NOT FOUND")
+
+        LocationRepository.findById(TunDuLacSeed.WEAPONS_SHOP_ID)?.let { location ->
+            LocationRepository.update(location.copy(itemIds = weaponsShopItems))
+            results.add("Weapons Shop: ${weaponsShopItems.size} items")
+        } ?: results.add("Weapons Shop: NOT FOUND")
+
+        log.info("Repopulated Tun du Lac shops: $results")
+
+        @kotlinx.serialization.Serializable
+        data class RepopulateResponse(
+            val message: String,
+            val results: List<String>
+        )
+
+        call.respond(RepopulateResponse(
+            message = "Repopulated Tun du Lac shop inventories",
+            results = results
+        ))
+    }
+
     // File upload routes (admin only)
     route("/admin/files") {
         // List all uploaded files

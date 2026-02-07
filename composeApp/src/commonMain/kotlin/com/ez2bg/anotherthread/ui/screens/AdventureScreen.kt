@@ -50,6 +50,7 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import coil3.compose.AsyncImage
+import com.ez2bg.anotherthread.copyToClipboard
 import com.ez2bg.anotherthread.AppConfig
 import com.ez2bg.anotherthread.api.AbilityDto
 import com.ez2bg.anotherthread.api.CreatureDto
@@ -518,29 +519,54 @@ fun AdventureScreen(
                         )
                     }
 
-                    // Mode toggle - bottom right (only for admin users)
-                    if (!ghostMode && isAdmin) {
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.End
-                        ) {
-                            ModeToggle(
-                                isCreateMode = false,
-                                onToggle = onSwitchToCreate,
-                                modifier = Modifier.padding(end = 8.dp, bottom = 4.dp)
-                            )
-                        }
-                    }
-
-                    // Event log at very bottom
-                    EventLog(
-                        entries = eventLogEntries,
+                    // Event log with floating admin controls overlay
+                    Box(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .height(80.dp),
-                        maxVisibleEntries = 4,
-                        isAdmin = isAdmin
-                    )
+                            .height(80.dp)
+                    ) {
+                        // Event log takes full space
+                        EventLog(
+                            entries = eventLogEntries,
+                            modifier = Modifier.fillMaxSize(),
+                            maxVisibleEntries = 4,
+                            isAdmin = false  // Copy button moved to floating panel
+                        )
+
+                        // Floating admin controls in top-right corner
+                        if (!ghostMode && isAdmin) {
+                            Column(
+                                modifier = Modifier
+                                    .align(Alignment.TopEnd)
+                                    .padding(end = 4.dp, top = 4.dp)
+                                    .background(Color.Black.copy(alpha = 0.7f), RoundedCornerShape(4.dp))
+                                    .padding(4.dp),
+                                horizontalAlignment = Alignment.End,
+                                verticalArrangement = Arrangement.spacedBy(4.dp)
+                            ) {
+                                // Copy All button
+                                Text(
+                                    text = "Copy",
+                                    color = Color(0xFF888888),
+                                    fontSize = 9.sp,
+                                    modifier = Modifier
+                                        .clip(RoundedCornerShape(4.dp))
+                                        .background(Color.Black.copy(alpha = 0.5f))
+                                        .clickable {
+                                            val allText = eventLogEntries.joinToString("\n") { it.message }
+                                            copyToClipboard(allText)
+                                        }
+                                        .padding(horizontal = 6.dp, vertical = 2.dp)
+                                )
+                                // Mode toggle
+                                ModeToggle(
+                                    isCreateMode = false,
+                                    onToggle = onSwitchToCreate,
+                                    modifier = Modifier
+                                )
+                            }
+                        }
+                    }
                 }
             }
 
