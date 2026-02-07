@@ -1,11 +1,13 @@
 package com.ez2bg.anotherthread.routes
 
 import com.ez2bg.anotherthread.database.*
+import com.ez2bg.anotherthread.events.LocationEventService
 import io.ktor.http.*
 import io.ktor.server.application.*
 import io.ktor.server.request.*
 import io.ktor.server.response.*
 import io.ktor.server.routing.*
+import kotlinx.coroutines.runBlocking
 import kotlinx.serialization.Serializable
 import org.slf4j.LoggerFactory
 
@@ -221,11 +223,22 @@ fun Route.riftPortalRoutes() {
             )
             LocationRepository.update(updatedLocation)
 
+            // Broadcast the exit addition to all players at this location
+            LocationEventService.broadcastExitAdded(updatedLocation, newExit)
+
             log.info("User $userId created rift portal from ${currentLocation.name} to ${targetLocation.name} in $targetAreaId")
+
+            // Build message - avoid redundancy if location name matches area name
+            val areaName = formatAreaName(targetAreaId)
+            val riftMessage = if (targetLocation.name.equals(areaName, ignoreCase = true)) {
+                "Opened a rift portal to ${targetLocation.name}!"
+            } else {
+                "Opened a rift portal to ${targetLocation.name} in $areaName!"
+            }
 
             call.respond(CreateRiftResponse(
                 success = true,
-                message = "Opened a rift portal to ${targetLocation.name} in ${formatAreaName(targetAreaId)}!",
+                message = riftMessage,
                 exitAdded = newExit,
                 targetLocation = targetLocation
             ))
@@ -357,6 +370,9 @@ fun Route.riftPortalRoutes() {
             val updatedExits = currentLocation.exits.filter { it != exitToSeal }
             val updatedLocation = currentLocation.copy(exits = updatedExits)
             LocationRepository.update(updatedLocation)
+
+            // Broadcast the exit removal to all players at this location
+            LocationEventService.broadcastExitRemoved(updatedLocation, exitToSeal)
 
             log.info("User $userId sealed rift portal from ${currentLocation.name} to $targetAreaId")
 

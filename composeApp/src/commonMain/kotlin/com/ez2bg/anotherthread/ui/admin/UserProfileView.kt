@@ -1142,8 +1142,12 @@ private fun InventoryItemCard(
     abilities: List<AbilityDto> = emptyList(),
     onEquipToggle: (() -> Unit)?
 ) {
+    var isExpanded by remember { mutableStateOf(false) }
+
     Card(
-        modifier = Modifier.fillMaxWidth(),
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable { isExpanded = !isExpanded },
         colors = CardDefaults.cardColors(
             containerColor = if (isEquipped)
                 MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.3f)
@@ -1234,18 +1238,44 @@ private fun InventoryItemCard(
                     }
                 }
 
-                // Equip/Unequip button
-                if (onEquipToggle != null) {
-                    OutlinedButton(
-                        onClick = onEquipToggle,
-                        modifier = Modifier.padding(start = 8.dp)
-                    ) {
-                        Text(if (isEquipped) "Unequip" else "Equip")
+                // Expand/collapse indicator and equip button
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(4.dp)
+                ) {
+                    Icon(
+                        imageVector = if (isExpanded) Icons.Filled.ExpandLess else Icons.Filled.ExpandMore,
+                        contentDescription = if (isExpanded) "Collapse" else "Expand",
+                        modifier = Modifier.size(20.dp),
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    // Equip/Unequip button
+                    if (onEquipToggle != null) {
+                        OutlinedButton(
+                            onClick = onEquipToggle,
+                            modifier = Modifier.padding(start = 4.dp)
+                        ) {
+                            Text(if (isEquipped) "Unequip" else "Equip")
+                        }
                     }
                 }
             }
 
-            // Show granted abilities
+            // Expanded description section
+            if (isExpanded && item.desc.isNotBlank()) {
+                HorizontalDivider(
+                    modifier = Modifier.padding(horizontal = 12.dp),
+                    color = MaterialTheme.colorScheme.outlineVariant
+                )
+                Text(
+                    text = item.desc,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(start = 12.dp, end = 12.dp, top = 8.dp, bottom = if (abilities.isNotEmpty()) 4.dp else 12.dp)
+                )
+            }
+
+            // Show granted abilities (always visible when present)
             if (abilities.isNotEmpty()) {
                 Column(
                     modifier = Modifier
