@@ -839,4 +839,247 @@ class CombatServiceTest {
         val message3 = generateEngagementMessage("ShAmBlEr", "Player")
         assertEquals("ShAmBlEr shambles toward Player!", message3)
     }
+
+    // ========== Combat Sequence Tests ==========
+    // These test the full flow: player enters room → aggressive creature attacks → combat starts → creature attacks player
+
+    @Test
+    fun testCombatSessionCreatedWithAggressiveCreature() {
+        // Create a session with an aggressive creature and a player
+        val player = TestFixtures.playerCombatant(currentHp = 30, maxHp = 30)
+        val aggressiveCreature = TestFixtures.creatureCombatant(currentHp = 15, maxHp = 15)
+
+        val session = CombatSession(
+            id = "test-aggressive-session",
+            locationId = TestFixtures.DUNGEON_ENTRANCE_ID,
+            state = CombatState.ACTIVE,
+            combatants = listOf(player, aggressiveCreature)
+        )
+
+        // Session should be active
+        assertEquals(CombatState.ACTIVE, session.state)
+
+        // Should have both player and creature
+        assertEquals(1, session.players.size)
+        assertEquals(1, session.creatures.size)
+
+        // Both should be alive
+        assertEquals(1, session.alivePlayers.size)
+        assertEquals(1, session.aliveCreatures.size)
+    }
+
+    @Test
+    fun testCombatSequence_creatureAttacksPlayer() {
+        // Simulate a combat round where creature attacks player
+        val player = TestFixtures.playerCombatant(currentHp = 30, maxHp = 30)
+        val creature = TestFixtures.creatureCombatant(currentHp = 15, maxHp = 15, baseDamage = 8)
+        val basicAttack = TestFixtures.basicAttack()
+
+        // Creature attacks player
+        val action = CombatAction(
+            combatantId = creature.id,
+            abilityId = basicAttack.id,
+            targetId = player.id
+        )
+
+        val result = executeAbility(creature, basicAttack, player, listOf(player, creature))
+        val updatedCombatants = applyActionResult(listOf(player, creature), action, result)
+
+        // Player should have taken damage
+        val updatedPlayer = updatedCombatants.find { it.id == TestFixtures.PLAYER_1_ID }!!
+        assertTrue(updatedPlayer.currentHp < 30)
+        assertTrue(result.damage > 0)
+        assertTrue(result.message.contains("hits"))
+    }
+
+    @Test
+    fun testCombatSequence_fullRoundExchange() {
+        // Simulate a full round where both player and creature attack each other
+        var player = TestFixtures.playerCombatant(currentHp = 30, maxHp = 30, initiative = 15) // Player goes first
+        var creature = TestFixtures.creatureCombatant(currentHp = 15, maxHp = 15, baseDamage = 5)
+        val basicAttack = TestFixtures.basicAttack()
+
+        // Player attacks creature
+        val playerAction = CombatAction(
+            combatantId = player.id,
+            abilityId = basicAttack.id,
+            targetId = creature.id
+        )
+        val playerResult = executeAbility(player, basicAttack, creature, listOf(player, creature))
+        val afterPlayerAttack = applyActionResult(listOf(player, creature), playerAction, playerResult)
+        player = afterPlayerAttack.find { it.id == TestFixtures.PLAYER_1_ID }!!
+        creature = afterPlayerAttack.find { it.id == TestFixtures.GOBLIN_ID }!!
+
+        val creatureHpAfterPlayerAttack = creature.currentHp
+
+        // Creature attacks player (if still alive)
+        if (creature.isAlive) {
+            val creatureAction = CombatAction(
+                combatantId = creature.id,
+                abilityId = basicAttack.id,
+                targetId = player.id
+            )
+            val creatureResult = executeAbility(creature, basicAttack, player, listOf(player, creature))
+            val afterCreatureAttack = applyActionResult(listOf(player, creature), creatureAction, creatureResult)
+            player = afterCreatureAttack.find { it.id == TestFixtures.PLAYER_1_ID }!!
+            creature = afterCreatureAttack.find { it.id == TestFixtures.GOBLIN_ID }!!
+        }
+
+        // Verify both have taken damage (or creature is dead)
+        assertTrue(creature.currentHp < 15 || !creature.isAlive)
+        if (creature.isAlive) {
+            assertTrue(player.currentHp < 30)
+        }
+    }
+
+    @Test
+    fun testCombatSequence_creatureDefeated() {
+        // Player with high damage defeats creature in one hit
+        val player = TestFixtures.playerCombatant(currentHp = 30, maxHp = 30, initiative = 30) // Very high initiative = high damage
+        val creature = TestFixtures.creatureCombatant(currentHp = 5, maxHp = 15) // Low HP
+        val basicAttack = TestFixtures.basicAttack()
+
+        val session = CombatSession(
+            id = "test-defeat-session",
+            locationId = TestFixtures.DUNGEON_ENTRANCE_ID,
+            state = CombatState.ACTIVE,
+            combatants = listOf(player, creature)
+        )
+
+        // Player attacks creature
+        val playerAction = CombatAction(
+            combatantId = player.id,
+            abilityId = basicAttack.id,
+            targetId = creature.id
+        )
+        val playerResult = executeAbility(player, basicAttack, creature, listOf(player, creature))
+        val updatedCombatants = applyActionResult(listOf(player, creature), playerAction, playerResult)
+
+        val updatedCreature = updatedCombatants.find { it.id == TestFixtures.GOBLIN_ID }!!
+
+        // Creature should be dead
+        assertFalse(updatedCreature.isAlive)
+        assertEquals(0, updatedCreature.currentHp)
+
+        // Check combat end condition
+        val updatedSession = session.copy(combatants = updatedCombatants)
+        val finalSession = checkEndConditionsForTest(updatedSession)
+
+        assertEquals(CombatState.ENDED, finalSession.state)
+        assertEquals(CombatEndReason.ALL_ENEMIES_DEFEATED, finalSession.endReason)
+    }
+
+    @Test
+    fun testCombatSequence_playerDefeated() {
+        // Creature with high damage defeats player
+        val player = TestFixtures.playerCombatant(currentHp = 5, maxHp = 30) // Low HP
+        val creature = TestFixtures.creatureCombatant(currentHp = 15, maxHp = 15, baseDamage = 20) // High damage
+        val basicAttack = TestFixtures.basicAttack()
+
+        val session = CombatSession(
+            id = "test-player-defeat-session",
+            locationId = TestFixtures.DUNGEON_ENTRANCE_ID,
+            state = CombatState.ACTIVE,
+            combatants = listOf(player, creature)
+        )
+
+        // Creature attacks player
+        val creatureAction = CombatAction(
+            combatantId = creature.id,
+            abilityId = basicAttack.id,
+            targetId = player.id
+        )
+        val creatureResult = executeAbility(creature, basicAttack, player, listOf(player, creature))
+        val updatedCombatants = applyActionResult(listOf(player, creature), creatureAction, creatureResult)
+
+        val updatedPlayer = updatedCombatants.find { it.id == TestFixtures.PLAYER_1_ID }!!
+
+        // Player should be dead (or downed if death mechanics are in play)
+        assertEquals(0, updatedPlayer.currentHp)
+        assertFalse(updatedPlayer.isAlive)
+
+        // Check combat end condition
+        val updatedSession = session.copy(combatants = updatedCombatants)
+        val finalSession = checkEndConditionsForTest(updatedSession)
+
+        assertEquals(CombatState.ENDED, finalSession.state)
+        assertEquals(CombatEndReason.ALL_PLAYERS_DEFEATED, finalSession.endReason)
+    }
+
+    @Test
+    fun testCombatSequence_multiRoundCombat() {
+        // Test a combat that lasts multiple rounds
+        var player = TestFixtures.playerCombatant(currentHp = 30, maxHp = 30, initiative = 10)
+        var creature = TestFixtures.creatureCombatant(currentHp = 30, maxHp = 30, baseDamage = 5) // Tanky creature
+        val basicAttack = TestFixtures.basicAttack()
+
+        var round = 0
+        var combatEnded = false
+
+        // Run up to 5 rounds or until combat ends
+        while (round < 5 && !combatEnded) {
+            round++
+
+            // Player attacks
+            if (creature.isAlive) {
+                val playerAction = CombatAction(
+                    combatantId = player.id,
+                    abilityId = basicAttack.id,
+                    targetId = creature.id
+                )
+                val playerResult = executeAbility(player, basicAttack, creature, listOf(player, creature))
+                val afterPlayerAttack = applyActionResult(listOf(player, creature), playerAction, playerResult)
+                player = afterPlayerAttack.find { it.id == TestFixtures.PLAYER_1_ID }!!
+                creature = afterPlayerAttack.find { it.id == TestFixtures.GOBLIN_ID }!!
+            }
+
+            // Creature attacks
+            if (creature.isAlive && player.isAlive) {
+                val creatureAction = CombatAction(
+                    combatantId = creature.id,
+                    abilityId = basicAttack.id,
+                    targetId = player.id
+                )
+                val creatureResult = executeAbility(creature, basicAttack, player, listOf(player, creature))
+                val afterCreatureAttack = applyActionResult(listOf(player, creature), creatureAction, creatureResult)
+                player = afterCreatureAttack.find { it.id == TestFixtures.PLAYER_1_ID }!!
+                creature = afterCreatureAttack.find { it.id == TestFixtures.GOBLIN_ID }!!
+            }
+
+            // Check if combat ended
+            if (!player.isAlive || !creature.isAlive) {
+                combatEnded = true
+            }
+        }
+
+        // Combat should have progressed (at least some damage dealt)
+        assertTrue(player.currentHp < 30 || creature.currentHp < 30)
+        assertTrue(round >= 1)
+    }
+
+    @Test
+    fun testPlayerLeavingCombat_combatEndsForSession() {
+        // When a player leaves a location mid-combat, they should be removed from the session
+        val player = TestFixtures.playerCombatant(currentHp = 25, maxHp = 30)
+        val creature = TestFixtures.creatureCombatant(currentHp = 15, maxHp = 15)
+
+        val session = CombatSession(
+            id = "test-leave-session",
+            locationId = TestFixtures.DUNGEON_ENTRANCE_ID,
+            state = CombatState.ACTIVE,
+            combatants = listOf(player, creature)
+        )
+
+        // Simulate player leaving - mark them as not alive in the session
+        val playerLeft = player.copy(isAlive = false)
+        val updatedSession = session.copy(combatants = listOf(playerLeft, creature))
+
+        // After player leaves, there are no alive players
+        assertTrue(updatedSession.alivePlayers.isEmpty())
+        assertEquals(1, updatedSession.aliveCreatures.size)
+
+        // Check end condition - should end with ALL_PLAYERS_DEFEATED (since player left)
+        val finalSession = checkEndConditionsForTest(updatedSession)
+        assertEquals(CombatState.ENDED, finalSession.state)
+    }
 }

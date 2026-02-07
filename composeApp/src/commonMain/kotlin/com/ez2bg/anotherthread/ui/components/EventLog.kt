@@ -5,6 +5,7 @@ import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInVertically
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -19,6 +20,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.ez2bg.anotherthread.copyToClipboard
 import kotlinx.coroutines.delay
 
 private var eventIdCounter = 0L
@@ -71,20 +73,31 @@ private fun EventType.toColor(): Color = when (this) {
  * - Fades old entries
  * - Max entries limit with auto-cleanup
  * - Compact display
+ * - Optional "Copy All" button for admin users
  */
 @Composable
 fun EventLog(
     entries: List<EventLogEntry>,
     modifier: Modifier = Modifier,
     maxVisibleEntries: Int = 6,
-    showTimestamps: Boolean = false
+    showTimestamps: Boolean = false,
+    isAdmin: Boolean = false
 ) {
     val listState = rememberLazyListState()
+    var copyFeedback by remember { mutableStateOf<String?>(null) }
 
     // Auto-scroll to bottom when new entries added
     LaunchedEffect(entries.size) {
         if (entries.isNotEmpty()) {
             listState.animateScrollToItem(entries.lastIndex)
+        }
+    }
+
+    // Clear copy feedback after delay
+    LaunchedEffect(copyFeedback) {
+        if (copyFeedback != null) {
+            delay(2000)
+            copyFeedback = null
         }
     }
 
@@ -102,16 +115,42 @@ fun EventLog(
                 modifier = Modifier.align(Alignment.Center)
             )
         } else {
-            LazyColumn(
-                state = listState,
-                modifier = Modifier.fillMaxSize(),
-                verticalArrangement = Arrangement.spacedBy(2.dp)
-            ) {
-                items(entries.takeLast(maxVisibleEntries * 2), key = { it.id }) { entry ->
-                    EventLogItem(
-                        entry = entry,
-                        showTimestamp = showTimestamps
-                    )
+            Column(modifier = Modifier.fillMaxSize()) {
+                // Admin copy button at top
+                if (isAdmin && entries.isNotEmpty()) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.End
+                    ) {
+                        Text(
+                            text = copyFeedback ?: "Copy All",
+                            color = if (copyFeedback != null) Color(0xFF69F0AE) else Color(0xFF888888),
+                            fontSize = 9.sp,
+                            modifier = Modifier
+                                .clip(RoundedCornerShape(4.dp))
+                                .background(Color.Black.copy(alpha = 0.5f))
+                                .clickable {
+                                    val allText = entries.joinToString("\n") { it.message }
+                                    val success = copyToClipboard(allText)
+                                    copyFeedback = if (success) "Copied!" else "Failed"
+                                }
+                                .padding(horizontal = 6.dp, vertical = 2.dp)
+                        )
+                    }
+                    Spacer(modifier = Modifier.height(4.dp))
+                }
+
+                LazyColumn(
+                    state = listState,
+                    modifier = Modifier.fillMaxSize(),
+                    verticalArrangement = Arrangement.spacedBy(2.dp)
+                ) {
+                    items(entries.takeLast(maxVisibleEntries * 2), key = { it.id }) { entry ->
+                        EventLogItem(
+                            entry = entry,
+                            showTimestamp = showTimestamps
+                        )
+                    }
                 }
             }
         }

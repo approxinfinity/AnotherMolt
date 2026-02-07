@@ -12,3 +12,9 @@ expect fun isWebPlatform(): Boolean
  * Get current time in milliseconds since epoch.
  */
 expect fun currentTimeMillis(): Long
+
+/**
+ * Copy text to the system clipboard.
+ * Returns true if successful.
+ */
+expect fun copyToClipboard(text: String): Boolean

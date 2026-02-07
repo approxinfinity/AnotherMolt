@@ -537,7 +537,8 @@ fun AdventureScreen(
                         modifier = Modifier
                             .fillMaxWidth()
                             .height(80.dp),
-                        maxVisibleEntries = 4
+                        maxVisibleEntries = 4,
+                        isAdmin = isAdmin
                     )
                 }
             }

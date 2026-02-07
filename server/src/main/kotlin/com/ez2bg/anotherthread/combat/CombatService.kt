@@ -149,13 +149,15 @@ object CombatService {
         val updatedSession = session.copy(combatants = updatedCombatants)
         sessions[sessionId] = updatedSession
 
-        // Notify the player they've disengaged
-        broadcastToSession(sessionId, CombatEndedMessage(
+        // Notify the player they've disengaged - send directly to them
+        val endMessage = CombatEndedMessage(
             sessionId = sessionId,
             reason = CombatEndReason.PLAYER_LEFT,
             victors = emptyList(),
             defeated = listOf(userId)
-        ))
+        )
+        log.info("Sending CombatEndedMessage (PLAYER_LEFT) directly to player $userId for session $sessionId")
+        sendToPlayer(userId, endMessage)
 
         // Check if combat should end (no players left)
         if (updatedSession.alivePlayers.isEmpty()) {
@@ -246,6 +248,7 @@ object CombatService {
 
         // Get or create session at location
         var session = getSessionAtLocation(locationId)
+        val isNewSession = session == null
 
         if (session == null) {
             // Create new session
@@ -275,13 +278,18 @@ object CombatService {
         // Update user's combat session reference
         UserRepository.updateCombatState(userId, user.currentHp, session.id)
 
-        // Persist session
-        CombatSessionRepository.create(session)
+        // Persist session - create if new, update if existing
+        if (isNewSession) {
+            CombatSessionRepository.create(session)
+        } else {
+            CombatSessionRepository.update(session)
+        }
 
         // Generate engagement messages for each creature attacking this player
         val engagementMessages = session.creatures.map { creature ->
             generateEngagementMessage(creature.name, user.name)
         }
+        log.info("Combat session ${session.id}: state=${session.state}, ${session.creatures.size} creatures, ${session.players.size} players, engagement messages: $engagementMessages")
 
         // Send CombatStartedMessage ONLY to the joining player (not all players)
         // This prevents duplicate "Combat started!" logs for existing players
@@ -471,12 +479,22 @@ object CombatService {
     suspend fun processTick() = sessionMutex.withLock {
         val now = System.currentTimeMillis()
 
+        if (sessions.isNotEmpty()) {
+            log.debug("processTick: ${sessions.size} sessions")
+        }
+
         for ((sessionId, session) in sessions) {
+            log.debug("Session $sessionId: state=${session.state}, players=${session.players.size}, creatures=${session.creatures.size}")
             if (session.state != CombatState.ACTIVE) continue
 
             // Check if round duration has passed
-            if (now - session.roundStartTime < CombatConfig.ROUND_DURATION_MS) continue
+            val timeSinceRoundStart = now - session.roundStartTime
+            if (timeSinceRoundStart < CombatConfig.ROUND_DURATION_MS) {
+                log.debug("Session $sessionId: waiting for round (${timeSinceRoundStart}ms / ${CombatConfig.ROUND_DURATION_MS}ms)")
+                continue
+            }
 
+            log.info("Processing round for session $sessionId")
             // Process the round
             val updatedSession = processRound(session)
 
@@ -1912,7 +1930,7 @@ object CombatService {
             LocationRepository.update(updatedTargetLocation)
             movedCreatures.add(creature.id)
 
-            // Broadcast movement to all connected players
+            // Broadcast movement only to players at source or destination locations
             val moveMessage = CreatureMovedMessage(
                 creatureId = creature.id,
                 creatureName = creature.name,
@@ -1920,7 +1938,7 @@ object CombatService {
                 toLocationId = targetLocation.id,
                 direction = randomExit.direction.name.lowercase().replace("_", "")  // e.g., "north", "southeast"
             )
-            broadcastToAllPlayers(moveMessage)
+            broadcastToPlayersAtLocations(moveMessage, setOf(currentLocation.id, targetLocation.id))
 
             log.info("${creature.name} wandered from ${currentLocation.name} to ${targetLocation.name}")
         }
@@ -1941,6 +1959,27 @@ object CombatService {
     }
 
     /**
+     * Broadcast a message to players at specific locations.
+     * Used for location-specific events like creature movement.
+     */
+    private suspend fun broadcastToPlayersAtLocations(message: ServerCombatMessage, locationIds: Set<String>) {
+        // Get all players at these locations
+        val playersAtLocations = locationIds.flatMap { locationId ->
+            UserRepository.findActiveUsersAtLocation(locationId)
+        }.map { it.id }.toSet()
+
+        val jsonMessage = json.encodeToString(message)
+        for (userId in playersAtLocations) {
+            val connection = playerConnections[userId] ?: continue
+            try {
+                connection.send(Frame.Text(jsonMessage))
+            } catch (e: Exception) {
+                log.debug("Failed to send location broadcast to player $userId: ${e.message}")
+            }
+        }
+    }
+
+    /**
      * Broadcast a message to all players in a session.
      */
     private suspend fun broadcastToSession(sessionId: String, message: ServerCombatMessage) {
@@ -1955,9 +1994,14 @@ object CombatService {
      * Send a message to a specific player.
      */
     private suspend fun sendToPlayer(userId: String, message: ServerCombatMessage) {
-        val connection = playerConnections[userId] ?: return
+        val connection = playerConnections[userId]
+        if (connection == null) {
+            log.warn("Cannot send message to player $userId - no connection found")
+            return
+        }
         try {
             val jsonMessage = json.encodeToString(message)
+            log.debug("Sending ${message::class.simpleName} to player $userId: ${jsonMessage.take(200)}")
             connection.send(Frame.Text(jsonMessage))
         } catch (e: Exception) {
             log.error("Failed to send message to player $userId: ${e.message}")
