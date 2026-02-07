@@ -2,12 +2,15 @@ package com.ez2bg.anotherthread.state
 
 import com.ez2bg.anotherthread.api.CombatantDto
 import com.ez2bg.anotherthread.api.CombatantType
+import com.ez2bg.anotherthread.api.CombatSessionDto
+import com.ez2bg.anotherthread.api.CombatState
 import com.ez2bg.anotherthread.api.HealthUpdateResponse
 import com.ez2bg.anotherthread.api.ResourceUpdateResponse
 import com.ez2bg.anotherthread.combat.GlobalEvent
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertNotNull
+import kotlin.test.assertTrue
 import kotlinx.coroutines.test.runTest
 
 /**
@@ -315,5 +318,100 @@ class CombatStateHolderTest {
 
         // Note: isInCombat checks _combatSession.value != null, so we need to verify
         // the specific implementation. For now, we test what we can access.
+    }
+
+    // =========================================================================
+    // Engagement Message Tests
+    // =========================================================================
+
+    private fun createTestSession(
+        id: String = "session-1",
+        combatants: List<CombatantDto> = emptyList()
+    ) = CombatSessionDto(
+        id = id,
+        locationId = "test-location",
+        state = CombatState.ACTIVE,
+        currentRound = 1,
+        roundStartTime = 1000L,  // Fixed timestamp for testing
+        combatants = combatants,
+        createdAt = 1000L  // Fixed timestamp for testing
+    )
+
+    @Test
+    fun combatStarted_withEngagementMessages_addsMessagesToEventLog() = runTest {
+        // Given: Clear state
+        CombatStateHolder.clearCombatStatePublic()
+        CombatStateHolder.setConnectedUserId(testUserId)
+
+        val playerCombatant = createTestCombatant()
+        val session = createTestSession(combatants = listOf(playerCombatant))
+
+        // When: CombatStarted event with engagement messages
+        val engagementMessages = listOf(
+            "Shambler shambles toward Test Player!",
+            "Goblin shrieks and charges at Test Player!"
+        )
+        CombatStateHolder.handleEventForTest(
+            GlobalEvent.CombatStarted(session, playerCombatant, engagementMessages)
+        )
+
+        // Then: Event log should contain the engagement messages
+        val eventLog = CombatStateHolder.eventLog.value
+        assertTrue(eventLog.size >= 3, "Event log should have at least 3 entries (2 engagement + 1 combat started)")
+
+        // The engagement messages should appear before "Combat started!"
+        val messages = eventLog.map { it.message }
+        assertTrue(messages.contains("Shambler shambles toward Test Player!"), "Should contain shambler message")
+        assertTrue(messages.contains("Goblin shrieks and charges at Test Player!"), "Should contain goblin message")
+        assertTrue(messages.contains("Combat started!"), "Should contain combat started message")
+    }
+
+    @Test
+    fun combatStarted_withEmptyEngagementMessages_onlyAddsCombatStarted() = runTest {
+        // Given: Clear state
+        CombatStateHolder.clearCombatStatePublic()
+        CombatStateHolder.setConnectedUserId(testUserId)
+
+        val playerCombatant = createTestCombatant()
+        val session = createTestSession(combatants = listOf(playerCombatant))
+
+        // When: CombatStarted event with NO engagement messages (player initiated combat)
+        CombatStateHolder.handleEventForTest(
+            GlobalEvent.CombatStarted(session, playerCombatant, emptyList())
+        )
+
+        // Then: Event log should only have "Combat started!"
+        val eventLog = CombatStateHolder.eventLog.value
+        val combatStartedEntries = eventLog.filter { it.message == "Combat started!" }
+        assertEquals(1, combatStartedEntries.size, "Should have exactly one 'Combat started!' entry")
+    }
+
+    @Test
+    fun combatStarted_setsSessionAndCombatant() = runTest {
+        // Given: Clear state
+        CombatStateHolder.clearCombatStatePublic()
+        CombatStateHolder.setConnectedUserId(testUserId)
+
+        val playerCombatant = createTestCombatant(currentHp = 85, currentMana = 45)
+        val enemyCombatant = createTestCombatant(id = "goblin-1", currentHp = 30, maxHp = 30)
+        val session = createTestSession(combatants = listOf(playerCombatant, enemyCombatant))
+
+        // When: CombatStarted event
+        CombatStateHolder.handleEventForTest(
+            GlobalEvent.CombatStarted(session, playerCombatant, listOf("Goblin attacks!"))
+        )
+
+        // Then: Combat state should be properly set
+        val currentSession = CombatStateHolder.combatSession.value
+        assertNotNull(currentSession, "Session should be set")
+        assertEquals("session-1", currentSession.id, "Session ID should match")
+
+        val currentPlayerCombatant = CombatStateHolder.playerCombatant.value
+        assertNotNull(currentPlayerCombatant, "Player combatant should be set")
+        assertEquals(85, currentPlayerCombatant.currentHp, "Player HP should match")
+        assertEquals(45, currentPlayerCombatant.currentMana, "Player mana should match")
+
+        val combatants = CombatStateHolder.combatants.value
+        assertEquals(2, combatants.size, "Should have 2 combatants")
     }
 }

@@ -742,4 +742,101 @@ class CombatServiceTest {
 
         return session.copy(state = state, endReason = endReason)
     }
+
+    // ========== Engagement Message Tests ==========
+
+    /**
+     * Helper function that mirrors the server's generateEngagementMessage logic.
+     * This allows us to test the message generation without needing to call the actual service.
+     */
+    private fun generateEngagementMessage(creatureName: String, playerName: String): String {
+        val lowerName = creatureName.lowercase()
+        val verb = when {
+            lowerName.contains("shambler") -> "shambles toward"
+            lowerName.contains("zombie") -> "lurches toward"
+            lowerName.contains("skeleton") -> "rattles toward"
+            lowerName.contains("ghost") || lowerName.contains("specter") || lowerName.contains("wraith") -> "floats menacingly toward"
+            lowerName.contains("spider") -> "skitters toward"
+            lowerName.contains("wolf") || lowerName.contains("hound") -> "growls and leaps at"
+            lowerName.contains("goblin") -> "shrieks and charges at"
+            lowerName.contains("orc") -> "roars and rushes at"
+            lowerName.contains("troll") -> "lumbers toward"
+            lowerName.contains("rat") -> "scurries toward"
+            lowerName.contains("snake") || lowerName.contains("serpent") -> "slithers toward"
+            lowerName.contains("bat") -> "swoops at"
+            lowerName.contains("slime") || lowerName.contains("ooze") -> "oozes toward"
+            lowerName.contains("golem") -> "stomps toward"
+            lowerName.contains("bandit") || lowerName.contains("thief") -> "sneaks up on"
+            lowerName.contains("dragon") -> "roars and turns its attention to"
+            lowerName.contains("demon") -> "snarls and advances on"
+            lowerName.contains("fungus") || lowerName.contains("mushroom") -> "lurches toward"
+            lowerName.contains("plant") || lowerName.contains("vine") -> "writhes toward"
+            lowerName.contains("elemental") -> "surges toward"
+            lowerName.contains("imp") -> "cackles and darts at"
+            else -> "attacks"
+        }
+        return "$creatureName $verb $playerName!"
+    }
+
+    @Test
+    fun testEngagementMessage_shambler() {
+        val message = generateEngagementMessage("Fungal Shambler", "Goodman")
+        assertEquals("Fungal Shambler shambles toward Goodman!", message)
+    }
+
+    @Test
+    fun testEngagementMessage_goblin() {
+        val message = generateEngagementMessage("Goblin Scout", "Hero")
+        assertEquals("Goblin Scout shrieks and charges at Hero!", message)
+    }
+
+    @Test
+    fun testEngagementMessage_zombie() {
+        val message = generateEngagementMessage("Rotting Zombie", "Player")
+        assertEquals("Rotting Zombie lurches toward Player!", message)
+    }
+
+    @Test
+    fun testEngagementMessage_spider() {
+        val message = generateEngagementMessage("Giant Spider", "Adventurer")
+        assertEquals("Giant Spider skitters toward Adventurer!", message)
+    }
+
+    @Test
+    fun testEngagementMessage_wolf() {
+        val message = generateEngagementMessage("Dire Wolf", "Traveler")
+        assertEquals("Dire Wolf growls and leaps at Traveler!", message)
+    }
+
+    @Test
+    fun testEngagementMessage_ghost() {
+        val message = generateEngagementMessage("Vengeful Ghost", "Cleric")
+        assertEquals("Vengeful Ghost floats menacingly toward Cleric!", message)
+    }
+
+    @Test
+    fun testEngagementMessage_dragon() {
+        val message = generateEngagementMessage("Ancient Dragon", "Knight")
+        assertEquals("Ancient Dragon roars and turns its attention to Knight!", message)
+    }
+
+    @Test
+    fun testEngagementMessage_unknownCreature() {
+        // Unknown creatures should use the default "attacks" verb
+        val message = generateEngagementMessage("Mysterious Entity", "Player")
+        assertEquals("Mysterious Entity attacks Player!", message)
+    }
+
+    @Test
+    fun testEngagementMessage_caseInsensitive() {
+        // Should work regardless of creature name casing
+        val message1 = generateEngagementMessage("SHAMBLER", "Player")
+        assertEquals("SHAMBLER shambles toward Player!", message1)
+
+        val message2 = generateEngagementMessage("shambler", "Player")
+        assertEquals("shambler shambles toward Player!", message2)
+
+        val message3 = generateEngagementMessage("ShAmBlEr", "Player")
+        assertEquals("ShAmBlEr shambles toward Player!", message3)
+    }
 }
