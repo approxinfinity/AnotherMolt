@@ -27,6 +27,19 @@
                           repeatCount="indefinite"/>
     </circle>
 </svg>
+<!-- Override fetch to always include credentials (cookies) -->
+<!-- This is needed because Ktor's WASM client doesn't set credentials: 'include' by default -->
+<script type="application/javascript">
+(function() {
+    const originalFetch = window.fetch;
+    window.fetch = function(url, options) {
+        options = options || {};
+        // Always include credentials (cookies) for same-origin and cross-origin requests
+        options.credentials = options.credentials || 'include';
+        return originalFetch.call(this, url, options);
+    };
+})();
+</script>
 <script type="application/javascript" src="config.js"></script>
 <script type="application/javascript" src="composeApp.js"></script>
 </body>
