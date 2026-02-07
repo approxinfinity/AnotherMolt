@@ -91,39 +91,45 @@ data class UserResponse(
     val appearanceDescription: String
 )
 
-fun User.toResponse(): UserResponse = UserResponse(
-    id = id,
-    name = name,
-    desc = desc,
-    itemIds = itemIds,
-    featureIds = featureIds,
-    imageUrl = imageUrl,
-    currentLocationId = currentLocationId,
-    characterClassId = characterClassId,
-    classGenerationStartedAt = classGenerationStartedAt,
-    createdAt = createdAt,
-    lastActiveAt = lastActiveAt,
-    level = level,
-    experience = experience,
-    maxHp = maxHp,
-    currentHp = currentHp,
-    maxMana = maxMana,
-    currentMana = currentMana,
-    maxStamina = maxStamina,
-    currentStamina = currentStamina,
-    currentCombatSessionId = currentCombatSessionId,
-    strength = strength,
-    dexterity = dexterity,
-    constitution = constitution,
-    intelligence = intelligence,
-    wisdom = wisdom,
-    charisma = charisma,
-    attributeQualityBonus = attributeQualityBonus,
-    attributesGeneratedAt = attributesGeneratedAt,
-    gold = gold,
-    equippedItemIds = equippedItemIds,
-    appearanceDescription = UserRepository.generateAppearanceDescription(this)
-)
+fun User.toResponse(): UserResponse {
+    // Calculate equipment bonuses from equipped items
+    val equippedItems = equippedItemIds.mapNotNull { ItemRepository.findById(it) }
+    val equipHpBonus = equippedItems.sumOf { it.statBonuses?.maxHp ?: 0 }
+
+    return UserResponse(
+        id = id,
+        name = name,
+        desc = desc,
+        itemIds = itemIds,
+        featureIds = featureIds,
+        imageUrl = imageUrl,
+        currentLocationId = currentLocationId,
+        characterClassId = characterClassId,
+        classGenerationStartedAt = classGenerationStartedAt,
+        createdAt = createdAt,
+        lastActiveAt = lastActiveAt,
+        level = level,
+        experience = experience,
+        maxHp = maxHp + equipHpBonus,
+        currentHp = currentHp,
+        maxMana = maxMana,
+        currentMana = currentMana,
+        maxStamina = maxStamina,
+        currentStamina = currentStamina,
+        currentCombatSessionId = currentCombatSessionId,
+        strength = strength,
+        dexterity = dexterity,
+        constitution = constitution,
+        intelligence = intelligence,
+        wisdom = wisdom,
+        charisma = charisma,
+        attributeQualityBonus = attributeQualityBonus,
+        attributesGeneratedAt = attributesGeneratedAt,
+        gold = gold,
+        equippedItemIds = equippedItemIds,
+        appearanceDescription = UserRepository.generateAppearanceDescription(this)
+    )
+}
 
 object UserRepository {
     private fun listToJson(list: List<String>): String {
@@ -759,7 +765,9 @@ object UserRepository {
     }
 
     fun calculateEvasion(user: User, equipmentDefenseBonus: Int = 0): Int {
-        return attributeModifier(user.dexterity) + equipmentDefenseBonus
+        // Evasion scales with DEX modifier, level, and equipment
+        // Level adds +1 evasion per 2 levels to match creature accuracy scaling
+        return attributeModifier(user.dexterity) + (user.level / 2) + equipmentDefenseBonus
     }
 
     fun calculateCritBonus(user: User): Int {

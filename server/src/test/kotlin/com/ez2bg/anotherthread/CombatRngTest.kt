@@ -12,32 +12,32 @@ class CombatRngTest {
     // ========== Hit Chance Calculation Tests ==========
 
     @Test
-    fun testBaseHitChanceIs75() {
+    fun testBaseHitChanceIs65() {
         val hitChance = CombatRng.calculateHitChance()
-        assertEquals(75, hitChance)
+        assertEquals(65, hitChance)
     }
 
     @Test
     fun testAccuracyIncreasesHitChance() {
         val hitChance = CombatRng.calculateHitChance(attackerAccuracy = 10)
-        assertEquals(85, hitChance)
+        assertEquals(75, hitChance) // 65 + 10 = 75
     }
 
     @Test
     fun testEvasionDecreasesHitChance() {
         val hitChance = CombatRng.calculateHitChance(defenderEvasion = 10)
-        assertEquals(65, hitChance)
+        assertEquals(55, hitChance) // 65 - 10 = 55
     }
 
     @Test
     fun testLevelDifferenceAffectsHitChance() {
         // Attacker higher level
         val highLevelHitChance = CombatRng.calculateHitChance(attackerLevel = 5, defenderLevel = 1)
-        assertEquals(83, highLevelHitChance) // 75 + (4 * 2) = 83
+        assertEquals(73, highLevelHitChance) // 65 + (4 * 2) = 73
 
         // Defender higher level
         val lowLevelHitChance = CombatRng.calculateHitChance(attackerLevel = 1, defenderLevel = 5)
-        assertEquals(67, lowLevelHitChance) // 75 + (-4 * 2) = 67
+        assertEquals(57, lowLevelHitChance) // 65 + (-4 * 2) = 57
     }
 
     @Test
@@ -194,8 +194,8 @@ class CombatRngTest {
 
         assertNotNull(result.hitResult)
         assertNotNull(result.rollDetails)
-        // Calculate: 75 + 10 - 5 + ((3-2) * 2) = 75 + 10 - 5 + 2 = 82
-        assertEquals(82, result.rollDetails.hitChance)
+        // Calculate: 65 + 10 - 5 + ((3-2) * 2) = 65 + 10 - 5 + 2 = 72
+        assertEquals(72, result.rollDetails.hitChance)
         assertEquals(8, result.rollDetails.critChance) // 5 + 3 = 8
         assertEquals(50, result.rollDetails.baseDamage)
     }
@@ -333,11 +333,11 @@ class CombatRngTest {
             results[result.hitResult] = results.getOrDefault(result.hitResult, 0) + 1
         }
 
-        // With 75% hit, 10% glancing threshold, 5% crit:
-        // ~15% miss (rolls > 85)
-        // ~10% glancing (rolls 76-85)
+        // With 65% hit, 10% glancing threshold, 5% crit:
+        // ~25% miss (rolls > 75)
+        // ~10% glancing (rolls 66-75)
         // ~5% crit (of hits)
-        // ~70% normal hit
+        // ~60% normal hit
 
         val totalRolls = results.values.sum()
         assertEquals(1000, totalRolls)

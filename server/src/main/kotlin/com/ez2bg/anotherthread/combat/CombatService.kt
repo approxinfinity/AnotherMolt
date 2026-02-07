@@ -27,6 +27,70 @@ object DeathConfig {
 }
 
 /**
+ * Helper object for logging combat events to the database for auditing.
+ */
+object CombatEventLogger {
+    /**
+     * Convert a Combatant to a snapshot for logging.
+     */
+    fun Combatant.toSnapshot(locationId: String? = null): CombatantSnapshot = CombatantSnapshot(
+        id = id,
+        name = name,
+        type = if (type == CombatantType.PLAYER) "player" else "creature",
+        level = level,
+        currentHp = currentHp,
+        maxHp = maxHp,
+        currentMana = if (type == CombatantType.PLAYER) currentMana else null,
+        maxMana = if (type == CombatantType.PLAYER) maxMana else null,
+        currentStamina = if (type == CombatantType.PLAYER) currentStamina else null,
+        maxStamina = if (type == CombatantType.PLAYER) maxStamina else null,
+        accuracy = accuracy,
+        evasion = evasion,
+        baseDamage = baseDamage,
+        critBonus = critBonus,
+        isAlive = isAlive,
+        isDowned = isDowned,
+        statusEffects = statusEffects.map { "${it.name}(${it.remainingRounds})" },
+        locationId = locationId
+    )
+
+    /**
+     * Log a combat event with full context.
+     */
+    fun logEvent(
+        session: CombatSession,
+        eventType: CombatEventType,
+        message: String,
+        actor: Combatant? = null,
+        target: Combatant? = null,
+        includeAllCombatants: Boolean = false,
+        eventData: Map<String, Any>? = null
+    ) {
+        try {
+            val locationName = LocationRepository.findById(session.locationId)?.name ?: "Unknown"
+            CombatEventLogRepository.log(
+                sessionId = session.id,
+                locationId = session.locationId,
+                locationName = locationName,
+                eventType = eventType,
+                roundNumber = session.currentRound,
+                message = message,
+                actorSnapshot = actor?.toSnapshot(session.locationId),
+                targetSnapshot = target?.toSnapshot(session.locationId),
+                allCombatants = if (includeAllCombatants) {
+                    session.combatants.map { it.toSnapshot(session.locationId) }
+                } else null,
+                eventData = eventData
+            )
+        } catch (e: Exception) {
+            // Don't let logging failures affect combat
+            LoggerFactory.getLogger(CombatEventLogger::class.java)
+                .warn("Failed to log combat event: ${e.message}")
+        }
+    }
+}
+
+/**
  * CombatService manages all active combat sessions and the combat tick loop.
  *
  * MajorMUD-style combat flow:
@@ -291,6 +355,25 @@ object CombatService {
         }
         log.info("Combat session ${session.id}: state=${session.state}, ${session.creatures.size} creatures, ${session.players.size} players, engagement messages: $engagementMessages")
 
+        // Log combat event: session created or player joined
+        if (isNewSession) {
+            CombatEventLogger.logEvent(
+                session = session,
+                eventType = CombatEventType.SESSION_CREATED,
+                message = "Combat started at ${LocationRepository.findById(locationId)?.name ?: locationId}",
+                actor = playerCombatant,
+                includeAllCombatants = true
+            )
+        }
+        CombatEventLogger.logEvent(
+            session = session,
+            eventType = CombatEventType.PLAYER_JOINED,
+            message = "${user.name} joined combat",
+            actor = playerCombatant,
+            includeAllCombatants = true,
+            eventData = mapOf("engagementMessages" to engagementMessages)
+        )
+
         // Send CombatStartedMessage ONLY to the joining player (not all players)
         // This prevents duplicate "Combat started!" logs for existing players
         // Existing players will see the new combatant in the next RoundStartMessage
@@ -525,6 +608,14 @@ object CombatService {
             combatants = session.combatants
         ))
 
+        // Log round start with all combatant stats
+        CombatEventLogger.logEvent(
+            session = session.copy(currentRound = roundNumber),
+            eventType = CombatEventType.ROUND_START,
+            message = "Round $roundNumber started",
+            includeAllCombatants = true
+        )
+
         // Sort actions by combatant initiative
         val sortedActions = session.pendingActions.sortedByDescending { action ->
             session.combatants.find { it.id == action.combatantId }?.initiative ?: 0
@@ -634,6 +725,29 @@ object CombatService {
                     message = result.message
                 )
                 logEntries.add(logEntry)
+
+                // Log ability use to combat event log
+                val eventType = if (actor.type == CombatantType.PLAYER) {
+                    CombatEventType.PLAYER_ATTACK
+                } else {
+                    CombatEventType.ABILITY_USED
+                }
+                CombatEventLogger.logEvent(
+                    session = session.copy(currentRound = roundNumber),
+                    eventType = eventType,
+                    message = result.message,
+                    actor = actor,
+                    target = currentTarget,
+                    eventData = mapOf(
+                        "abilityId" to ability.id,
+                        "abilityName" to ability.name,
+                        "damage" to result.damage,
+                        "healing" to result.healing,
+                        "hitResult" to (result.hitResult ?: "N/A"),
+                        "wasCritical" to result.wasCritical,
+                        "wasGlancing" to result.wasGlancing
+                    )
+                )
 
                 // Broadcast ability resolution
                 broadcastToSession(session.id, AbilityResolvedMessage(
@@ -1461,7 +1575,29 @@ object CombatService {
 
         var updatedCombatants = combatants.toMutableList()
 
+        // Get the current location to verify creatures are still there
+        val currentLocation = LocationRepository.findById(session.locationId)
+        val creaturesAtLocation = currentLocation?.creatureIds?.toSet() ?: emptySet()
+
         for (creature in combatants.filter { it.type == CombatantType.CREATURE && it.isAlive }) {
+            // Skip creatures that have wandered away from this location
+            if (creature.id !in creaturesAtLocation) {
+                log.debug("${creature.name} is no longer at location ${session.locationId}, removing from combat")
+                // Log creature removal
+                CombatEventLogger.logEvent(
+                    session = session,
+                    eventType = CombatEventType.CREATURE_REMOVED,
+                    message = "${creature.name} wandered away from combat",
+                    actor = creature
+                )
+                // Mark creature as not alive so it's removed from combat
+                val creatureIndex = updatedCombatants.indexOfFirst { it.id == creature.id }
+                if (creatureIndex >= 0) {
+                    updatedCombatants[creatureIndex] = creature.copy(isAlive = false)
+                }
+                continue
+            }
+
             // Check if creature is stunned
             if (creature.statusEffects.any { it.effectType == "stun" }) {
                 log.debug("${creature.name} is stunned and cannot act")
@@ -1512,6 +1648,26 @@ object CombatService {
                 "result=${attackResult.hitResult}, damage=${attackResult.damage}" +
                 (if (attackResult.wasCritical) " CRITICAL!" else "") +
                 (if (attackResult.wasGlancing) " (glancing)" else ""))
+
+            // Log the creature attack with full stats
+            CombatEventLogger.logEvent(
+                session = session,
+                eventType = CombatEventType.CREATURE_ATTACK,
+                message = message,
+                actor = creature,
+                target = currentTarget,
+                eventData = mapOf(
+                    "hitRoll" to attackResult.rollDetails.hitRoll,
+                    "hitChance" to attackResult.rollDetails.hitChance,
+                    "critRoll" to attackResult.rollDetails.critRoll,
+                    "critChance" to attackResult.rollDetails.critChance,
+                    "hitResult" to attackResult.hitResult.name,
+                    "baseDamage" to attackResult.rollDetails.baseDamage,
+                    "finalDamage" to attackResult.damage,
+                    "wasCritical" to attackResult.wasCritical,
+                    "wasGlancing" to attackResult.wasGlancing
+                )
+            )
 
             // Apply damage if hit, handling shield/reflect/lifesteal
             if (attackResult.damage > 0) {
@@ -1794,6 +1950,22 @@ object CombatService {
             experienceGained = avgXp
         ))
 
+        // Log combat end event
+        CombatEventLogger.logEvent(
+            session = session,
+            eventType = CombatEventType.SESSION_ENDED,
+            message = "Combat ended: ${session.endReason}",
+            includeAllCombatants = true,
+            eventData = mapOf(
+                "endReason" to session.endReason!!.name,
+                "victors" to victors,
+                "defeated" to defeated,
+                "goldDropped" to totalGold,
+                "itemsDropped" to droppedItems.map { it.name },
+                "xpAwarded" to avgXp
+            )
+        )
+
         log.info("Combat session ${session.id} ended: ${session.endReason}. " +
             "Loot distributed: ${totalGold}g, ${droppedItems.size} items")
     }
@@ -2021,6 +2193,7 @@ object CombatService {
         val equippedItems = equippedItemIds.mapNotNull { ItemRepository.findById(it) }
         val equipAttack = equippedItems.sumOf { it.statBonuses?.attack ?: 0 }
         val equipDefense = equippedItems.sumOf { it.statBonuses?.defense ?: 0 }
+        val equipHpBonus = equippedItems.sumOf { it.statBonuses?.maxHp ?: 0 }
 
         // Calculate combat stats from D&D attributes + level + equipment
         val playerAccuracy = UserRepository.calculateAccuracy(this, equipAttack)
@@ -2050,11 +2223,14 @@ object CombatService {
         // Higher CON = more negative threshold = harder to kill
         val playerDeathThreshold = -(10 + constitution * 2)
 
+        // Apply equipment HP bonus to max HP (current HP stays as-is from DB)
+        val effectiveMaxHp = maxHp + equipHpBonus
+
         return Combatant(
             id = id,
             type = CombatantType.PLAYER,
             name = name,
-            maxHp = maxHp,
+            maxHp = effectiveMaxHp,
             currentHp = currentHp,
             maxMana = maxMana,
             currentMana = currentMana,

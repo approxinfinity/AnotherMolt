@@ -1052,8 +1052,12 @@ fun Application.module() {
     val dbPath = System.getProperty("TEST_DB_PATH")
         ?: appConfig.propertyOrNull("database.path")?.getString()
         ?: "data/anotherthread.db"
-    DatabaseConfig.init(dbPath)
-    log.info("Database initialized at $dbPath")
+    // Use migrations for QA/production (set via config or env var)
+    val useMigrations = appConfig.propertyOrNull("database.useMigrations")?.getString()?.toBoolean()
+        ?: System.getenv("USE_MIGRATIONS")?.toBoolean()
+        ?: false
+    DatabaseConfig.init(dbPath, useMigrations)
+    log.info("Database initialized at $dbPath (migrations: $useMigrations)")
 
     // Seed character classes and abilities if empty
     ClassAbilitySeed.seedIfEmpty()

@@ -944,6 +944,102 @@ fun Route.adminRoutes() {
             }
         }
     }
+
+    // Combat event log endpoints for debugging/auditing
+    route("/admin/combat-logs") {
+        // Get recent combat events
+        get {
+            val limit = call.request.queryParameters["limit"]?.toIntOrNull() ?: 100
+            val offset = call.request.queryParameters["offset"]?.toLongOrNull() ?: 0L
+            val events = CombatEventLogRepository.findRecent(limit, offset)
+            call.respond(events)
+        }
+
+        // Get combat events for a specific session
+        get("/session/{sessionId}") {
+            val sessionId = call.parameters["sessionId"]
+                ?: return@get call.respond(HttpStatusCode.BadRequest, "Missing sessionId")
+            val events = CombatEventLogRepository.findBySessionId(sessionId)
+            call.respond(events)
+        }
+
+        // Get combat events for a specific player
+        get("/player/{playerId}") {
+            val playerId = call.parameters["playerId"]
+                ?: return@get call.respond(HttpStatusCode.BadRequest, "Missing playerId")
+            val limit = call.request.queryParameters["limit"]?.toIntOrNull() ?: 100
+            val events = CombatEventLogRepository.findByPlayerId(playerId, limit)
+            call.respond(events)
+        }
+
+        // Get combat events at a specific location
+        get("/location/{locationId}") {
+            val locationId = call.parameters["locationId"]
+                ?: return@get call.respond(HttpStatusCode.BadRequest, "Missing locationId")
+            val limit = call.request.queryParameters["limit"]?.toIntOrNull() ?: 100
+            val events = CombatEventLogRepository.findByLocationId(locationId, limit)
+            call.respond(events)
+        }
+
+        // Get combat events by event type
+        get("/type/{eventType}") {
+            val eventTypeStr = call.parameters["eventType"]
+                ?: return@get call.respond(HttpStatusCode.BadRequest, "Missing eventType")
+            val eventType = try {
+                CombatEventType.valueOf(eventTypeStr.uppercase())
+            } catch (e: IllegalArgumentException) {
+                return@get call.respond(HttpStatusCode.BadRequest, "Invalid eventType: $eventTypeStr")
+            }
+            val limit = call.request.queryParameters["limit"]?.toIntOrNull() ?: 100
+            val events = CombatEventLogRepository.findByEventType(eventType, limit)
+            call.respond(events)
+        }
+
+        // Delete old logs (older than N days)
+        delete("/cleanup") {
+            val daysOld = call.request.queryParameters["daysOld"]?.toIntOrNull() ?: 7
+            val cutoffMs = System.currentTimeMillis() - (daysOld * 24 * 60 * 60 * 1000L)
+            val deleted = CombatEventLogRepository.deleteOlderThan(cutoffMs)
+            call.respond(mapOf("success" to true, "deletedCount" to deleted, "daysOld" to daysOld))
+        }
+    }
+
+    // Database migration endpoints
+    route("/admin/migrations") {
+        // Get migration status
+        get {
+            val status = com.ez2bg.anotherthread.database.migrations.MigrationRunner.getStatus()
+            call.respond(mapOf(
+                "appliedMigrations" to status.appliedMigrations.map { mapOf(
+                    "version" to it.version,
+                    "name" to it.name,
+                    "appliedAt" to it.appliedAt
+                )},
+                "pendingMigrations" to status.pendingMigrations.map { mapOf(
+                    "version" to it.version,
+                    "name" to it.name
+                )},
+                "totalMigrations" to status.totalMigrations
+            ))
+        }
+
+        // Run pending migrations
+        post("/run") {
+            try {
+                val applied = com.ez2bg.anotherthread.database.migrations.MigrationRunner.runPendingMigrations()
+                call.respond(mapOf(
+                    "success" to true,
+                    "migrationsApplied" to applied,
+                    "message" to if (applied > 0) "Applied $applied migration(s)" else "No pending migrations"
+                ))
+            } catch (e: Exception) {
+                call.respond(HttpStatusCode.InternalServerError, mapOf(
+                    "success" to false,
+                    "error" to (e.message ?: "Unknown error")
+                ))
+            }
+        }
+    }
 }
 
 // Helper functions

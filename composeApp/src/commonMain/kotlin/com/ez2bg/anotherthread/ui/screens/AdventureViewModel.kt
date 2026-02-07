@@ -574,9 +574,10 @@ class AdventureViewModel(
         scope.launch {
             ApiClient.buyItem(locationId, userId, itemId).onSuccess { response ->
                 if (response.success) {
-                    // Update gold from response
+                    // Update user state with new inventory and gold
                     response.user?.let { user ->
                         _localState.update { it.copy(playerGold = user.gold) }
+                        UserStateHolder.updateUser(user)
                     }
                     showSnackbar(response.message)
                 } else {
@@ -594,8 +595,10 @@ class AdventureViewModel(
         scope.launch {
             ApiClient.restAtInn(locationId, userId).onSuccess { response ->
                 if (response.success) {
+                    // Update user state with restored HP/MP/SP and spent gold
                     response.user?.let { user ->
                         _localState.update { it.copy(playerGold = user.gold) }
+                        UserStateHolder.updateUser(user)
                     }
                     showSnackbar(response.message)
                 } else {

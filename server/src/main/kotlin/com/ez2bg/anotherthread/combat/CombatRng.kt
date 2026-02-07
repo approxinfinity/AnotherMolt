@@ -14,7 +14,7 @@ import kotlin.random.Random
 object CombatRng {
 
     // Default combat stats
-    const val BASE_HIT_CHANCE = 75          // 75% base hit chance
+    const val BASE_HIT_CHANCE = 65          // 65% base hit chance
     const val BASE_CRIT_CHANCE = 5          // 5% base crit chance
     const val CRIT_MULTIPLIER = 2.0         // 2x damage on crit
     const val GLANCING_BLOW_MULTIPLIER = 0.5 // 50% damage on glancing blow
