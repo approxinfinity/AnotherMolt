@@ -79,6 +79,13 @@ object CombatStateHolder {
     private val _globalEvents = MutableSharedFlow<GlobalEvent>(extraBufferCapacity = 64)
     val globalEvents: SharedFlow<GlobalEvent> = _globalEvents.asSharedFlow()
 
+    // Death animation state - triggers when player dies, clears after animation completes
+    private val _isPlayingDeathAnimation = MutableStateFlow(false)
+    val isPlayingDeathAnimation: StateFlow<Boolean> = _isPlayingDeathAnimation.asStateFlow()
+
+    private val _respawnLocationName = MutableStateFlow<String?>(null)
+    val respawnLocationName: StateFlow<String?> = _respawnLocationName.asStateFlow()
+
     // Track connected user
     private var connectedUserId: String? = null
 
@@ -349,10 +356,10 @@ object CombatStateHolder {
                 addEventLogEntry("You have died!", EventLogType.ERROR)
                 addEventLogEntry("You respawn at ${response.respawnLocationName} with full health.", EventLogType.NAVIGATION)
                 clearCombatState()
-                // Refresh user data to get updated HP/location from server
-                scope.launch {
-                    UserStateHolder.refreshUser()
-                }
+                // Trigger death animation
+                _respawnLocationName.value = response.respawnLocationName
+                _isPlayingDeathAnimation.value = true
+                // User refresh happens after animation completes via onDeathAnimationComplete()
             }
 
             is GlobalEvent.PlayerDragged -> {
@@ -462,6 +469,19 @@ object CombatStateHolder {
     fun clearCombatStatePublic() {
         clearCombatState()
         addEventLogEntry("You left combat.", EventLogType.INFO)
+    }
+
+    /**
+     * Called when death animation completes.
+     * Refreshes user data to get new location and HP.
+     */
+    fun onDeathAnimationComplete() {
+        _isPlayingDeathAnimation.value = false
+        _respawnLocationName.value = null
+        // Now refresh user data to update location/HP
+        scope.launch {
+            UserStateHolder.refreshUser()
+        }
     }
 
     /**

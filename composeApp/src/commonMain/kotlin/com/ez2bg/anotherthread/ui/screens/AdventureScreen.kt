@@ -74,10 +74,12 @@ import com.ez2bg.anotherthread.ui.components.AbilityIconSmall
 import com.ez2bg.anotherthread.ui.components.BlindOverlay
 import com.ez2bg.anotherthread.ui.components.CombatTarget
 import com.ez2bg.anotherthread.ui.components.ConnectionIndicator
+import com.ez2bg.anotherthread.ui.components.DeathTransitionOverlay
 import com.ez2bg.anotherthread.ui.components.DisorientIndicator
 import com.ez2bg.anotherthread.ui.components.EventLog
 import com.ez2bg.anotherthread.ui.components.MapSelectionOverlay
 import com.ez2bg.anotherthread.ui.components.TargetSelectionOverlay
+import com.ez2bg.anotherthread.state.CombatStateHolder
 import com.ez2bg.anotherthread.ui.admin.getTerrainColor
 import com.ez2bg.anotherthread.ui.admin.UserProfileView
 import com.ez2bg.anotherthread.state.UserStateHolder
@@ -128,6 +130,10 @@ fun AdventureScreen(
     val eventLogState by viewModel.eventLog.collectAsState()
     val playerCombatant by viewModel.playerCombatant.collectAsState()
     val combatants by viewModel.combatants.collectAsState()
+
+    // Death animation state
+    val isPlayingDeathAnimation by CombatStateHolder.isPlayingDeathAnimation.collectAsState()
+    val respawnLocationName by CombatStateHolder.respawnLocationName.collectAsState()
 
     // Reactive user state for mana/stamina display (updates on phasewalk, etc.)
     val reactiveUser by UserStateHolder.currentUser.collectAsState()
@@ -794,6 +800,14 @@ fun AdventureScreen(
                 .align(Alignment.TopStart)
                 .padding(8.dp)
         )
+
+        // Death transition overlay - covers everything when player dies
+        if (isPlayingDeathAnimation && respawnLocationName != null) {
+            DeathTransitionOverlay(
+                respawnLocationName = respawnLocationName!!,
+                onAnimationComplete = { CombatStateHolder.onDeathAnimationComplete() }
+            )
+        }
     }
 }
 
