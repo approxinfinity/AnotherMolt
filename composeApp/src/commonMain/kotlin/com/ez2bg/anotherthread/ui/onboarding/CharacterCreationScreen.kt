@@ -146,20 +146,22 @@ fun CharacterCreationScreen(
 
             Spacer(modifier = Modifier.height(32.dp))
 
-            // Character image
-            Surface(
-                modifier = Modifier.size(200.dp),
-                shape = RoundedCornerShape(16.dp),
-                color = SurfaceColor
-            ) {
-                EntityImage(
-                    imageUrl = imageUrl,
-                    contentDescription = "Character image",
-                    isGenerating = isImageGenerating
-                )
-            }
+            // Character image - only show when image has been generated or is generating
+            if (!imageUrl.isNullOrBlank() || isImageGenerating) {
+                Surface(
+                    modifier = Modifier.size(200.dp),
+                    shape = RoundedCornerShape(16.dp),
+                    color = SurfaceColor
+                ) {
+                    EntityImage(
+                        imageUrl = imageUrl,
+                        contentDescription = "Character image",
+                        isGenerating = isImageGenerating
+                    )
+                }
 
-            Spacer(modifier = Modifier.height(24.dp))
+                Spacer(modifier = Modifier.height(24.dp))
+            }
 
             // Content area (scrollable part)
             Surface(

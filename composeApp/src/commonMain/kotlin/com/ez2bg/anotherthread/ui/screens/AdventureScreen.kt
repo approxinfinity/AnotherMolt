@@ -757,19 +757,19 @@ fun AdventureScreen(
             }
         }
 
-        // Ghost mode "Create Character" button - prominent call to action
+        // Ghost mode "Create Character" button - centered floating at bottom of location view
         if (ghostMode && onGhostModeBack != null) {
             Surface(
                 onClick = onGhostModeBack,
                 modifier = Modifier
-                    .align(Alignment.TopStart)
-                    .padding(12.dp),
-                shape = RoundedCornerShape(20.dp),
-                color = Color(0xFF6366F1).copy(alpha = 0.9f),  // Accent purple matching onboarding
-                shadowElevation = 4.dp
+                    .align(Alignment.BottomCenter)
+                    .padding(bottom = 100.dp),  // Above event log
+                shape = RoundedCornerShape(24.dp),
+                color = Color(0xFF6366F1),  // Accent purple matching onboarding
+                shadowElevation = 8.dp
             ) {
                 Row(
-                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
+                    modifier = Modifier.padding(horizontal = 24.dp, vertical = 12.dp),
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
@@ -777,12 +777,12 @@ fun AdventureScreen(
                         imageVector = Icons.Filled.Person,
                         contentDescription = null,
                         tint = Color.White,
-                        modifier = Modifier.size(18.dp)
+                        modifier = Modifier.size(20.dp)
                     )
                     Text(
                         text = "Create Character",
                         color = Color.White,
-                        style = MaterialTheme.typography.labelLarge
+                        style = MaterialTheme.typography.titleMedium
                     )
                 }
             }

@@ -1011,14 +1011,20 @@ fun Application.module() {
         allowHost("localhost:8081")
         allowHost("localhost:12080")
         allowHost("localhost:12081")
+        allowHost("localhost:12090")  // QA frontend
+        allowHost("localhost:12091")  // QA backend
         allowHost("127.0.0.1:8080")
         allowHost("127.0.0.1:8081")
         allowHost("127.0.0.1:12080")
         allowHost("127.0.0.1:12081")
+        allowHost("127.0.0.1:12090")
+        allowHost("127.0.0.1:12091")
         allowHost("192.168.1.239:8080")  // User's local network
         allowHost("192.168.1.239:8081")
         allowHost("192.168.1.239:12080")
         allowHost("192.168.1.239:12081")
+        allowHost("192.168.1.239:12090")
+        allowHost("192.168.1.239:12091")
 
         // Production domains
         allowHost("anotherthread.ez2bgood.com", schemes = listOf("https"))
