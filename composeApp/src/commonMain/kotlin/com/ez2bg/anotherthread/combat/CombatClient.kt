@@ -2,6 +2,8 @@ package com.ez2bg.anotherthread.combat
 
 import com.ez2bg.anotherthread.AppConfig
 import com.ez2bg.anotherthread.api.*
+import com.ez2bg.anotherthread.api.LocationMutationEvent
+import com.ez2bg.anotherthread.api.LocationEventType
 import io.ktor.client.*
 import io.ktor.client.plugins.websocket.*
 import io.ktor.websocket.*
@@ -41,6 +43,7 @@ sealed class GlobalEvent {
     data class PlayerStabilized(val response: PlayerStabilizedResponse) : GlobalEvent()
     data class PlayerDragged(val response: PlayerDraggedResponse) : GlobalEvent()
     data class PlayerDied(val response: PlayerDeathResponse) : GlobalEvent()
+    data class LocationMutated(val event: LocationMutationEvent) : GlobalEvent()
     data class Error(val message: String, val code: String?) : GlobalEvent()
 }
 
@@ -411,6 +414,11 @@ class CombatClient(
                     currentSessionId = null
                     lastKnownCombatants = emptyList()
                     _events.emit(GlobalEvent.PlayerDied(response))
+                }
+
+                text.contains("LOCATION_MUTATION") || (text.contains("\"eventType\"") && text.contains("\"locationId\"") && text.contains("\"locationName\"")) -> {
+                    val event = json.decodeFromString<LocationMutationEvent>(extractPayload(text))
+                    _events.emit(GlobalEvent.LocationMutated(event))
                 }
 
                 else -> {

@@ -2,6 +2,7 @@ package com.ez2bg.anotherthread.api
 
 import com.ez2bg.anotherthread.AppConfig
 import com.ez2bg.anotherthread.isWebPlatform
+import com.ez2bg.anotherthread.state.ConnectionStateHolder
 import com.ez2bg.anotherthread.storage.AuthStorage
 import io.ktor.client.*
 import io.ktor.client.call.*
@@ -35,6 +36,12 @@ data class ExitDto(
 )
 
 @Serializable
+enum class ShopLayoutDirection {
+    VERTICAL,
+    HORIZONTAL
+}
+
+@Serializable
 data class LocationDto(
     val id: String,
     val name: String,
@@ -62,7 +69,9 @@ data class LocationDto(
     val isRiver: Boolean? = null,
     val isCoast: Boolean? = null,
     val terrainFeatures: List<String>? = null,
-    val isOriginalTerrain: Boolean? = null
+    val isOriginalTerrain: Boolean? = null,
+    // Shop layout direction (default VERTICAL)
+    val shopLayoutDirection: ShopLayoutDirection? = null
 )
 
 @Serializable
@@ -891,19 +900,34 @@ object ApiClient {
 
     private val baseUrl = AppConfig.api.baseUrl
 
-    suspend fun getLocations(cacheBuster: Long? = null): Result<List<LocationDto>> = runCatching {
+    /**
+     * Wrapper that tracks connection status for API calls.
+     */
+    private inline fun <T> apiCall(block: () -> T): Result<T> {
+        return runCatching {
+            block()
+        }.also { result ->
+            result.onSuccess {
+                ConnectionStateHolder.recordSuccess()
+            }.onFailure { error ->
+                ConnectionStateHolder.recordFailure(error)
+            }
+        }
+    }
+
+    suspend fun getLocations(cacheBuster: Long? = null): Result<List<LocationDto>> = apiCall {
         val url = if (cacheBuster != null) "$baseUrl/locations?_=$cacheBuster" else "$baseUrl/locations"
         client.get(url).body()
     }
 
-    suspend fun createLocation(request: CreateLocationRequest): Result<LocationDto> = runCatching {
+    suspend fun createLocation(request: CreateLocationRequest): Result<LocationDto> = apiCall {
         client.post("$baseUrl/locations") {
             contentType(ContentType.Application.Json)
             setBody(request)
         }.body()
     }
 
-    suspend fun updateLocation(id: String, request: CreateLocationRequest): Result<Unit> = runCatching {
+    suspend fun updateLocation(id: String, request: CreateLocationRequest): Result<Unit> = apiCall {
         client.put("$baseUrl/locations/$id") {
             contentType(ContentType.Application.Json)
             setBody(request)
@@ -911,55 +935,55 @@ object ApiClient {
         Unit
     }
 
-    suspend fun getLocation(id: String): Result<LocationDto?> = runCatching {
+    suspend fun getLocation(id: String): Result<LocationDto?> = apiCall {
         val locations: List<LocationDto> = client.get("$baseUrl/locations").body()
         locations.find { it.id == id }
     }
 
-    suspend fun toggleLocationLock(locationId: String, userId: String): Result<LocationDto> = runCatching {
+    suspend fun toggleLocationLock(locationId: String, userId: String): Result<LocationDto> = apiCall {
         client.put("$baseUrl/locations/$locationId/lock") {
             contentType(ContentType.Application.Json)
             setBody(LockRequest(userId))
         }.body()
     }
 
-    suspend fun toggleCreatureLock(creatureId: String, userId: String): Result<CreatureDto> = runCatching {
+    suspend fun toggleCreatureLock(creatureId: String, userId: String): Result<CreatureDto> = apiCall {
         client.put("$baseUrl/creatures/$creatureId/lock") {
             contentType(ContentType.Application.Json)
             setBody(LockRequest(userId))
         }.body()
     }
 
-    suspend fun toggleItemLock(itemId: String, userId: String): Result<ItemDto> = runCatching {
+    suspend fun toggleItemLock(itemId: String, userId: String): Result<ItemDto> = apiCall {
         client.put("$baseUrl/items/$itemId/lock") {
             contentType(ContentType.Application.Json)
             setBody(LockRequest(userId))
         }.body()
     }
 
-    suspend fun deleteLocation(id: String): Result<Unit> = runCatching {
+    suspend fun deleteLocation(id: String): Result<Unit> = apiCall {
         client.delete("$baseUrl/locations/$id")
         Unit
     }
 
-    suspend fun deleteCreature(id: String): Result<Unit> = runCatching {
+    suspend fun deleteCreature(id: String): Result<Unit> = apiCall {
         client.delete("$baseUrl/creatures/$id")
         Unit
     }
 
-    suspend fun deleteItem(id: String): Result<Unit> = runCatching {
+    suspend fun deleteItem(id: String): Result<Unit> = apiCall {
         client.delete("$baseUrl/items/$id")
         Unit
     }
 
-    suspend fun createCreature(request: CreateCreatureRequest): Result<CreatureDto> = runCatching {
+    suspend fun createCreature(request: CreateCreatureRequest): Result<CreatureDto> = apiCall {
         client.post("$baseUrl/creatures") {
             contentType(ContentType.Application.Json)
             setBody(request)
         }.body()
     }
 
-    suspend fun updateCreature(id: String, request: CreateCreatureRequest): Result<Unit> = runCatching {
+    suspend fun updateCreature(id: String, request: CreateCreatureRequest): Result<Unit> = apiCall {
         client.put("$baseUrl/creatures/$id") {
             contentType(ContentType.Application.Json)
             setBody(request)
@@ -967,14 +991,14 @@ object ApiClient {
         Unit
     }
 
-    suspend fun createItem(request: CreateItemRequest): Result<ItemDto> = runCatching {
+    suspend fun createItem(request: CreateItemRequest): Result<ItemDto> = apiCall {
         client.post("$baseUrl/items") {
             contentType(ContentType.Application.Json)
             setBody(request)
         }.body()
     }
 
-    suspend fun updateItem(id: String, request: CreateItemRequest): Result<Unit> = runCatching {
+    suspend fun updateItem(id: String, request: CreateItemRequest): Result<Unit> = apiCall {
         client.put("$baseUrl/items/$id") {
             contentType(ContentType.Application.Json)
             setBody(request)
@@ -982,11 +1006,11 @@ object ApiClient {
         Unit
     }
 
-    suspend fun getCreatures(): Result<List<CreatureDto>> = runCatching {
+    suspend fun getCreatures(): Result<List<CreatureDto>> = apiCall {
         client.get("$baseUrl/creatures").body()
     }
 
-    suspend fun getCreature(id: String): Result<CreatureDto?> = runCatching {
+    suspend fun getCreature(id: String): Result<CreatureDto?> = apiCall {
         val creatures: List<CreatureDto> = client.get("$baseUrl/creatures").body()
         creatures.find { it.id == id }
     }
@@ -994,28 +1018,28 @@ object ApiClient {
     /**
      * Get activity states for all creatures (wandering, in_combat, idle).
      */
-    suspend fun getCreatureStates(): Result<Map<String, String>> = runCatching {
+    suspend fun getCreatureStates(): Result<Map<String, String>> = apiCall {
         client.get("$baseUrl/creatures/states").body()
     }
 
-    suspend fun getItems(): Result<List<ItemDto>> = runCatching {
+    suspend fun getItems(): Result<List<ItemDto>> = apiCall {
         client.get("$baseUrl/items").body()
     }
 
-    suspend fun getItem(id: String): Result<ItemDto?> = runCatching {
+    suspend fun getItem(id: String): Result<ItemDto?> = apiCall {
         val items: List<ItemDto> = client.get("$baseUrl/items").body()
         items.find { it.id == id }
     }
 
     // User auth methods
-    suspend fun register(name: String, password: String): Result<AuthResponse> = runCatching {
+    suspend fun register(name: String, password: String): Result<AuthResponse> = apiCall {
         client.post("$baseUrl/auth/register") {
             contentType(ContentType.Application.Json)
             setBody(RegisterRequest(name, password))
         }.body()
     }
 
-    suspend fun login(name: String, password: String): Result<AuthResponse> = runCatching {
+    suspend fun login(name: String, password: String): Result<AuthResponse> = apiCall {
         client.post("$baseUrl/auth/login") {
             contentType(ContentType.Application.Json)
             setBody(LoginRequest(name, password))
@@ -1028,14 +1052,14 @@ object ApiClient {
      * On web, the cookie is automatically sent and refreshed.
      * On native, the Authorization header is sent and response contains new expiry.
      */
-    suspend fun validateSession(): Result<AuthResponse> = runCatching {
+    suspend fun validateSession(): Result<AuthResponse> = apiCall {
         client.get("$baseUrl/auth/me").body()
     }
 
     /**
      * Logout - invalidate current session.
      */
-    suspend fun logout(): Result<Unit> = runCatching {
+    suspend fun logout(): Result<Unit> = apiCall {
         client.post("$baseUrl/auth/logout")
         Unit
     }
@@ -1043,23 +1067,23 @@ object ApiClient {
     /**
      * Logout from all devices - invalidate all sessions for this user.
      */
-    suspend fun logoutAll(): Result<Unit> = runCatching {
+    suspend fun logoutAll(): Result<Unit> = apiCall {
         client.post("$baseUrl/auth/logout-all")
         Unit
     }
 
-    suspend fun getUser(id: String): Result<UserDto?> = runCatching {
+    suspend fun getUser(id: String): Result<UserDto?> = apiCall {
         client.get("$baseUrl/users/$id").body()
     }
 
-    suspend fun updateUser(id: String, request: UpdateUserRequest): Result<UserDto> = runCatching {
+    suspend fun updateUser(id: String, request: UpdateUserRequest): Result<UserDto> = apiCall {
         client.put("$baseUrl/users/$id") {
             contentType(ContentType.Application.Json)
             setBody(request)
         }.body()
     }
 
-    suspend fun updateUserLocation(id: String, locationId: String?): Result<Unit> = runCatching {
+    suspend fun updateUserLocation(id: String, locationId: String?): Result<Unit> = apiCall {
         client.put("$baseUrl/users/$id/location") {
             contentType(ContentType.Application.Json)
             setBody(UpdateUserLocationRequest(locationId))
@@ -1067,21 +1091,21 @@ object ApiClient {
         Unit
     }
 
-    suspend fun updateUserClass(id: String, classId: String?): Result<UserDto> = runCatching {
+    suspend fun updateUserClass(id: String, classId: String?): Result<UserDto> = apiCall {
         client.put("$baseUrl/users/$id/class") {
             contentType(ContentType.Application.Json)
             setBody(UpdateUserClassRequest(classId))
         }.body()
     }
 
-    suspend fun deriveAttributes(userId: String, description: String, followUpAnswers: Map<String, String> = emptyMap()): Result<DerivedAttributesDto> = runCatching {
+    suspend fun deriveAttributes(userId: String, description: String, followUpAnswers: Map<String, String> = emptyMap()): Result<DerivedAttributesDto> = apiCall {
         client.post("$baseUrl/users/$userId/derive-attributes") {
             contentType(ContentType.Application.Json)
             setBody(DeriveAttributesRequestDto(description, followUpAnswers))
         }.body()
     }
 
-    suspend fun commitAttributes(userId: String, attributes: DerivedAttributesDto): Result<UserDto> = runCatching {
+    suspend fun commitAttributes(userId: String, attributes: DerivedAttributesDto): Result<UserDto> = apiCall {
         client.post("$baseUrl/users/$userId/commit-attributes") {
             contentType(ContentType.Application.Json)
             setBody(CommitAttributesRequestDto(
@@ -1096,7 +1120,7 @@ object ApiClient {
         }.body()
     }
 
-    suspend fun getActiveUsersAtLocation(locationId: String): Result<List<UserDto>> = runCatching {
+    suspend fun getActiveUsersAtLocation(locationId: String): Result<List<UserDto>> = apiCall {
         client.get("$baseUrl/users/at-location/$locationId").body()
     }
 
@@ -1104,15 +1128,15 @@ object ApiClient {
     // EQUIPMENT
     // =========================================================================
 
-    suspend fun equipItem(userId: String, itemId: String): Result<UserDto> = runCatching {
+    suspend fun equipItem(userId: String, itemId: String): Result<UserDto> = apiCall {
         client.post("$baseUrl/users/$userId/equip/$itemId").body()
     }
 
-    suspend fun unequipItem(userId: String, itemId: String): Result<UserDto> = runCatching {
+    suspend fun unequipItem(userId: String, itemId: String): Result<UserDto> = apiCall {
         client.post("$baseUrl/users/$userId/unequip/$itemId").body()
     }
 
-    suspend fun pickupItem(userId: String, itemId: String, locationId: String): Result<UserDto> = runCatching {
+    suspend fun pickupItem(userId: String, itemId: String, locationId: String): Result<UserDto> = apiCall {
         client.post("$baseUrl/users/$userId/pickup/$itemId") {
             contentType(ContentType.Application.Json)
             setBody(mapOf("locationId" to locationId))
@@ -1123,18 +1147,18 @@ object ApiClient {
     // ICON MAPPINGS
     // =========================================================================
 
-    suspend fun getIconMappings(userId: String): Result<List<IconMappingDto>> = runCatching {
+    suspend fun getIconMappings(userId: String): Result<List<IconMappingDto>> = apiCall {
         client.get("$baseUrl/users/$userId/icon-mappings").body()
     }
 
-    suspend fun setIconMapping(userId: String, abilityId: String, iconName: String): Result<IconMappingDto> = runCatching {
+    suspend fun setIconMapping(userId: String, abilityId: String, iconName: String): Result<IconMappingDto> = apiCall {
         client.put("$baseUrl/users/$userId/icon-mappings/$abilityId") {
             contentType(ContentType.Application.Json)
             setBody(SetIconMappingRequestDto(iconName = iconName))
         }.body()
     }
 
-    suspend fun deleteIconMapping(userId: String, abilityId: String): Result<Unit> = runCatching {
+    suspend fun deleteIconMapping(userId: String, abilityId: String): Result<Unit> = apiCall {
         client.delete("$baseUrl/users/$userId/icon-mappings/$abilityId")
     }
 
@@ -1142,11 +1166,11 @@ object ApiClient {
     // ENCOUNTERS
     // =========================================================================
 
-    suspend fun getEncounters(userId: String): Result<List<PlayerEncounterDto>> = runCatching {
+    suspend fun getEncounters(userId: String): Result<List<PlayerEncounterDto>> = apiCall {
         client.get("$baseUrl/users/$userId/encounters").body()
     }
 
-    suspend fun classifyEncounter(userId: String, encounteredUserId: String, classification: String): Result<Unit> = runCatching {
+    suspend fun classifyEncounter(userId: String, encounteredUserId: String, classification: String): Result<Unit> = apiCall {
         client.put("$baseUrl/users/$userId/encounters/$encounteredUserId/classify") {
             contentType(ContentType.Application.Json)
             setBody(ClassifyEncounterRequestDto(classification = classification))
@@ -1157,11 +1181,11 @@ object ApiClient {
     // TELEPORT
     // =========================================================================
 
-    suspend fun getTeleportDestinations(): Result<List<TeleportDestinationDto>> = runCatching {
+    suspend fun getTeleportDestinations(): Result<List<TeleportDestinationDto>> = apiCall {
         client.get("$baseUrl/teleport/destinations").body()
     }
 
-    suspend fun teleport(userId: String, targetAreaId: String, abilityId: String): Result<TeleportResponseDto> = runCatching {
+    suspend fun teleport(userId: String, targetAreaId: String, abilityId: String): Result<TeleportResponseDto> = apiCall {
         client.post("$baseUrl/teleport") {
             contentType(ContentType.Application.Json)
             setBody(TeleportRequestDto(userId = userId, targetAreaId = targetAreaId, abilityId = abilityId))
@@ -1172,11 +1196,11 @@ object ApiClient {
     // PHASEWALK
     // =========================================================================
 
-    suspend fun getPhasewalkDestinations(userId: String): Result<List<PhasewalkDestinationDto>> = runCatching {
+    suspend fun getPhasewalkDestinations(userId: String): Result<List<PhasewalkDestinationDto>> = apiCall {
         client.get("$baseUrl/phasewalk/destinations/$userId").body()
     }
 
-    suspend fun phasewalk(userId: String, direction: String): Result<PhasewalkResponseDto> = runCatching {
+    suspend fun phasewalk(userId: String, direction: String): Result<PhasewalkResponseDto> = apiCall {
         client.post("$baseUrl/phasewalk") {
             contentType(ContentType.Application.Json)
             setBody(PhasewalkRequestDto(userId = userId, direction = direction))
@@ -1187,19 +1211,19 @@ object ApiClient {
     // RIFT PORTAL
     // =========================================================================
 
-    suspend fun getUnconnectedAreas(userId: String): Result<List<UnconnectedAreaDto>> = runCatching {
+    suspend fun getUnconnectedAreas(userId: String): Result<List<UnconnectedAreaDto>> = apiCall {
         client.get("$baseUrl/rift-portal/unconnected-areas") {
             header("X-User-Id", userId)
         }.body()
     }
 
-    suspend fun getSealableRifts(userId: String): Result<List<SealableRiftDto>> = runCatching {
+    suspend fun getSealableRifts(userId: String): Result<List<SealableRiftDto>> = apiCall {
         client.get("$baseUrl/rift-portal/sealable-rifts") {
             header("X-User-Id", userId)
         }.body()
     }
 
-    suspend fun openRift(userId: String, targetAreaId: String): Result<CreateRiftResponseDto> = runCatching {
+    suspend fun openRift(userId: String, targetAreaId: String): Result<CreateRiftResponseDto> = apiCall {
         client.post("$baseUrl/rift-portal/create") {
             header("X-User-Id", userId)
             contentType(ContentType.Application.Json)
@@ -1207,7 +1231,7 @@ object ApiClient {
         }.body()
     }
 
-    suspend fun sealRift(userId: String, targetAreaId: String): Result<CreateRiftResponseDto> = runCatching {
+    suspend fun sealRift(userId: String, targetAreaId: String): Result<CreateRiftResponseDto> = apiCall {
         client.post("$baseUrl/rift-portal/seal") {
             header("X-User-Id", userId)
             contentType(ContentType.Application.Json)
@@ -1219,14 +1243,14 @@ object ApiClient {
     // SHOP
     // =========================================================================
 
-    suspend fun buyItem(locationId: String, userId: String, itemId: String): Result<ShopActionResponse> = runCatching {
+    suspend fun buyItem(locationId: String, userId: String, itemId: String): Result<ShopActionResponse> = apiCall {
         client.post("$baseUrl/shop/$locationId/buy") {
             contentType(ContentType.Application.Json)
             setBody(BuyItemRequest(userId = userId, itemId = itemId))
         }.body()
     }
 
-    suspend fun restAtInn(locationId: String, userId: String): Result<ShopActionResponse> = runCatching {
+    suspend fun restAtInn(locationId: String, userId: String): Result<ShopActionResponse> = apiCall {
         client.post("$baseUrl/shop/$locationId/rest") {
             contentType(ContentType.Application.Json)
             setBody(RestAtInnRequest(userId = userId))
@@ -1251,18 +1275,18 @@ object ApiClient {
         val entityType: String
     )
 
-    suspend fun getIdentifiedEntities(userId: String): Result<IdentifiedEntitiesResponse> = runCatching {
+    suspend fun getIdentifiedEntities(userId: String): Result<IdentifiedEntitiesResponse> = apiCall {
         client.get("$baseUrl/users/$userId/identified").body()
     }
 
-    suspend fun identifyEntity(userId: String, entityId: String, entityType: String): Result<IdentifyResponse> = runCatching {
+    suspend fun identifyEntity(userId: String, entityId: String, entityType: String): Result<IdentifyResponse> = apiCall {
         client.post("$baseUrl/users/$userId/identify") {
             contentType(ContentType.Application.Json)
             setBody(IdentifyRequest(entityId, entityType))
         }.body()
     }
 
-    suspend fun assignClass(userId: String, request: AssignClassRequest): Result<AssignClassResponse> = runCatching {
+    suspend fun assignClass(userId: String, request: AssignClassRequest): Result<AssignClassResponse> = apiCall {
         client.post("$baseUrl/users/$userId/assign-class") {
             contentType(ContentType.Application.Json)
             setBody(request)
@@ -1273,7 +1297,7 @@ object ApiClient {
     private data class ErrorResponse(val error: String)
 
     // Content generation methods
-    suspend fun isContentGenerationAvailable(): Result<Boolean> = runCatching {
+    suspend fun isContentGenerationAvailable(): Result<Boolean> = apiCall {
         val response: Map<String, Boolean> = client.get("$baseUrl/generate/status").body()
         response["available"] ?: false
     }
@@ -1283,7 +1307,7 @@ object ApiClient {
         featureIds: List<String> = emptyList(),
         existingName: String? = null,
         existingDesc: String? = null
-    ): Result<GeneratedContentResponse> = runCatching {
+    ): Result<GeneratedContentResponse> = apiCall {
         val response = client.post("$baseUrl/generate/location") {
             contentType(ContentType.Application.Json)
             setBody(GenerateLocationContentRequest(exitIds, featureIds, existingName, existingDesc))
@@ -1299,7 +1323,7 @@ object ApiClient {
     suspend fun generateCreatureContent(
         existingName: String? = null,
         existingDesc: String? = null
-    ): Result<GeneratedContentResponse> = runCatching {
+    ): Result<GeneratedContentResponse> = apiCall {
         val response = client.post("$baseUrl/generate/creature") {
             contentType(ContentType.Application.Json)
             setBody(GenerateCreatureContentRequest(existingName, existingDesc))
@@ -1315,7 +1339,7 @@ object ApiClient {
     suspend fun generateItemContent(
         existingName: String? = null,
         existingDesc: String? = null
-    ): Result<GeneratedContentResponse> = runCatching {
+    ): Result<GeneratedContentResponse> = apiCall {
         val response = client.post("$baseUrl/generate/item") {
             contentType(ContentType.Application.Json)
             setBody(GenerateItemContentRequest(existingName, existingDesc))
@@ -1329,7 +1353,7 @@ object ApiClient {
     }
 
     // Image generation methods
-    suspend fun isImageGenerationAvailable(): Result<Boolean> = runCatching {
+    suspend fun isImageGenerationAvailable(): Result<Boolean> = apiCall {
         val response: Map<String, Boolean> = client.get("$baseUrl/image-generation/status").body()
         response["available"] ?: false
     }
@@ -1340,7 +1364,7 @@ object ApiClient {
         name: String,
         description: String,
         featureIds: List<String> = emptyList()
-    ): Result<GenerateImageResponse> = runCatching {
+    ): Result<GenerateImageResponse> = apiCall {
         val response = client.post("$baseUrl/image-generation/generate") {
             contentType(ContentType.Application.Json)
             setBody(GenerateImageRequest(entityType, entityId, name, description, featureIds))
@@ -1354,11 +1378,11 @@ object ApiClient {
     }
 
     // Feature methods
-    suspend fun getFeatures(): Result<List<FeatureDto>> = runCatching {
+    suspend fun getFeatures(): Result<List<FeatureDto>> = apiCall {
         client.get("$baseUrl/features").body()
     }
 
-    suspend fun getFeature(id: String): Result<FeatureDto?> = runCatching {
+    suspend fun getFeature(id: String): Result<FeatureDto?> = apiCall {
         val response = client.get("$baseUrl/features/$id")
         if (response.status.isSuccess()) {
             response.body()
@@ -1368,11 +1392,11 @@ object ApiClient {
     }
 
     // Admin file management methods
-    suspend fun getUploadedFiles(): Result<List<UploadedFileDto>> = runCatching {
+    suspend fun getUploadedFiles(): Result<List<UploadedFileDto>> = apiCall {
         client.get("$baseUrl/admin/files").body()
     }
 
-    suspend fun uploadFile(filename: String, fileBytes: ByteArray): Result<FileUploadResponseDto> = runCatching {
+    suspend fun uploadFile(filename: String, fileBytes: ByteArray): Result<FileUploadResponseDto> = apiCall {
         val response = client.post("$baseUrl/admin/files/upload") {
             setBody(
                 MultiPartFormDataContent(
@@ -1391,69 +1415,69 @@ object ApiClient {
         }
     }
 
-    suspend fun deleteUploadedFile(filename: String): Result<Boolean> = runCatching {
+    suspend fun deleteUploadedFile(filename: String): Result<Boolean> = apiCall {
         val response = client.delete("$baseUrl/admin/files/$filename")
         response.status.isSuccess()
     }
 
-    suspend fun getAllowedFileTypes(): Result<Set<String>> = runCatching {
+    suspend fun getAllowedFileTypes(): Result<Set<String>> = apiCall {
         val response: Map<String, Set<String>> = client.get("$baseUrl/admin/files/allowed-types").body()
         response["allowedExtensions"] ?: emptySet()
     }
 
     // Audit log methods
-    suspend fun getAuditLogs(limit: Int = 100, offset: Long = 0): Result<List<AuditLogDto>> = runCatching {
+    suspend fun getAuditLogs(limit: Int = 100, offset: Long = 0): Result<List<AuditLogDto>> = apiCall {
         client.get("$baseUrl/audit-logs") {
             parameter("limit", limit)
             parameter("offset", offset)
         }.body()
     }
 
-    suspend fun getAuditLogsByRecord(recordId: String): Result<List<AuditLogDto>> = runCatching {
+    suspend fun getAuditLogsByRecord(recordId: String): Result<List<AuditLogDto>> = apiCall {
         client.get("$baseUrl/audit-logs/by-record/$recordId").body()
     }
 
-    suspend fun getAuditLogsByType(recordType: String, limit: Int = 100): Result<List<AuditLogDto>> = runCatching {
+    suspend fun getAuditLogsByType(recordType: String, limit: Int = 100): Result<List<AuditLogDto>> = apiCall {
         client.get("$baseUrl/audit-logs/by-type/$recordType") {
             parameter("limit", limit)
         }.body()
     }
 
-    suspend fun getAuditLogsByUser(userId: String, limit: Int = 100): Result<List<AuditLogDto>> = runCatching {
+    suspend fun getAuditLogsByUser(userId: String, limit: Int = 100): Result<List<AuditLogDto>> = apiCall {
         client.get("$baseUrl/audit-logs/by-user/$userId") {
             parameter("limit", limit)
         }.body()
     }
 
     // Data integrity check
-    suspend fun getDataIntegrity(): Result<DataIntegrityResponseDto> = runCatching {
+    suspend fun getDataIntegrity(): Result<DataIntegrityResponseDto> = apiCall {
         client.get("$baseUrl/admin/database/data-integrity").body()
     }
 
     // Admin users
-    suspend fun getAdminUsers(): Result<AdminUsersResponseDto> = runCatching {
+    suspend fun getAdminUsers(): Result<AdminUsersResponseDto> = apiCall {
         client.get("$baseUrl/admin/users").body()
     }
 
     // Terrain override methods
-    suspend fun getTerrainOverrides(locationId: String): Result<TerrainOverrideDto> = runCatching {
+    suspend fun getTerrainOverrides(locationId: String): Result<TerrainOverrideDto> = apiCall {
         client.get("$baseUrl/locations/$locationId/terrain-overrides").body()
     }
 
-    suspend fun updateTerrainOverrides(locationId: String, overrides: TerrainOverridesDto): Result<TerrainOverrideDto> = runCatching {
+    suspend fun updateTerrainOverrides(locationId: String, overrides: TerrainOverridesDto): Result<TerrainOverrideDto> = apiCall {
         client.put("$baseUrl/locations/$locationId/terrain-overrides") {
             contentType(ContentType.Application.Json)
             setBody(overrides)
         }.body()
     }
 
-    suspend fun resetTerrainOverrides(locationId: String): Result<Unit> = runCatching {
+    suspend fun resetTerrainOverrides(locationId: String): Result<Unit> = apiCall {
         client.delete("$baseUrl/locations/$locationId/terrain-overrides")
         Unit
     }
 
     // Exit validation
-    suspend fun validateExit(fromLocationId: String, toLocationId: String): Result<ValidateExitResponse> = runCatching {
+    suspend fun validateExit(fromLocationId: String, toLocationId: String): Result<ValidateExitResponse> = apiCall {
         client.post("$baseUrl/locations/validate-exit") {
             contentType(ContentType.Application.Json)
             setBody(ValidateExitRequest(fromLocationId, toLocationId))
@@ -1462,16 +1486,16 @@ object ApiClient {
 
     // Service health and management
     // Get local service health (Ollama, Stable Diffusion) via backend API
-    suspend fun getLocalServicesHealth(): Result<List<ServiceStatusDto>> = runCatching {
+    suspend fun getLocalServicesHealth(): Result<List<ServiceStatusDto>> = apiCall {
         client.get("$baseUrl/admin/services/health/local").body()
     }
 
     // Get Cloudflare tunnel health via backend API
-    suspend fun getCloudflareServicesHealth(): Result<List<ServiceStatusDto>> = runCatching {
+    suspend fun getCloudflareServicesHealth(): Result<List<ServiceStatusDto>> = apiCall {
         client.get("$baseUrl/admin/services/health/cloudflare").body()
     }
 
-    suspend fun controlService(serviceName: String, action: String): Result<ServiceActionResponse> = runCatching {
+    suspend fun controlService(serviceName: String, action: String): Result<ServiceActionResponse> = apiCall {
         client.post("$baseUrl/admin/services/$serviceName/control") {
             contentType(ContentType.Application.Json)
             setBody(ServiceActionRequest(action))
@@ -1479,35 +1503,35 @@ object ApiClient {
     }
 
     // Purge Cloudflare cache
-    suspend fun purgeCloudflareCache(): Result<ServiceActionResponse> = runCatching {
+    suspend fun purgeCloudflareCache(): Result<ServiceActionResponse> = apiCall {
         client.post("$baseUrl/admin/services/cloudflare/purge-cache").body()
     }
 
     // Database backup/restore
-    suspend fun createDatabaseBackup(): Result<BackupResponse> = runCatching {
+    suspend fun createDatabaseBackup(): Result<BackupResponse> = apiCall {
         client.post("$baseUrl/admin/database/backup").body()
     }
 
-    suspend fun listDatabaseBackups(): Result<BackupListResponse> = runCatching {
+    suspend fun listDatabaseBackups(): Result<BackupListResponse> = apiCall {
         client.get("$baseUrl/admin/database/backups").body()
     }
 
-    suspend fun restoreDatabase(filename: String): Result<RestoreResponse> = runCatching {
+    suspend fun restoreDatabase(filename: String): Result<RestoreResponse> = apiCall {
         client.post("$baseUrl/admin/database/restore/$filename").body()
     }
 
-    suspend fun deleteBackup(filename: String): Result<BackupResponse> = runCatching {
+    suspend fun deleteBackup(filename: String): Result<BackupResponse> = apiCall {
         client.delete("$baseUrl/admin/database/backup/$filename").body()
     }
 
     // Character Class methods
-    suspend fun getCharacterClasses(isAdmin: Boolean = false): Result<List<CharacterClassDto>> = runCatching {
+    suspend fun getCharacterClasses(isAdmin: Boolean = false): Result<List<CharacterClassDto>> = apiCall {
         client.get("$baseUrl/classes") {
             header("X-Is-Admin", isAdmin.toString())
         }.body()
     }
 
-    suspend fun getCharacterClass(id: String): Result<CharacterClassDto?> = runCatching {
+    suspend fun getCharacterClass(id: String): Result<CharacterClassDto?> = apiCall {
         val response = client.get("$baseUrl/classes/$id")
         if (response.status.isSuccess()) {
             response.body()
@@ -1516,37 +1540,37 @@ object ApiClient {
         }
     }
 
-    suspend fun createCharacterClass(request: CreateCharacterClassRequest): Result<CharacterClassDto> = runCatching {
+    suspend fun createCharacterClass(request: CreateCharacterClassRequest): Result<CharacterClassDto> = apiCall {
         client.post("$baseUrl/classes") {
             contentType(ContentType.Application.Json)
             setBody(request)
         }.body()
     }
 
-    suspend fun updateCharacterClass(id: String, request: CreateCharacterClassRequest): Result<CharacterClassDto> = runCatching {
+    suspend fun updateCharacterClass(id: String, request: CreateCharacterClassRequest): Result<CharacterClassDto> = apiCall {
         client.put("$baseUrl/classes/$id") {
             contentType(ContentType.Application.Json)
             setBody(request)
         }.body()
     }
 
-    suspend fun deleteCharacterClass(id: String): Result<Unit> = runCatching {
+    suspend fun deleteCharacterClass(id: String): Result<Unit> = apiCall {
         client.delete("$baseUrl/classes/$id")
         Unit
     }
 
-    suspend fun toggleClassLock(classId: String): Result<CharacterClassDto> = runCatching {
+    suspend fun toggleClassLock(classId: String): Result<CharacterClassDto> = apiCall {
         client.put("$baseUrl/classes/$classId/lock") {
             header("X-Is-Admin", "true")
         }.body()
     }
 
     // Ability methods
-    suspend fun getAbilities(): Result<List<AbilityDto>> = runCatching {
+    suspend fun getAbilities(): Result<List<AbilityDto>> = apiCall {
         client.get("$baseUrl/abilities").body()
     }
 
-    suspend fun getAbility(id: String): Result<AbilityDto?> = runCatching {
+    suspend fun getAbility(id: String): Result<AbilityDto?> = apiCall {
         val response = client.get("$baseUrl/abilities/$id")
         if (response.status.isSuccess()) {
             response.body()
@@ -1555,50 +1579,50 @@ object ApiClient {
         }
     }
 
-    suspend fun getAbilitiesByClass(classId: String): Result<List<AbilityDto>> = runCatching {
+    suspend fun getAbilitiesByClass(classId: String): Result<List<AbilityDto>> = apiCall {
         client.get("$baseUrl/abilities/class/$classId").body()
     }
 
-    suspend fun createAbility(request: CreateAbilityRequest): Result<AbilityDto> = runCatching {
+    suspend fun createAbility(request: CreateAbilityRequest): Result<AbilityDto> = apiCall {
         client.post("$baseUrl/abilities") {
             contentType(ContentType.Application.Json)
             setBody(request)
         }.body()
     }
 
-    suspend fun updateAbility(id: String, request: CreateAbilityRequest): Result<AbilityDto> = runCatching {
+    suspend fun updateAbility(id: String, request: CreateAbilityRequest): Result<AbilityDto> = apiCall {
         client.put("$baseUrl/abilities/$id") {
             contentType(ContentType.Application.Json)
             setBody(request)
         }.body()
     }
 
-    suspend fun deleteAbility(id: String): Result<Unit> = runCatching {
+    suspend fun deleteAbility(id: String): Result<Unit> = apiCall {
         client.delete("$baseUrl/abilities/$id")
         Unit
     }
 
     // Class Generation and Matching methods
-    suspend fun matchCharacterToClass(description: String): Result<ClassMatchResult> = runCatching {
+    suspend fun matchCharacterToClass(description: String): Result<ClassMatchResult> = apiCall {
         client.post("$baseUrl/class-generation/match") {
             contentType(ContentType.Application.Json)
             setBody(MatchClassRequest(description))
         }.body()
     }
 
-    suspend fun generateClass(description: String, isPublic: Boolean = false): Result<GeneratedClassResponse> = runCatching {
+    suspend fun generateClass(description: String, isPublic: Boolean = false): Result<GeneratedClassResponse> = apiCall {
         client.post("$baseUrl/class-generation/generate") {
             contentType(ContentType.Application.Json)
             setBody(GenerateClassRequest(description, isPublic))
         }.body()
     }
 
-    suspend fun getLlmStatus(): Result<LlmStatusResponse> = runCatching {
+    suspend fun getLlmStatus(): Result<LlmStatusResponse> = apiCall {
         client.get("$baseUrl/class-generation/status").body()
     }
 
     // World Generation methods
-    suspend fun generateWorld(params: WorldGenParamsDto): Result<WorldGenJobResponseDto> = runCatching {
+    suspend fun generateWorld(params: WorldGenParamsDto): Result<WorldGenJobResponseDto> = apiCall {
         val response = client.post("$baseUrl/world/generate") {
             contentType(ContentType.Application.Json)
             setBody(params)
@@ -1606,61 +1630,61 @@ object ApiClient {
         // Handle non-success responses that still have a body
         if (!response.status.isSuccess()) {
             val errorBody: WorldGenJobResponseDto = response.body()
-            return@runCatching errorBody
+            return@apiCall errorBody
         }
         response.body()
     }
 
-    suspend fun generateWorldSync(params: WorldGenParamsDto): Result<WorldGenerationResultDto> = runCatching {
+    suspend fun generateWorldSync(params: WorldGenParamsDto): Result<WorldGenerationResultDto> = apiCall {
         client.post("$baseUrl/world/generate/sync") {
             contentType(ContentType.Application.Json)
             setBody(params)
         }.body()
     }
 
-    suspend fun getWorldGenJobStatus(jobId: String): Result<WorldGenJobStatusDto> = runCatching {
+    suspend fun getWorldGenJobStatus(jobId: String): Result<WorldGenJobStatusDto> = apiCall {
         client.get("$baseUrl/world/generate/$jobId/status").body()
     }
 
-    suspend fun getWorldAreas(): Result<List<AreaInfoDto>> = runCatching {
+    suspend fun getWorldAreas(): Result<List<AreaInfoDto>> = apiCall {
         client.get("$baseUrl/world/areas").body()
     }
 
-    suspend fun deleteWorldArea(areaId: String): Result<AreaDeleteResponseDto> = runCatching {
+    suspend fun deleteWorldArea(areaId: String): Result<AreaDeleteResponseDto> = apiCall {
         client.delete("$baseUrl/world/area/$areaId").body()
     }
 
-    suspend fun getWorldBiomes(): Result<List<BiomeInfoDto>> = runCatching {
+    suspend fun getWorldBiomes(): Result<List<BiomeInfoDto>> = apiCall {
         client.get("$baseUrl/world/biomes").body()
     }
 
-    suspend fun getWorldGenDefaults(): Result<WorldGenParamsDto> = runCatching {
+    suspend fun getWorldGenDefaults(): Result<WorldGenParamsDto> = apiCall {
         client.get("$baseUrl/world/params/defaults").body()
     }
 
     // Nerf Request methods
-    suspend fun getNerfRequests(): Result<List<NerfRequestDto>> = runCatching {
+    suspend fun getNerfRequests(): Result<List<NerfRequestDto>> = apiCall {
         client.get("$baseUrl/nerf-requests").body()
     }
 
-    suspend fun getPendingNerfRequests(): Result<List<NerfRequestDto>> = runCatching {
+    suspend fun getPendingNerfRequests(): Result<List<NerfRequestDto>> = apiCall {
         client.get("$baseUrl/nerf-requests/pending").body()
     }
 
-    suspend fun getPendingNerfCount(): Result<PendingCountResponse> = runCatching {
+    suspend fun getPendingNerfCount(): Result<PendingCountResponse> = apiCall {
         client.get("$baseUrl/nerf-requests/pending/count").body()
     }
 
-    suspend fun getNerfRequest(id: String): Result<NerfRequestDto?> = runCatching {
+    suspend fun getNerfRequest(id: String): Result<NerfRequestDto?> = apiCall {
         val response = client.get("$baseUrl/nerf-requests/$id")
         if (response.status.isSuccess()) response.body() else null
     }
 
-    suspend fun getNerfRequestsForAbility(abilityId: String): Result<List<NerfRequestDto>> = runCatching {
+    suspend fun getNerfRequestsForAbility(abilityId: String): Result<List<NerfRequestDto>> = apiCall {
         client.get("$baseUrl/nerf-requests/ability/$abilityId").body()
     }
 
-    suspend fun createNerfRequest(abilityId: String, reason: String): Result<NerfRequestDto> = runCatching {
+    suspend fun createNerfRequest(abilityId: String, reason: String): Result<NerfRequestDto> = apiCall {
         client.post("$baseUrl/nerf-requests") {
             contentType(ContentType.Application.Json)
             setBody(CreateNerfRequestRequest(abilityId, reason))
@@ -1672,20 +1696,20 @@ object ApiClient {
         status: String,
         adminNotes: String? = null,
         applyChanges: Boolean = false
-    ): Result<NerfRequestDto> = runCatching {
+    ): Result<NerfRequestDto> = apiCall {
         client.put("$baseUrl/nerf-requests/$id/resolve") {
             contentType(ContentType.Application.Json)
             setBody(ResolveNerfRequestRequest(status, adminNotes, applyChanges))
         }.body()
     }
 
-    suspend fun deleteNerfRequest(id: String): Result<Unit> = runCatching {
+    suspend fun deleteNerfRequest(id: String): Result<Unit> = apiCall {
         client.delete("$baseUrl/nerf-requests/$id")
         Unit
     }
 
     // PDF Analysis methods
-    suspend fun analyzePdf(filename: String, fileBytes: ByteArray, analysisType: String): Result<PdfAnalysisResponse> = runCatching {
+    suspend fun analyzePdf(filename: String, fileBytes: ByteArray, analysisType: String): Result<PdfAnalysisResponse> = apiCall {
         val response = client.post("$baseUrl/pdf/analyze") {
             setBody(
                 MultiPartFormDataContent(
@@ -1922,6 +1946,7 @@ data class RoundStartResponse(
 data class HealthUpdateResponse(
     val sessionId: String,
     val combatantId: String,
+    val combatantName: String,
     val currentHp: Int,
     val maxHp: Int,
     val changeAmount: Int,
@@ -2074,4 +2099,31 @@ data class ShopActionResponse(
     val success: Boolean,
     val message: String,
     val user: UserDto? = null
+)
+
+// ============================================================================
+// Location Mutation DTOs (WebSocket events for real-time location updates)
+// ============================================================================
+
+enum class LocationEventType {
+    LOCATION_UPDATED,
+    EXIT_ADDED,
+    EXIT_REMOVED,
+    ITEM_ADDED,
+    ITEM_REMOVED
+}
+
+@Serializable
+data class LocationMutationEvent(
+    val type: String,                    // "LOCATION_MUTATION"
+    val eventType: LocationEventType,
+    val locationId: String,
+    val areaId: String? = null,
+    val gridX: Int? = null,
+    val gridY: Int? = null,
+    val locationName: String,
+    val exitAdded: ExitDto? = null,
+    val exitRemoved: ExitDto? = null,
+    val itemIdAdded: String? = null,
+    val itemIdRemoved: String? = null
 )
