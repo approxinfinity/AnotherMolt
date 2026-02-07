@@ -157,8 +157,23 @@ class AdventureViewModel(
 ) {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
 
+    // Known shop location IDs (defined before uiState so they can be used in initialValue)
+    private val shopLocationIds = setOf(
+        "tun-du-lac-magic-shop",
+        "tun-du-lac-armor-shop",
+        "tun-du-lac-weapons-shop",
+        "location-hermits-hollow"
+    )
+    private val innLocationId = "tun-du-lac-inn"
+
     // Local UI state (selections, targeting, etc.)
-    private val _localState = MutableStateFlow(AdventureLocalState())
+    // Initialize with shop/inn detection based on current location
+    private val _localState = MutableStateFlow(
+        AdventureLocalState(
+            isShopLocation = currentUser?.currentLocationId in shopLocationIds,
+            isInnLocation = currentUser?.currentLocationId == innLocationId
+        )
+    )
 
     /**
      * Combined UI state that merges repository state with local state.
@@ -218,16 +233,12 @@ class AdventureViewModel(
     }.stateIn(
         scope = scope,
         started = SharingStarted.WhileSubscribed(5000),
-        initialValue = AdventureUiState(currentLocationId = currentUser?.currentLocationId)
+        initialValue = AdventureUiState(
+            currentLocationId = currentUser?.currentLocationId,
+            isShopLocation = currentUser?.currentLocationId in shopLocationIds,
+            isInnLocation = currentUser?.currentLocationId == innLocationId
+        )
     )
-
-    // Known shop location IDs
-    private val shopLocationIds = setOf(
-        "tun-du-lac-magic-shop",
-        "tun-du-lac-armor-shop",
-        "tun-du-lac-weapons-shop"
-    )
-    private val innLocationId = "tun-du-lac-inn"
 
     init {
         initializeRepository()
@@ -236,6 +247,10 @@ class AdventureViewModel(
         loadAbilitiesMap()
         loadPlayerGold()
         loadPhasewalkDestinations()
+        // Load shop items if starting at a shop location
+        if (currentUser?.currentLocationId in shopLocationIds) {
+            loadShopItemsFromApi(currentUser?.currentLocationId ?: "")
+        }
     }
 
     // =========================================================================
@@ -259,6 +274,20 @@ class AdventureViewModel(
                     val location = AdventureRepository.getLocation(locationId)
                     location?.let { AdventureStateHolder.setCurrentLocationDirect(it) }
 
+                    // Check if this is a shop or inn location
+                    val isShop = locationId in shopLocationIds
+                    val isInn = locationId == innLocationId
+                    _localState.update {
+                        it.copy(
+                            isShopLocation = isShop,
+                            isInnLocation = isInn
+                        )
+                    }
+                    // Load shop items if at a shop
+                    if (isShop) {
+                        loadShopItems(locationId)
+                    }
+
                     // If this is the first update and it differs from user's stored location,
                     // update the server (this handles the fallback case)
                     if (firstLocationUpdate && currentUser != null && locationId != currentUser.currentLocationId) {
@@ -275,13 +304,16 @@ class AdventureViewModel(
         CombatStateHolder.connect(userId)
     }
 
-    private fun loadPlayerAbilities() {
+    fun loadPlayerAbilities() {
         scope.launch {
+            // Use latest user state, not stale constructor param
+            val user = UserStateHolder.currentUser.value ?: currentUser ?: return@launch
+
             val classAbilities = mutableListOf<AbilityDto>()
             val itemAbilities = mutableListOf<AbilityDto>()
 
             // 1. Load class abilities
-            val classId = currentUser?.characterClassId
+            val classId = user.characterClassId
             if (classId != null) {
                 ApiClient.getAbilitiesByClass(classId).getOrNull()?.let { abilities ->
                     classAbilities.addAll(abilities)
@@ -292,7 +324,7 @@ class AdventureViewModel(
             }
 
             // 2. Load item abilities from equipped items
-            val equippedItemIds = currentUser?.equippedItemIds ?: emptyList()
+            val equippedItemIds = user.equippedItemIds
             if (equippedItemIds.isNotEmpty()) {
                 val allItems = ApiClient.getItems().getOrNull() ?: emptyList()
                 val equippedItems = allItems.filter { it.id in equippedItemIds }
@@ -470,6 +502,27 @@ class AdventureViewModel(
             ApiClient.getItems().onSuccess { allItems ->
                 val shopItems = allItems.filter { it.id in itemIds }
                 _localState.update { it.copy(shopItems = shopItems) }
+            }
+        }
+    }
+
+    /**
+     * Load shop items directly from API, without relying on repository.
+     * Used during initial load when repository might not be ready yet.
+     */
+    private fun loadShopItemsFromApi(locationId: String) {
+        scope.launch {
+            // Fetch the location directly from API
+            ApiClient.getLocation(locationId).onSuccess { location ->
+                if (location == null) return@onSuccess
+                val itemIds = location.itemIds
+                if (itemIds.isEmpty()) return@onSuccess
+
+                // Load items
+                ApiClient.getItems().onSuccess { allItems ->
+                    val shopItems = allItems.filter { it.id in itemIds }
+                    _localState.update { it.copy(shopItems = shopItems) }
+                }
             }
         }
     }

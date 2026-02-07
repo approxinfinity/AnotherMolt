@@ -9,6 +9,7 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.shape.CircleShape
@@ -57,6 +58,7 @@ import com.ez2bg.anotherthread.api.ExitDto
 import com.ez2bg.anotherthread.api.ItemDto
 import com.ez2bg.anotherthread.api.LocationDto
 import com.ez2bg.anotherthread.api.PhasewalkDestinationDto
+import com.ez2bg.anotherthread.api.ShopLayoutDirection
 import com.ez2bg.anotherthread.api.UnconnectedAreaDto
 import com.ez2bg.anotherthread.api.SealableRiftDto
 import com.ez2bg.anotherthread.api.UserDto
@@ -70,6 +72,7 @@ import com.ez2bg.anotherthread.ui.components.AbilityIconMapper
 import com.ez2bg.anotherthread.ui.components.AbilityIconSmall
 import com.ez2bg.anotherthread.ui.components.BlindOverlay
 import com.ez2bg.anotherthread.ui.components.CombatTarget
+import com.ez2bg.anotherthread.ui.components.ConnectionIndicator
 import com.ez2bg.anotherthread.ui.components.DisorientIndicator
 import com.ez2bg.anotherthread.ui.components.EventLog
 import com.ez2bg.anotherthread.ui.components.MapSelectionOverlay
@@ -279,13 +282,24 @@ fun AdventureScreen(
                 modifier = Modifier.fillMaxSize()
             ) {
                 // === TOP SECTION: Location info panel or Shop panel ===
+                // In shops/inns, this section expands to fill more space since minimap is hidden
+                val isShopOrInnLocal = uiState.isShopLocation || uiState.isInnLocation
                 if (!uiState.isDetailViewVisible) {
                     Box(
                         modifier = Modifier
                             .fillMaxWidth()
+                            .then(
+                                if (isShopOrInnLocal && !ghostMode) {
+                                    // Shops take more vertical space since minimap is hidden
+                                    Modifier.weight(1f)
+                                } else {
+                                    // Normal locations have constrained height
+                                    Modifier.heightIn(max = 280.dp)
+                                }
+                            )
                             .background(Color.Black.copy(alpha = 0.6f))
                     ) {
-                        if ((uiState.isShopLocation || uiState.isInnLocation) && !ghostMode) {
+                        if (isShopOrInnLocal && !ghostMode) {
                             ShopPanel(
                                 location = currentLocation,
                                 shopItems = uiState.shopItems,
@@ -348,62 +362,120 @@ fun AdventureScreen(
                 }
 
                 // === CENTER SECTION: Minimap with directional ring (takes remaining space) ===
+                // In shops/inns, this section is minimal (just shows the back FAB)
+                // Outside shops, this takes remaining space with weight(1f)
+                val enterExits = currentLocation.exits.filter { it.direction == ExitDirection.ENTER }
+
                 Box(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .weight(1f),
+                        .then(
+                            if (isShopOrInnLocal && !ghostMode) {
+                                // In shops, just enough height for the FAB
+                                Modifier.height(64.dp)
+                            } else {
+                                // Outside shops, take remaining space
+                                Modifier.weight(1f)
+                            }
+                        ),
                     contentAlignment = Alignment.Center
                 ) {
-                    // Disorient indicator below minimap
-                    if (isDisoriented && disorientRounds > 0) {
-                        DisorientIndicator(
-                            roundsRemaining = disorientRounds,
-                            modifier = Modifier
-                                .align(Alignment.Center)
-                                .offset(y = 120.dp)
-                        )
-                    }
-
-                    // Container for minimap + directionals (rotates when disoriented)
-                    Box(
-                        modifier = Modifier
-                            .graphicsLayer {
-                                if (isDisoriented) {
-                                    rotationZ = 180f
-                                }
-                            },
-                        contentAlignment = Alignment.Center
-                    ) {
-                        // Directional navigation ring (around minimap)
-                        // DirectionalRing needs all locations to resolve cross-area exits (e.g. ENTER)
-                        DirectionalRing(
-                            exits = currentLocation.exits,
-                            locations = uiState.locations,
-                            phasewalkDestinations = uiState.phasewalkDestinations,
-                            onNavigate = { viewModel.navigateToExit(it) },
-                            onPhasewalk = { direction -> viewModel.phasewalk(direction) }
-                        )
-
-                        // Filter to only show locations in the same area for minimap
-                        val currentAreaId = currentLocation.areaId
-                        val areaLocations = remember(uiState.locations, currentAreaId) {
-                            uiState.locations.filter { it.areaId == currentAreaId }
+                    // Only show minimap and direction ring outside of shops/inns
+                    if (!isShopOrInnLocal) {
+                        // Disorient indicator below minimap
+                        if (isDisoriented && disorientRounds > 0) {
+                            DisorientIndicator(
+                                roundsRemaining = disorientRounds,
+                                modifier = Modifier
+                                    .align(Alignment.Center)
+                                    .offset(y = 120.dp)
+                            )
                         }
 
-                        // Centered minimap (replaces location thumbnail)
-                        // Disable click in shops/inns - no detail popup needed there
-                        CenterMinimap(
-                            locations = areaLocations,
-                            currentLocation = currentLocation,
-                            isRanger = uiState.isRanger,
-                            isBlinded = isBlinded,
-                            blindRounds = blindRounds,
-                            onClick = if (uiState.isShopLocation || uiState.isInnLocation) {
-                                {}  // No-op in shops/inns
-                            } else {
-                                { showLocationDetailPopup = true }
+                        // Container for minimap + directionals (rotates when disoriented)
+                        Box(
+                            modifier = Modifier
+                                .graphicsLayer {
+                                    if (isDisoriented) {
+                                        rotationZ = 180f
+                                    }
+                                },
+                            contentAlignment = Alignment.Center
+                        ) {
+                            // Directional navigation ring (around minimap)
+                            // DirectionalRing needs all locations to resolve cross-area exits (e.g. ENTER)
+                            DirectionalRing(
+                                exits = currentLocation.exits,
+                                locations = uiState.locations,
+                                phasewalkDestinations = uiState.phasewalkDestinations,
+                                onNavigate = { viewModel.navigateToExit(it) },
+                                onPhasewalk = { direction -> viewModel.phasewalk(direction) }
+                            )
+
+                            // Filter to only show locations in the same area for minimap
+                            val currentAreaId = currentLocation.areaId
+                            val areaLocations = remember(uiState.locations, currentAreaId) {
+                                uiState.locations.filter { it.areaId == currentAreaId }
                             }
-                        )
+
+                            // Centered minimap (replaces location thumbnail)
+                            CenterMinimap(
+                                locations = areaLocations,
+                                currentLocation = currentLocation,
+                                isRanger = uiState.isRanger,
+                                isBlinded = isBlinded,
+                                blindRounds = blindRounds,
+                                onClick = { showLocationDetailPopup = true }
+                            )
+                        }
+                    }
+
+                    // Floating ENTER/back FAB - overlays bottom-right of this section
+                    // In shops: shows green back arrow. Outside: shows green ENTER doors.
+                    if (!ghostMode && (isShopOrInnLocal || enterExits.isNotEmpty())) {
+                        Row(
+                            modifier = Modifier
+                                .align(Alignment.BottomEnd)
+                                .padding(end = 16.dp, bottom = 8.dp),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            if (isShopOrInnLocal) {
+                                // Shop/Inn: show green back arrow
+                                FloatingActionButton(
+                                    onClick = {
+                                        currentLocation.exits.firstOrNull()?.let { exit ->
+                                            viewModel.navigateToExit(exit)
+                                        }
+                                    },
+                                    containerColor = Color(0xFF4CAF50), // Green
+                                    contentColor = Color.White,
+                                    modifier = Modifier.size(48.dp)
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.AutoMirrored.Filled.KeyboardReturn,
+                                        contentDescription = "Leave shop",
+                                        modifier = Modifier.size(24.dp)
+                                    )
+                                }
+                            } else {
+                                // Normal location with ENTER exits
+                                enterExits.forEach { exit ->
+                                    FloatingActionButton(
+                                        onClick = { viewModel.navigateToExit(exit) },
+                                        containerColor = Color(0xFF4CAF50), // Green
+                                        contentColor = Color.White,
+                                        modifier = Modifier.size(48.dp)
+                                    ) {
+                                        Icon(
+                                            imageVector = Icons.Filled.MeetingRoom,
+                                            contentDescription = "Enter",
+                                            modifier = Modifier.size(24.dp)
+                                        )
+                                    }
+                                }
+                            }
+                        }
                     }
                 }
 
@@ -411,45 +483,6 @@ fun AdventureScreen(
                 Column(
                     modifier = Modifier.fillMaxWidth()
                 ) {
-                    // Purple action buttons row - floating above resource bars, right-aligned
-                    // Shows: ENTER exits for normal locations, or back button for shops/inns
-                    if (!ghostMode) {
-                        val enterExits = currentLocation.exits.filter { it.direction == ExitDirection.ENTER }
-                        val isShopOrInn = uiState.isShopLocation || uiState.isInnLocation
-
-                        if (isShopOrInn || enterExits.isNotEmpty()) {
-                            Row(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .padding(bottom = 4.dp, end = 12.dp),
-                                horizontalArrangement = Arrangement.End,
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
-                                if (isShopOrInn) {
-                                    // Shop/Inn: show back button
-                                    PurpleActionButton(
-                                        icon = Icons.AutoMirrored.Filled.KeyboardReturn,
-                                        contentDescription = "Leave",
-                                        onClick = {
-                                            currentLocation.exits.firstOrNull()?.let { exit ->
-                                                viewModel.navigateToExit(exit)
-                                            }
-                                        }
-                                    )
-                                } else {
-                                    // Normal location: show ENTER exits
-                                    enterExits.forEach { exit ->
-                                        PurpleActionButton(
-                                            icon = Icons.Filled.MeetingRoom,
-                                            contentDescription = "Enter",
-                                            onClick = { viewModel.navigateToExit(exit) }
-                                        )
-                                        Spacer(modifier = Modifier.width(8.dp))
-                                    }
-                                }
-                            }
-                        }
-                    }
 
                     // Player resource bars (HP/MP/SP)
                     if (!ghostMode) {
@@ -536,7 +569,8 @@ fun AdventureScreen(
                         currentUser = displayUser ?: currentUser,
                         isAdmin = isAdmin,
                         onUserUpdated = { updatedUser ->
-                            // Reload phasewalk destinations when equipment changes
+                            // Reload abilities and phasewalk destinations when equipment changes
+                            viewModel.loadPlayerAbilities()
                             viewModel.loadPhasewalkDestinations()
                         },
                         onLogout = { },
@@ -668,12 +702,23 @@ fun AdventureScreen(
             )
 
         } else {
-            // No location found
-            Text(
-                text = "No location available",
-                color = Color.White,
-                modifier = Modifier.align(Alignment.Center)
-            )
+            // No location found - likely server connection issue
+            Column(
+                modifier = Modifier.align(Alignment.Center),
+                horizontalAlignment = Alignment.CenterHorizontally
+            ) {
+                Text(
+                    text = "Can't connect to server",
+                    color = Color.White,
+                    fontSize = 18.sp
+                )
+                Text(
+                    text = "Check your connection and try again",
+                    color = Color.Gray,
+                    fontSize = 14.sp,
+                    modifier = Modifier.padding(top = 8.dp)
+                )
+            }
         }
 
         // Ghost mode "Create Character" button - prominent call to action
@@ -706,6 +751,13 @@ fun AdventureScreen(
                 }
             }
         }
+
+        // Connection status indicator - blinking red icon when disconnected
+        ConnectionIndicator(
+            modifier = Modifier
+                .align(Alignment.TopStart)
+                .padding(8.dp)
+        )
     }
 }
 
@@ -749,7 +801,7 @@ private fun LocationInfoPanel(
             )
         }
 
-        // Creatures section
+        // Creatures section - horizontal scrolling row
         Text(
             text = if (isBlinded) "Presences" else "Others",
             color = Color.Gray,
@@ -762,33 +814,40 @@ private fun LocationInfoPanel(
                 fontSize = 14.sp
             )
         } else {
-            creaturesHere.forEachIndexed { index, creature ->
-                val state = creatureStates[creature.id] ?: "idle"
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    modifier = Modifier
-                        .clickable { onCreatureClick(creature) }
-                        .padding(vertical = 2.dp)
-                ) {
-                    if (!isBlinded) {
-                        CreatureStateIcon(
-                            state = state,
-                            modifier = Modifier.size(14.dp)
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .horizontalScroll(rememberScrollState()),
+                horizontalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
+                creaturesHere.forEachIndexed { index, creature ->
+                    val state = creatureStates[creature.id] ?: "idle"
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        modifier = Modifier
+                            .clickable { onCreatureClick(creature) }
+                            .padding(vertical = 2.dp)
+                    ) {
+                        if (!isBlinded) {
+                            CreatureStateIcon(
+                                state = state,
+                                modifier = Modifier.size(14.dp)
+                            )
+                            Spacer(modifier = Modifier.width(4.dp))
+                        }
+                        Text(
+                            text = if (isBlinded) getBlindPresenceDescription(creature, index) else creature.name,
+                            color = if (isBlinded) Color.White.copy(alpha = 0.6f) else Color(0xFF64B5F6),
+                            fontSize = 14.sp
                         )
-                        Spacer(modifier = Modifier.width(4.dp))
                     }
-                    Text(
-                        text = if (isBlinded) getBlindPresenceDescription(creature, index) else creature.name,
-                        color = if (isBlinded) Color.White.copy(alpha = 0.6f) else Color(0xFF64B5F6),
-                        fontSize = 14.sp
-                    )
                 }
             }
         }
 
         Spacer(modifier = Modifier.height(8.dp))
 
-        // Items section
+        // Items section - horizontal scrolling row
         Text(
             text = if (isBlinded) "Objects" else "Items",
             color = Color.Gray,
@@ -801,15 +860,22 @@ private fun LocationInfoPanel(
                 fontSize = 14.sp
             )
         } else {
-            itemsHere.forEachIndexed { index, item ->
-                Text(
-                    text = if (isBlinded) getBlindItemDescription(item, index) else item.name,
-                    color = if (isBlinded) Color.White.copy(alpha = 0.6f) else Color(0xFFFFD54F),
-                    fontSize = 14.sp,
-                    modifier = Modifier
-                        .clickable { onItemClick(item) }
-                        .padding(vertical = 2.dp)
-                )
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .horizontalScroll(rememberScrollState()),
+                horizontalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
+                itemsHere.forEachIndexed { index, item ->
+                    Text(
+                        text = if (isBlinded) getBlindItemDescription(item, index) else item.name,
+                        color = if (isBlinded) Color.White.copy(alpha = 0.6f) else Color(0xFFFFD54F),
+                        fontSize = 14.sp,
+                        modifier = Modifier
+                            .clickable { onItemClick(item) }
+                            .padding(vertical = 2.dp)
+                    )
+                }
             }
         }
     }
@@ -919,23 +985,47 @@ private fun ShopPanel(
                 )
             }
 
-            // Shop: scrollable item list
-            val scrollState = rememberScrollState()
-            Column(
-                modifier = Modifier
-                    .heightIn(max = 300.dp)  // Limit height so it doesn't take over the screen
-                    .verticalScroll(scrollState)
-            ) {
-                shopItems.forEach { item ->
-                    val discountedPrice = applyCharismaDiscount(item.value, playerCharisma)
-                    ShopItemRow(
-                        item = item,
-                        basePrice = item.value,
-                        discountedPrice = discountedPrice,
-                        canAfford = playerGold >= discountedPrice,
-                        onBuy = { onBuyItem(item) }
-                    )
-                    Spacer(modifier = Modifier.height(4.dp))
+            // Check layout direction - default to VERTICAL
+            val isHorizontal = location.shopLayoutDirection == ShopLayoutDirection.HORIZONTAL
+
+            if (isHorizontal) {
+                // Horizontal scrolling item list (compact cards)
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .horizontalScroll(rememberScrollState()),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    shopItems.forEach { item ->
+                        val discountedPrice = applyCharismaDiscount(item.value, playerCharisma)
+                        ShopItemCard(
+                            item = item,
+                            basePrice = item.value,
+                            discountedPrice = discountedPrice,
+                            canAfford = playerGold >= discountedPrice,
+                            onBuy = { onBuyItem(item) }
+                        )
+                    }
+                }
+            } else {
+                // Vertical scrolling item list (default - full width rows)
+                // No height constraint - the shop panel expands to fill available space
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .verticalScroll(rememberScrollState()),
+                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    shopItems.forEach { item ->
+                        val discountedPrice = applyCharismaDiscount(item.value, playerCharisma)
+                        ShopItemRow(
+                            item = item,
+                            basePrice = item.value,
+                            discountedPrice = discountedPrice,
+                            canAfford = playerGold >= discountedPrice,
+                            onBuy = { onBuyItem(item) }
+                        )
+                    }
                 }
             }
         }
@@ -1017,6 +1107,67 @@ private fun ShopItemRow(
                     fontWeight = FontWeight.Bold
                 )
             }
+        }
+    }
+}
+
+@Composable
+private fun ShopItemCard(
+    item: ItemDto,
+    basePrice: Int,
+    discountedPrice: Int,
+    canAfford: Boolean,
+    onBuy: () -> Unit
+) {
+    val hasDiscount = discountedPrice < basePrice
+
+    Column(
+        modifier = Modifier
+            .width(120.dp)
+            .background(Color.White.copy(alpha = 0.05f), RoundedCornerShape(8.dp))
+            .border(
+                1.dp,
+                if (canAfford) Color(0xFFFFD54F).copy(alpha = 0.3f) else Color.Gray.copy(alpha = 0.2f),
+                RoundedCornerShape(8.dp)
+            )
+            .clickable(enabled = canAfford) { onBuy() }
+            .padding(8.dp),
+        horizontalAlignment = Alignment.CenterHorizontally
+    ) {
+        // Item name
+        Text(
+            text = item.name,
+            color = Color(0xFFFFD54F),
+            fontSize = 12.sp,
+            fontWeight = FontWeight.Medium,
+            textAlign = TextAlign.Center,
+            maxLines = 2
+        )
+
+        Spacer(modifier = Modifier.height(4.dp))
+
+        // Price
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.Center
+        ) {
+            if (hasDiscount) {
+                Text(
+                    text = "${basePrice}g",
+                    color = Color.Gray,
+                    fontSize = 10.sp,
+                    textDecoration = androidx.compose.ui.text.style.TextDecoration.LineThrough,
+                    modifier = Modifier.padding(end = 4.dp)
+                )
+            }
+            Text(
+                text = "${discountedPrice}g",
+                color = if (canAfford) {
+                    if (hasDiscount) Color(0xFF81C784) else Color(0xFFFFD700)
+                } else Color.Gray,
+                fontSize = 12.sp,
+                fontWeight = FontWeight.Bold
+            )
         }
     }
 }
