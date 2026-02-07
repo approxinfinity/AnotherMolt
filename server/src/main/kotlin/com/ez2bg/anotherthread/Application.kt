@@ -27,6 +27,7 @@ import com.ez2bg.anotherthread.routes.teleportRoutes
 import com.ez2bg.anotherthread.routes.phasewalkRoutes
 import com.ez2bg.anotherthread.routes.riftPortalRoutes
 import com.ez2bg.anotherthread.routes.worldGenRoutes
+import com.ez2bg.anotherthread.events.LocationEventService
 import com.ez2bg.anotherthread.spell.*
 import com.ez2bg.anotherthread.SimpleGoldBalancer
 import io.ktor.server.request.header
@@ -143,6 +144,13 @@ data class AdminUsersResponse(
     val success: Boolean,
     val totalUsers: Int,
     val users: List<AdminUserInfo>
+)
+
+@Serializable
+data class RecalculateResourcesResponse(
+    val message: String,
+    val updated: List<String>,
+    val failed: List<String>
 )
 
 @Serializable
@@ -1134,6 +1142,9 @@ fun Application.module() {
 
             log.info("WebSocket connection established for user $userId")
             CombatService.registerConnection(userId, this)
+            LocationEventService.registerConnection(userId, this)
+            // Track user's current location for location events
+            user.currentLocationId?.let { LocationEventService.updatePlayerLocation(userId, it) }
 
             try {
                 for (frame in incoming) {
@@ -1200,6 +1211,7 @@ fun Application.module() {
                 }
             } finally {
                 CombatService.unregisterConnection(userId)
+                LocationEventService.unregisterConnection(userId)
                 log.info("WebSocket connection closed for user $userId")
             }
         }
@@ -1648,330 +1660,6 @@ fun Application.module() {
                 val userId = call.parameters["userId"] ?: return@get call.respond(HttpStatusCode.BadRequest)
                 val limit = call.request.queryParameters["limit"]?.toIntOrNull() ?: 100
                 call.respond(AuditLogRepository.findByUserId(userId, limit))
-            }
-        }
-
-        // Admin migration endpoint - assign coordinates to locations without them (MOVED TO AdminRoutes.kt)
-        post("/admin/migrate/assign-coordinates") {
-            val allLocations = LocationRepository.findAll()
-            val locationsWithoutCoords = allLocations.filter { it.gridX == null || it.gridY == null }
-
-            if (locationsWithoutCoords.isEmpty()) {
-                call.respondText(
-                    """{"message":"All locations already have coordinates","updated":0,"details":[]}""",
-                    ContentType.Application.Json
-                )
-                return@post
-            }
-
-            val updated = mutableListOf<String>()
-            var currentLocations = allLocations
-
-            for (location in locationsWithoutCoords) {
-                val (newX, newY) = findRandomUnusedCoordinate(currentLocations)
-                val updatedLocation = location.copy(gridX = newX, gridY = newY, areaId = "overworld")
-                LocationRepository.update(updatedLocation)
-                updated.add("${location.name} -> ($newX, $newY)")
-
-                // Update our local list so next iteration sees the new coordinate as used
-                currentLocations = currentLocations.map {
-                    if (it.id == location.id) updatedLocation else it
-                }
-            }
-
-            val detailsJson = updated.joinToString(",") { "\"${it.replace("\"", "\\\"")}\"" }
-            call.respondText(
-                """{"message":"Assigned coordinates to ${updated.size} locations","updated":${updated.size},"details":[$detailsJson]}""",
-                ContentType.Application.Json
-            )
-        }
-
-        // Database backup routes
-        route("/admin/database") {
-            // Create a backup of the database
-            post("/backup") {
-                try {
-                    val backupPath = createDatabaseBackup()
-                    call.respondText(
-                        """{"success":true,"message":"Backup created successfully","path":"$backupPath"}""",
-                        ContentType.Application.Json
-                    )
-                } catch (e: Exception) {
-                    call.respondText(
-                        """{"success":false,"message":"Backup failed: ${e.message?.replace("\"", "\\\"")}"}""",
-                        ContentType.Application.Json,
-                        HttpStatusCode.InternalServerError
-                    )
-                }
-            }
-
-            // List available backups
-            get("/backups") {
-                try {
-                    val backups = listDatabaseBackups()
-                    val backupsJson = backups.joinToString(",") {
-                        """{"filename":"${it.name}","size":${it.length()},"modified":${it.lastModified()}}"""
-                    }
-                    call.respondText(
-                        """{"success":true,"backups":[$backupsJson]}""",
-                        ContentType.Application.Json
-                    )
-                } catch (e: Exception) {
-                    call.respondText(
-                        """{"success":false,"message":"Failed to list backups: ${e.message?.replace("\"", "\\\"")}"}""",
-                        ContentType.Application.Json,
-                        HttpStatusCode.InternalServerError
-                    )
-                }
-            }
-
-            // Restore from a backup (creates a backup first)
-            post("/restore/{filename}") {
-                val filename = call.parameters["filename"]
-                    ?: return@post call.respondText(
-                        """{"success":false,"message":"Filename required"}""",
-                        ContentType.Application.Json,
-                        HttpStatusCode.BadRequest
-                    )
-
-                try {
-                    // First create a backup of the current state
-                    val preRestoreBackup = createDatabaseBackup("pre-restore")
-
-                    // Then restore from the specified backup
-                    restoreDatabaseFromBackup(filename)
-
-                    call.respondText(
-                        """{"success":true,"message":"Database restored successfully","preRestoreBackup":"$preRestoreBackup"}""",
-                        ContentType.Application.Json
-                    )
-                } catch (e: Exception) {
-                    call.respondText(
-                        """{"success":false,"message":"Restore failed: ${e.message?.replace("\"", "\\\"")}"}""",
-                        ContentType.Application.Json,
-                        HttpStatusCode.InternalServerError
-                    )
-                }
-            }
-
-            // Delete a backup
-            delete("/backup/{filename}") {
-                val filename = call.parameters["filename"]
-                    ?: return@delete call.respondText(
-                        """{"success":false,"message":"Filename required"}""",
-                        ContentType.Application.Json,
-                        HttpStatusCode.BadRequest
-                    )
-
-                try {
-                    deleteDatabaseBackup(filename)
-                    call.respondText(
-                        """{"success":true,"message":"Backup deleted successfully"}""",
-                        ContentType.Application.Json
-                    )
-                } catch (e: Exception) {
-                    call.respondText(
-                        """{"success":false,"message":"Delete failed: ${e.message?.replace("\"", "\\\"")}"}""",
-                        ContentType.Application.Json,
-                        HttpStatusCode.InternalServerError
-                    )
-                }
-            }
-
-            // Data integrity check
-            get("/data-integrity") {
-                try {
-                    val allLocations = LocationRepository.findAll()
-                    val issues = mutableListOf<IntegrityIssue>()
-                    val locationMap = allLocations.associateBy { it.id }
-
-                    // Check for duplicate coordinates (within the same area)
-                    val coordMap = mutableMapOf<Triple<Int, Int, String>, MutableList<Location>>()
-                    allLocations.forEach { loc ->
-                        if (loc.gridX != null && loc.gridY != null) {
-                            val coord = Triple(loc.gridX, loc.gridY, loc.areaId ?: "overworld")
-                            coordMap.getOrPut(coord) { mutableListOf() }.add(loc)
-                        }
-                    }
-                    coordMap.filter { it.value.size > 1 }.forEach { (coord, locs) ->
-                        locs.forEach { loc ->
-                            val otherNames = locs.filter { it.id != loc.id }.map { it.name }
-                            issues.add(IntegrityIssue(
-                                type = "DUPLICATE_COORDS",
-                                severity = "ERROR",
-                                locationId = loc.id,
-                                locationName = loc.name,
-                                message = "Shares coordinates (${coord.first}, ${coord.second}) in area '${coord.third}' with: ${otherNames.joinToString(", ")}"
-                            ))
-                        }
-                    }
-
-                    // Check each location's exits
-                    for (location in allLocations) {
-                        for (exit in location.exits) {
-                            val target = locationMap[exit.locationId]
-
-                            // Missing target
-                            if (target == null) {
-                                issues.add(IntegrityIssue(
-                                    type = "MISSING_TARGET",
-                                    severity = "ERROR",
-                                    locationId = location.id,
-                                    locationName = location.name,
-                                    message = "Exit ${exit.direction} points to non-existent location ID: ${exit.locationId.take(8)}..."
-                                ))
-                                continue
-                            }
-
-                            // Both have coordinates - validate distance and direction
-                            if (location.gridX != null && location.gridY != null &&
-                                target.gridX != null && target.gridY != null) {
-
-                                val dx = target.gridX - location.gridX
-                                val dy = target.gridY - location.gridY
-                                val (expectedDx, expectedDy) = getDirectionOffset(exit.direction)
-
-                                if (dx != expectedDx || dy != expectedDy) {
-                                    val distance = maxOf(kotlin.math.abs(dx), kotlin.math.abs(dy))
-                                    if (distance > 1) {
-                                        issues.add(IntegrityIssue(
-                                            type = "EXIT_TOO_FAR",
-                                            severity = "ERROR",
-                                            locationId = location.id,
-                                            locationName = location.name,
-                                            message = "Exit ${exit.direction} to '${target.name}' is $distance tiles away (should be 1)",
-                                            relatedLocationId = target.id,
-                                            relatedLocationName = target.name
-                                        ))
-                                    } else if (exit.direction != ExitDirection.UNKNOWN) {
-                                        issues.add(IntegrityIssue(
-                                            type = "DIRECTION_MISMATCH",
-                                            severity = "WARNING",
-                                            locationId = location.id,
-                                            locationName = location.name,
-                                            message = "Exit marked ${exit.direction} but target '${target.name}' is at offset ($dx, $dy)",
-                                            relatedLocationId = target.id,
-                                            relatedLocationName = target.name
-                                        ))
-                                    }
-                                }
-
-                                // Check bidirectional direction consistency (only for two-way exits)
-                                val reverseExit = target.exits.find { it.locationId == location.id }
-                                if (reverseExit != null &&
-                                    exit.direction != ExitDirection.UNKNOWN &&
-                                    reverseExit.direction != ExitDirection.UNKNOWN) {
-                                    val expectedOpposite = getOppositeDirection(exit.direction)
-                                    if (reverseExit.direction != expectedOpposite) {
-                                        // Only report once (from the alphabetically first location)
-                                        if (location.name < target.name) {
-                                            issues.add(IntegrityIssue(
-                                                type = "BIDIRECTIONAL_MISMATCH",
-                                                severity = "WARNING",
-                                                locationId = location.id,
-                                                locationName = location.name,
-                                                message = "Exit ${exit.direction} to '${target.name}', but return is ${reverseExit.direction} (expected $expectedOpposite)",
-                                                relatedLocationId = target.id,
-                                                relatedLocationName = target.name
-                                            ))
-                                        }
-                                    }
-                                }
-                            }
-                        }
-
-                        // Note: Orphaned locations (no exits to/from) are allowed - content creators
-                        // may create locations before connecting them with exits
-                    }
-
-                    call.respond(DataIntegrityResponse(
-                        success = true,
-                        totalLocations = allLocations.size,
-                        issuesFound = issues.size,
-                        issues = issues.sortedWith(compareBy({ it.severity }, { it.type }, { it.locationName }))
-                    ))
-                } catch (e: Exception) {
-                    call.respond(
-                        HttpStatusCode.InternalServerError,
-                        DataIntegrityResponse(
-                            success = false,
-                            totalLocations = 0,
-                            issuesFound = 0,
-                            issues = emptyList()
-                        )
-                    )
-                }
-            }
-        }
-
-        // Admin users routes
-        route("/admin/users") {
-            // Get all users with activity info
-            get {
-                try {
-                    val allUsers = UserRepository.findAll()
-                    val allLocations = LocationRepository.findAll()
-                    val locationMap = allLocations.associateBy { it.id }
-
-                    val userInfos = allUsers.map { user ->
-                        AdminUserInfo(
-                            id = user.id,
-                            name = user.name,
-                            createdAt = user.createdAt,
-                            lastActiveAt = user.lastActiveAt,
-                            currentLocationId = user.currentLocationId,
-                            currentLocationName = user.currentLocationId?.let { locationMap[it]?.name },
-                            imageUrl = user.imageUrl
-                        )
-                    }.sortedByDescending { it.lastActiveAt }
-
-                    call.respond(AdminUsersResponse(
-                        success = true,
-                        totalUsers = userInfos.size,
-                        users = userInfos
-                    ))
-                } catch (e: Exception) {
-                    call.respond(
-                        HttpStatusCode.InternalServerError,
-                        AdminUsersResponse(
-                            success = false,
-                            totalUsers = 0,
-                            users = emptyList()
-                        )
-                    )
-                }
-            }
-
-            // Delete a user by ID
-            delete("/{id}") {
-                val userId = call.parameters["id"]
-                    ?: return@delete call.respondText(
-                        """{"success":false,"message":"Missing user ID"}""",
-                        ContentType.Application.Json,
-                        HttpStatusCode.BadRequest
-                    )
-
-                try {
-                    val deleted = UserRepository.delete(userId)
-                    if (deleted) {
-                        call.respondText(
-                            """{"success":true,"message":"User deleted"}""",
-                            ContentType.Application.Json
-                        )
-                    } else {
-                        call.respondText(
-                            """{"success":false,"message":"User not found"}""",
-                            ContentType.Application.Json,
-                            HttpStatusCode.NotFound
-                        )
-                    }
-                } catch (e: Exception) {
-                    call.respondText(
-                        """{"success":false,"message":"Delete failed: ${e.message?.replace("\"", "\\\"")}"}""",
-                        ContentType.Application.Json,
-                        HttpStatusCode.InternalServerError
-                    )
-                }
             }
         }
 

@@ -19,6 +19,29 @@ private val log = org.slf4j.LoggerFactory.getLogger("AdminRoutes")
  * Admin routes for file management, service control, database operations, and user management.
  */
 fun Route.adminRoutes() {
+    // Recalculate max resources for all users based on their stats, level, and class
+    post("/admin/recalculate-resources") {
+        val allUsers = UserRepository.findAll()
+        val updated = mutableListOf<String>()
+        val failed = mutableListOf<String>()
+
+        for (user in allUsers) {
+            val success = UserRepository.recalculateMaxResources(user.id, restoreToFull = true)
+            if (success) {
+                updated.add(user.name)
+                log.info("Recalculated resources for user: ${user.name}")
+            } else {
+                failed.add(user.name)
+            }
+        }
+
+        call.respond(RecalculateResourcesResponse(
+            message = "Recalculated resources for ${updated.size} users",
+            updated = updated,
+            failed = failed
+        ))
+    }
+
     // File upload routes (admin only)
     route("/admin/files") {
         // List all uploaded files

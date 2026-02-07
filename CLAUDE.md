@@ -54,6 +54,23 @@ When the user asks to restart or check servers, ALWAYS:
 - Ktor backend with SQLite
 - Terrain rendering uses SimplexNoise and VoronoiNoise for procedural generation
 
+## Code Hygiene Checks
+
+**Periodically check for duplicate code patterns:**
+
+1. **Duplicate Routes**: Search for route definitions that exist in multiple files
+   ```bash
+   grep -rn "post\|get\|route" server/src --include="*.kt" | grep "/admin" | sort
+   ```
+   Routes should only be defined ONCE - typically in their dedicated `*Routes.kt` file, NOT in `Application.kt`.
+
+2. **Duplicate Function Names**: Look for functions defined in multiple places
+   ```bash
+   grep -rn "^fun \|^private fun " server/src --include="*.kt" | awk -F':' '{print $2}' | sort | uniq -d
+   ```
+
+3. **Migration leftovers**: When moving code to new files, ensure old definitions are removed. Look for comments like "(MOVED TO ...)" that indicate incomplete migrations.
+
 ## Future Musings / Known Issues
 
 For known issues, future feature ideas, and design decisions still to be made, see [MUSINGS.md](MUSINGS.md).

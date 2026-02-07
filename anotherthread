@@ -1,0 +1,286 @@
+#!/bin/bash
+# AnotherThread CLI - Manage server and web client
+
+set -e
+
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+cd "$SCRIPT_DIR"
+
+SERVER_PORT="${SERVER_PORT:-12081}"
+WEB_PORT="${WEB_PORT:-12080}"
+SERVER_JAR="server/build/libs/server-all.jar"
+
+# Colors for output
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+YELLOW='\033[1;33m'
+BLUE='\033[0;34m'
+NC='\033[0m' # No Color
+
+log_info() { echo -e "${BLUE}[INFO]${NC} $1"; }
+log_success() { echo -e "${GREEN}[OK]${NC} $1"; }
+log_warn() { echo -e "${YELLOW}[WARN]${NC} $1"; }
+log_error() { echo -e "${RED}[ERROR]${NC} $1"; }
+
+# Get PIDs (check both JAR and Gradle-run processes)
+get_server_pid() {
+    # Check for JAR process first, then Gradle-run process
+    pgrep -f "server-all.jar" 2>/dev/null || pgrep -f "com.ez2bg.anotherthread.ApplicationKt" 2>/dev/null || true
+}
+
+get_web_pid() {
+    pgrep -f "wasmJsBrowserDevelopmentRun" 2>/dev/null || true
+}
+
+# Check if services are running
+is_server_running() {
+    [ -n "$(get_server_pid)" ]
+}
+
+is_web_running() {
+    [ -n "$(get_web_pid)" ]
+}
+
+# Build commands
+build_server() {
+    log_info "Building server..."
+    ./gradlew :server:build -x test --quiet
+    log_success "Server built successfully"
+}
+
+build_web() {
+    log_info "Building web client..."
+    ./gradlew :composeApp:compileKotlinWasmJs --quiet
+    log_success "Web client built successfully"
+}
+
+build_all() {
+    build_server
+    build_web
+}
+
+# Start commands
+start_server() {
+    if is_server_running; then
+        log_warn "Server already running (PID: $(get_server_pid))"
+        return 0
+    fi
+
+    if [ ! -f "$SERVER_JAR" ]; then
+        log_warn "Server JAR not found, building..."
+        build_server
+    fi
+
+    log_info "Starting server on port $SERVER_PORT..."
+    java -jar "$SERVER_JAR" > /tmp/anotherthread-server.log 2>&1 &
+
+    # Wait for server to be ready (max 30 seconds)
+    for i in {1..30}; do
+        if curl -s --max-time 2 "http://localhost:$SERVER_PORT/health" 2>/dev/null | grep -q OK; then
+            log_success "Server started (PID: $(get_server_pid)) on port $SERVER_PORT"
+            return 0
+        fi
+        sleep 1
+    done
+
+    # Check if process is at least running
+    if is_server_running; then
+        log_warn "Server process started but health check not responding yet"
+        return 0
+    else
+        log_error "Failed to start server"
+        return 1
+    fi
+}
+
+start_web() {
+    if is_web_running; then
+        log_warn "Web client already running (PID: $(get_web_pid))"
+        return 0
+    fi
+
+    log_info "Starting web client on port $WEB_PORT..."
+    ./gradlew composeApp:wasmJsBrowserDevelopmentRun --continuous -PdevPort=$WEB_PORT --quiet &
+
+    # Wait for it to be ready
+    for i in {1..30}; do
+        if curl -s --max-time 2 "http://localhost:$WEB_PORT" > /dev/null 2>&1; then
+            log_success "Web client started at http://localhost:$WEB_PORT"
+            return 0
+        fi
+        sleep 1
+    done
+
+    if is_web_running; then
+        log_success "Web client starting (PID: $(get_web_pid))"
+    else
+        log_error "Failed to start web client"
+        return 1
+    fi
+}
+
+start_all() {
+    start_server
+    start_web
+}
+
+# Stop commands
+stop_server() {
+    local pid=$(get_server_pid)
+    if [ -z "$pid" ]; then
+        log_warn "Server not running"
+        return 0
+    fi
+
+    log_info "Stopping server (PID: $pid)..."
+    kill $pid 2>/dev/null || true
+    sleep 1
+
+    # Force kill if still running
+    if is_server_running; then
+        kill -9 $(get_server_pid) 2>/dev/null || true
+    fi
+
+    log_success "Server stopped"
+}
+
+stop_web() {
+    local pid=$(get_web_pid)
+    if [ -z "$pid" ]; then
+        log_warn "Web client not running"
+        return 0
+    fi
+
+    log_info "Stopping web client (PID: $pid)..."
+    pkill -f "wasmJsBrowserDevelopmentRun" 2>/dev/null || true
+    sleep 1
+
+    log_success "Web client stopped"
+}
+
+stop_all() {
+    stop_server
+    stop_web
+}
+
+# Restart commands
+restart_server() {
+    stop_server
+    build_server
+    start_server
+}
+
+restart_web() {
+    stop_web
+    start_web
+}
+
+restart_all() {
+    stop_all
+    build_all
+    start_all
+}
+
+# Status command
+status() {
+    echo ""
+    echo "=== AnotherThread Status ==="
+    echo ""
+
+    if is_server_running; then
+        echo -e "Server:     ${GREEN}RUNNING${NC} (PID: $(get_server_pid)) on port $SERVER_PORT"
+    else
+        echo -e "Server:     ${RED}STOPPED${NC}"
+    fi
+
+    if is_web_running; then
+        echo -e "Web Client: ${GREEN}RUNNING${NC} (PID: $(get_web_pid)) on port $WEB_PORT"
+    else
+        echo -e "Web Client: ${RED}STOPPED${NC}"
+    fi
+    echo ""
+}
+
+# Logs command
+logs_server() {
+    log_info "Tailing server logs (Ctrl+C to exit)..."
+    tail -f server/logs/*.log 2>/dev/null || log_warn "No log files found"
+}
+
+# Help
+show_help() {
+    echo ""
+    echo "AnotherThread CLI"
+    echo ""
+    echo "Usage: ./anotherthread <command> [target]"
+    echo ""
+    echo "Commands:"
+    echo "  start [server|web]     Start services (default: all)"
+    echo "  stop [server|web]      Stop services (default: all)"
+    echo "  restart [server|web]   Rebuild and restart services (default: all)"
+    echo "  status                 Show status of all services"
+    echo "  build [server|web]     Build without starting (default: all)"
+    echo "  logs                   Tail server logs"
+    echo "  help                   Show this help message"
+    echo ""
+    echo "Examples:"
+    echo "  ./anotherthread start          # Start both server and web"
+    echo "  ./anotherthread restart server # Rebuild and restart just the server"
+    echo "  ./anotherthread stop           # Stop everything"
+    echo "  ./anotherthread status         # Check what's running"
+    echo ""
+    echo "Environment variables:"
+    echo "  SERVER_PORT  Server port (default: 12081)"
+    echo "  WEB_PORT     Web client port (default: 12080)"
+    echo ""
+}
+
+# Main command handler
+case "$1" in
+    start)
+        case "$2" in
+            server) start_server ;;
+            web) start_web ;;
+            *) start_all ;;
+        esac
+        ;;
+    stop)
+        case "$2" in
+            server) stop_server ;;
+            web) stop_web ;;
+            *) stop_all ;;
+        esac
+        ;;
+    restart)
+        case "$2" in
+            server) restart_server ;;
+            web) restart_web ;;
+            *) restart_all ;;
+        esac
+        ;;
+    build)
+        case "$2" in
+            server) build_server ;;
+            web) build_web ;;
+            *) build_all ;;
+        esac
+        ;;
+    status)
+        status
+        ;;
+    logs)
+        logs_server
+        ;;
+    help|--help|-h)
+        show_help
+        ;;
+    *)
+        if [ -z "$1" ]; then
+            show_help
+        else
+            log_error "Unknown command: $1"
+            echo "Run './anotherthread help' for usage"
+            exit 1
+        fi
+        ;;
+esac

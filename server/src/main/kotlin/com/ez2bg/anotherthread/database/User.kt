@@ -280,9 +280,25 @@ object UserRepository {
     }
 
     fun updateCharacterClass(id: String, classId: String?): Boolean = transaction {
+        // Get user and class to recalculate max resources
+        val user = findById(id) ?: return@transaction false
+        val characterClass = classId?.let { CharacterClassRepository.findById(it) }
+
+        // Recalculate max resources based on new class
+        val updatedUser = user.copy(characterClassId = classId)
+        val newMaxHp = calculateMaxHp(updatedUser, characterClass)
+        val newMaxMana = calculateMaxMana(updatedUser, characterClass)
+        val newMaxStamina = calculateMaxStamina(updatedUser, characterClass)
+
         UserTable.update({ UserTable.id eq id }) {
             it[characterClassId] = classId
             it[classGenerationStartedAt] = null // Clear generation status when class is assigned
+            it[maxHp] = newMaxHp
+            it[currentHp] = newMaxHp // Full heal on class change
+            it[maxMana] = newMaxMana
+            it[currentMana] = newMaxMana
+            it[maxStamina] = newMaxStamina
+            it[currentStamina] = newMaxStamina
             it[lastActiveAt] = System.currentTimeMillis()
         } > 0
     }
@@ -328,17 +344,27 @@ object UserRepository {
      */
     fun awardExperience(id: String, expGained: Int): Boolean = transaction {
         val user = findById(id) ?: return@transaction false
+        val characterClass = user.characterClassId?.let { CharacterClassRepository.findById(it) }
         val newExp = user.experience + expGained
         val newLevel = calculateLevel(newExp)
-        val newMaxHp = calculateMaxHp(newLevel, user.characterClassId)
+
+        // Recalculate all max resources with new level
+        val updatedUser = user.copy(level = newLevel)
+        val newMaxHp = calculateMaxHp(updatedUser, characterClass)
+        val newMaxMana = calculateMaxMana(updatedUser, characterClass)
+        val newMaxStamina = calculateMaxStamina(updatedUser, characterClass)
 
         UserTable.update({ UserTable.id eq id }) {
             it[experience] = newExp
             it[level] = newLevel
             it[maxHp] = newMaxHp
-            // Restore HP on level up
+            it[maxMana] = newMaxMana
+            it[maxStamina] = newMaxStamina
+            // Full restore on level up
             if (newLevel > user.level) {
                 it[currentHp] = newMaxHp
+                it[currentMana] = newMaxMana
+                it[currentStamina] = newMaxStamina
             }
             it[lastActiveAt] = System.currentTimeMillis()
         } > 0
@@ -590,6 +616,32 @@ object UserRepository {
             it[maxHp] = newMaxHp
             it[maxMana] = newMaxMana
             it[maxStamina] = newMaxStamina
+            it[lastActiveAt] = System.currentTimeMillis()
+        } > 0
+    }
+
+    /**
+     * Recalculate max resources based on current stats, level, and class.
+     * Useful for fixing existing characters whose resources weren't calculated properly.
+     * Optionally restores current resources to max.
+     */
+    fun recalculateMaxResources(id: String, restoreToFull: Boolean = false): Boolean = transaction {
+        val user = findById(id) ?: return@transaction false
+        val characterClass = user.characterClassId?.let { CharacterClassRepository.findById(it) }
+
+        val newMaxHp = calculateMaxHp(user, characterClass)
+        val newMaxMana = calculateMaxMana(user, characterClass)
+        val newMaxStamina = calculateMaxStamina(user, characterClass)
+
+        UserTable.update({ UserTable.id eq id }) {
+            it[maxHp] = newMaxHp
+            it[maxMana] = newMaxMana
+            it[maxStamina] = newMaxStamina
+            if (restoreToFull) {
+                it[currentHp] = newMaxHp
+                it[currentMana] = newMaxMana
+                it[currentStamina] = newMaxStamina
+            }
             it[lastActiveAt] = System.currentTimeMillis()
         } > 0
     }
