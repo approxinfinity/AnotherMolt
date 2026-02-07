@@ -1652,6 +1652,13 @@ private fun DirectionalRing(
     // Only show directional exits (compass directions), not ENTER exits
     val directionalExits = exits.filter { it.direction != ExitDirection.ENTER && it.direction != ExitDirection.UNKNOWN }
 
+    // Filter phasewalk destinations to exclude any direction that has a regular exit
+    // This is a safety check - server should already filter these, but this prevents overlap issues
+    val exitDirections = directionalExits.map { it.direction.name.lowercase() }.toSet()
+    val filteredPhasewalkDestinations = phasewalkDestinations.filter {
+        it.direction.lowercase() !in exitDirections
+    }
+
     // Helper to calculate offset for a direction
     fun getDirectionOffset(direction: String): Pair<Dp, Dp> {
         return when (direction.lowercase()) {
@@ -1735,7 +1742,8 @@ private fun DirectionalRing(
 
         // Render phasewalk destinations (purple boot icons with mana cost)
         // Show disabled (grey) buttons when player can't use phasewalk
-        phasewalkDestinations.forEach { destination ->
+        // Use filtered list to ensure no overlap with regular exits
+        filteredPhasewalkDestinations.forEach { destination ->
             val (offsetX, offsetY) = getDirectionOffset(destination.direction)
             PhasewalkButton(
                 direction = destination.direction,
