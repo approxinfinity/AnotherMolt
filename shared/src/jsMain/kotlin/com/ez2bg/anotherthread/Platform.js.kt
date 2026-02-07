@@ -12,13 +12,15 @@ actual fun getPlatform(): Platform = JsPlatform()
 actual fun developmentBaseUrl(): String {
     val hostname = window.location.hostname
     val protocol = window.location.protocol
-    // If accessing via Cloudflare tunnel, use api subdomain for backend
-    return if (hostname == "anotherthread.ez2bgood.com") {
-        "$protocol//api.ez2bgood.com"
-    } else if (hostname.endsWith(".trycloudflare.com")) {
-        "https://vegetarian-distance-fires-chip.trycloudflare.com"
-    } else {
-        "http://$hostname:12081"
+    // If accessing via Cloudflare tunnel, use corresponding api subdomain for backend
+    return when (hostname) {
+        "anotherthread.ez2bgood.com" -> "$protocol//api.ez2bgood.com"
+        "anotherthread2.ez2bgood.com" -> "$protocol//api2.ez2bgood.com"
+        else -> if (hostname.endsWith(".trycloudflare.com")) {
+            "https://vegetarian-distance-fires-chip.trycloudflare.com"
+        } else {
+            "http://$hostname:12081"
+        }
     }
 }
 
