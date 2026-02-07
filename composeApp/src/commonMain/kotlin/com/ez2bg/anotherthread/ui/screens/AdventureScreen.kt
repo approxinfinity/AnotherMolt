@@ -407,10 +407,16 @@ fun AdventureScreen(
                         ) {
                             // Directional navigation ring (around minimap)
                             // DirectionalRing needs all locations to resolve cross-area exits (e.g. ENTER)
+                            // Phasewalk is enabled when player has 2+ mana and is not in combat
+                            val playerMana = playerCombatant?.currentMana ?: displayUser?.currentMana ?: 0
+                            val isInCombat = combatants.isNotEmpty()
+                            val canPhasewalk = playerMana >= 2 && !isInCombat
+
                             DirectionalRing(
                                 exits = currentLocation.exits,
                                 locations = uiState.locations,
                                 phasewalkDestinations = uiState.phasewalkDestinations,
+                                phasewalkEnabled = canPhasewalk,
                                 onNavigate = { viewModel.navigateToExit(it) },
                                 onPhasewalk = { direction -> viewModel.phasewalk(direction) }
                             )
@@ -1636,6 +1642,7 @@ private fun DirectionalRing(
     exits: List<ExitDto>,
     locations: List<LocationDto>,
     phasewalkDestinations: List<PhasewalkDestinationDto>,
+    phasewalkEnabled: Boolean = true,
     onNavigate: (ExitDto) -> Unit,
     onPhasewalk: (String) -> Unit
 ) {
@@ -1727,6 +1734,7 @@ private fun DirectionalRing(
         }
 
         // Render phasewalk destinations (purple boot icons with mana cost)
+        // Show disabled (grey) buttons when player can't use phasewalk
         phasewalkDestinations.forEach { destination ->
             val (offsetX, offsetY) = getDirectionOffset(destination.direction)
             PhasewalkButton(
@@ -1735,6 +1743,7 @@ private fun DirectionalRing(
                 offsetX = offsetX,
                 offsetY = offsetY,
                 buttonSize = buttonSize,
+                enabled = phasewalkEnabled,
                 onPhasewalk = onPhasewalk
             )
         }
@@ -1790,6 +1799,8 @@ private fun DirectionalButton(
  * Purple phasewalk button with boot icon and mana cost label inside the circle.
  * Shows for directions without exits where phasewalk is available.
  * Style matches AbilityIconButton with cost displayed at bottom of circle.
+ *
+ * When disabled (not enough mana or in combat), shows as grey and doesn't respond to taps.
  */
 @Composable
 private fun PhasewalkButton(
@@ -1798,14 +1809,20 @@ private fun PhasewalkButton(
     offsetX: Dp,
     offsetY: Dp,
     buttonSize: Dp,
+    enabled: Boolean = true,
     onPhasewalk: (String) -> Unit
 ) {
     var isPressed by remember { mutableStateOf(false) }
     val navScale by animateFloatAsState(
-        targetValue = if (isPressed) 1.2f else 1f,
+        targetValue = if (isPressed && enabled) 1.2f else 1f,
         animationSpec = tween(durationMillis = 100),
         label = "phasewalkScale"
     )
+
+    // Colors: purple when enabled, grey when disabled
+    val buttonColor = if (enabled) Color(0xFF9C27B0) else Color(0xFF666666)
+    val iconTint = if (enabled) Color.White else Color(0xFFAAAAAA)
+    val costColor = if (enabled) Color(0xFF64B5F6) else Color(0xFF888888)
 
     Box(
         modifier = Modifier
@@ -1819,24 +1836,30 @@ private fun PhasewalkButton(
                 .size(buttonSize)
                 .scale(navScale)
                 .clip(CircleShape)
-                .background(Color(0xFF9C27B0), CircleShape)  // Purple
-                .border(1.dp, Color.White.copy(alpha = 0.3f), CircleShape)
-                .pointerInput(direction) {
-                    detectTapGestures(
-                        onPress = {
-                            isPressed = true
-                            tryAwaitRelease()
-                            isPressed = false
-                            onPhasewalk(direction)
+                .background(buttonColor, CircleShape)
+                .border(1.dp, Color.White.copy(alpha = if (enabled) 0.3f else 0.1f), CircleShape)
+                .then(
+                    if (enabled) {
+                        Modifier.pointerInput(direction) {
+                            detectTapGestures(
+                                onPress = {
+                                    isPressed = true
+                                    tryAwaitRelease()
+                                    isPressed = false
+                                    onPhasewalk(direction)
+                                }
+                            )
                         }
-                    )
-                },
+                    } else {
+                        Modifier  // No tap handling when disabled
+                    }
+                ),
             contentAlignment = Alignment.Center
         ) {
             Icon(
                 imageVector = Icons.AutoMirrored.Filled.DirectionsWalk,
-                contentDescription = "Phasewalk $direction to $locationName",
-                tint = Color.White,
+                contentDescription = if (enabled) "Phasewalk $direction to $locationName" else "Phasewalk unavailable (need 2 MP, no combat)",
+                tint = iconTint,
                 modifier = Modifier.size(14.dp)
             )
         }
@@ -1844,7 +1867,7 @@ private fun PhasewalkButton(
         // Mana cost label at bottom of circle (matching ability button style)
         Text(
             text = "2 MP",
-            color = Color(0xFF64B5F6),  // Blue for mana cost like ability buttons
+            color = costColor,
             fontSize = 8.sp,
             fontWeight = FontWeight.Medium,
             textAlign = TextAlign.Center,

@@ -54,7 +54,8 @@ data class AdventureLocalState(
     val showMapSelection: Boolean = false,
     val teleportDestinations: List<TeleportDestinationDto> = emptyList(),
     val teleportAbilityId: String? = null,
-    // Phasewalk destinations (for directions without exits)
+    // Phasewalk state (local state tracks ability + destinations)
+    val hasPhasewalkAbility: Boolean = false,
     val phasewalkDestinations: List<PhasewalkDestinationDto> = emptyList(),
     // Rift state
     val showRiftSelection: Boolean = false,
@@ -103,7 +104,8 @@ data class AdventureUiState(
     val showMapSelection: Boolean = false,
     val teleportDestinations: List<TeleportDestinationDto> = emptyList(),
     val teleportAbilityId: String? = null,
-    // Phasewalk destinations (for directions without exits)
+    // Phasewalk state
+    val hasPhasewalkAbility: Boolean = false,
     val phasewalkDestinations: List<PhasewalkDestinationDto> = emptyList(),
     // Rift state
     val showRiftSelection: Boolean = false,
@@ -224,6 +226,7 @@ class AdventureViewModel(
             showMapSelection = local.showMapSelection,
             teleportDestinations = local.teleportDestinations,
             teleportAbilityId = local.teleportAbilityId,
+            hasPhasewalkAbility = local.hasPhasewalkAbility,
             phasewalkDestinations = local.phasewalkDestinations,
             showRiftSelection = local.showRiftSelection,
             riftMode = local.riftMode,
@@ -325,10 +328,15 @@ class AdventureViewModel(
 
             // 2. Load item abilities from equipped items
             val equippedItemIds = user.equippedItemIds
+            var hasPhasewalk = false
             if (equippedItemIds.isNotEmpty()) {
                 val allItems = ApiClient.getItems().getOrNull() ?: emptyList()
                 val equippedItems = allItems.filter { it.id in equippedItemIds }
                 val abilityIdsFromItems = equippedItems.flatMap { it.abilityIds }.distinct()
+
+                // Check if player has phasewalk ability from equipped items
+                hasPhasewalk = "ability-phasewalk" in abilityIdsFromItems
+
                 // Fetch each ability sequentially to ensure all complete
                 for (abilityId in abilityIdsFromItems) {
                     ApiClient.getAbility(abilityId).getOrNull()?.let { ability ->
@@ -341,7 +349,19 @@ class AdventureViewModel(
             val allAbilities = (classAbilities + itemAbilities)
                 .filter { it.abilityType != "passive" }
                 .sortedBy { it.name.lowercase() }
-            _localState.update { it.copy(playerAbilities = allAbilities) }
+            _localState.update {
+                it.copy(
+                    playerAbilities = allAbilities,
+                    hasPhasewalkAbility = hasPhasewalk
+                )
+            }
+
+            // 4. If player has phasewalk, load destinations
+            if (hasPhasewalk) {
+                loadPhasewalkDestinations()
+            } else {
+                _localState.update { it.copy(phasewalkDestinations = emptyList()) }
+            }
         }
     }
 
@@ -427,16 +447,73 @@ class AdventureViewModel(
      * Public so it can be triggered when user equips/unequips items.
      */
     fun loadPhasewalkDestinations() {
+        // First, try to compute locally for instant display
+        computePhasewalkDestinationsLocally()
+
+        // Then fetch from server to ensure accuracy (and to catch edge cases)
         val userId = currentUser?.id ?: return
         scope.launch {
             ApiClient.getPhasewalkDestinations(userId).onSuccess { destinations ->
-                println("[Phasewalk] Loaded ${destinations.size} destinations for user $userId")
+                println("[Phasewalk] Loaded ${destinations.size} destinations from server")
                 _localState.update { it.copy(phasewalkDestinations = destinations) }
             }.onFailure { error ->
-                println("[Phasewalk] Failed to load destinations: ${error.message}")
-                _localState.update { it.copy(phasewalkDestinations = emptyList()) }
+                // On failure, keep local computation (don't clear)
+                println("[Phasewalk] Server fetch failed, keeping local: ${error.message}")
             }
         }
+    }
+
+    /**
+     * Compute phasewalk destinations locally based on current location's grid position.
+     * Shows destinations immediately without waiting for server response.
+     */
+    private fun computePhasewalkDestinationsLocally() {
+        val currentLoc = AdventureRepository.getCurrentLocation() ?: return
+        val gridX = currentLoc.gridX ?: return
+        val gridY = currentLoc.gridY ?: return
+        val areaId = currentLoc.areaId ?: "overworld"
+
+        // Get existing exit directions
+        val existingExitDirections = currentLoc.exits
+            .map { it.direction.name.lowercase() }
+            .toSet()
+
+        // All 8 directions with their offsets
+        val directions = listOf(
+            "north" to Pair(0, -1),
+            "northeast" to Pair(1, -1),
+            "east" to Pair(1, 0),
+            "southeast" to Pair(1, 1),
+            "south" to Pair(0, 1),
+            "southwest" to Pair(-1, 1),
+            "west" to Pair(-1, 0),
+            "northwest" to Pair(-1, -1)
+        )
+
+        // Get all locations in the same area
+        val areaLocations = AdventureRepository.locations.value
+            .filter { it.areaId == areaId && it.gridX != null && it.gridY != null }
+
+        // Find phasewalk destinations (directions without exits that have a location)
+        val destinations = directions
+            .filter { (dir, _) -> dir !in existingExitDirections }
+            .mapNotNull { (dir, offset) ->
+                val targetX = gridX + offset.first
+                val targetY = gridY + offset.second
+                val targetLoc = areaLocations.find { it.gridX == targetX && it.gridY == targetY }
+                if (targetLoc != null) {
+                    PhasewalkDestinationDto(
+                        direction = dir,
+                        locationId = targetLoc.id,
+                        locationName = targetLoc.name,
+                        gridX = targetX,
+                        gridY = targetY
+                    )
+                } else null
+            }
+
+        println("[Phasewalk] Computed ${destinations.size} destinations locally")
+        _localState.update { it.copy(phasewalkDestinations = destinations) }
     }
 
     fun phasewalk(direction: String) {
