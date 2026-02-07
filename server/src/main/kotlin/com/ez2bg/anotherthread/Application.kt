@@ -1026,9 +1026,13 @@ fun Application.module() {
         allowHost("192.168.1.239:12090")
         allowHost("192.168.1.239:12091")
 
-        // Production domains
+        // Production domains (QA)
         allowHost("anotherthread.ez2bgood.com", schemes = listOf("https"))
         allowHost("api.ez2bgood.com", schemes = listOf("https"))
+
+        // Dev domains
+        allowHost("anotherthread2.ez2bgood.com", schemes = listOf("https"))
+        allowHost("api2.ez2bgood.com", schemes = listOf("https"))
 
         // Headers
         allowHeader(HttpHeaders.ContentType)
