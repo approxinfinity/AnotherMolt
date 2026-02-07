@@ -603,11 +603,24 @@ object UserRepository {
     }
 
     /**
-     * Heal HP (capped at max)
+     * Heal HP (capped at base max - use healWithEquipment for equipment-aware healing)
      */
     fun heal(id: String, amount: Int): Boolean = transaction {
         val user = findById(id) ?: return@transaction false
         val newHp = (user.currentHp + amount).coerceAtMost(user.maxHp)
+        UserTable.update({ UserTable.id eq id }) {
+            it[currentHp] = newHp
+            it[lastActiveAt] = System.currentTimeMillis()
+        } > 0
+    }
+
+    /**
+     * Heal HP respecting equipment bonuses (capped at effective max HP)
+     * Used by regen system to allow healing up to equipment-boosted max
+     */
+    fun healWithEquipment(id: String, amount: Int, effectiveMaxHp: Int): Boolean = transaction {
+        val user = findById(id) ?: return@transaction false
+        val newHp = (user.currentHp + amount).coerceAtMost(effectiveMaxHp)
         UserTable.update({ UserTable.id eq id }) {
             it[currentHp] = newHp
             it[lastActiveAt] = System.currentTimeMillis()

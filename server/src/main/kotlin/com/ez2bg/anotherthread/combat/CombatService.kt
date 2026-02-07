@@ -2201,13 +2201,15 @@ object CombatService {
         val playerCritBonus = UserRepository.calculateCritBonus(this)
         val playerBaseDamage = UserRepository.calculateBaseDamage(this, equipAttack)
 
-        // Calculate resource regeneration based on stats
+        // Calculate resource regeneration based on stats (MajorMUD style)
         val conMod = UserRepository.attributeModifier(constitution)
         val intMod = UserRepository.attributeModifier(intelligence)
         val wisMod = UserRepository.attributeModifier(wisdom)
 
-        // HP regen: base 0 + CON modifier (min 0) - only positive CON gives regen
-        val hpRegenRate = conMod.coerceAtLeast(0)
+        // HP regen: base 1 + CON modifier + level/3
+        // Everyone gets at least 1 HP per round, CON and level add more
+        val levelBonus = level / 3
+        val hpRegenRate = (1 + conMod + levelBonus).coerceAtLeast(1)
 
         // Mana regen: base 1 + higher of INT or WIS modifier (for both arcane and divine casters)
         val spellMod = maxOf(intMod, wisMod)

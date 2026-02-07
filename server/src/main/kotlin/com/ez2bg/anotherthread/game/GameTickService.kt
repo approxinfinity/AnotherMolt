@@ -2,6 +2,7 @@ package com.ez2bg.anotherthread.game
 
 import com.ez2bg.anotherthread.combat.CombatConfig
 import com.ez2bg.anotherthread.combat.CombatService
+import com.ez2bg.anotherthread.database.ItemRepository
 import com.ez2bg.anotherthread.database.UserRepository
 import kotlinx.coroutines.*
 import org.slf4j.LoggerFactory
@@ -74,6 +75,12 @@ object GameTickService {
     /**
      * Process resource regeneration for all online players.
      * Players in combat get their regen handled by CombatService instead.
+     *
+     * MajorMUD-style regen:
+     * - Base HP regen that everyone gets (1 per tick minimum)
+     * - CON modifier adds to HP regen
+     * - Level adds scaling regen (+1 per 3 levels)
+     * - Equipment HP bonuses are considered for max HP cap
      */
     private suspend fun processGlobalRegen() {
         // Get all users who are online (have been active in last 5 minutes)
@@ -91,13 +98,15 @@ object GameTickService {
             }
             lastRegenTick[user.id] = currentTickNumber
 
-            // Calculate regen based on stats
+            // Calculate regen based on stats (MajorMUD style)
             val conMod = UserRepository.attributeModifier(user.constitution)
             val intMod = UserRepository.attributeModifier(user.intelligence)
             val wisMod = UserRepository.attributeModifier(user.wisdom)
 
-            // HP regen: CON modifier (only if positive)
-            val hpRegen = conMod.coerceAtLeast(0)
+            // HP regen: base 1 + CON modifier + level/3
+            // Everyone gets at least 1 HP per tick, CON adds more, level adds scaling
+            val levelBonus = user.level / 3
+            val hpRegen = (1 + conMod + levelBonus).coerceAtLeast(1)
 
             // Mana regen: 1 + max(INT, WIS) modifier
             val spellMod = maxOf(intMod, wisMod)
@@ -106,22 +115,22 @@ object GameTickService {
             // Stamina regen: 2 + CON modifier
             val staminaRegen = (2 + conMod).coerceAtLeast(1)
 
-            // Apply regeneration if below max
-            var changed = false
+            // Calculate effective max HP including equipment bonuses
+            val equippedItems = user.equippedItemIds.mapNotNull { ItemRepository.findById(it) }
+            val equipHpBonus = equippedItems.sumOf { it.statBonuses?.maxHp ?: 0 }
+            val effectiveMaxHp = user.maxHp + equipHpBonus
 
-            if (hpRegen > 0 && user.currentHp < user.maxHp) {
-                UserRepository.heal(user.id, hpRegen)
-                changed = true
+            // Apply regeneration if below max
+            if (user.currentHp < effectiveMaxHp) {
+                UserRepository.healWithEquipment(user.id, hpRegen, effectiveMaxHp)
             }
 
             if (user.currentMana < user.maxMana) {
                 UserRepository.restoreMana(user.id, manaRegen)
-                changed = true
             }
 
             if (user.currentStamina < user.maxStamina) {
                 UserRepository.restoreStamina(user.id, staminaRegen)
-                changed = true
             }
 
             // TODO: Could broadcast resource update to connected WebSocket clients
