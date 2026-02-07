@@ -309,6 +309,7 @@ fun AdventureScreen(
                                 innCost = 25,
                                 onBuyItem = { viewModel.buyItem(it.id) },
                                 onRest = { viewModel.restAtInn() },
+                                onLocationNameClick = { showLocationDetailPopup = true },
                                 modifier = Modifier
                                     .fillMaxWidth()
                                     .padding(16.dp)
@@ -322,6 +323,7 @@ fun AdventureScreen(
                                 isBlinded = isBlinded,
                                 onCreatureClick = { if (!ghostMode) viewModel.selectCreature(it) },
                                 onItemClick = { if (!ghostMode) viewModel.pickupItem(it) },
+                                onLocationNameClick = { showLocationDetailPopup = true },
                                 modifier = Modifier
                                     .fillMaxWidth()
                                     .padding(16.dp)
@@ -774,16 +776,19 @@ private fun LocationInfoPanel(
     isBlinded: Boolean,
     onCreatureClick: (CreatureDto) -> Unit,
     onItemClick: (ItemDto) -> Unit,
+    onLocationNameClick: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     Column(
         modifier = modifier,
         horizontalAlignment = Alignment.Start
     ) {
-        // Location name with coordinates
+        // Location name with coordinates - tappable to show details
         Row(
             verticalAlignment = Alignment.CenterVertically,
-            modifier = Modifier.padding(bottom = 12.dp)
+            modifier = Modifier
+                .padding(bottom = 12.dp)
+                .clickable { onLocationNameClick() }
         ) {
             Text(
                 text = location.name,
@@ -909,16 +914,19 @@ private fun ShopPanel(
     innCost: Int,
     onBuyItem: (ItemDto) -> Unit,
     onRest: () -> Unit,
+    onLocationNameClick: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     Column(modifier = modifier) {
-        // Shop name
+        // Shop name (clickable to show location details)
         Text(
             text = location.name,
             color = Color.White,
             fontSize = 18.sp,
             fontWeight = FontWeight.Bold,
-            modifier = Modifier.padding(bottom = 8.dp)
+            modifier = Modifier
+                .padding(bottom = 8.dp)
+                .clickable { onLocationNameClick() }
         )
 
         // Description

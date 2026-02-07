@@ -490,6 +490,44 @@ class CombatServiceTest {
         assertNull(checkedSession.endReason)
     }
 
+    @Test
+    fun testCombatEndsWhenNoCreatures() {
+        // If combat somehow started without creatures, it should end with timeout
+        val session = CombatSession(
+            id = "test-no-creatures-session",
+            locationId = TestFixtures.DUNGEON_ENTRANCE_ID,
+            state = CombatState.ACTIVE,
+            combatants = listOf(
+                TestFixtures.playerCombatant(currentHp = 20, maxHp = 30)
+                // No creatures at all
+            )
+        )
+
+        val checkedSession = checkEndConditionsForTest(session)
+
+        assertEquals(CombatState.ENDED, checkedSession.state)
+        assertEquals(CombatEndReason.TIMEOUT, checkedSession.endReason)
+    }
+
+    @Test
+    fun testCombatEndsWhenNoPlayers() {
+        // If all players leave (e.g., phasewalk), combat should end
+        val session = CombatSession(
+            id = "test-no-players-session",
+            locationId = TestFixtures.DUNGEON_ENTRANCE_ID,
+            state = CombatState.ACTIVE,
+            combatants = listOf(
+                // No players
+                TestFixtures.creatureCombatant(currentHp = 10, maxHp = 15)
+            )
+        )
+
+        val checkedSession = checkEndConditionsForTest(session)
+
+        assertEquals(CombatState.ENDED, checkedSession.state)
+        assertEquals(CombatEndReason.ALL_PLAYERS_DEFEATED, checkedSession.endReason)
+    }
+
     // ========== Effect Replacement Tests ==========
 
     @Test
@@ -681,16 +719,24 @@ class CombatServiceTest {
     }
 
     private fun checkEndConditionsForTest(session: CombatSession): CombatSession {
-        val alivePlayers = session.combatants.filter { it.type == CombatantType.PLAYER && it.isAlive }
-        val aliveCreatures = session.combatants.filter { it.type == CombatantType.CREATURE && it.isAlive }
+        val players = session.combatants.filter { it.type == CombatantType.PLAYER }
+        val creatures = session.combatants.filter { it.type == CombatantType.CREATURE }
+        val alivePlayers = players.filter { it.isAlive }
+        val aliveCreatures = creatures.filter { it.isAlive }
 
         val (state, endReason) = when {
-            alivePlayers.isEmpty() && aliveCreatures.isEmpty() ->
-                CombatState.ENDED to CombatEndReason.TIMEOUT
+            // No players left at all - combat ends
+            players.isEmpty() ->
+                CombatState.ENDED to CombatEndReason.ALL_PLAYERS_DEFEATED
+            // All players dead/fled
             alivePlayers.isEmpty() ->
                 CombatState.ENDED to CombatEndReason.ALL_PLAYERS_DEFEATED
-            aliveCreatures.isEmpty() && session.combatants.any { it.type == CombatantType.CREATURE } ->
+            // All creatures dead (and there were creatures to fight)
+            aliveCreatures.isEmpty() && creatures.isNotEmpty() ->
                 CombatState.ENDED to CombatEndReason.ALL_ENEMIES_DEFEATED
+            // No creatures at all - nothing to fight, end combat
+            creatures.isEmpty() ->
+                CombatState.ENDED to CombatEndReason.TIMEOUT
             else -> session.state to session.endReason
         }
 

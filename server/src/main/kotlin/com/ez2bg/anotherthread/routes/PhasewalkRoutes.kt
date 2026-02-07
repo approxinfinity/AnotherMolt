@@ -1,5 +1,6 @@
 package com.ez2bg.anotherthread.routes
 
+import com.ez2bg.anotherthread.combat.CombatService
 import com.ez2bg.anotherthread.database.*
 import io.ktor.http.*
 import io.ktor.server.application.*
@@ -210,7 +211,10 @@ fun Route.phasewalkRoutes() {
             // 9. Update location
             UserRepository.updateCurrentLocation(user.id, destination.id)
 
-            // 10. Build departure message (visible to others in the room)
+            // 10. Remove player from combat (they phased away from the battlefield)
+            CombatService.removePlayerFromCombat(user.id)
+
+            // 11. Build departure message (visible to others in the room)
             val departureMessage = "${user.name} evaporates to the $direction."
 
             call.respond(

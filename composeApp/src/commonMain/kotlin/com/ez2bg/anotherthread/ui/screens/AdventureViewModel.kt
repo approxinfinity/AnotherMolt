@@ -457,6 +457,9 @@ class AdventureViewModel(
                     // Deduct mana locally for immediate UI feedback (2 mana cost)
                     UserStateHolder.spendManaLocally(2)
 
+                    // Clear combat state - phasewalking removes player from combat
+                    CombatStateHolder.clearCombatStatePublic()
+
                     // Add event log entries
                     CombatStateHolder.addEventLogEntry(
                         response.message,

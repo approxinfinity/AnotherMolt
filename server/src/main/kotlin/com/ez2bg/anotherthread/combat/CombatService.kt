@@ -245,8 +245,10 @@ object CombatService {
         // Persist session
         CombatSessionRepository.create(session)
 
-        // Notify all players
-        broadcastToSession(session.id, CombatStartedMessage(session, playerCombatant))
+        // Send CombatStartedMessage ONLY to the joining player (not all players)
+        // This prevents duplicate "Combat started!" logs for existing players
+        // Existing players will see the new combatant in the next RoundStartMessage
+        sendToPlayer(userId, CombatStartedMessage(session, playerCombatant))
 
         log.info("Player $userId joined combat session ${session.id} at location $locationId")
         return Result.success(session)
@@ -1575,15 +1577,22 @@ object CombatService {
         for (player in session.players) {
             log.info("CHECK_END: Player ${player.name}: HP=${player.currentHp}, isAlive=${player.isAlive}, isDowned=${player.isDowned}, deathThreshold=${player.deathThreshold}")
         }
-        log.info("CHECK_END: alivePlayers.size=${alivePlayers.size}, aliveCreatures.size=${aliveCreatures.size}")
+        log.info("CHECK_END: alivePlayers.size=${alivePlayers.size}, aliveCreatures.size=${aliveCreatures.size}, session.creatures.size=${session.creatures.size}")
 
         val (state, endReason) = when {
-            alivePlayers.isEmpty() && aliveCreatures.isEmpty() ->
-                CombatState.ENDED to CombatEndReason.TIMEOUT
+            // No players left at all - combat ends
+            session.players.isEmpty() ->
+                CombatState.ENDED to CombatEndReason.ALL_PLAYERS_DEFEATED
+            // All players dead/fled
             alivePlayers.isEmpty() ->
                 CombatState.ENDED to CombatEndReason.ALL_PLAYERS_DEFEATED
+            // All creatures dead (and there were creatures to fight)
             aliveCreatures.isEmpty() && session.creatures.isNotEmpty() ->
                 CombatState.ENDED to CombatEndReason.ALL_ENEMIES_DEFEATED
+            // No creatures at all - nothing to fight, end combat
+            session.creatures.isEmpty() ->
+                CombatState.ENDED to CombatEndReason.TIMEOUT
+            // Max rounds reached
             session.currentRound >= CombatConfig.MAX_COMBAT_ROUNDS ->
                 CombatState.ENDED to CombatEndReason.TIMEOUT
             else -> session.state to session.endReason

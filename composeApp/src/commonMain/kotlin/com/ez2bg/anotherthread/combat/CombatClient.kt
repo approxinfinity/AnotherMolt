@@ -427,7 +427,9 @@ class CombatClient(
             }
         } catch (e: Exception) {
             println("$TAG: Error parsing message: ${e.message}")
-            println("$TAG: Message was: ${text.take(200)}")
+            println("$TAG: Exception type: ${e::class.simpleName}")
+            println("$TAG: Message was: ${text.take(500)}")
+            e.printStackTrace()
         }
     }
 

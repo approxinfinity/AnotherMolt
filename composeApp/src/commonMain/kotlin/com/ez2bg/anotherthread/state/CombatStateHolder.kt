@@ -446,6 +446,15 @@ object CombatStateHolder {
     }
 
     /**
+     * Public method to clear combat state.
+     * Called when player leaves combat via phasewalk or other means.
+     */
+    fun clearCombatStatePublic() {
+        clearCombatState()
+        addEventLogEntry("You left combat.", EventLogType.INFO)
+    }
+
+    /**
      * Get the opposite direction for "wanders in from" messages.
      * If creature went north, they came from the south.
      */
@@ -510,5 +519,21 @@ object CombatStateHolder {
     fun resetForTest() {
         clearCombatState()
         connectedUserId = null
+    }
+
+    /**
+     * Set blinded state for testing.
+     */
+    fun setBlindedForTest(blinded: Boolean, rounds: Int) {
+        _isBlinded.value = blinded
+        _blindRounds.value = rounds
+    }
+
+    /**
+     * Set disoriented state for testing.
+     */
+    fun setDisorientedForTest(disoriented: Boolean, rounds: Int) {
+        _isDisoriented.value = disoriented
+        _disorientRounds.value = rounds
     }
 }

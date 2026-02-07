@@ -1197,9 +1197,10 @@ fun Application.module() {
                                     }
                                 }
                             } catch (e: Exception) {
-                                log.error("Error processing combat message: ${e.message}")
+                                log.error("Error processing combat message: ${e.message}", e)
+                                log.error("Message content was: ${text.take(500)}")
                                 send(Frame.Text(combatJson.encodeToString(
-                                    CombatErrorMessage(error = "Invalid message format", code = "PARSE_ERROR")
+                                    CombatErrorMessage(error = "Invalid message format: ${e.message}", code = "PARSE_ERROR")
                                 )))
                             }
                         }
