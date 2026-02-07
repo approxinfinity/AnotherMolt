@@ -378,11 +378,17 @@ object UserRepository {
 
     /**
      * Fully heal a user (restores HP, mana, and stamina)
+     * Includes equipment bonuses for effective max HP calculation
      */
     fun healToFull(id: String): Boolean = transaction {
         val user = findById(id) ?: return@transaction false
+        // Calculate effective max HP including equipment bonuses
+        val equippedItems = user.equippedItemIds.mapNotNull { ItemRepository.findById(it) }
+        val equipHpBonus = equippedItems.sumOf { it.statBonuses?.maxHp ?: 0 }
+        val effectiveMaxHp = user.maxHp + equipHpBonus
+
         UserTable.update({ UserTable.id eq id }) {
-            it[currentHp] = user.maxHp
+            it[currentHp] = effectiveMaxHp
             it[currentMana] = user.maxMana
             it[currentStamina] = user.maxStamina
             it[lastActiveAt] = System.currentTimeMillis()
