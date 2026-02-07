@@ -9,11 +9,31 @@ import io.ktor.server.request.*
 import io.ktor.server.response.*
 import io.ktor.server.routing.*
 import kotlinx.coroutines.launch
+import kotlinx.serialization.Serializable
 import java.io.File
 import java.net.HttpURLConnection
 import java.net.URL
 
 private val log = org.slf4j.LoggerFactory.getLogger("AdminRoutes")
+
+@Serializable
+data class AppliedMigrationResponse(val version: Int, val name: String, val appliedAt: Long)
+
+@Serializable
+data class PendingMigrationResponse(val version: Int, val name: String)
+
+@Serializable
+data class MigrationStatusResponse(
+    val appliedMigrations: List<AppliedMigrationResponse>,
+    val pendingMigrations: List<PendingMigrationResponse>,
+    val totalMigrations: Int
+)
+
+@Serializable
+data class MigrationRunResponse(val success: Boolean, val migrationsApplied: Int, val message: String)
+
+@Serializable
+data class MigrationErrorResponse(val success: Boolean, val error: String)
 
 /**
  * Admin routes for file management, service control, database operations, and user management.
@@ -1009,17 +1029,14 @@ fun Route.adminRoutes() {
         // Get migration status
         get {
             val status = com.ez2bg.anotherthread.database.migrations.MigrationRunner.getStatus()
-            call.respond(mapOf(
-                "appliedMigrations" to status.appliedMigrations.map { mapOf(
-                    "version" to it.version,
-                    "name" to it.name,
-                    "appliedAt" to it.appliedAt
-                )},
-                "pendingMigrations" to status.pendingMigrations.map { mapOf(
-                    "version" to it.version,
-                    "name" to it.name
-                )},
-                "totalMigrations" to status.totalMigrations
+            call.respond(MigrationStatusResponse(
+                appliedMigrations = status.appliedMigrations.map {
+                    AppliedMigrationResponse(it.version, it.name, it.appliedAt)
+                },
+                pendingMigrations = status.pendingMigrations.map {
+                    PendingMigrationResponse(it.version, it.name)
+                },
+                totalMigrations = status.totalMigrations
             ))
         }
 
@@ -1027,15 +1044,15 @@ fun Route.adminRoutes() {
         post("/run") {
             try {
                 val applied = com.ez2bg.anotherthread.database.migrations.MigrationRunner.runPendingMigrations()
-                call.respond(mapOf(
-                    "success" to true,
-                    "migrationsApplied" to applied,
-                    "message" to if (applied > 0) "Applied $applied migration(s)" else "No pending migrations"
+                call.respond(MigrationRunResponse(
+                    success = true,
+                    migrationsApplied = applied,
+                    message = if (applied > 0) "Applied $applied migration(s)" else "No pending migrations"
                 ))
             } catch (e: Exception) {
-                call.respond(HttpStatusCode.InternalServerError, mapOf(
-                    "success" to false,
-                    "error" to (e.message ?: "Unknown error")
+                call.respond(HttpStatusCode.InternalServerError, MigrationErrorResponse(
+                    success = false,
+                    error = e.message ?: "Unknown error"
                 ))
             }
         }
