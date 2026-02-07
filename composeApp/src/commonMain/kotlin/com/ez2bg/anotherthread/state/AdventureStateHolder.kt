@@ -7,6 +7,8 @@ import com.ez2bg.anotherthread.api.ExitDto
 import com.ez2bg.anotherthread.api.ItemDto
 import com.ez2bg.anotherthread.api.LocationDto
 import com.ez2bg.anotherthread.api.AbilityDto
+import com.ez2bg.anotherthread.api.LocationEventType
+import com.ez2bg.anotherthread.api.LocationMutationEvent
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -283,6 +285,112 @@ object AdventureStateHolder {
      */
     fun getCreatureState(creatureId: String): String? {
         return _creatureStates.value[creatureId]
+    }
+
+    /**
+     * Handle a location mutation event from the WebSocket.
+     * Updates the location in cache and current location if it matches.
+     */
+    fun handleLocationMutation(event: LocationMutationEvent) {
+        val currentLoc = _currentLocation.value
+
+        // Only process if this mutation is for our current location
+        if (currentLoc == null || currentLoc.id != event.locationId) {
+            // Still update allLocations cache for minimap consistency
+            updateLocationInCache(event)
+            return
+        }
+
+        // Update the current location based on event type
+        val updatedLocation = when (event.eventType) {
+            LocationEventType.EXIT_ADDED -> {
+                event.exitAdded?.let { exitDto ->
+                    currentLoc.copy(
+                        exits = currentLoc.exits + exitDto
+                    )
+                } ?: currentLoc
+            }
+            LocationEventType.EXIT_REMOVED -> {
+                event.exitRemoved?.let { exitDto ->
+                    currentLoc.copy(
+                        exits = currentLoc.exits.filter { it.locationId != exitDto.locationId }
+                    )
+                } ?: currentLoc
+            }
+            LocationEventType.ITEM_ADDED -> {
+                event.itemIdAdded?.let { itemId ->
+                    currentLoc.copy(
+                        itemIds = currentLoc.itemIds + itemId
+                    )
+                } ?: currentLoc
+            }
+            LocationEventType.ITEM_REMOVED -> {
+                event.itemIdRemoved?.let { itemId ->
+                    currentLoc.copy(
+                        itemIds = currentLoc.itemIds.filter { it != itemId }
+                    )
+                } ?: currentLoc
+            }
+            LocationEventType.LOCATION_UPDATED -> {
+                // For general updates, refresh from server
+                scope.launch { refreshCurrentLocation() }
+                currentLoc
+            }
+        }
+
+        // Update current location state
+        _currentLocation.value = updatedLocation
+
+        // Update entities at location (in case items changed)
+        updateEntitiesAtLocation(updatedLocation)
+
+        // Update in allLocations cache
+        updateLocationInCache(event, updatedLocation)
+    }
+
+    /**
+     * Update a location in the allLocations cache based on a mutation event.
+     */
+    private fun updateLocationInCache(event: LocationMutationEvent, updatedLocation: LocationDto? = null) {
+        _allLocations.value = _allLocations.value.map { loc ->
+            if (loc.id == event.locationId) {
+                updatedLocation ?: applyMutationToLocation(loc, event)
+            } else {
+                loc
+            }
+        }
+    }
+
+    /**
+     * Apply a mutation event to a location.
+     */
+    private fun applyMutationToLocation(location: LocationDto, event: LocationMutationEvent): LocationDto {
+        return when (event.eventType) {
+            LocationEventType.EXIT_ADDED -> {
+                event.exitAdded?.let { exitDto ->
+                    location.copy(exits = location.exits + exitDto)
+                } ?: location
+            }
+            LocationEventType.EXIT_REMOVED -> {
+                event.exitRemoved?.let { exitDto ->
+                    location.copy(exits = location.exits.filter { it.locationId != exitDto.locationId })
+                } ?: location
+            }
+            LocationEventType.ITEM_ADDED -> {
+                event.itemIdAdded?.let { itemId ->
+                    location.copy(itemIds = location.itemIds + itemId)
+                } ?: location
+            }
+            LocationEventType.ITEM_REMOVED -> {
+                event.itemIdRemoved?.let { itemId ->
+                    location.copy(itemIds = location.itemIds.filter { it != itemId })
+                } ?: location
+            }
+            LocationEventType.LOCATION_UPDATED -> {
+                // For general updates, we'd need to fetch from server
+                location
+            }
+        }
     }
 
     /**

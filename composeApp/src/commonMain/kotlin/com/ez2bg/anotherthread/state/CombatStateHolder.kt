@@ -3,6 +3,7 @@ package com.ez2bg.anotherthread.state
 import com.ez2bg.anotherthread.api.CombatSessionDto
 import com.ez2bg.anotherthread.api.CombatantDto
 import com.ez2bg.anotherthread.api.StatusEffectDto
+import com.ez2bg.anotherthread.api.LocationEventType
 import com.ez2bg.anotherthread.combat.CombatClient
 import com.ez2bg.anotherthread.combat.CombatConnectionState
 import com.ez2bg.anotherthread.combat.GlobalEvent
@@ -287,12 +288,22 @@ object CombatStateHolder {
             }
 
             is GlobalEvent.HealthUpdated -> {
+                // Update player combatant HP if this is about us
                 val update = event.update
-                val type = if (update.changeAmount < 0) EventLogType.DAMAGE_RECEIVED else EventLogType.HEAL
-                addEventLogEntry(
-                    "${update.combatantId}: ${update.changeAmount} HP (${update.currentHp}/${update.maxHp})",
-                    type
-                )
+                if (update.combatantId == connectedUserId) {
+                    _playerCombatant.value?.let { current ->
+                        _playerCombatant.value = current.copy(
+                            currentHp = update.currentHp,
+                            maxHp = update.maxHp
+                        )
+                    }
+                }
+                // Also update in combatants list
+                _combatants.value = _combatants.value.map { combatant ->
+                    if (combatant.id == update.combatantId) {
+                        combatant.copy(currentHp = update.currentHp, maxHp = update.maxHp)
+                    } else combatant
+                }
             }
 
             is GlobalEvent.PlayerDowned -> {
@@ -384,12 +395,39 @@ object CombatStateHolder {
                 }
             }
 
+            is GlobalEvent.LocationMutated -> {
+                // Handle location mutation events (exits added/removed, items added/removed)
+                AdventureStateHolder.handleLocationMutation(event.event)
+            }
+
             is GlobalEvent.Error -> {
                 addEventLogEntry("Error: ${event.message}", EventLogType.ERROR)
             }
 
             is GlobalEvent.ResourceUpdated -> {
-                // Could log resource changes if needed
+                // Update player combatant mana/stamina if this is about us
+                val update = event.update
+                if (update.combatantId == connectedUserId) {
+                    _playerCombatant.value?.let { current ->
+                        _playerCombatant.value = current.copy(
+                            currentMana = update.currentMana,
+                            maxMana = update.maxMana,
+                            currentStamina = update.currentStamina,
+                            maxStamina = update.maxStamina
+                        )
+                    }
+                }
+                // Also update in combatants list
+                _combatants.value = _combatants.value.map { combatant ->
+                    if (combatant.id == update.combatantId) {
+                        combatant.copy(
+                            currentMana = update.currentMana,
+                            maxMana = update.maxMana,
+                            currentStamina = update.currentStamina,
+                            maxStamina = update.maxStamina
+                        )
+                    } else combatant
+                }
             }
         }
     }
@@ -432,4 +470,45 @@ object CombatStateHolder {
      */
     val isInCombat: Boolean
         get() = _combatSession.value != null
+
+    // =========================================================================
+    // TEST HELPERS - Only for unit testing
+    // =========================================================================
+
+    /**
+     * Set the connected user ID for testing.
+     */
+    fun setConnectedUserId(userId: String) {
+        connectedUserId = userId
+    }
+
+    /**
+     * Set player combatant directly for testing.
+     */
+    fun setPlayerCombatantForTest(combatant: CombatantDto?) {
+        _playerCombatant.value = combatant
+    }
+
+    /**
+     * Set combatants list directly for testing.
+     */
+    fun setCombatantsForTest(combatants: List<CombatantDto>) {
+        _combatants.value = combatants
+    }
+
+    /**
+     * Handle a GlobalEvent directly for testing.
+     * This bypasses the CombatClient and lets tests trigger state changes.
+     */
+    fun handleEventForTest(event: GlobalEvent) {
+        handleGlobalEvent(event)
+    }
+
+    /**
+     * Reset all state for testing.
+     */
+    fun resetForTest() {
+        clearCombatState()
+        connectedUserId = null
+    }
 }
