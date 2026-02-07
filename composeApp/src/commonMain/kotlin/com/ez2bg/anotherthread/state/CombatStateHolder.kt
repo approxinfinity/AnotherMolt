@@ -345,8 +345,14 @@ object CombatStateHolder {
             }
 
             is GlobalEvent.PlayerDied -> {
+                val response = event.response
                 addEventLogEntry("You have died!", EventLogType.ERROR)
+                addEventLogEntry("You respawn at ${response.respawnLocationName} with full health.", EventLogType.NAVIGATION)
                 clearCombatState()
+                // Refresh user data to get updated HP/location from server
+                scope.launch {
+                    UserStateHolder.refreshUser()
+                }
             }
 
             is GlobalEvent.PlayerDragged -> {

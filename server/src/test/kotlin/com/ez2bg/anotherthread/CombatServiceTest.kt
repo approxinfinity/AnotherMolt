@@ -1082,4 +1082,98 @@ class CombatServiceTest {
         val finalSession = checkEndConditionsForTest(updatedSession)
         assertEquals(CombatState.ENDED, finalSession.state)
     }
+
+    // ========== Death and Respawn Tests ==========
+
+    @Test
+    fun testHealToFull_restoresMaxHp() {
+        // Given: Player with reduced HP
+        val user = UserRepository.findById(TestFixtures.PLAYER_1_ID)!!
+        UserRepository.heal(user.id, -(user.currentHp - 5)) // Reduce to 5 HP
+
+        // Verify HP is reduced
+        val reducedUser = UserRepository.findById(TestFixtures.PLAYER_1_ID)!!
+        assertTrue(reducedUser.currentHp < reducedUser.maxHp, "HP should be reduced before heal")
+
+        // When: Heal to full
+        UserRepository.healToFull(user.id)
+
+        // Then: HP should be maxHp
+        val healedUser = UserRepository.findById(TestFixtures.PLAYER_1_ID)!!
+        assertEquals(healedUser.maxHp, healedUser.currentHp, "HP should equal maxHp after healToFull")
+    }
+
+    @Test
+    fun testHealToFull_restoresManaAndStamina() {
+        // Given: Player with reduced resources
+        val user = UserRepository.findById(TestFixtures.PLAYER_1_ID)!!
+        UserRepository.spendMana(user.id, user.currentMana - 5) // Reduce mana
+        UserRepository.spendStamina(user.id, user.currentStamina - 3) // Reduce stamina
+
+        // When: Heal to full
+        UserRepository.healToFull(user.id)
+
+        // Then: All resources should be at max
+        val healedUser = UserRepository.findById(TestFixtures.PLAYER_1_ID)!!
+        assertEquals(healedUser.maxHp, healedUser.currentHp, "HP should be full")
+        assertEquals(healedUser.maxMana, healedUser.currentMana, "Mana should be full")
+        assertEquals(healedUser.maxStamina, healedUser.currentStamina, "Stamina should be full")
+    }
+
+    @Test
+    fun testUpdateCombatState_setsHpCorrectly() {
+        // Given: Player in combat with reduced HP
+        val user = UserRepository.findById(TestFixtures.PLAYER_1_ID)!!
+        val newHp = user.maxHp - 10
+
+        // When: Update combat state with specific HP
+        UserRepository.updateCombatState(user.id, newHp, "test-session-id")
+
+        // Then: HP should be set correctly
+        val updatedUser = UserRepository.findById(TestFixtures.PLAYER_1_ID)!!
+        assertEquals(newHp, updatedUser.currentHp, "HP should match the value passed to updateCombatState")
+        assertEquals("test-session-id", updatedUser.currentCombatSessionId, "Combat session ID should be set")
+    }
+
+    @Test
+    fun testUpdateCombatState_clearsSessionOnNull() {
+        // Given: Player in combat
+        val user = UserRepository.findById(TestFixtures.PLAYER_1_ID)!!
+        UserRepository.updateCombatState(user.id, user.currentHp, "test-session-id")
+
+        // When: Clear combat state (respawn)
+        UserRepository.updateCombatState(user.id, user.maxHp, null)
+
+        // Then: HP should be maxHp and session should be cleared
+        val updatedUser = UserRepository.findById(TestFixtures.PLAYER_1_ID)!!
+        assertEquals(user.maxHp, updatedUser.currentHp, "HP should be full after respawn")
+        assertNull(updatedUser.currentCombatSessionId, "Combat session should be cleared")
+    }
+
+    @Test
+    fun testDeathRespawn_fullHpRestoration() {
+        // This simulates the full death respawn flow:
+        // 1. Player takes lethal damage
+        // 2. healToFull is called
+        // 3. updateCombatState is called with maxHp and null session
+
+        // Given: Player with some HP
+        val user = UserRepository.findById(TestFixtures.PLAYER_1_ID)!!
+        val originalMaxHp = user.maxHp
+
+        // Simulate taking damage and being near death
+        UserRepository.heal(user.id, -(user.currentHp - 1)) // Reduce to 1 HP
+        val damagedUser = UserRepository.findById(TestFixtures.PLAYER_1_ID)!!
+        assertEquals(1, damagedUser.currentHp, "Player should be at 1 HP")
+
+        // When: Death respawn sequence (as called in handlePlayerDeath)
+        UserRepository.healToFull(user.id)
+        UserRepository.updateCombatState(user.id, originalMaxHp, null)
+
+        // Then: Player should have full HP
+        val respawnedUser = UserRepository.findById(TestFixtures.PLAYER_1_ID)!!
+        assertEquals(originalMaxHp, respawnedUser.currentHp, "HP should be fully restored after death")
+        assertEquals(originalMaxHp, respawnedUser.maxHp, "maxHp should not change")
+        assertNull(respawnedUser.currentCombatSessionId, "Combat session should be cleared")
+    }
 }
