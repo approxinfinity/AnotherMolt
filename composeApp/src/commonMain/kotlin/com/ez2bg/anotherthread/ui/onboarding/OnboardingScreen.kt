@@ -29,7 +29,9 @@ import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.unit.dp
 import com.ez2bg.anotherthread.api.ApiClient
 import com.ez2bg.anotherthread.api.UserDto
+import com.ez2bg.anotherthread.state.UserStateHolder
 import com.ez2bg.anotherthread.storage.AuthStorage
+import com.ez2bg.anotherthread.storage.OnboardingStorage
 import kotlinx.coroutines.launch
 
 private val DarkBackground = Color(0xFF1A1A2E)
@@ -41,12 +43,21 @@ private val LightBlue = Color(0xFFBFDBFE)
  * 1. Adventure Mode value proposition
  * 2. Create Mode value proposition
  * 3. Authentication
+ *
+ * If the user has previously seen onboarding, skip directly to auth page.
  */
 @Composable
 fun OnboardingScreen(
     onComplete: (UserDto) -> Unit
 ) {
-    val pagerState = rememberPagerState(pageCount = { 3 })
+    // If user has seen onboarding before, skip to auth page (page 2)
+    val hasSeenOnboarding = remember { OnboardingStorage.hasSeenOnboarding() }
+    val initialPage = if (hasSeenOnboarding) 2 else 0
+
+    val pagerState = rememberPagerState(
+        initialPage = initialPage,
+        pageCount = { 3 }
+    )
     val scope = rememberCoroutineScope()
 
     Box(
@@ -56,7 +67,9 @@ fun OnboardingScreen(
     ) {
         HorizontalPager(
             state = pagerState,
-            modifier = Modifier.fillMaxSize()
+            modifier = Modifier.fillMaxSize(),
+            // Disable swiping if we started on auth page
+            userScrollEnabled = !hasSeenOnboarding
         ) { page ->
             when (page) {
                 0 -> OnboardingPage(
@@ -74,68 +87,73 @@ fun OnboardingScreen(
                 2 -> AuthPage(
                     onAuthenticated = { user ->
                         AuthStorage.saveUser(user)
+                        UserStateHolder.updateUser(user)
                         onComplete(user)
-                    }
+                    },
+                    defaultToLogin = hasSeenOnboarding,
+                    isReturningUser = hasSeenOnboarding
                 )
             }
         }
 
-        // Bottom navigation area
-        Column(
-            modifier = Modifier
-                .align(Alignment.BottomCenter)
-                .padding(bottom = 48.dp)
-                .fillMaxWidth(),
-            horizontalAlignment = Alignment.CenterHorizontally
-        ) {
-            // Progress indicator
-            OnboardingProgressIndicator(
-                pageCount = 3,
-                currentPage = pagerState.currentPage
-            )
-
-            Spacer(modifier = Modifier.height(32.dp))
-
-            // Navigation buttons (only show on value prop pages)
-            AnimatedVisibility(
-                visible = pagerState.currentPage < 2,
-                enter = fadeIn(),
-                exit = fadeOut()
+        // Bottom navigation area - only show if user hasn't seen onboarding before
+        if (!hasSeenOnboarding) {
+            Column(
+                modifier = Modifier
+                    .align(Alignment.BottomCenter)
+                    .padding(bottom = 48.dp)
+                    .fillMaxWidth(),
+                horizontalAlignment = Alignment.CenterHorizontally
             ) {
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(horizontal = 32.dp),
-                    horizontalArrangement = Arrangement.SpaceBetween
-                ) {
-                    // Skip button
-                    TextButton(
-                        onClick = {
-                            scope.launch {
-                                pagerState.animateScrollToPage(2)
-                            }
-                        }
-                    ) {
-                        Text(
-                            "Skip",
-                            color = Color.White.copy(alpha = 0.7f)
-                        )
-                    }
+                // Progress indicator
+                OnboardingProgressIndicator(
+                    pageCount = 3,
+                    currentPage = pagerState.currentPage
+                )
 
-                    // Next button
-                    Button(
-                        onClick = {
-                            scope.launch {
-                                pagerState.animateScrollToPage(pagerState.currentPage + 1)
-                            }
-                        },
-                        colors = ButtonDefaults.buttonColors(
-                            containerColor = AccentColor
-                        )
+                Spacer(modifier = Modifier.height(32.dp))
+
+                // Navigation buttons (only show on value prop pages)
+                AnimatedVisibility(
+                    visible = pagerState.currentPage < 2,
+                    enter = fadeIn(),
+                    exit = fadeOut()
+                ) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 32.dp),
+                        horizontalArrangement = Arrangement.SpaceBetween
                     ) {
-                        Text(
-                            if (pagerState.currentPage == 1) "Get Started" else "Next"
-                        )
+                        // Skip button
+                        TextButton(
+                            onClick = {
+                                scope.launch {
+                                    pagerState.animateScrollToPage(2)
+                                }
+                            }
+                        ) {
+                            Text(
+                                "Skip",
+                                color = Color.White.copy(alpha = 0.7f)
+                            )
+                        }
+
+                        // Next button
+                        Button(
+                            onClick = {
+                                scope.launch {
+                                    pagerState.animateScrollToPage(pagerState.currentPage + 1)
+                                }
+                            },
+                            colors = ButtonDefaults.buttonColors(
+                                containerColor = AccentColor
+                            )
+                        ) {
+                            Text(
+                                if (pagerState.currentPage == 1) "Get Started" else "Next"
+                            )
+                        }
                     }
                 }
             }
@@ -148,9 +166,11 @@ fun OnboardingScreen(
  */
 @Composable
 private fun AuthPage(
-    onAuthenticated: (UserDto) -> Unit
+    onAuthenticated: (UserDto) -> Unit,
+    defaultToLogin: Boolean = false,
+    isReturningUser: Boolean = false
 ) {
-    var isLoginMode by remember { mutableStateOf(false) }
+    var isLoginMode by remember { mutableStateOf(defaultToLogin) }
     var name by remember { mutableStateOf("") }
     var password by remember { mutableStateOf("") }
     var confirmPassword by remember { mutableStateOf("") }
@@ -187,7 +207,7 @@ private fun AuthPage(
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
         Text(
-            text = "Join the Adventure",
+            text = if (isReturningUser) "Adventure Awaits" else "Join the Adventure",
             style = MaterialTheme.typography.headlineLarge,
             color = Color.White
         )
@@ -195,7 +215,7 @@ private fun AuthPage(
         Spacer(modifier = Modifier.height(8.dp))
 
         Text(
-            text = "Create an account or sign in to begin",
+            text = if (isReturningUser) "Sign in or create an account to begin" else "Create an account or sign in to begin",
             style = MaterialTheme.typography.bodyLarge,
             color = Color.White.copy(alpha = 0.7f)
         )

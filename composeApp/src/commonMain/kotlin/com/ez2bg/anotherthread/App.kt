@@ -11,6 +11,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.tooling.preview.Preview
 import com.ez2bg.anotherthread.api.UserDto
+import com.ez2bg.anotherthread.state.UserStateHolder
 import com.ez2bg.anotherthread.storage.AuthStorage
 import com.ez2bg.anotherthread.storage.OnboardingStorage
 import com.ez2bg.anotherthread.ui.AdminScreen
@@ -31,6 +32,11 @@ private sealed class AppScreen {
 @Composable
 @Preview
 fun App() {
+    // Initialize UserStateHolder at app startup to sync with AuthStorage
+    LaunchedEffect(Unit) {
+        UserStateHolder.initialize()
+    }
+
     // Determine initial screen based on stored state
     val initialScreen = remember {
         if (!OnboardingStorage.hasSeenOnboarding()) {
@@ -91,6 +97,7 @@ fun App() {
                         user = screen.user,
                         onComplete = { updatedUser ->
                             AuthStorage.saveUser(updatedUser)
+                            UserStateHolder.updateUser(updatedUser)
                             currentScreen = AppScreen.Main
                         },
                         onExploreAsGhost = {

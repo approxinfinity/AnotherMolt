@@ -882,8 +882,11 @@ object ApiClient {
             connectTimeoutMillis = 30_000
             socketTimeoutMillis = 180_000
         }
-        // Enable cookies for session handling (used by web)
-        install(HttpCookies)
+        // Only use Ktor's HttpCookies on native platforms
+        // On web, we rely on the browser's native cookie handling via fetch credentials
+        if (!isWebPlatform()) {
+            install(HttpCookies)
+        }
         install(DefaultRequest) {
             // Add user headers for audit logging if available
             currentUserId?.let { header("X-User-Id", it) }

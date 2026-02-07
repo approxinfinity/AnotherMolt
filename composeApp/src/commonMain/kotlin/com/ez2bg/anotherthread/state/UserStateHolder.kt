@@ -86,7 +86,8 @@ object UserStateHolder {
     /**
      * Validate the current session with the server.
      * On success, refreshes user data and session expiry.
-     * On failure, logs out the user.
+     * On explicit session invalid, logs out the user.
+     * On network error, keeps the user logged in (optimistic).
      */
     private suspend fun validateSession() {
         val result = ApiClient.validateSession()
@@ -102,14 +103,15 @@ object UserStateHolder {
                     AuthStorage.saveSessionToken(response.sessionToken, response.expiresAt)
                 }
             } else {
-                // Session invalid - logout
+                // Session explicitly invalid - logout
+                println("[UserStateHolder] Session invalid: ${response.message}")
                 performLocalLogout()
                 _authEvents.emit(AuthEvent.AuthError("Session expired. Please login again."))
             }
-        }.onFailure {
-            // Session invalid or network error - logout
-            performLocalLogout()
-            _authEvents.emit(AuthEvent.AuthError("Session expired. Please login again."))
+        }.onFailure { error ->
+            // Network error - keep user logged in (optimistic), they can retry later
+            println("[UserStateHolder] Session validation failed (network): ${error.message}")
+            // Don't logout on network errors - let the user continue with cached data
         }
     }
 
