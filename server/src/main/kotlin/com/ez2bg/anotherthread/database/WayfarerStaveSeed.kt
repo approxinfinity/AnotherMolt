@@ -65,7 +65,7 @@ object WayfarerStaveSeed {
                         featureIds = emptyList(),
                         abilityIds = listOf(ABILITY_ID),
                         equipmentType = "weapon",
-                        equipmentSlot = "main_hand",
+                        equipmentSlot = "off_hand",
                         statBonuses = StatBonuses(attack = 2),
                         value = 0
                     )

@@ -447,6 +447,12 @@ class AdventureViewModel(
      * Public so it can be triggered when user equips/unequips items.
      */
     fun loadPhasewalkDestinations() {
+        // Only compute/load if player has phasewalk ability
+        if (!_localState.value.hasPhasewalkAbility) {
+            _localState.update { it.copy(phasewalkDestinations = emptyList()) }
+            return
+        }
+
         // First, try to compute locally for instant display
         computePhasewalkDestinationsLocally()
 
