@@ -351,6 +351,8 @@ class AdventureViewModel {
                     // we got the user's actual location from the server.
                     // We only do this ONCE because after that, the user is navigating
                     // and we don't want to fight with their navigation.
+                    // TODO: Explore re-syncing location on WebSocket reconnection as well,
+                    // in case the user's location drifts during a disconnect/reconnect cycle.
                     if (!hasPerformedInitialLocationSync && currentLocationId != null) {
                         hasPerformedInitialLocationSync = true
 

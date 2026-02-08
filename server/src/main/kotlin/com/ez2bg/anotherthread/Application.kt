@@ -1171,7 +1171,17 @@ fun Application.module() {
             CombatService.registerConnection(userId, this)
             LocationEventService.registerConnection(userId, this)
             // Track user's current location for location events
-            user.currentLocationId?.let { LocationEventService.updatePlayerLocation(userId, it) }
+            user.currentLocationId?.let { locationId ->
+                LocationEventService.updatePlayerLocation(userId, locationId)
+                // Broadcast player presence to others at this location
+                // This handles the case where a player reconnects (session restore)
+                val location = LocationRepository.findById(locationId)
+                if (location != null) {
+                    LocationEventService.broadcastPlayerEntered(location, userId, user.name)
+                }
+            }
+            // Update last active timestamp on WebSocket connect
+            UserRepository.updateLastActiveAt(userId)
 
             try {
                 for (frame in incoming) {
@@ -1241,6 +1251,15 @@ fun Application.module() {
                     }
                 }
             } finally {
+                // Broadcast player left to others at their location before unregistering
+                val disconnectingUser = UserRepository.findById(userId)
+                val locationId = disconnectingUser?.currentLocationId
+                if (locationId != null && disconnectingUser != null) {
+                    val location = LocationRepository.findById(locationId)
+                    if (location != null) {
+                        LocationEventService.broadcastPlayerLeft(location, userId, disconnectingUser.name)
+                    }
+                }
                 CombatService.unregisterConnection(userId)
                 LocationEventService.unregisterConnection(userId)
                 log.info("WebSocket connection closed for user $userId")
