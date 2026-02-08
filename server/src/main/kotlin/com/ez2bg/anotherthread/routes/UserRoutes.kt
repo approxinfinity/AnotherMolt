@@ -681,6 +681,60 @@ fun Route.userRoutes() {
             call.respond(HttpStatusCode.OK, updatedUser.toResponse())
         }
 
+        // Drop an item from inventory to current location
+        post("/{id}/drop/{itemId}") {
+            val userId = call.parameters["id"] ?: return@post call.respond(HttpStatusCode.BadRequest)
+            val itemId = call.parameters["itemId"] ?: return@post call.respond(HttpStatusCode.BadRequest)
+
+            val user = UserRepository.findById(userId)
+            if (user == null) {
+                call.respond(HttpStatusCode.NotFound, mapOf("error" to "User not found"))
+                return@post
+            }
+
+            // Check user has the item
+            if (itemId !in user.itemIds) {
+                call.respond(HttpStatusCode.BadRequest, mapOf("error" to "You don't have that item"))
+                return@post
+            }
+
+            // Get user's current location
+            val locationId = user.currentLocationId
+            if (locationId == null) {
+                call.respond(HttpStatusCode.BadRequest, mapOf("error" to "You must be at a location to drop items"))
+                return@post
+            }
+
+            val location = LocationRepository.findById(locationId)
+            if (location == null) {
+                call.respond(HttpStatusCode.BadRequest, mapOf("error" to "Location not found"))
+                return@post
+            }
+
+            // Check if item is equipped - must unequip first
+            if (itemId in user.equippedItemIds) {
+                call.respond(HttpStatusCode.BadRequest, mapOf("error" to "You must unequip this item before dropping it"))
+                return@post
+            }
+
+            // Remove ONE instance of the item from user inventory
+            val updatedItemIds = user.itemIds.toMutableList()
+            updatedItemIds.remove(itemId)
+            UserRepository.update(user.copy(itemIds = updatedItemIds))
+
+            // Add item to location (both legacy itemIds and new LocationItem table)
+            val updatedLocationItemIds = location.itemIds + itemId
+            val updatedLocation = location.copy(itemIds = updatedLocationItemIds)
+            LocationRepository.update(updatedLocation)
+            LocationItemRepository.addItem(locationId, itemId, userId)
+
+            // Broadcast item added to location observers
+            LocationEventService.broadcastItemAdded(location, itemId)
+
+            val updatedUser = UserRepository.findById(userId)!!
+            call.respond(HttpStatusCode.OK, updatedUser.toResponse())
+        }
+
         // Get identified entities for a user
         get("/{id}/identified") {
             val userId = call.parameters["id"] ?: return@get call.respond(HttpStatusCode.BadRequest)

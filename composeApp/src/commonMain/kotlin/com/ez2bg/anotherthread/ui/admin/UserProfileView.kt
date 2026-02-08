@@ -1,6 +1,9 @@
 package com.ez2bg.anotherthread.ui.admin
 
+import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -9,6 +12,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.AdminPanelSettings
+import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.ExpandLess
 import androidx.compose.material.icons.filled.ExpandMore
 import androidx.compose.material.icons.filled.Lock
@@ -19,6 +23,10 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -27,6 +35,7 @@ import androidx.compose.material.icons.filled.Dangerous
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Backpack
 import androidx.compose.material.icons.filled.CheckCircle
+import kotlin.math.roundToInt
 import com.ez2bg.anotherthread.api.*
 import com.ez2bg.anotherthread.state.UserStateHolder
 import com.ez2bg.anotherthread.ui.BackgroundImageGenerationManager
@@ -750,6 +759,19 @@ fun UserProfileView(
                                                     }
                                                 }
                                             }
+                                        } else null,
+                                        onDrop = if (isOwnProfile) {
+                                            {
+                                                scope.launch {
+                                                    ApiClient.dropItem(user.id, item.id).onSuccess { updatedUser ->
+                                                        UserStateHolder.updateUser(updatedUser)
+                                                        onUserUpdated(updatedUser)
+                                                        message = "Dropped ${item.name}"
+                                                    }.onFailure { error ->
+                                                        message = "Failed to drop: ${error.message}"
+                                                    }
+                                                }
+                                            }
                                         } else null
                                     )
                                 }
@@ -1016,176 +1038,259 @@ private fun AbilityDisplayCard(ability: AbilityDto) {
     }
 }
 
+/**
+ * Inventory item card with swipe-to-drop functionality.
+ * Swipe left to reveal crimson drop zone, release to drop item on ground.
+ */
 @Composable
 private fun InventoryItemCard(
     item: ItemDto,
     count: Int = 1,
     isEquipped: Boolean,
     abilities: List<AbilityDto> = emptyList(),
-    onEquipToggle: (() -> Unit)?
+    onEquipToggle: (() -> Unit)?,
+    onDrop: (() -> Unit)? = null
 ) {
     var isExpanded by remember { mutableStateOf(false) }
+    var offsetX by remember { mutableStateOf(0f) }
+    val dropThreshold = -120f  // Pixels to swipe left to trigger drop
 
-    Card(
-        modifier = Modifier
-            .fillMaxWidth()
-            .clickable { isExpanded = !isExpanded },
-        colors = CardDefaults.cardColors(
-            containerColor = if (isEquipped)
-                MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.3f)
-            else
-                MaterialTheme.colorScheme.surfaceVariant
-        )
+    // Calculate if drop should trigger
+    val shouldDrop = offsetX < dropThreshold
+
+    // Animate background color based on swipe progress
+    val backgroundColor by animateColorAsState(
+        targetValue = when {
+            isEquipped -> MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.3f)
+            shouldDrop -> Color(0xFFB71C1C)  // Dark crimson when ready to drop
+            offsetX < 0 -> Color(0xFFB71C1C).copy(alpha = (-offsetX / -dropThreshold).coerceIn(0f, 1f) * 0.7f)
+            else -> MaterialTheme.colorScheme.surfaceVariant
+        },
+        label = "backgroundColor"
+    )
+
+    // Animate offset for smooth return
+    val animatedOffsetX by animateFloatAsState(
+        targetValue = offsetX,
+        label = "offsetX"
+    )
+
+    Box(
+        modifier = Modifier.fillMaxWidth()
     ) {
-        Column(modifier = Modifier.fillMaxWidth()) {
-            Row(
+        // Background drop indicator (revealed when swiping)
+        if (offsetX < 0 && onDrop != null && !isEquipped) {
+            Box(
                 modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(12.dp),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.SpaceBetween
+                    .matchParentSize()
+                    .background(
+                        Color(0xFFB71C1C),
+                        RoundedCornerShape(12.dp)
+                    ),
+                contentAlignment = Alignment.CenterEnd
             ) {
                 Row(
+                    modifier = Modifier.padding(end = 16.dp),
                     verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(12.dp),
-                    modifier = Modifier.weight(1f)
-                ) {
-                    // Item image or placeholder
-                    Surface(
-                        shape = RoundedCornerShape(8.dp),
-                        color = MaterialTheme.colorScheme.surface,
-                        modifier = Modifier.size(48.dp)
-                    ) {
-                        if (item.imageUrl != null) {
-                            EntityImage(
-                                imageUrl = item.imageUrl,
-                                contentDescription = item.name,
-                                modifier = Modifier.size(48.dp)
-                            )
-                        } else {
-                            Box(contentAlignment = Alignment.Center) {
-                                Icon(
-                                    imageVector = Icons.Filled.Backpack,
-                                    contentDescription = null,
-                                    modifier = Modifier.size(24.dp),
-                                    tint = MaterialTheme.colorScheme.onSurfaceVariant
-                                )
-                            }
-                        }
-                    }
-
-                    Column {
-                        Row(
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(8.dp)
-                        ) {
-                            Text(
-                                text = if (count > 1) "${item.name} x$count" else item.name,
-                                style = MaterialTheme.typography.titleSmall
-                            )
-                            if (isEquipped) {
-                                Icon(
-                                    imageVector = Icons.Filled.CheckCircle,
-                                    contentDescription = "Equipped",
-                                    tint = MaterialTheme.colorScheme.primary,
-                                    modifier = Modifier.size(16.dp)
-                                )
-                            }
-                        }
-                        // Show slot info
-                        if (item.equipmentSlot != null) {
-                            Text(
-                                text = item.equipmentSlot.replace("_", " ").replaceFirstChar { it.uppercase() },
-                                style = MaterialTheme.typography.labelSmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
-                        }
-                        // Show stat bonuses if any
-                        item.statBonuses?.let { bonuses ->
-                            val bonusStrings = mutableListOf<String>()
-                            if (bonuses.attack != 0) bonusStrings.add("ATK ${if (bonuses.attack > 0) "+" else ""}${bonuses.attack}")
-                            if (bonuses.defense != 0) bonusStrings.add("DEF ${if (bonuses.defense > 0) "+" else ""}${bonuses.defense}")
-                            if (bonuses.maxHp != 0) bonusStrings.add("HP ${if (bonuses.maxHp > 0) "+" else ""}${bonuses.maxHp}")
-                            if (bonusStrings.isNotEmpty()) {
-                                Text(
-                                    text = bonusStrings.joinToString(" "),
-                                    style = MaterialTheme.typography.labelSmall,
-                                    color = if (bonusStrings.any { it.contains("-") })
-                                        MaterialTheme.colorScheme.error
-                                    else
-                                        MaterialTheme.colorScheme.primary
-                                )
-                            }
-                        }
-                    }
-                }
-
-                // Expand/collapse indicator and equip button
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(4.dp)
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
                     Icon(
-                        imageVector = if (isExpanded) Icons.Filled.ExpandLess else Icons.Filled.ExpandMore,
-                        contentDescription = if (isExpanded) "Collapse" else "Expand",
-                        modifier = Modifier.size(20.dp),
-                        tint = MaterialTheme.colorScheme.onSurfaceVariant
+                        imageVector = Icons.Filled.Delete,
+                        contentDescription = "Drop item",
+                        tint = Color.White,
+                        modifier = Modifier.size(24.dp)
                     )
-                    // Equip/Unequip button
-                    if (onEquipToggle != null) {
-                        OutlinedButton(
-                            onClick = onEquipToggle,
-                            modifier = Modifier.padding(start = 4.dp)
+                    Text(
+                        text = "Drop",
+                        color = Color.White,
+                        style = MaterialTheme.typography.labelLarge
+                    )
+                }
+            }
+        }
+
+        // Main card content
+        Card(
+            modifier = Modifier
+                .fillMaxWidth()
+                .offset { IntOffset(animatedOffsetX.roundToInt().coerceAtMost(0), 0) }
+                .then(
+                    if (onDrop != null && !isEquipped) {
+                        Modifier.pointerInput(item.id) {
+                            detectHorizontalDragGestures(
+                                onDragStart = { },
+                                onDragEnd = {
+                                    if (shouldDrop) {
+                                        onDrop()
+                                    }
+                                    offsetX = 0f
+                                },
+                                onDragCancel = {
+                                    offsetX = 0f
+                                },
+                                onHorizontalDrag = { _, dragAmount ->
+                                    // Only allow dragging left (negative)
+                                    offsetX = (offsetX + dragAmount).coerceAtMost(0f).coerceAtLeast(-200f)
+                                }
+                            )
+                        }
+                    } else Modifier
+                )
+                .clickable { isExpanded = !isExpanded },
+            colors = CardDefaults.cardColors(
+                containerColor = backgroundColor
+            )
+        ) {
+            Column(modifier = Modifier.fillMaxWidth()) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(12.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween
+                ) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(12.dp),
+                        modifier = Modifier.weight(1f)
+                    ) {
+                        // Item image or placeholder
+                        Surface(
+                            shape = RoundedCornerShape(8.dp),
+                            color = MaterialTheme.colorScheme.surface,
+                            modifier = Modifier.size(48.dp)
                         ) {
-                            Text(if (isEquipped) "Unequip" else "Equip")
+                            if (item.imageUrl != null) {
+                                EntityImage(
+                                    imageUrl = item.imageUrl,
+                                    contentDescription = item.name,
+                                    modifier = Modifier.size(48.dp)
+                                )
+                            } else {
+                                Box(contentAlignment = Alignment.Center) {
+                                    Icon(
+                                        imageVector = Icons.Filled.Backpack,
+                                        contentDescription = null,
+                                        modifier = Modifier.size(24.dp),
+                                        tint = MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                }
+                            }
+                        }
+
+                        Column {
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                            ) {
+                                Text(
+                                    text = if (count > 1) "${item.name} x$count" else item.name,
+                                    style = MaterialTheme.typography.titleSmall
+                                )
+                                if (isEquipped) {
+                                    Icon(
+                                        imageVector = Icons.Filled.CheckCircle,
+                                        contentDescription = "Equipped",
+                                        tint = MaterialTheme.colorScheme.primary,
+                                        modifier = Modifier.size(16.dp)
+                                    )
+                                }
+                            }
+                            // Show slot info
+                            if (item.equipmentSlot != null) {
+                                Text(
+                                    text = item.equipmentSlot.replace("_", " ").replaceFirstChar { it.uppercase() },
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+                            // Show stat bonuses if any
+                            item.statBonuses?.let { bonuses ->
+                                val bonusStrings = mutableListOf<String>()
+                                if (bonuses.attack != 0) bonusStrings.add("ATK ${if (bonuses.attack > 0) "+" else ""}${bonuses.attack}")
+                                if (bonuses.defense != 0) bonusStrings.add("DEF ${if (bonuses.defense > 0) "+" else ""}${bonuses.defense}")
+                                if (bonuses.maxHp != 0) bonusStrings.add("HP ${if (bonuses.maxHp > 0) "+" else ""}${bonuses.maxHp}")
+                                if (bonusStrings.isNotEmpty()) {
+                                    Text(
+                                        text = bonusStrings.joinToString(" "),
+                                        style = MaterialTheme.typography.labelSmall,
+                                        color = if (bonusStrings.any { it.contains("-") })
+                                            MaterialTheme.colorScheme.error
+                                        else
+                                            MaterialTheme.colorScheme.primary
+                                    )
+                                }
+                            }
+                        }
+                    }
+
+                    // Expand/collapse indicator and equip button
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(4.dp)
+                    ) {
+                        Icon(
+                            imageVector = if (isExpanded) Icons.Filled.ExpandLess else Icons.Filled.ExpandMore,
+                            contentDescription = if (isExpanded) "Collapse" else "Expand",
+                            modifier = Modifier.size(20.dp),
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                        // Equip/Unequip button
+                        if (onEquipToggle != null) {
+                            OutlinedButton(
+                                onClick = onEquipToggle,
+                                modifier = Modifier.padding(start = 4.dp)
+                            ) {
+                                Text(if (isEquipped) "Unequip" else "Equip")
+                            }
                         }
                     }
                 }
-            }
 
-            // Expanded description section
-            if (isExpanded && item.desc.isNotBlank()) {
-                HorizontalDivider(
-                    modifier = Modifier.padding(horizontal = 12.dp),
-                    color = MaterialTheme.colorScheme.outlineVariant
-                )
-                Text(
-                    text = item.desc,
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.padding(start = 12.dp, end = 12.dp, top = 8.dp, bottom = if (abilities.isNotEmpty()) 4.dp else 12.dp)
-                )
-            }
-
-            // Show granted abilities (always visible when present)
-            if (abilities.isNotEmpty()) {
-                Column(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(start = 72.dp, end = 12.dp, bottom = 12.dp),
-                    verticalArrangement = Arrangement.spacedBy(4.dp)
-                ) {
-                    Text(
-                        text = "Grants:",
-                        style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.secondary
+                // Expanded description section
+                if (isExpanded && item.desc.isNotBlank()) {
+                    HorizontalDivider(
+                        modifier = Modifier.padding(horizontal = 12.dp),
+                        color = MaterialTheme.colorScheme.outlineVariant
                     )
-                    abilities.forEach { ability ->
-                        Row(
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(6.dp)
-                        ) {
-                            Icon(
-                                imageVector = Icons.Filled.Star,
-                                contentDescription = null,
-                                modifier = Modifier.size(12.dp),
-                                tint = MaterialTheme.colorScheme.secondary
-                            )
-                            Text(
-                                text = ability.name,
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurface
-                            )
+                    Text(
+                        text = item.desc,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.padding(start = 12.dp, end = 12.dp, top = 8.dp, bottom = if (abilities.isNotEmpty()) 4.dp else 12.dp)
+                    )
+                }
+
+                // Show granted abilities (always visible when present)
+                if (abilities.isNotEmpty()) {
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(start = 72.dp, end = 12.dp, bottom = 12.dp),
+                        verticalArrangement = Arrangement.spacedBy(4.dp)
+                    ) {
+                        Text(
+                            text = "Grants:",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.secondary
+                        )
+                        abilities.forEach { ability ->
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(6.dp)
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Filled.Star,
+                                    contentDescription = null,
+                                    modifier = Modifier.size(12.dp),
+                                    tint = MaterialTheme.colorScheme.secondary
+                                )
+                                Text(
+                                    text = ability.name,
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurface
+                                )
+                            }
                         }
                     }
                 }

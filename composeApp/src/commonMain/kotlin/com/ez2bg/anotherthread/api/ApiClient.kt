@@ -1313,6 +1313,25 @@ object ApiClient {
     }
 
     /**
+     * Drop an item from inventory at current location.
+     * Returns the updated user.
+     */
+    suspend fun dropItem(userId: String, itemId: String): Result<UserDto> = apiCall {
+        val response = client.post("$baseUrl/users/$userId/drop/$itemId")
+        if (response.status.isSuccess()) {
+            response.body()
+        } else {
+            val errorBody = response.bodyAsText()
+            val errorMessage = try {
+                Json.decodeFromString<Map<String, String>>(errorBody)["error"] ?: errorBody
+            } catch (e: Exception) {
+                errorBody
+            }
+            throw Exception(errorMessage)
+        }
+    }
+
+    /**
      * Voluntary death - player gives up while downed (HP <= 0).
      * Respawns at Tun du Lac with full HP, optionally dropping items/gold based on server config.
      */
