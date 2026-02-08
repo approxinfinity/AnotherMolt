@@ -1001,7 +1001,8 @@ object CombatService {
             wasGlancing = attackResult.wasGlancing
 
             val diceInfo = if (effectiveDamageDice != null) " dice=$effectiveDamageDice," else ""
-            log.debug("Attack roll: ${actor.name} vs ${target.name} -$diceInfo " +
+            log.info(">>> ATTACK: ${actor.name} vs ${target.name} (HP: ${target.currentHp}/${target.maxHp}) -$diceInfo " +
+                "baseDamage=$effectiveBaseDamage, " +
                 "hitRoll=${attackResult.rollDetails.hitRoll}/${attackResult.rollDetails.hitChance}, " +
                 "result=$hitResult, damage=$damage" +
                 (if (wasCritical) " CRITICAL!" else "") +
@@ -1896,6 +1897,18 @@ object CombatService {
             session.creatures.mapNotNull { CreatureRepository.findById(it.id) }
         } else emptyList()
 
+        // Remove dead creatures from the location
+        if (defeatedCreatures.isNotEmpty()) {
+            val location = LocationRepository.findById(session.locationId)
+            if (location != null) {
+                val deadCreatureIds = defeatedCreatures.map { it.id }.toSet()
+                val updatedCreatureIds = location.creatureIds.filter { it !in deadCreatureIds }
+                val updatedLocation = location.copy(creatureIds = updatedCreatureIds)
+                LocationRepository.update(updatedLocation)
+                log.info("Removed ${deadCreatureIds.size} dead creature(s) from ${location.name}: ${defeatedCreatures.map { it.name }}")
+            }
+        }
+
         // Calculate total loot from all defeated creatures
         var totalGold = 0
         val droppedItems = mutableListOf<Item>()
@@ -2408,9 +2421,11 @@ object CombatService {
         val becameDowned = !wasDowned && isDowned
         val becameDead = wasAlive && !isAlive
 
-        // Debug logging for player death tracking
+        // Debug logging for damage tracking
+        log.info(">>> DAMAGE APPLIED: ${combatant.name} took $damage damage: HP ${combatant.currentHp} -> $newHp, " +
+            "isAlive=$isAlive, isDowned=$isDowned")
         if (combatant.type == CombatantType.PLAYER) {
-            log.info("DAMAGE: ${combatant.name} took $damage damage: HP ${combatant.currentHp} -> $newHp, " +
+            log.info("PLAYER DAMAGE: ${combatant.name} took $damage damage: HP ${combatant.currentHp} -> $newHp, " +
                 "deathThreshold=${combatant.deathThreshold}, isAlive=$wasAlive->$isAlive, isDowned=$wasDowned->$isDowned" +
                 (if (becameDowned) " [BECAME DOWNED]" else "") +
                 (if (becameDead) " [DIED]" else ""))
