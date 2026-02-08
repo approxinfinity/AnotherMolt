@@ -352,13 +352,15 @@ class CombatClient(
                     _events.emit(GlobalEvent.StatusEffectChanged(response))
                 }
 
-                text.contains("RoundEndMessage") || text.contains("\"logEntries\"") -> {
+                text.contains("RoundEndMessage") || (text.contains("\"logEntries\"") && !text.contains("\"victors\"")) -> {
                     val response = json.decodeFromString<RoundEndResponse>(extractPayload(text))
                     lastKnownCombatants = response.combatants
+                    println("$TAG: Parsed RoundEndMessage - round ${response.roundNumber}")
                     _events.emit(GlobalEvent.RoundEnded(response.sessionId, response.roundNumber, response.combatants, response.logEntries))
                 }
 
-                text.contains("CombatEndedMessage") || text.contains("\"victors\"") -> {
+                text.contains("CombatEndedMessage") || (text.contains("\"victors\"") && text.contains("\"reason\"")) -> {
+                    println("$TAG: Parsing as CombatEndedMessage - contains victors:${text.contains("\"victors\"")}, contains reason:${text.contains("\"reason\"")}")
                     val response = json.decodeFromString<CombatEndedResponse>(extractPayload(text))
                     currentSessionId = null
                     lastKnownCombatants = emptyList()

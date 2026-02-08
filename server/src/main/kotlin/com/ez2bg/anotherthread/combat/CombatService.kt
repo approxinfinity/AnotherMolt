@@ -2223,7 +2223,12 @@ object CombatService {
         }
         try {
             val jsonMessage = json.encodeToString(message)
-            log.debug("Sending ${message::class.simpleName} to player $userId: ${jsonMessage.take(200)}")
+            // Log CombatEndedMessage at INFO level for debugging
+            if (message is CombatEndedMessage) {
+                log.info(">>> SENDING CombatEndedMessage to $userId: $jsonMessage")
+            } else {
+                log.debug("Sending ${message::class.simpleName} to player $userId: ${jsonMessage.take(200)}")
+            }
             connection.send(Frame.Text(jsonMessage))
         } catch (e: Exception) {
             log.error("Failed to send message to player $userId: ${e.message}")
