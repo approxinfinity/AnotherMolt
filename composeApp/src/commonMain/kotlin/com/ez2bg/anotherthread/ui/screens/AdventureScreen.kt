@@ -169,6 +169,18 @@ fun AdventureScreen(
     // Character sheet overlay state
     var showCharacterSheet by remember { mutableStateOf(false) }
 
+    // Reload abilities when character sheet closes (in case user changed visible abilities)
+    LaunchedEffect(showCharacterSheet) {
+        if (!showCharacterSheet) {
+            viewModel.loadPlayerAbilities()
+        }
+    }
+
+    // Also reload abilities when visibleAbilityIds changes in the reactive user
+    LaunchedEffect(reactiveUser?.visibleAbilityIds) {
+        viewModel.loadPlayerAbilities()
+    }
+
     // Basic attack target selection modal state
     var showBasicAttackTargetModal by remember { mutableStateOf(false) }
 
