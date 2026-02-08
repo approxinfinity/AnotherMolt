@@ -15,6 +15,21 @@ import kotlinx.serialization.Serializable
 @Serializable
 data class SetIconMappingRequest(val iconName: String)
 
+@Serializable
+data class SearchResponse(
+    val success: Boolean,
+    val message: String,
+    val discoveredItems: List<DiscoveredItemInfo>,
+    val totalHidden: Int,
+    val hasMoreHidden: Boolean
+)
+
+@Serializable
+data class DiscoveredItemInfo(
+    val id: String,
+    val name: String
+)
+
 /**
  * Auth routes for user registration and login.
  * Base path: /auth
@@ -382,19 +397,16 @@ fun Route.userRoutes() {
             // Get item details for discovered items
             val discoveredItemDetails = result.discoveredItems.mapNotNull { locationItem ->
                 ItemRepository.findById(locationItem.itemId)?.let { item ->
-                    mapOf(
-                        "id" to item.id,
-                        "name" to item.name
-                    )
+                    DiscoveredItemInfo(id = item.id, name = item.name)
                 }
             }
 
-            call.respond(mapOf(
-                "success" to result.success,
-                "message" to result.message,
-                "discoveredItems" to discoveredItemDetails,
-                "totalHidden" to result.totalHidden,
-                "hasMoreHidden" to (result.totalHidden > result.discoveredItems.size)
+            call.respond(SearchResponse(
+                success = result.success,
+                message = result.message,
+                discoveredItems = discoveredItemDetails,
+                totalHidden = result.totalHidden,
+                hasMoreHidden = result.totalHidden > result.discoveredItems.size
             ))
         }
 
