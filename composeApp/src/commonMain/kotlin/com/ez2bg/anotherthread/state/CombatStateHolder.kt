@@ -302,12 +302,20 @@ object CombatStateHolder {
             is GlobalEvent.CombatEnded -> {
                 addEventLogEntry("Combat ended!", EventLogType.COMBAT_END)
                 clearCombatState()
+                // Refresh user data to sync HP, XP, gold, items from server
+                scope.launch {
+                    UserStateHolder.refreshUser()
+                }
             }
 
             is GlobalEvent.FleeResult -> {
                 if (event.response.success) {
                     addEventLogEntry("You fled from combat!", EventLogType.INFO)
                     clearCombatState()
+                    // Refresh user data to sync HP from server
+                    scope.launch {
+                        UserStateHolder.refreshUser()
+                    }
                 } else {
                     addEventLogEntry("Failed to flee: ${event.response.message}", EventLogType.ERROR)
                 }
