@@ -357,6 +357,48 @@ fun Route.userRoutes() {
         }
 
         /**
+         * Search the current location for hidden items.
+         * Intelligence and thief-type classes have bonuses.
+         */
+        post("/{id}/search") {
+            val id = call.parameters["id"] ?: return@post call.respond(HttpStatusCode.BadRequest)
+            val user = UserRepository.findById(id)
+            if (user == null) {
+                call.respond(HttpStatusCode.NotFound)
+                return@post
+            }
+
+            val locationId = user.currentLocationId
+            if (locationId == null) {
+                call.respond(HttpStatusCode.BadRequest, mapOf(
+                    "success" to false,
+                    "message" to "You are not at a valid location."
+                ))
+                return@post
+            }
+
+            val result = com.ez2bg.anotherthread.game.SearchService.attemptSearch(user, locationId)
+
+            // Get item details for discovered items
+            val discoveredItemDetails = result.discoveredItems.mapNotNull { locationItem ->
+                ItemRepository.findById(locationItem.itemId)?.let { item ->
+                    mapOf(
+                        "id" to item.id,
+                        "name" to item.name
+                    )
+                }
+            }
+
+            call.respond(mapOf(
+                "success" to result.success,
+                "message" to result.message,
+                "discoveredItems" to discoveredItemDetails,
+                "totalHidden" to result.totalHidden,
+                "hasMoreHidden" to (result.totalHidden > result.discoveredItems.size)
+            ))
+        }
+
+        /**
          * Stop hiding/sneaking and become visible.
          */
         post("/{id}/reveal") {
@@ -617,10 +659,11 @@ fun Route.userRoutes() {
             // Add to user inventory
             UserRepository.addItems(userId, listOf(itemId))
 
-            // Remove from location
+            // Remove from location (both legacy itemIds and new LocationItem table)
             val updatedItemIds = location.itemIds.filter { it != itemId }
             val updatedLocation = location.copy(itemIds = updatedItemIds)
             LocationRepository.update(updatedLocation)
+            LocationItemRepository.removeItemByItemId(itemId, request.locationId)
 
             val updatedUser = UserRepository.findById(userId)!!
             call.respond(HttpStatusCode.OK, updatedUser.toResponse())

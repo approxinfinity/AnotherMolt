@@ -1982,6 +1982,9 @@ object CombatService {
             if (DeathConfig.itemsDropOnDeath) {
                 val droppedItemIds = user.itemIds.toList()
                 if (droppedItemIds.isNotEmpty() && deathLocationId != null) {
+                    // Use new LocationItem system for tracked ground items
+                    LocationItemRepository.addItems(deathLocationId, droppedItemIds, user.id)
+                    // Also update the legacy itemIds for backwards compatibility
                     LocationRepository.addItems(deathLocationId, droppedItemIds)
                     log.info("Player ${user.name} dropped ${droppedItemIds.size} items at location $deathLocationId")
                 }

@@ -328,6 +328,18 @@ object StatModifierService {
         return baseMod + breakpoint
     }
 
+    /**
+     * Search chance for finding hidden items.
+     * Uses INT (observation) + class bonus for thief-types.
+     * @param classBonus Additional bonus from thief/rogue classes
+     */
+    fun searchChance(intelligence: Int, level: Int, classBonus: Int = 0): Int {
+        val baseMod = attributeModifier(intelligence)
+        val breakpoint = breakpointBonus(intelligence)
+        // Base 30% + 6% per INT mod + 8% per breakpoint + 2% per level + class bonus
+        return (30 + (baseMod * 6) + (breakpoint * 8) + (level * 2) + classBonus).coerceIn(10, 95)
+    }
+
     // ============================================================================
     // CONSTITUTION (CON) - Vitality & Endurance
     // ============================================================================
@@ -672,6 +684,9 @@ object StatModifierService {
             initiative = initiativeBonus(user.dexterity, user.level),
             sneakChance = sneakChance(user.dexterity, user.level),
 
+            // INT-derived search
+            searchChance = searchChance(user.intelligence, user.level),
+
             // CON-derived
             hpBonus = hpPerLevelBonus(user.constitution),
             hpRegen = hpRegenBonus(user.constitution, user.level),
@@ -733,6 +748,9 @@ data class StatSummary(
     val attacksPerRound: Int,
     val initiative: Int,
     val sneakChance: Int,            // Percentage
+
+    // INT-derived search
+    val searchChance: Int,           // Percentage
 
     // CON-derived
     val hpBonus: Int,                // Per level

@@ -47,9 +47,10 @@ object MigrationRunner {
         V003_AddAbilityMinLevel(),
         V004_AddLearnedAbilityIds(),
         V005_AddItemWeight(),
-        V006_AddStealthStatus()
+        V006_AddStealthStatus(),
+        V007_AddLocationItems()
         // Add future migrations here:
-        // V007_AlterSomeColumn(),
+        // V008_AlterSomeColumn(),
     )
 
     /**

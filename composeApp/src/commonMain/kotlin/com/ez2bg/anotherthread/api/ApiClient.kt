@@ -298,6 +298,21 @@ data class StealthResultDto(
 )
 
 @Serializable
+data class SearchResultItemDto(
+    val id: String,
+    val name: String
+)
+
+@Serializable
+data class SearchResultDto(
+    val success: Boolean,
+    val message: String,
+    val discoveredItems: List<SearchResultItemDto> = emptyList(),
+    val totalHidden: Int = 0,
+    val hasMoreHidden: Boolean = false
+)
+
+@Serializable
 data class IconMappingDto(
     val abilityId: String,
     val iconName: String
@@ -1200,6 +1215,14 @@ object ApiClient {
      */
     suspend fun revealSelf(userId: String): Result<StealthResultDto> = apiCall {
         client.post("$baseUrl/users/$userId/reveal").body()
+    }
+
+    /**
+     * Search the current location for hidden items.
+     * Intelligence and thief-type classes have bonuses.
+     */
+    suspend fun searchLocation(userId: String): Result<SearchResultDto> = apiCall {
+        client.post("$baseUrl/users/$userId/search").body()
     }
 
     suspend fun updateUserClass(id: String, classId: String?): Result<UserDto> = apiCall {
