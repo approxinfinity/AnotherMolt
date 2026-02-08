@@ -42,3 +42,8 @@ check_db.py
 # Claude local settings
 .claude/settings.local.json
 .claude/project-config.json
+
+# Server logs (both paths depending on working directory)
+server/logs/
+server/server/logs/
+**/logs/*.log
