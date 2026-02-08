@@ -525,9 +525,11 @@ fun Route.userRoutes() {
 
             // Check encumbrance - block movement if over-encumbered
             val user = UserRepository.findById(id)
+            log.info("Location update: user found=${user != null}")
             if (user != null) {
                 val encumbranceInfo = com.ez2bg.anotherthread.game.EncumbranceService.getEncumbranceInfo(user)
                 if (!encumbranceInfo.canMove) {
+                    log.info("Location update: blocked by encumbrance")
                     return@put call.respond(HttpStatusCode.BadRequest, EncumbranceErrorResponse(
                         error = "You are over-encumbered and cannot move. Drop some items first.",
                         currentWeight = encumbranceInfo.currentWeight,
@@ -540,8 +542,11 @@ fun Route.userRoutes() {
             val oldLocationId = user?.currentLocationId
             val oldLocation = oldLocationId?.let { LocationRepository.findById(it) }
             val userName = user?.name ?: "Unknown"
+            log.info("Location update: oldLocationId=$oldLocationId, userName=$userName")
 
-            if (UserRepository.updateCurrentLocation(id, request.locationId)) {
+            val updateSuccess = UserRepository.updateCurrentLocation(id, request.locationId)
+            log.info("Location update: DB update success=$updateSuccess")
+            if (updateSuccess) {
                 // Update last active timestamp so player shows in active users list
                 UserRepository.updateLastActiveAt(id)
 
@@ -549,8 +554,12 @@ fun Route.userRoutes() {
                 CombatService.removePlayerFromCombat(id)
 
                 // Broadcast player left old location (before updating location tracking)
+                log.info("Location update: oldLocation=${oldLocation?.id}, oldLocationId=$oldLocationId, newLocationId=${request.locationId}")
                 if (oldLocation != null && oldLocationId != request.locationId) {
+                    log.info("Location update: Broadcasting PLAYER_LEFT from ${oldLocation.name}")
                     LocationEventService.broadcastPlayerLeft(oldLocation, id, userName)
+                } else {
+                    log.info("Location update: Skipping PLAYER_LEFT (oldLocation null or same location)")
                 }
 
                 // Update location tracking for WebSocket events
@@ -560,8 +569,12 @@ fun Route.userRoutes() {
 
                 // Broadcast player entered new location
                 val newLocation = request.locationId?.let { LocationRepository.findById(it) }
+                log.info("Location update: newLocation=${newLocation?.id}, newLocation name=${newLocation?.name}")
                 if (newLocation != null && request.locationId != oldLocationId) {
+                    log.info("Location update: Broadcasting PLAYER_ENTERED to ${newLocation.name}")
                     LocationEventService.broadcastPlayerEntered(newLocation, id, userName)
+                } else {
+                    log.info("Location update: Skipping PLAYER_ENTERED (newLocation null or same location)")
                 }
 
                 // Record encounters with other players at this location
