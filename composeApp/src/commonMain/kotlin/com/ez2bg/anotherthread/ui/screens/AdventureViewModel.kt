@@ -30,6 +30,7 @@ import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
@@ -350,10 +351,25 @@ class AdventureViewModel {
                     // Check on EVERY emission (including first) since the repository may have
                     // already initialized with a fallback location before we got server data
                     if (currentLocationId != null) {
-                        val currentRepoLocationId = AdventureRepository.currentLocationId.value
-                        if (currentRepoLocationId != null && currentRepoLocationId != currentLocationId) {
-                            println("[AdventureViewModel] Server location differs from repository (server=$currentLocationId, repo=$currentRepoLocationId), navigating to correct location")
-                            AdventureRepository.setCurrentLocation(currentLocationId)
+                        // Wait for repository to be initialized before checking location
+                        // Otherwise currentLocationId.value will be null and we'll miss the mismatch
+                        if (AdventureRepository.isInitialized.value) {
+                            val currentRepoLocationId = AdventureRepository.currentLocationId.value
+                            if (currentRepoLocationId != null && currentRepoLocationId != currentLocationId) {
+                                println("[AdventureViewModel] Server location differs from repository (server=$currentLocationId, repo=$currentRepoLocationId), navigating to correct location")
+                                AdventureRepository.setCurrentLocation(currentLocationId)
+                            }
+                        } else {
+                            // Repository not initialized yet - launch a coroutine to wait and then check
+                            val serverLocationId = currentLocationId // capture for lambda
+                            scope.launch {
+                                AdventureRepository.isInitialized.first { it }
+                                val currentRepoLocationId = AdventureRepository.currentLocationId.value
+                                if (currentRepoLocationId != null && currentRepoLocationId != serverLocationId) {
+                                    println("[AdventureViewModel] (delayed) Server location differs from repository (server=$serverLocationId, repo=$currentRepoLocationId), navigating to correct location")
+                                    AdventureRepository.setCurrentLocation(serverLocationId)
+                                }
+                            }
                         }
                     }
 
@@ -409,14 +425,9 @@ class AdventureViewModel {
                     // Load other players at this location
                     loadPlayersAtLocation(locationId)
 
-                    // If this is the first update and it differs from user's stored location,
-                    // update the server (this handles the fallback case)
-                    val userId = UserStateHolder.userId
-                    if (firstLocationUpdate && userId != null && locationId != initialUserLocationId) {
-                        ApiClient.updateUserLocation(userId, locationId)
-                        // Persist the fallback location locally so it survives page refresh
-                        UserStateHolder.updateLocationLocally(locationId)
-                    }
+                    // NOTE: We no longer update the server when the repository falls back to (0,0).
+                    // The server has the correct location - the listenForUserUpdates() function
+                    // will correct the repository once the server data is received.
                     firstLocationUpdate = false
                 }
             }
