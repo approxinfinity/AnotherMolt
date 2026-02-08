@@ -2167,9 +2167,8 @@ object CombatService {
      * Derives combat stats from D&D attributes, level, and equipment bonuses.
      */
     private fun User.toCombatant(): Combatant {
-        val classAbilities = characterClassId?.let {
-            AbilityRepository.findByClassId(it).map { a -> a.id }
-        } ?: emptyList()
+        // Get abilities the player has learned from trainers and can use (meets level requirement)
+        val usableAbilities = UserRepository.getUsableAbilities(id).map { it.id }
 
         // Sum equipment bonuses from equipped items
         val equippedItems = equippedItemIds.mapNotNull { ItemRepository.findById(it) }
@@ -2184,24 +2183,24 @@ object CombatService {
         val playerBaseDamage = UserRepository.calculateBaseDamage(this, equipAttack)
 
         // Calculate resource regeneration based on stats (MajorMUD style)
+        // All regen rates scale with level to keep pace with increasing resource pools
         val conMod = UserRepository.attributeModifier(constitution)
         val intMod = UserRepository.attributeModifier(intelligence)
         val wisMod = UserRepository.attributeModifier(wisdom)
+        val levelBonus = level / 3  // +1 regen per 3 levels
 
         // HP regen: base 1 + CON modifier + level/3
         // Everyone gets at least 1 HP per round, CON and level add more
-        val levelBonus = level / 3
         val hpRegenRate = (1 + conMod + levelBonus).coerceAtLeast(1)
 
-        // Mana regen: base 1 + higher of INT or WIS modifier (for both arcane and divine casters)
+        // Mana regen: base 1 + higher of INT or WIS modifier + level/3
+        // Both arcane (INT) and divine (WIS) casters benefit
         val spellMod = maxOf(intMod, wisMod)
-        val manaRegenRate = (1 + spellMod).coerceAtLeast(1)
+        val manaRegenRate = (1 + spellMod + levelBonus).coerceAtLeast(1)
 
-        // Stamina regen: base 2 + CON modifier (martial classes benefit from constitution)
-        val staminaRegenRate = (2 + conMod).coerceAtLeast(1)
-
-        // Get universal abilities (classId is null) that all players have
-        val universalAbilities = AbilityRepository.findUniversal().map { it.id }
+        // Stamina regen: base 2 + CON modifier + level/3
+        // Martial classes regenerate stamina faster, scales with level
+        val staminaRegenRate = (2 + conMod + levelBonus).coerceAtLeast(1)
 
         // Death threshold: -(10 + CON * 2)
         // Higher CON = more negative threshold = harder to kill
@@ -2221,7 +2220,7 @@ object CombatService {
             maxStamina = maxStamina,
             currentStamina = currentStamina,
             characterClassId = characterClassId,
-            abilityIds = classAbilities + universalAbilities,
+            abilityIds = usableAbilities,
             initiative = CombatRng.rollD20() + UserRepository.attributeModifier(dexterity),
             level = level,
             accuracy = playerAccuracy,

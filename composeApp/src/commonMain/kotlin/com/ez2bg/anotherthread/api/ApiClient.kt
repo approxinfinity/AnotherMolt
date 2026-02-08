@@ -187,6 +187,8 @@ data class UserDto(
     // Economy and equipment
     val gold: Int = 0,
     val equippedItemIds: List<String> = emptyList(),
+    // Trainer system: abilities the user has learned
+    val learnedAbilityIds: List<String> = emptyList(),
     // Generated appearance based on equipment
     val appearanceDescription: String = ""
 )
@@ -1260,6 +1262,33 @@ object ApiClient {
         }.body()
     }
 
+    // =========================================================================
+    // Trainer API
+    // =========================================================================
+
+    suspend fun getTrainerInfo(creatureId: String, userId: String?): Result<TrainerInfoResponse> = apiCall {
+        client.get("$baseUrl/trainer/$creatureId") {
+            if (userId != null) {
+                header("X-User-Id", userId)
+            }
+        }.body()
+    }
+
+    suspend fun learnAbility(creatureId: String, userId: String, abilityId: String): Result<TrainerActionResponse> = apiCall {
+        client.post("$baseUrl/trainer/$creatureId/learn") {
+            contentType(ContentType.Application.Json)
+            setBody(LearnAbilityRequest(userId = userId, abilityId = abilityId))
+        }.body()
+    }
+
+    suspend fun getUsableAbilities(userId: String): Result<List<AbilityDto>> = apiCall {
+        client.get("$baseUrl/trainer/usable/$userId").body()
+    }
+
+    suspend fun getLearnedAbilities(userId: String): Result<List<AbilityDto>> = apiCall {
+        client.get("$baseUrl/trainer/learned/$userId").body()
+    }
+
     // Entity identification
     @Serializable
     data class IdentifiedEntitiesResponse(
@@ -2118,6 +2147,35 @@ data class ShopActionResponse(
     val success: Boolean,
     val message: String,
     val user: UserDto? = null
+)
+
+// ============================================================================
+// Trainer DTOs
+// ============================================================================
+
+@Serializable
+data class LearnAbilityRequest(val userId: String, val abilityId: String)
+
+@Serializable
+data class TrainerActionResponse(
+    val success: Boolean,
+    val message: String,
+    val user: UserDto? = null
+)
+
+@Serializable
+data class TrainerAbilityInfo(
+    val ability: AbilityDto,
+    val goldCost: Int,
+    val alreadyLearned: Boolean,
+    val meetsLevelRequirement: Boolean
+)
+
+@Serializable
+data class TrainerInfoResponse(
+    val trainerId: String,
+    val trainerName: String,
+    val abilities: List<TrainerAbilityInfo>
 )
 
 // ============================================================================

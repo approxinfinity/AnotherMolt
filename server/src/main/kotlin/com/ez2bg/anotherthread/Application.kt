@@ -25,6 +25,7 @@ import com.ez2bg.anotherthread.routes.pdfRoutes
 import com.ez2bg.anotherthread.routes.spellRoutes
 import com.ez2bg.anotherthread.routes.userRoutes
 import com.ez2bg.anotherthread.routes.shopRoutes
+import com.ez2bg.anotherthread.routes.trainerRoutes
 import com.ez2bg.anotherthread.routes.encounterRoutes
 import com.ez2bg.anotherthread.routes.teleportRoutes
 import com.ez2bg.anotherthread.routes.phasewalkRoutes
@@ -1100,6 +1101,7 @@ fun Application.module() {
     SimpleGoldBalancer.addMissingGoldDrops()
     FungusForestSeed.seedIfEmpty()
     TunDuLacSeed.seedIfEmpty()
+    TrainerSeed.seedIfEmpty()  // Trainer NPCs + ensures existing users have universal abilities
     ForestShopSeed.seedIfEmpty()
     WayfarerStaveSeed.seedIfEmpty()
     GoodmanGearSeed.seedIfEmpty()
@@ -1336,6 +1338,9 @@ fun Application.module() {
 
         // Shop routes (buy items, rest at inn)
         shopRoutes()
+
+        // Trainer routes (learn abilities from NPCs)
+        trainerRoutes()
 
         // Chest routes
         route("/chests") {

@@ -46,7 +46,9 @@ data class User(
     val attributesGeneratedAt: Long? = null,
     // Economy and equipment
     val gold: Int = 50,  // Starting gold for new characters
-    val equippedItemIds: List<String> = emptyList()
+    val equippedItemIds: List<String> = emptyList(),
+    // Trainer system: abilities the user has learned from trainers
+    val learnedAbilityIds: List<String> = emptyList()
 )
 
 /**
@@ -87,6 +89,8 @@ data class UserResponse(
     // Economy and equipment
     val gold: Int,
     val equippedItemIds: List<String>,
+    // Trainer system: abilities the user has learned from trainers
+    val learnedAbilityIds: List<String>,
     // Generated appearance description based on equipment
     val appearanceDescription: String
 )
@@ -127,6 +131,7 @@ fun User.toResponse(): UserResponse {
         attributesGeneratedAt = attributesGeneratedAt,
         gold = gold,
         equippedItemIds = equippedItemIds,
+        learnedAbilityIds = learnedAbilityIds,
         appearanceDescription = UserRepository.generateAppearanceDescription(this)
     )
 }
@@ -177,7 +182,8 @@ object UserRepository {
         attributeQualityBonus = this[UserTable.attributeQualityBonus],
         attributesGeneratedAt = this[UserTable.attributesGeneratedAt],
         gold = this[UserTable.gold],
-        equippedItemIds = jsonToList(this[UserTable.equippedItemIds])
+        equippedItemIds = jsonToList(this[UserTable.equippedItemIds]),
+        learnedAbilityIds = jsonToList(this[UserTable.learnedAbilityIds])
     )
 
     fun create(user: User): User = transaction {
@@ -213,6 +219,7 @@ object UserRepository {
             it[attributesGeneratedAt] = user.attributesGeneratedAt
             it[gold] = user.gold
             it[equippedItemIds] = listToJson(user.equippedItemIds)
+            it[learnedAbilityIds] = listToJson(user.learnedAbilityIds)
         }
         user
     }
@@ -263,6 +270,7 @@ object UserRepository {
             it[attributesGeneratedAt] = user.attributesGeneratedAt
             it[gold] = user.gold
             it[equippedItemIds] = listToJson(user.equippedItemIds)
+            it[learnedAbilityIds] = listToJson(user.learnedAbilityIds)
         } > 0
     }
 
@@ -564,6 +572,47 @@ object UserRepository {
             it[equippedItemIds] = listToJson(user.equippedItemIds - itemId)
             it[lastActiveAt] = System.currentTimeMillis()
         } > 0
+    }
+
+    /**
+     * Learn an ability from a trainer
+     * Returns true if the ability was learned (or already known)
+     */
+    fun learnAbility(id: String, abilityId: String): Boolean = transaction {
+        val user = findById(id) ?: return@transaction false
+        if (abilityId in user.learnedAbilityIds) return@transaction true // Already learned
+        UserTable.update({ UserTable.id eq id }) {
+            it[learnedAbilityIds] = listToJson(user.learnedAbilityIds + abilityId)
+            it[lastActiveAt] = System.currentTimeMillis()
+        } > 0
+    }
+
+    /**
+     * Check if a user has learned a specific ability
+     */
+    fun hasLearnedAbility(id: String, abilityId: String): Boolean = transaction {
+        val user = findById(id) ?: return@transaction false
+        abilityId in user.learnedAbilityIds
+    }
+
+    /**
+     * Get all abilities a user has learned
+     */
+    fun getLearnedAbilities(id: String): List<Ability> = transaction {
+        val user = findById(id) ?: return@transaction emptyList()
+        user.learnedAbilityIds.mapNotNull { AbilityRepository.findById(it) }
+    }
+
+    /**
+     * Get abilities a user can use in combat:
+     * - Must have learned the ability from a trainer
+     * - Must meet the minLevel requirement
+     */
+    fun getUsableAbilities(id: String): List<Ability> = transaction {
+        val user = findById(id) ?: return@transaction emptyList()
+        user.learnedAbilityIds
+            .mapNotNull { AbilityRepository.findById(it) }
+            .filter { it.minLevel <= user.level }
     }
 
     /**

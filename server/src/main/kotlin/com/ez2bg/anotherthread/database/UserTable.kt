@@ -37,6 +37,8 @@ object UserTable : Table("user") {
     // Economy and equipment
     val gold = integer("gold").default(0)
     val equippedItemIds = text("equipped_item_ids").default("[]")  // JSON array
+    // Trainer system: abilities the user has learned from trainers
+    val learnedAbilityIds = text("learned_ability_ids").default("[]")  // JSON array
 
     override val primaryKey = PrimaryKey(id)
 }

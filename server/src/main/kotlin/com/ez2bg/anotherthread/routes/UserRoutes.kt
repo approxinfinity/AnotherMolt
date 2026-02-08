@@ -56,11 +56,15 @@ fun Route.authRoutes() {
                 return@post
             }
 
-            // Create user with hashed password and starting location
+            // Get universal abilities that all players start with
+            val universalAbilityIds = AbilityRepository.findUniversal().map { it.id }
+
+            // Create user with hashed password, starting location, and universal abilities
             val user = User(
                 name = request.name,
                 passwordHash = UserRepository.hashPassword(request.password),
-                currentLocationId = TunDuLacSeed.TUN_DU_LAC_OVERWORLD_ID  // Default starting location
+                currentLocationId = TunDuLacSeed.TUN_DU_LAC_OVERWORLD_ID,  // Default starting location
+                learnedAbilityIds = universalAbilityIds  // Start with universal abilities (Attack, Aid, Drag)
             )
             val createdUser = UserRepository.create(user)
 
