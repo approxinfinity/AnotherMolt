@@ -1170,7 +1170,10 @@ fun Application.module() {
                                 when {
                                     text.contains("\"type\":\"join\"") || text.contains("JoinCombat") -> {
                                         val msg = combatJson.decodeFromString<JoinCombatMessage>(text)
-                                        val locationId = user.currentLocationId
+                                        // IMPORTANT: Fetch fresh user data to get current location
+                                        // The user may have moved since the WebSocket connected
+                                        val freshUser = UserRepository.findById(userId)
+                                        val locationId = freshUser?.currentLocationId
                                         if (locationId == null) {
                                             send(Frame.Text(combatJson.encodeToString(
                                                 CombatErrorMessage(error = "No current location", code = "NO_LOCATION")

@@ -31,6 +31,8 @@ object TestFixtures {
 
     // ========== Stock Ability IDs ==========
     const val BASIC_ATTACK_ID = "test-basic-attack"
+    const val UNIVERSAL_BASIC_ATTACK_ID = "universal-basic-attack"  // Has baseDamage = 0, uses actor's baseDamage
+    const val FIREBALL_ID = "test-fireball"
     const val HEAL_SELF_ID = "test-heal-self"
     const val HEAL_OTHER_ID = "test-heal-other"
     const val POISON_DOT_ID = "test-poison-dot"
@@ -61,6 +63,44 @@ object TestFixtures {
         cooldownRounds = 0,
         baseDamage = 10,
         durationRounds = 0,
+        effects = "[]"
+    )
+
+    /**
+     * Universal basic attack - has baseDamage = 0, should use combatant's baseDamage stat.
+     * This mimics the real universal-basic-attack in the game.
+     */
+    fun universalBasicAttack() = Ability(
+        id = UNIVERSAL_BASIC_ATTACK_ID,
+        name = "Attack",
+        description = "A basic physical attack using your weapon.",
+        classId = null,  // Available to all
+        abilityType = "combat",
+        targetType = "single_enemy",
+        range = 5,
+        cooldownType = "none",
+        cooldownRounds = 0,
+        baseDamage = 0,  // Damage comes from combatant's baseDamage stat
+        durationRounds = 0,
+        effects = "[]"
+    )
+
+    /**
+     * Fireball - area fire spell with base damage.
+     */
+    fun fireball() = Ability(
+        id = FIREBALL_ID,
+        name = "Fireball",
+        description = "Hurls a ball of fire at enemies.",
+        classId = MAGE_CLASS_ID,
+        abilityType = "spell",
+        targetType = "area",
+        range = 60,
+        cooldownType = "medium",
+        cooldownRounds = 3,
+        baseDamage = 25,
+        durationRounds = 0,
+        manaCost = 8,
         effects = "[]"
     )
 
@@ -195,6 +235,8 @@ object TestFixtures {
      */
     fun allAbilities(): List<Ability> = listOf(
         basicAttack(),
+        universalBasicAttack(),
+        fireball(),
         healSelf(),
         healOther(),
         poisonDot(),
