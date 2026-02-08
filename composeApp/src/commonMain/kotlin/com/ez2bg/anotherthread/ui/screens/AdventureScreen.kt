@@ -198,12 +198,13 @@ fun AdventureScreen(
         }
     }
 
-    // Resume class generation polling when entering ghost mode if generation was in progress
+    // Check if class generation is in progress when entering ghost mode
+    // Note: Generation status is now tracked in-memory on both client and server.
+    // If the app restarts during generation, the user will need to re-initiate.
     LaunchedEffect(ghostMode, currentUser?.id) {
         if (ghostMode && currentUser != null) {
-            val startedAt = currentUser.classGenerationStartedAt
-            if (startedAt != null && currentUser.characterClassId == null) {
-                AsyncOperationRepository.resumeClassGenerationPolling(currentUser.id, startedAt)
+            if (AsyncOperationRepository.isClassGenerating(currentUser.id) && currentUser.characterClassId == null) {
+                // Already tracking this generation - nothing to do, it will continue
             }
         }
     }

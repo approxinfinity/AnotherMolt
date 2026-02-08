@@ -833,12 +833,21 @@ fun Route.userRoutes() {
 
             if (request.generateClass) {
                 log.info("assign-class: Starting class GENERATION mode for user $id")
-                // Mark that class generation has started
-                val genStarted = UserRepository.startClassGeneration(id)
+                // Mark that class generation has started (in-memory tracking)
+                val genStarted = UserRepository.startClassGeneration(id, request.characterDescription)
+                if (!genStarted) {
+                    log.warn("assign-class: Class generation already in progress for user $id")
+                    call.respond(AssignClassResponse(
+                        success = false,
+                        user = existingUser.toResponse(),
+                        message = "Class generation already in progress. Please wait."
+                    ))
+                    return@post
+                }
                 log.info("assign-class: Class generation start marked: $genStarted")
 
-                val userWithGenStatus = UserRepository.findById(id)!!
-                log.info("assign-class: User classGenerationStartedAt=${userWithGenStatus.classGenerationStartedAt}")
+                val userForResponse = UserRepository.findById(id)!!
+                log.info("assign-class: User isGenerating=${UserRepository.isClassGenerating(id)}")
 
                 // For class generation, run async and return immediately
                 // The client will poll for the user's characterClassId
@@ -866,7 +875,7 @@ fun Route.userRoutes() {
                         val (savedClass, savedAbilities) = ClassGenerationService.saveGeneratedClass(newClass, abilities)
                         log.info("assign-class: [ASYNC] Saved class to database with id=${savedClass.id}")
 
-                        // updateCharacterClass also clears classGenerationStartedAt
+                        // updateCharacterClass also clears in-memory generation status
                         val updateSuccess = UserRepository.updateCharacterClass(id, savedClass.id)
                         log.info("assign-class: [ASYNC] Updated user with class assignment: $updateSuccess")
                         log.info("assign-class: [ASYNC] Class generation COMPLETE for user $id: ${savedClass.name}")
@@ -882,7 +891,7 @@ fun Route.userRoutes() {
                 // Return immediately - class is being generated
                 call.respond(AssignClassResponse(
                     success = true,
-                    user = userWithGenStatus.toResponse(),
+                    user = userForResponse.toResponse(),
                     assignedClass = null,
                     message = "Generating your custom class... This may take a few minutes. The page will update when complete."
                 ))

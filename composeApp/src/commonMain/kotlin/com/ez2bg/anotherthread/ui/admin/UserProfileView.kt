@@ -84,13 +84,12 @@ fun UserProfileView(
     val classGenerationStatus by AsyncOperationRepository.classGenerationStatus.collectAsState()
     val isClassGenerating = user.id in classGenerationStatus
 
-    // Resume polling on load if class generation was in progress (survives page reload/navigation)
+    // Check if class generation is already in progress (client-side tracking)
+    // Note: Generation status is now tracked in-memory on both client and server.
+    // If the app restarts during generation, the user will need to re-initiate.
     LaunchedEffect(user.id) {
-        val startedAt = user.classGenerationStartedAt
-        if (startedAt != null && user.characterClassId == null) {
-            // Resume polling via repository (handles timeout internally)
-            AsyncOperationRepository.resumeClassGenerationPolling(user.id, startedAt)
-        }
+        // No action needed - AsyncOperationRepository tracks active generations
+        // and will continue polling if there's one in progress
     }
 
     // Collect class generation completions and update UI

@@ -166,23 +166,26 @@ object AsyncOperationRepository {
 
     /**
      * Resume polling for a user whose class generation was already in progress.
-     * Call this when the UI loads and detects an ongoing generation from classGenerationStartedAt.
+     * Since generation status is now in-memory on the server, the client tracks
+     * its own start time when generation begins. This function is kept for
+     * backward compatibility but now uses the current time as the start.
+     *
+     * Note: If the app restarts while generation is in progress, the user will
+     * need to manually check or restart generation, which is the expected behavior
+     * for a long-running operation that doesn't survive server restarts.
      */
-    fun resumeClassGenerationPolling(userId: String, startedAt: Long) {
+    fun resumeClassGenerationPolling(userId: String) {
         // Don't start if already polling
         if (isClassGenerating(userId)) return
 
-        val elapsed = currentTimeMillis() - startedAt
-        if (elapsed >= CLASS_GENERATION_TIMEOUT_MS) {
-            // Already timed out
-            return
-        }
+        // Use current time as start since we don't have persistent tracking
+        val startedAt = currentTimeMillis()
 
         // Mark as generating
         _classGenerationStatus.value = _classGenerationStatus.value + (userId to ClassGenerationStatus(
             userId = userId,
             startedAt = startedAt,
-            message = "Class generation in progress..."
+            message = "Checking class generation status..."
         ))
 
         // Start polling
@@ -221,7 +224,7 @@ object AsyncOperationRepository {
                 // Check if still generating (might have been cancelled)
                 if (!isClassGenerating(userId)) return@launch
 
-                // Poll for status
+                // Poll for status - just check if characterClassId is now set
                 ApiClient.getUser(userId).onSuccess { updatedUser ->
                     if (updatedUser != null) {
                         if (updatedUser.characterClassId != null) {
@@ -247,11 +250,8 @@ object AsyncOperationRepository {
                                 )
                             }
                             removeGenerationStatus(userId)
-                        } else if (updatedUser.classGenerationStartedAt == null) {
-                            // Generation was cleared without assigning a class - failed
-                            emitFailure(userId, "Class generation failed. Please try again.")
                         }
-                        // Otherwise, still generating - continue polling
+                        // Otherwise, still generating - continue polling until timeout
                     }
                 }.onFailure { error ->
                     // Network error during polling - continue trying

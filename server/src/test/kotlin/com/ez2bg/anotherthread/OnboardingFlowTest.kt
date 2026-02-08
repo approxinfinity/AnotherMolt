@@ -47,11 +47,8 @@ class OnboardingFlowTest : BaseApplicationTest() {
             "New user should have null characterClassId"
         )
 
-        // New user should have no class generation in progress
-        assertTrue(
-            user["classGenerationStartedAt"]?.jsonPrimitive?.longOrNull == null,
-            "New user should have no class generation started"
-        )
+        // Class generation status is now tracked in-memory, not in user response
+        // (classGenerationStartedAt field was removed)
     }
 
     @Test

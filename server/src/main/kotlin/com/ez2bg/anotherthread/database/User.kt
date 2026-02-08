@@ -22,7 +22,6 @@ data class User(
     val imageUrl: String? = null,
     val currentLocationId: String? = null,
     val characterClassId: String? = null,
-    val classGenerationStartedAt: Long? = null,
     val createdAt: Long = System.currentTimeMillis(),
     val lastActiveAt: Long = System.currentTimeMillis(),
     // Combat stats
@@ -67,7 +66,6 @@ data class UserResponse(
     val imageUrl: String?,
     val currentLocationId: String?,
     val characterClassId: String?,
-    val classGenerationStartedAt: Long?,
     val createdAt: Long,
     val lastActiveAt: Long,
     // Combat stats
@@ -115,7 +113,6 @@ fun User.toResponse(): UserResponse {
         imageUrl = imageUrl,
         currentLocationId = currentLocationId,
         characterClassId = characterClassId,
-        classGenerationStartedAt = classGenerationStartedAt,
         createdAt = createdAt,
         lastActiveAt = lastActiveAt,
         level = level,
@@ -169,7 +166,6 @@ object UserRepository {
         imageUrl = this[UserTable.imageUrl],
         currentLocationId = this[UserTable.currentLocationId],
         characterClassId = this[UserTable.characterClassId],
-        classGenerationStartedAt = this[UserTable.classGenerationStartedAt],
         createdAt = this[UserTable.createdAt],
         lastActiveAt = this[UserTable.lastActiveAt],
         level = this[UserTable.level],
@@ -207,7 +203,6 @@ object UserRepository {
             it[imageUrl] = user.imageUrl
             it[currentLocationId] = user.currentLocationId
             it[characterClassId] = user.characterClassId
-            it[classGenerationStartedAt] = user.classGenerationStartedAt
             it[createdAt] = user.createdAt
             it[lastActiveAt] = user.lastActiveAt
             it[level] = user.level
@@ -342,9 +337,11 @@ object UserRepository {
         val newMaxMana = calculateMaxMana(updatedUser, characterClass)
         val newMaxStamina = calculateMaxStamina(updatedUser, characterClass)
 
+        // Clear in-memory generation status when class is assigned
+        com.ez2bg.anotherthread.game.ClassGenerationTracker.clearGeneration(id)
+
         UserTable.update({ UserTable.id eq id }) {
             it[characterClassId] = classId
-            it[classGenerationStartedAt] = null // Clear generation status when class is assigned
             it[maxHp] = newMaxHp
             it[currentHp] = newMaxHp // Full heal on class change
             it[maxMana] = newMaxMana
@@ -355,18 +352,33 @@ object UserRepository {
         } > 0
     }
 
-    fun startClassGeneration(id: String): Boolean = transaction {
-        UserTable.update({ UserTable.id eq id }) {
-            it[classGenerationStartedAt] = System.currentTimeMillis()
-            it[lastActiveAt] = System.currentTimeMillis()
-        } > 0
+    /**
+     * Start class generation for a user using in-memory tracking.
+     * Returns true if started successfully, false if already generating.
+     */
+    fun startClassGeneration(id: String, description: String = ""): Boolean {
+        return com.ez2bg.anotherthread.game.ClassGenerationTracker.startGeneration(id, description)
     }
 
-    fun clearClassGeneration(id: String): Boolean = transaction {
-        UserTable.update({ UserTable.id eq id }) {
-            it[classGenerationStartedAt] = null
-            it[lastActiveAt] = System.currentTimeMillis()
-        } > 0
+    /**
+     * Clear class generation status for a user using in-memory tracking.
+     */
+    fun clearClassGeneration(id: String) {
+        com.ez2bg.anotherthread.game.ClassGenerationTracker.clearGeneration(id)
+    }
+
+    /**
+     * Check if class generation is in progress for a user.
+     */
+    fun isClassGenerating(id: String): Boolean {
+        return com.ez2bg.anotherthread.game.ClassGenerationTracker.isGenerating(id)
+    }
+
+    /**
+     * Get the start time of class generation for a user, if active.
+     */
+    fun getClassGenerationStartedAt(id: String): Long? {
+        return com.ez2bg.anotherthread.game.ClassGenerationTracker.getStartedAt(id)
     }
 
     /**

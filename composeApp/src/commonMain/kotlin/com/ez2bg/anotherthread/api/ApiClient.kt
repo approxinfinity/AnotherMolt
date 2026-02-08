@@ -163,7 +163,6 @@ data class UserDto(
     val imageUrl: String? = null,
     val currentLocationId: String? = null,
     val characterClassId: String? = null,
-    val classGenerationStartedAt: Long? = null,
     val createdAt: Long = 0,
     val lastActiveAt: Long = 0,
     // Combat stats

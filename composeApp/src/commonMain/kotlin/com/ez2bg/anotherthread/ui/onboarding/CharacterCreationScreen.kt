@@ -71,11 +71,12 @@ fun CharacterCreationScreen(
     val generatingEntities by BackgroundImageGenerationManager.generatingEntities.collectAsState()
     val isImageGenerating = user.id in generatingEntities
 
-    // Resume polling on load if class generation was in progress
+    // Check if class generation is already in progress (client-side tracking)
+    // Note: Generation status is now tracked in-memory on both client and server.
+    // If the app restarts during generation, the user will need to re-initiate.
     LaunchedEffect(user.id) {
-        val startedAt = user.classGenerationStartedAt
-        if (startedAt != null && user.characterClassId == null) {
-            AsyncOperationRepository.resumeClassGenerationPolling(user.id, startedAt)
+        if (AsyncOperationRepository.isClassGenerating(user.id) && user.characterClassId == null) {
+            // Already tracking this generation - nothing to do, it will continue
         }
     }
 
