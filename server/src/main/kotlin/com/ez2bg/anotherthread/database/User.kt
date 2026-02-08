@@ -48,7 +48,10 @@ data class User(
     val gold: Int = 50,  // Starting gold for new characters
     val equippedItemIds: List<String> = emptyList(),
     // Trainer system: abilities the user has learned from trainers
-    val learnedAbilityIds: List<String> = emptyList()
+    val learnedAbilityIds: List<String> = emptyList(),
+    // Stealth status
+    val isHidden: Boolean = false,    // Currently hiding in place
+    val isSneaking: Boolean = false   // Moving stealthily
 )
 
 /**
@@ -91,6 +94,9 @@ data class UserResponse(
     val equippedItemIds: List<String>,
     // Trainer system: abilities the user has learned from trainers
     val learnedAbilityIds: List<String>,
+    // Stealth status
+    val isHidden: Boolean,
+    val isSneaking: Boolean,
     // Generated appearance description based on equipment
     val appearanceDescription: String
 )
@@ -132,6 +138,8 @@ fun User.toResponse(): UserResponse {
         gold = gold,
         equippedItemIds = equippedItemIds,
         learnedAbilityIds = learnedAbilityIds,
+        isHidden = isHidden,
+        isSneaking = isSneaking,
         appearanceDescription = UserRepository.generateAppearanceDescription(this)
     )
 }
@@ -183,7 +191,9 @@ object UserRepository {
         attributesGeneratedAt = this[UserTable.attributesGeneratedAt],
         gold = this[UserTable.gold],
         equippedItemIds = jsonToList(this[UserTable.equippedItemIds]),
-        learnedAbilityIds = jsonToList(this[UserTable.learnedAbilityIds])
+        learnedAbilityIds = jsonToList(this[UserTable.learnedAbilityIds]),
+        isHidden = this[UserTable.isHidden],
+        isSneaking = this[UserTable.isSneaking]
     )
 
     fun create(user: User): User = transaction {
@@ -220,6 +230,8 @@ object UserRepository {
             it[gold] = user.gold
             it[equippedItemIds] = listToJson(user.equippedItemIds)
             it[learnedAbilityIds] = listToJson(user.learnedAbilityIds)
+            it[isHidden] = user.isHidden
+            it[isSneaking] = user.isSneaking
         }
         user
     }
@@ -271,6 +283,32 @@ object UserRepository {
             it[gold] = user.gold
             it[equippedItemIds] = listToJson(user.equippedItemIds)
             it[learnedAbilityIds] = listToJson(user.learnedAbilityIds)
+            it[isHidden] = user.isHidden
+            it[isSneaking] = user.isSneaking
+        } > 0
+    }
+
+    /**
+     * Update stealth status (hidden/sneaking).
+     * Called when using Sneak or Hide abilities.
+     */
+    fun updateStealthStatus(id: String, isHidden: Boolean? = null, isSneaking: Boolean? = null): Boolean = transaction {
+        val user = findById(id) ?: return@transaction false
+        UserTable.update({ UserTable.id eq id }) {
+            if (isHidden != null) it[UserTable.isHidden] = isHidden
+            if (isSneaking != null) it[UserTable.isSneaking] = isSneaking
+            it[lastActiveAt] = System.currentTimeMillis()
+        } > 0
+    }
+
+    /**
+     * Clear all stealth status (when taking visible action or entering combat).
+     */
+    fun clearStealthStatus(id: String): Boolean = transaction {
+        UserTable.update({ UserTable.id eq id }) {
+            it[isHidden] = false
+            it[isSneaking] = false
+            it[lastActiveAt] = System.currentTimeMillis()
         } > 0
     }
 

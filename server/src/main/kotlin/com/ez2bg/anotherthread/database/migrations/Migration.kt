@@ -46,9 +46,10 @@ object MigrationRunner {
         V002_AddDamageDiceColumns(),
         V003_AddAbilityMinLevel(),
         V004_AddLearnedAbilityIds(),
-        V005_AddItemWeight()
+        V005_AddItemWeight(),
+        V006_AddStealthStatus()
         // Add future migrations here:
-        // V006_AlterSomeColumn(),
+        // V007_AlterSomeColumn(),
     )
 
     /**

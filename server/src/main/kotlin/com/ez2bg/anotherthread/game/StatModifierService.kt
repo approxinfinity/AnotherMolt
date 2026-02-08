@@ -197,6 +197,40 @@ object StatModifierService {
         return baseMod + breakpoint
     }
 
+    /**
+     * Perception bonus for detecting hidden/sneaking characters.
+     * Uses WIS (awareness) + INT (pattern recognition).
+     * Returns a bonus to perception checks.
+     */
+    fun perceptionBonus(wisdom: Int, intelligence: Int, level: Int): Int {
+        val wisMod = attributeModifier(wisdom)
+        val intMod = attributeModifier(intelligence)
+        val wisBreakpoint = breakpointBonus(wisdom)
+        // WIS is primary, INT is secondary
+        // 3 per WIS mod + 1 per INT mod + 2 per WIS breakpoint + level/3
+        return (wisMod * 3) + intMod + (wisBreakpoint * 2) + (level / 3)
+    }
+
+    /**
+     * Perception check to detect a hidden/sneaking character.
+     * Returns percentage chance of detection.
+     * @param observerWis Observer's WIS
+     * @param observerInt Observer's INT
+     * @param observerLevel Observer's level
+     * @param targetSneakCheck Target's stealth check result (from sneakChance or hideChance)
+     */
+    fun detectionChance(
+        observerWis: Int,
+        observerInt: Int,
+        observerLevel: Int,
+        targetStealth: Int
+    ): Int {
+        val perception = perceptionBonus(observerWis, observerInt, observerLevel)
+        // Base 30% + perception bonus - target stealth/2
+        // Higher perception = more likely to spot, higher stealth = less likely
+        return (30 + perception - (targetStealth / 2)).coerceIn(5, 95)
+    }
+
     // ============================================================================
     // DEXTERITY (DEX) - Agility & Speed
     // ============================================================================
@@ -261,6 +295,19 @@ object StatModifierService {
         val breakpoint = breakpointBonus(dexterity)
         // Base 30% + 6% per DEX mod + 8% per breakpoint + 2% per level - armor penalty
         return (30 + (baseMod * 6) + (breakpoint * 8) + (level * 2) - armorPenalty).coerceIn(5, 95)
+    }
+
+    /**
+     * Hide in place success/effectiveness value.
+     * Similar to sneak but for stationary hiding.
+     * Slightly higher base since not moving.
+     */
+    fun hideChance(dexterity: Int, level: Int, armorPenalty: Int = 0): Int {
+        val baseMod = attributeModifier(dexterity)
+        val breakpoint = breakpointBonus(dexterity)
+        // Base 40% + 6% per DEX mod + 8% per breakpoint + 2% per level - armor penalty
+        // Higher base than sneak because standing still is easier than moving silently
+        return (40 + (baseMod * 6) + (breakpoint * 8) + (level * 2) - armorPenalty).coerceIn(10, 95)
     }
 
     /**

@@ -190,6 +190,9 @@ data class UserDto(
     val equippedItemIds: List<String> = emptyList(),
     // Trainer system: abilities the user has learned
     val learnedAbilityIds: List<String> = emptyList(),
+    // Stealth status
+    val isHidden: Boolean = false,    // Currently hiding in place
+    val isSneaking: Boolean = false,  // Moving stealthily
     // Generated appearance based on equipment
     val appearanceDescription: String = ""
 )
@@ -283,6 +286,15 @@ data class CommitAttributesRequestDto(
     val wisdom: Int,
     val charisma: Int,
     val qualityBonus: Int
+)
+
+@Serializable
+data class StealthResultDto(
+    val success: Boolean,
+    val message: String,
+    val isHidden: Boolean = false,
+    val isSneaking: Boolean = false,
+    val stealthValue: Int = 0
 )
 
 @Serializable
@@ -1165,6 +1177,29 @@ object ApiClient {
             setBody(UpdateUserLocationRequest(locationId))
         }
         Unit
+    }
+
+    /**
+     * Attempt to hide in the current location.
+     * Cannot be used during combat.
+     */
+    suspend fun attemptHide(userId: String): Result<StealthResultDto> = apiCall {
+        client.post("$baseUrl/users/$userId/hide").body()
+    }
+
+    /**
+     * Attempt to start sneaking.
+     * Cannot be used during combat.
+     */
+    suspend fun attemptSneak(userId: String): Result<StealthResultDto> = apiCall {
+        client.post("$baseUrl/users/$userId/sneak").body()
+    }
+
+    /**
+     * Stop hiding/sneaking and become visible.
+     */
+    suspend fun revealSelf(userId: String): Result<StealthResultDto> = apiCall {
+        client.post("$baseUrl/users/$userId/reveal").body()
     }
 
     suspend fun updateUserClass(id: String, classId: String?): Result<UserDto> = apiCall {

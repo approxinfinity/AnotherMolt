@@ -19,8 +19,22 @@ enum class LocationEventType {
     ITEM_ADDED,            // Item added to location
     ITEM_REMOVED,          // Item removed from location
     CREATURE_REMOVED,      // Creature killed/left location
-    CREATURE_ADDED         // Creature spawned/entered location
+    CREATURE_ADDED,        // Creature spawned/entered location
+    STEALTH_DETECTED       // Observer detected a hidden/sneaking character
 }
+
+/**
+ * Stealth detection event sent to a specific player.
+ */
+@Serializable
+data class StealthDetectionEvent(
+    val type: String = "STEALTH_DETECTION",
+    val observerId: String,
+    val targetId: String,
+    val targetName: String,
+    val stealthType: String,  // "HIDING" or "SNEAKING"
+    val message: String
+)
 
 /**
  * Location mutation event sent to clients.
@@ -241,6 +255,30 @@ object LocationEventService {
                 connection.send(Frame.Text(jsonMessage))
             } catch (e: Exception) {
                 log.debug("Failed to broadcast to player $userId: ${e.message}")
+            }
+        }
+    }
+
+    /**
+     * Send stealth detection message to a specific player (blocking version for use in routes).
+     */
+    fun sendStealthDetection(detection: com.ez2bg.anotherthread.game.StealthService.PerceptionResult) {
+        kotlinx.coroutines.runBlocking {
+            val connection = playerConnections[detection.observerId] ?: return@runBlocking
+
+            val event = StealthDetectionEvent(
+                observerId = detection.observerId,
+                targetId = detection.targetId,
+                targetName = detection.targetName,
+                stealthType = detection.stealthType.name,
+                message = detection.message
+            )
+
+            try {
+                connection.send(Frame.Text(json.encodeToString(event)))
+                log.debug("Sent stealth detection to ${detection.observerName}: ${detection.message}")
+            } catch (e: Exception) {
+                log.debug("Failed to send stealth detection to ${detection.observerName}: ${e.message}")
             }
         }
     }

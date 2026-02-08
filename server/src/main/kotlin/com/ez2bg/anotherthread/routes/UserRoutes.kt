@@ -299,6 +299,85 @@ fun Route.userRoutes() {
             call.respond(statSummary)
         }
 
+        /**
+         * Attempt to hide in the current location.
+         * Cannot be used during combat.
+         */
+        post("/{id}/hide") {
+            val id = call.parameters["id"] ?: return@post call.respond(HttpStatusCode.BadRequest)
+            val user = UserRepository.findById(id)
+            if (user == null) {
+                call.respond(HttpStatusCode.NotFound)
+                return@post
+            }
+
+            val result = com.ez2bg.anotherthread.game.StealthService.attemptHide(user)
+
+            // If successful, notify other players who detect the hiding attempt
+            if (result.success && user.currentLocationId != null) {
+                val detections = com.ez2bg.anotherthread.game.StealthService.checkLocationDetection(
+                    user,
+                    user.currentLocationId!!,
+                    com.ez2bg.anotherthread.game.StealthService.StealthType.HIDING
+                )
+                // Send detection messages to observers (via WebSocket)
+                for (detection in detections) {
+                    LocationEventService.sendStealthDetection(detection)
+                }
+            }
+
+            call.respond(mapOf(
+                "success" to result.success,
+                "message" to result.message,
+                "isHidden" to result.success,
+                "stealthValue" to result.stealthValue
+            ))
+        }
+
+        /**
+         * Attempt to start sneaking.
+         * Cannot be used during combat.
+         */
+        post("/{id}/sneak") {
+            val id = call.parameters["id"] ?: return@post call.respond(HttpStatusCode.BadRequest)
+            val user = UserRepository.findById(id)
+            if (user == null) {
+                call.respond(HttpStatusCode.NotFound)
+                return@post
+            }
+
+            val result = com.ez2bg.anotherthread.game.StealthService.attemptSneak(user)
+
+            call.respond(mapOf(
+                "success" to result.success,
+                "message" to result.message,
+                "isSneaking" to result.success,
+                "stealthValue" to result.stealthValue
+            ))
+        }
+
+        /**
+         * Stop hiding/sneaking and become visible.
+         */
+        post("/{id}/reveal") {
+            val id = call.parameters["id"] ?: return@post call.respond(HttpStatusCode.BadRequest)
+            val user = UserRepository.findById(id)
+            if (user == null) {
+                call.respond(HttpStatusCode.NotFound)
+                return@post
+            }
+
+            val message = com.ez2bg.anotherthread.game.StealthService.revealSelf(user)
+            val updatedUser = UserRepository.findById(id)
+
+            call.respond(mapOf(
+                "success" to true,
+                "message" to message,
+                "isHidden" to (updatedUser?.isHidden ?: false),
+                "isSneaking" to (updatedUser?.isSneaking ?: false)
+            ))
+        }
+
         put("/{id}") {
             val id = call.parameters["id"] ?: return@put call.respond(HttpStatusCode.BadRequest)
             val request = call.receive<UpdateUserRequest>()
