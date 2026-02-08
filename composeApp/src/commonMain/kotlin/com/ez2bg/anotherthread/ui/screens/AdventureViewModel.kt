@@ -396,7 +396,7 @@ class AdventureViewModel(
             ?: currentUser?.currentHp
             ?: 0
         if (playerHp <= 0) {
-            showSnackbar("You cannot move while incapacitated")
+            logError("You cannot move while incapacitated")
             return
         }
 
@@ -529,7 +529,7 @@ class AdventureViewModel(
             ?: currentUser?.currentHp
             ?: 0
         if (playerHp <= 0) {
-            showSnackbar("You cannot phasewalk while incapacitated")
+            logError("You cannot phasewalk while incapacitated")
             return
         }
 
@@ -570,10 +570,10 @@ class AdventureViewModel(
                     // Load phasewalk destinations for the new location
                     loadPhasewalkDestinations()
                 } else {
-                    showSnackbar(response.message)
+                    logError(response.message)
                 }
             }.onFailure {
-                showSnackbar("Failed to phasewalk: ${it.message}")
+                logError("Failed to phasewalk: ${it.message}")
             }
         }
     }
@@ -667,7 +667,7 @@ class AdventureViewModel(
                     showSnackbar(response.message)
                 }
             }.onFailure {
-                showSnackbar("Purchase failed: ${it.message}")
+                logError("Purchase failed: ${it.message}")
             }
         }
     }
@@ -688,7 +688,7 @@ class AdventureViewModel(
                     showSnackbar(response.message)
                 }
             }.onFailure {
-                showSnackbar("Rest failed: ${it.message}")
+                logError("Rest failed: ${it.message}")
             }
         }
     }
@@ -731,9 +731,9 @@ class AdventureViewModel(
                 val message = error.message ?: "Failed to pick up item"
                 // Parse common error messages for better UX
                 when {
-                    message.contains("Inventory full") -> showSnackbar("Inventory full!")
-                    message.contains("not at this location") -> showSnackbar("Item is no longer here")
-                    else -> showSnackbar(message)
+                    message.contains("Inventory full") -> logError("Inventory full!")
+                    message.contains("not at this location") -> logError("Item is no longer here")
+                    else -> logError(message)
                 }
             }
         }
@@ -749,7 +749,7 @@ class AdventureViewModel(
             ?: currentUser?.currentHp
             ?: 0
         if (playerHp <= 0) {
-            showSnackbar("You cannot act while incapacitated")
+            logError("You cannot act while incapacitated")
             return
         }
 
@@ -862,7 +862,7 @@ class AdventureViewModel(
                     )
                 }
             }.onFailure {
-                showSnackbar("Failed to load destinations")
+                logError("Failed to load destinations")
             }
         }
     }
@@ -899,7 +899,7 @@ class AdventureViewModel(
                     showSnackbar(response.message)
                 }
             }.onFailure {
-                showSnackbar("Teleport failed: ${it.message}")
+                logError("Teleport failed: ${it.message}")
             }
 
             // Clear teleport state
@@ -947,7 +947,7 @@ class AdventureViewModel(
                     }
                 }
             }.onFailure {
-                showSnackbar("Failed to find realms: ${it.message}")
+                logError("Failed to find realms: ${it.message}")
             }
         }
     }
@@ -973,7 +973,7 @@ class AdventureViewModel(
                     }
                 }
             }.onFailure {
-                showSnackbar("Failed to find rifts: ${it.message}")
+                logError("Failed to find rifts: ${it.message}")
             }
         }
     }
@@ -994,7 +994,7 @@ class AdventureViewModel(
                     showSnackbar(response.message)
                 }
             }.onFailure {
-                showSnackbar("Failed to open rift: ${it.message}")
+                logError("Failed to open rift: ${it.message}")
             }
 
             _localState.update {
@@ -1019,7 +1019,7 @@ class AdventureViewModel(
                     showSnackbar(response.message)
                 }
             }.onFailure {
-                showSnackbar("Failed to seal rift: ${it.message}")
+                logError("Failed to seal rift: ${it.message}")
             }
 
             _localState.update {
@@ -1091,11 +1091,27 @@ class AdventureViewModel(
     }
 
     // =========================================================================
-    // SNACKBAR
+    // EVENT LOG MESSAGES (replaces snackbar)
     // =========================================================================
 
+    /**
+     * Log a message to the event log. This replaces snackbar notifications.
+     * Messages appear in the scrollable event log at the bottom of the screen.
+     */
+    private fun logMessage(message: String, type: EventLogType = EventLogType.INFO) {
+        CombatStateHolder.addEventLogEntry(message, type)
+    }
+
+    /**
+     * Log an error message to the event log.
+     */
+    private fun logError(message: String) {
+        CombatStateHolder.addEventLogEntry(message, EventLogType.ERROR)
+    }
+
+    // Legacy method - kept for backward compatibility with any remaining snackbar usage
     private fun showSnackbar(message: String) {
-        _localState.update { it.copy(snackbarMessage = message) }
+        logMessage(message)
     }
 
     fun consumeSnackbarMessage() {
