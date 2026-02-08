@@ -66,13 +66,7 @@ fun UserProfileView(
     var assignedClass by remember { mutableStateOf<CharacterClassDto?>(null) }
     var characterClassId by remember(user.id) { mutableStateOf(user.characterClassId) }
     var classAbilities by remember { mutableStateOf<List<AbilityDto>>(emptyList()) }
-    var abilitiesExpanded by remember { mutableStateOf(false) }
-    var iconMappingsExpanded by remember { mutableStateOf(false) }
     var iconMappings by remember { mutableStateOf<Map<String, String>>(emptyMap()) }
-    var iconPickerAbilityId by remember { mutableStateOf<String?>(null) }
-    var actionBarExpanded by remember { mutableStateOf(false) }
-    var visibleAbilityIds by remember(user.id) { mutableStateOf(user.visibleAbilityIds) }
-    var allAvailableAbilities by remember { mutableStateOf<List<AbilityDto>>(emptyList()) }
     var encountersExpanded by remember { mutableStateOf(false) }
     var encounters by remember { mutableStateOf<List<PlayerEncounterDto>>(emptyList()) }
     var inventoryExpanded by remember { mutableStateOf(false) }
@@ -183,39 +177,6 @@ fun UserProfileView(
         } else {
             itemAbilitiesMap = emptyMap()
         }
-    }
-
-    // Load all available abilities for action bar configuration (class + learned + item abilities)
-    LaunchedEffect(characterClassId, user.learnedAbilityIds, inventoryItems) {
-        val abilityList = mutableListOf<AbilityDto>()
-
-        // Class abilities
-        characterClassId?.let { classId ->
-            ApiClient.getAbilitiesByClass(classId).getOrNull()?.let { abilities ->
-                abilityList.addAll(abilities)
-            }
-        }
-
-        // Learned abilities
-        user.learnedAbilityIds.forEach { abilityId ->
-            ApiClient.getAbility(abilityId).getOrNull()?.let { ability ->
-                abilityList.add(ability)
-            }
-        }
-
-        // Item abilities
-        val itemAbilityIds = inventoryItems.flatMap { it.abilityIds }.distinct()
-        itemAbilityIds.forEach { abilityId ->
-            ApiClient.getAbility(abilityId).getOrNull()?.let { ability ->
-                abilityList.add(ability)
-            }
-        }
-
-        // Dedupe and filter to non-passive abilities only, sorted by name
-        allAvailableAbilities = abilityList
-            .distinctBy { it.id }
-            .filter { it.abilityType != "passive" }
-            .sortedBy { it.name.lowercase() }
     }
 
     // Profile incomplete warning - only show for own profile when no class assigned
