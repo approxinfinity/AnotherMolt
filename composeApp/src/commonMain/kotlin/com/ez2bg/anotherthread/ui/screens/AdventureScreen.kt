@@ -908,25 +908,28 @@ private fun LocationInfoPanel(
                 horizontalArrangement = Arrangement.spacedBy(12.dp)
             ) {
                 creaturesHere.forEachIndexed { index, creature ->
-                    val state = creatureStates[creature.id] ?: "idle"
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        modifier = Modifier
-                            .clickable { onCreatureClick(creature) }
-                            .padding(vertical = 2.dp)
-                    ) {
-                        if (!isBlinded) {
-                            CreatureStateIcon(
-                                state = state,
-                                modifier = Modifier.size(14.dp)
+                    // Use key() to help Compose track individual creatures and avoid full recomposition
+                    key(creature.id) {
+                        val state = creatureStates[creature.id] ?: "idle"
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            modifier = Modifier
+                                .clickable { onCreatureClick(creature) }
+                                .padding(vertical = 2.dp)
+                        ) {
+                            if (!isBlinded) {
+                                CreatureStateIcon(
+                                    state = state,
+                                    modifier = Modifier.size(14.dp)
+                                )
+                                Spacer(modifier = Modifier.width(4.dp))
+                            }
+                            Text(
+                                text = if (isBlinded) getBlindPresenceDescription(creature, index) else creature.name,
+                                color = if (isBlinded) Color.White.copy(alpha = 0.6f) else Color(0xFF64B5F6),
+                                fontSize = 14.sp
                             )
-                            Spacer(modifier = Modifier.width(4.dp))
                         }
-                        Text(
-                            text = if (isBlinded) getBlindPresenceDescription(creature, index) else creature.name,
-                            color = if (isBlinded) Color.White.copy(alpha = 0.6f) else Color(0xFF64B5F6),
-                            fontSize = 14.sp
-                        )
                     }
                 }
             }
@@ -954,14 +957,17 @@ private fun LocationInfoPanel(
                 horizontalArrangement = Arrangement.spacedBy(12.dp)
             ) {
                 itemsHere.forEachIndexed { index, item ->
-                    Text(
-                        text = if (isBlinded) getBlindItemDescription(item, index) else item.name,
-                        color = if (isBlinded) Color.White.copy(alpha = 0.6f) else Color(0xFFFFD54F),
-                        fontSize = 14.sp,
-                        modifier = Modifier
-                            .clickable { onItemClick(item) }
-                            .padding(vertical = 2.dp)
-                    )
+                    // Use key() to help Compose track individual items and avoid full recomposition
+                    key(item.id) {
+                        Text(
+                            text = if (isBlinded) getBlindItemDescription(item, index) else item.name,
+                            color = if (isBlinded) Color.White.copy(alpha = 0.6f) else Color(0xFFFFD54F),
+                            fontSize = 14.sp,
+                            modifier = Modifier
+                                .clickable { onItemClick(item) }
+                                .padding(vertical = 2.dp)
+                        )
+                    }
                 }
             }
         }

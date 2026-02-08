@@ -45,6 +45,8 @@ object GameEventLogHolder {
     val eventLog: StateFlow<List<EventLogEntry>> = _eventLog.asStateFlow()
     private var eventIdCounter = 0L
 
+    private const val MAX_LOG_ENTRIES = 2000
+
     /**
      * Add an entry to the event log.
      */
@@ -54,8 +56,8 @@ object GameEventLogHolder {
             message = message,
             type = type
         )
-        // Keep last 100 entries
-        _eventLog.value = (_eventLog.value + entry).takeLast(100)
+        // Keep last 2000 entries for session persistence
+        _eventLog.value = (_eventLog.value + entry).takeLast(MAX_LOG_ENTRIES)
     }
 
     /**
