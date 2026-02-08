@@ -274,6 +274,30 @@ class AdventureViewModel {
         if (initialLocationId in shopLocationIds) {
             loadShopItemsFromApi(initialLocationId ?: "")
         }
+        // Listen for user state changes to reload abilities when user data is refreshed
+        // This handles the case where session validation updates learnedAbilityIds after initial load
+        listenForUserUpdates()
+    }
+
+    /**
+     * Listen for changes to the current user and reload abilities when learnedAbilityIds changes.
+     * This ensures abilities are reloaded after session validation refreshes user data.
+     */
+    private fun listenForUserUpdates() {
+        scope.launch {
+            var previousLearnedAbilityIds: List<String>? = null
+            UserStateHolder.currentUser.collect { user ->
+                if (user != null) {
+                    val currentLearnedIds = user.learnedAbilityIds
+                    // Reload abilities if learned abilities changed (and we had a previous value)
+                    if (previousLearnedAbilityIds != null && previousLearnedAbilityIds != currentLearnedIds) {
+                        println("[AdventureViewModel] User learnedAbilityIds changed, reloading abilities")
+                        loadPlayerAbilities()
+                    }
+                    previousLearnedAbilityIds = currentLearnedIds
+                }
+            }
+        }
     }
 
     // =========================================================================
