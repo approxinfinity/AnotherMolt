@@ -131,7 +131,8 @@ fun AdventureScreen(
     onGhostModeBack: (() -> Unit)? = null
 ) {
     // Create ViewModel scoped to this composable
-    val viewModel = remember(currentUser?.id) { AdventureViewModel(currentUser) }
+    // ViewModel now uses UserStateHolder internally for reactive user state
+    val viewModel = remember(currentUser?.id) { AdventureViewModel() }
 
     // Collect UI state
     val uiState by viewModel.uiState.collectAsState()

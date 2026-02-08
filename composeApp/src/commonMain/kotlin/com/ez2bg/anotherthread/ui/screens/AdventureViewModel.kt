@@ -162,10 +162,9 @@ data class AdventureUiState(
  * - Collects reactive state from AdventureRepository
  * - Repository subscribes to WebSocket events for real-time updates
  * - UI automatically reacts when creatures move via WebSocket
+ * - Uses UserStateHolder for reactive user state (not a static snapshot)
  */
-class AdventureViewModel(
-    private val currentUser: UserDto?
-) {
+class AdventureViewModel {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
 
     // Known shop location IDs (defined before uiState so they can be used in initialValue)
@@ -177,12 +176,16 @@ class AdventureViewModel(
     )
     private val innLocationId = "tun-du-lac-inn"
 
+    // Get current user reactively from UserStateHolder
+    private val currentUser: UserDto?
+        get() = UserStateHolder.currentUser.value
+
     // Local UI state (selections, targeting, etc.)
     // Initialize with shop/inn detection based on current location
     private val _localState = MutableStateFlow(
         AdventureLocalState(
-            isShopLocation = currentUser?.currentLocationId in shopLocationIds,
-            isInnLocation = currentUser?.currentLocationId == innLocationId
+            isShopLocation = UserStateHolder.currentLocationId in shopLocationIds,
+            isInnLocation = UserStateHolder.currentLocationId == innLocationId
         )
     )
 
@@ -249,9 +252,9 @@ class AdventureViewModel(
         scope = scope,
         started = SharingStarted.WhileSubscribed(5000),
         initialValue = AdventureUiState(
-            currentLocationId = currentUser?.currentLocationId,
-            isShopLocation = currentUser?.currentLocationId in shopLocationIds,
-            isInnLocation = currentUser?.currentLocationId == innLocationId
+            currentLocationId = UserStateHolder.currentLocationId,
+            isShopLocation = UserStateHolder.currentLocationId in shopLocationIds,
+            isInnLocation = UserStateHolder.currentLocationId == innLocationId
         )
     )
 
@@ -263,8 +266,9 @@ class AdventureViewModel(
         loadPlayerGold()
         loadPhasewalkDestinations()
         // Load shop items if starting at a shop location
-        if (currentUser?.currentLocationId in shopLocationIds) {
-            loadShopItemsFromApi(currentUser?.currentLocationId ?: "")
+        val initialLocationId = UserStateHolder.currentLocationId
+        if (initialLocationId in shopLocationIds) {
+            loadShopItemsFromApi(initialLocationId ?: "")
         }
     }
 
@@ -278,12 +282,13 @@ class AdventureViewModel(
         // 1. Load all world data from the server
         // 2. Subscribe to WebSocket events for real-time updates
         // 3. Fall back to (0,0) origin if location is invalid
-        AdventureRepository.initialize(currentUser?.currentLocationId)
+        AdventureRepository.initialize(UserStateHolder.currentLocationId)
 
         // Sync with AdventureStateHolder for event log filtering
         // Also update server if location was changed due to fallback
         scope.launch {
             var firstLocationUpdate = true
+            var initialUserLocationId = UserStateHolder.currentLocationId
             AdventureRepository.currentLocationId.collect { locationId ->
                 if (locationId != null) {
                     val location = AdventureRepository.getLocation(locationId)
@@ -305,8 +310,9 @@ class AdventureViewModel(
 
                     // If this is the first update and it differs from user's stored location,
                     // update the server (this handles the fallback case)
-                    if (firstLocationUpdate && currentUser != null && locationId != currentUser.currentLocationId) {
-                        ApiClient.updateUserLocation(currentUser.id, locationId)
+                    val userId = UserStateHolder.userId
+                    if (firstLocationUpdate && userId != null && locationId != initialUserLocationId) {
+                        ApiClient.updateUserLocation(userId, locationId)
                     }
                     firstLocationUpdate = false
                 }
@@ -315,7 +321,7 @@ class AdventureViewModel(
     }
 
     private fun connectCombatWebSocket() {
-        val userId = currentUser?.id ?: return
+        val userId = UserStateHolder.userId ?: return
         CombatStateHolder.connect(userId)
     }
 
@@ -386,12 +392,12 @@ class AdventureViewModel(
     }
 
     private fun loadPlayerGold() {
-        val userId = currentUser?.id ?: return
-        _localState.update { it.copy(playerGold = currentUser.gold) }
+        val user = currentUser ?: return
+        _localState.update { it.copy(playerGold = user.gold) }
         scope.launch {
-            ApiClient.getUser(userId).onSuccess { user ->
-                if (user != null) {
-                    _localState.update { it.copy(playerGold = user.gold) }
+            ApiClient.getUser(user.id).onSuccess { freshUser ->
+                if (freshUser != null) {
+                    _localState.update { it.copy(playerGold = freshUser.gold) }
                 }
             }
         }
@@ -444,8 +450,8 @@ class AdventureViewModel(
             }
 
             // Update user presence on server
-            currentUser?.let { user ->
-                ApiClient.updateUserLocation(user.id, exit.locationId)
+            UserStateHolder.userId?.let { userId ->
+                ApiClient.updateUserLocation(userId, exit.locationId)
             }
 
             // Load phasewalk destinations for the new location
@@ -469,7 +475,7 @@ class AdventureViewModel(
         computePhasewalkDestinationsLocally()
 
         // Then fetch from server to ensure accuracy (and to catch edge cases)
-        val userId = currentUser?.id ?: return
+        val userId = UserStateHolder.userId ?: return
         scope.launch {
             ApiClient.getPhasewalkDestinations(userId).onSuccess { destinations ->
                 println("[Phasewalk] Loaded ${destinations.size} destinations from server")
@@ -545,7 +551,7 @@ class AdventureViewModel(
             return
         }
 
-        val userId = currentUser?.id ?: return
+        val userId = UserStateHolder.userId ?: return
         scope.launch {
             ApiClient.phasewalk(userId, direction).onSuccess { response ->
                 if (response.success && response.newLocationId != null) {
@@ -664,7 +670,7 @@ class AdventureViewModel(
     // =========================================================================
 
     fun buyItem(itemId: String) {
-        val userId = currentUser?.id ?: return
+        val userId = UserStateHolder.userId ?: return
         val locationId = uiState.value.currentLocationId ?: return
         scope.launch {
             ApiClient.buyItem(locationId, userId, itemId).onSuccess { response ->
@@ -685,7 +691,7 @@ class AdventureViewModel(
     }
 
     fun restAtInn() {
-        val userId = currentUser?.id ?: return
+        val userId = UserStateHolder.userId ?: return
         val locationId = uiState.value.currentLocationId ?: return
         scope.launch {
             ApiClient.restAtInn(locationId, userId).onSuccess { response ->
@@ -719,7 +725,7 @@ class AdventureViewModel(
             return
         }
 
-        val userId = currentUser?.id
+        val userId = UserStateHolder.userId
         if (userId == null) {
             showSnackbar("Not logged in")
             return
@@ -733,7 +739,7 @@ class AdventureViewModel(
         scope.launch {
             ApiClient.pickupItem(userId, item.id, locationId).onSuccess { updatedUser ->
                 // Log pickup to event log with player name
-                val playerName = currentUser?.name ?: "You"
+                val playerName = UserStateHolder.userName ?: "You"
                 CombatStateHolder.addEventLogEntry("$playerName picked up ${item.name}", EventLogType.LOOT)
                 // Update user state with new inventory
                 UserStateHolder.updateUser(updatedUser)
@@ -829,7 +835,7 @@ class AdventureViewModel(
                 }
             }
             "single_ally" -> {
-                CombatStateHolder.useAbility(ability.id, currentUser?.id)
+                CombatStateHolder.useAbility(ability.id, UserStateHolder.userId)
                 showSnackbar("Casting ${ability.name} on self")
             }
             else -> {
@@ -880,7 +886,7 @@ class AdventureViewModel(
     }
 
     fun selectTeleportDestination(destination: TeleportDestinationDto) {
-        val userId = currentUser?.id ?: return
+        val userId = UserStateHolder.userId ?: return
         val abilityId = _localState.value.teleportAbilityId ?: return
 
         scope.launch {
@@ -888,7 +894,7 @@ class AdventureViewModel(
             _localState.update { it.copy(showMapSelection = false) }
 
             // Departure message
-            val userName = currentUser?.name ?: "Unknown"
+            val userName = UserStateHolder.userName ?: "Unknown"
             CombatStateHolder.addEventLogEntry(
                 "With a soft pop $userName dematerializes.",
                 EventLogType.NAVIGATION
@@ -944,7 +950,7 @@ class AdventureViewModel(
             return
         }
 
-        val userId = currentUser?.id ?: return
+        val userId = UserStateHolder.userId ?: return
         scope.launch {
             ApiClient.getUnconnectedAreas(userId).onSuccess { areas ->
                 if (areas.isEmpty()) {
@@ -970,7 +976,7 @@ class AdventureViewModel(
             return
         }
 
-        val userId = currentUser?.id ?: return
+        val userId = UserStateHolder.userId ?: return
         scope.launch {
             ApiClient.getSealableRifts(userId).onSuccess { rifts ->
                 if (rifts.isEmpty()) {
@@ -991,7 +997,7 @@ class AdventureViewModel(
     }
 
     fun selectRiftToOpen(area: UnconnectedAreaDto) {
-        val userId = currentUser?.id ?: return
+        val userId = UserStateHolder.userId ?: return
 
         scope.launch {
             _localState.update { it.copy(showRiftSelection = false) }
@@ -1016,7 +1022,7 @@ class AdventureViewModel(
     }
 
     fun selectRiftToSeal(rift: SealableRiftDto) {
-        val userId = currentUser?.id ?: return
+        val userId = UserStateHolder.userId ?: return
 
         scope.launch {
             _localState.update { it.copy(showRiftSelection = false) }
@@ -1060,7 +1066,7 @@ class AdventureViewModel(
      * Fetches the trainer info from the server.
      */
     fun openTrainerModal(creature: CreatureDto) {
-        val userId = currentUser?.id ?: return
+        val userId = UserStateHolder.userId ?: return
 
         _localState.update { it.copy(isLoadingTrainer = true, showTrainerModal = true) }
 
@@ -1091,7 +1097,7 @@ class AdventureViewModel(
      */
     fun learnAbility(abilityId: String) {
         val trainerInfo = _localState.value.trainerInfo ?: return
-        val userId = currentUser?.id ?: return
+        val userId = UserStateHolder.userId ?: return
 
         scope.launch {
             ApiClient.learnAbility(trainerInfo.trainerId, userId, abilityId)
