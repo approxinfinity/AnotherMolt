@@ -1188,6 +1188,53 @@ class AdventureViewModel {
     }
 
     // =========================================================================
+    // VOLUNTARY DEATH (give up when downed)
+    // =========================================================================
+
+    /**
+     * Voluntary death - player gives up while downed (HP <= 0).
+     * Respawns at Tun du Lac with full HP.
+     *
+     * @param onComplete Callback invoked when the give-up is processed
+     */
+    fun giveUp(onComplete: (Boolean, String) -> Unit) {
+        val userId = UserStateHolder.userId
+        if (userId == null) {
+            onComplete(false, "Not logged in")
+            return
+        }
+
+        // Check if player is downed
+        val playerHp = UserStateHolder.currentUser.value?.currentHp ?: 0
+        if (playerHp > 0) {
+            onComplete(false, "You can only give up when downed")
+            return
+        }
+
+        scope.launch {
+            ApiClient.giveUp(userId).onSuccess { response ->
+                if (response.success) {
+                    logMessage("You have died and respawned at ${response.respawnLocationName ?: "town"}.", EventLogType.ERROR)
+                    if (response.itemsDropped > 0) {
+                        logMessage("You dropped ${response.itemsDropped} item(s).", EventLogType.ERROR)
+                    }
+                    if (response.goldLost > 0) {
+                        logMessage("You lost ${response.goldLost} gold.", EventLogType.ERROR)
+                    }
+                    // Note: The WebSocket will receive a PlayerDeathMessage which handles
+                    // the death animation and user refresh via CombatStateHolder
+                    onComplete(true, response.message)
+                } else {
+                    onComplete(false, response.message)
+                }
+            }.onFailure { error ->
+                logError("Failed to give up: ${error.message}")
+                onComplete(false, error.message ?: "Failed to give up")
+            }
+        }
+    }
+
+    // =========================================================================
     // EVENT LOG MESSAGES (replaces snackbar)
     // =========================================================================
 

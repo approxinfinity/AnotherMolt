@@ -172,6 +172,9 @@ fun AdventureScreen(
     // Basic attack target selection modal state
     var showBasicAttackTargetModal by remember { mutableStateOf(false) }
 
+    // Give up confirmation modal state (voluntary death when downed)
+    var showGiveUpConfirmation by remember { mutableStateOf(false) }
+
     // Custom icon mappings
     var iconMappings by remember { mutableStateOf<Map<String, String>>(emptyMap()) }
     LaunchedEffect(currentUser?.id) {
@@ -579,29 +582,45 @@ fun AdventureScreen(
                             uiState.allItems.find { it.id == equippedId }?.equipmentType == "weapon"
                         } ?: false
 
-                        AbilityRow(
-                            abilities = uiState.playerAbilities,
-                            cooldowns = cooldowns,
-                            queuedAbilityId = queuedAbilityId,
-                            currentMana = playerCombatant?.currentMana ?: displayUser?.currentMana ?: 0,
-                            currentStamina = playerCombatant?.currentStamina ?: displayUser?.currentStamina ?: 0,
-                            hasWeaponEquipped = hasWeaponEquipped,
-                            onBasicAttackClick = {
-                                // If only one creature, attack immediately. Otherwise show target modal.
-                                if (uiState.creaturesHere.size == 1) {
-                                    viewModel.initiateBasicAttack(uiState.creaturesHere.first().id)
-                                } else if (uiState.creaturesHere.isNotEmpty()) {
-                                    showBasicAttackTargetModal = true
-                                }
-                            },
-                            onAbilityClick = { viewModel.handleAbilityClick(it) },
-                            onSpellbookToggle = { showSpellbook = !showSpellbook },
-                            showSpellbook = showSpellbook,
-                            iconMappings = iconMappings,
+                        // Check if player is downed (HP <= 0)
+                        val isPlayerDowned = (playerCombatant?.currentHp ?: displayUser?.currentHp ?: 1) <= 0
+
+                        Row(
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .padding(horizontal = 8.dp, vertical = 4.dp)
-                        )
+                                .padding(horizontal = 8.dp, vertical = 4.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            // Skull button - only visible when downed
+                            if (isPlayerDowned) {
+                                GiveUpButton(
+                                    onClick = { showGiveUpConfirmation = true },
+                                    modifier = Modifier.padding(end = 8.dp)
+                                )
+                            }
+
+                            AbilityRow(
+                                abilities = uiState.playerAbilities,
+                                cooldowns = cooldowns,
+                                queuedAbilityId = queuedAbilityId,
+                                currentMana = playerCombatant?.currentMana ?: displayUser?.currentMana ?: 0,
+                                currentStamina = playerCombatant?.currentStamina ?: displayUser?.currentStamina ?: 0,
+                                hasWeaponEquipped = hasWeaponEquipped,
+                                onBasicAttackClick = {
+                                    // If only one creature, attack immediately. Otherwise show target modal.
+                                    if (uiState.creaturesHere.size == 1) {
+                                        viewModel.initiateBasicAttack(uiState.creaturesHere.first().id)
+                                    } else if (uiState.creaturesHere.isNotEmpty()) {
+                                        showBasicAttackTargetModal = true
+                                    }
+                                },
+                                onAbilityClick = { viewModel.handleAbilityClick(it) },
+                                onSpellbookToggle = { showSpellbook = !showSpellbook },
+                                showSpellbook = showSpellbook,
+                                iconMappings = iconMappings,
+                                modifier = Modifier.weight(1f)
+                            )
+                        }
                     }
 
                     // Event log with floating admin controls overlay
@@ -831,6 +850,19 @@ fun AdventureScreen(
                         viewModel.initiateBasicAttack(creatureId)
                     },
                     onDismiss = { showBasicAttackTargetModal = false }
+                )
+            }
+
+            // === GIVE UP CONFIRMATION MODAL ===
+            if (showGiveUpConfirmation) {
+                GiveUpConfirmationModal(
+                    onConfirm = {
+                        showGiveUpConfirmation = false
+                        viewModel.giveUp { success, message ->
+                            // The WebSocket handles the death animation
+                        }
+                    },
+                    onDismiss = { showGiveUpConfirmation = false }
                 )
             }
 
@@ -2298,6 +2330,116 @@ private fun BasicAttackTargetModal(
                     )
                 ) {
                     Text("Nevermind")
+                }
+            }
+        }
+    }
+}
+
+// =============================================================================
+// GIVE UP BUTTON AND CONFIRMATION
+// =============================================================================
+
+/**
+ * Black skull button shown when player is downed.
+ * Tap to open confirmation dialog for voluntary death.
+ */
+@Composable
+private fun GiveUpButton(
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    Box(
+        modifier = modifier
+            .size(32.dp)
+            .clip(CircleShape)
+            .background(Color.Black.copy(alpha = 0.9f))
+            .border(1.dp, Color(0xFF666666), CircleShape)
+            .clickable(onClick = onClick),
+        contentAlignment = Alignment.Center
+    ) {
+        // Skull emoji as text since Material Icons doesn't have a skull
+        Text(
+            text = "\uD83D\uDC80", // Skull emoji
+            fontSize = 16.sp
+        )
+    }
+}
+
+/**
+ * Confirmation modal for voluntary death.
+ */
+@Composable
+private fun GiveUpConfirmationModal(
+    onConfirm: () -> Unit,
+    onDismiss: () -> Unit
+) {
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(Color.Black.copy(alpha = 0.7f))
+            .clickable(onClick = onDismiss),
+        contentAlignment = Alignment.Center
+    ) {
+        Card(
+            modifier = Modifier
+                .widthIn(max = 320.dp)
+                .clickable(enabled = false) { /* Prevent click-through */ },
+            shape = RoundedCornerShape(16.dp),
+            colors = CardDefaults.cardColors(
+                containerColor = Color(0xFF2A2A3E)
+            )
+        ) {
+            Column(
+                modifier = Modifier.padding(24.dp),
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.spacedBy(16.dp)
+            ) {
+                // Skull icon
+                Text(
+                    text = "\uD83D\uDC80",
+                    fontSize = 48.sp
+                )
+
+                Text(
+                    text = "Give Up?",
+                    style = MaterialTheme.typography.titleLarge,
+                    color = Color.White,
+                    fontWeight = FontWeight.Bold
+                )
+
+                Text(
+                    text = "You will die and respawn at Tun du Lac. You may lose items and gold.",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = Color.White.copy(alpha = 0.8f),
+                    textAlign = TextAlign.Center
+                )
+
+                Spacer(modifier = Modifier.height(8.dp))
+
+                // Buttons
+                Row(
+                    horizontalArrangement = Arrangement.spacedBy(12.dp)
+                ) {
+                    OutlinedButton(
+                        onClick = onDismiss,
+                        modifier = Modifier.weight(1f),
+                        colors = ButtonDefaults.outlinedButtonColors(
+                            contentColor = Color.White
+                        )
+                    ) {
+                        Text("Cancel")
+                    }
+
+                    Button(
+                        onClick = onConfirm,
+                        modifier = Modifier.weight(1f),
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = Color(0xFFB71C1C) // Dark red
+                        )
+                    ) {
+                        Text("Give Up", color = Color.White)
+                    }
                 }
             }
         }

@@ -418,6 +418,16 @@ data class CreateRiftResponseDto(
 )
 
 @Serializable
+data class GiveUpResponse(
+    val success: Boolean,
+    val message: String,
+    val respawnLocationId: String? = null,
+    val respawnLocationName: String? = null,
+    val itemsDropped: Int = 0,
+    val goldLost: Int = 0
+)
+
+@Serializable
 data class RegisterRequest(
     val name: String,
     val password: String
@@ -1281,6 +1291,25 @@ object ApiClient {
             val errorBody = response.bodyAsText()
             val errorMessage = try {
                 Json.decodeFromString<Map<String, String>>(errorBody)["error"] ?: errorBody
+            } catch (e: Exception) {
+                errorBody
+            }
+            throw Exception(errorMessage)
+        }
+    }
+
+    /**
+     * Voluntary death - player gives up while downed (HP <= 0).
+     * Respawns at Tun du Lac with full HP, optionally dropping items/gold based on server config.
+     */
+    suspend fun giveUp(userId: String): Result<GiveUpResponse> = apiCall {
+        val response = client.post("$baseUrl/users/$userId/give-up")
+        if (response.status.isSuccess()) {
+            response.body()
+        } else {
+            val errorBody = response.bodyAsText()
+            val errorMessage = try {
+                Json.decodeFromString<Map<String, String>>(errorBody)["message"] ?: errorBody
             } catch (e: Exception) {
                 errorBody
             }

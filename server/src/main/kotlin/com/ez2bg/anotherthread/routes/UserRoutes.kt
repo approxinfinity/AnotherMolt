@@ -814,6 +814,44 @@ fun Route.userRoutes() {
             call.respond(HttpStatusCode.OK)
         }
 
+        // Voluntary death - player gives up while downed
+        post("/{id}/give-up") {
+            val id = call.parameters["id"] ?: return@post call.respond(HttpStatusCode.BadRequest)
+            log.info("give-up: Received request for user $id")
+
+            val user = UserRepository.findById(id)
+            if (user == null) {
+                call.respond(HttpStatusCode.NotFound, mapOf("success" to false, "message" to "User not found"))
+                return@post
+            }
+
+            // Only allow if player is downed (HP <= 0)
+            if (user.currentHp > 0) {
+                call.respond(HttpStatusCode.BadRequest, mapOf(
+                    "success" to false,
+                    "message" to "You can only give up when downed (HP <= 0)"
+                ))
+                return@post
+            }
+
+            val deathMessage = CombatService.voluntaryDeath(id)
+            if (deathMessage != null) {
+                call.respond(HttpStatusCode.OK, mapOf(
+                    "success" to true,
+                    "message" to "You have died and respawned at ${deathMessage.respawnLocationName}",
+                    "respawnLocationId" to deathMessage.respawnLocationId,
+                    "respawnLocationName" to deathMessage.respawnLocationName,
+                    "itemsDropped" to deathMessage.itemsDropped,
+                    "goldLost" to deathMessage.goldLost
+                ))
+            } else {
+                call.respond(HttpStatusCode.InternalServerError, mapOf(
+                    "success" to false,
+                    "message" to "Failed to process death"
+                ))
+            }
+        }
+
         // Assign class to user (either autoassign from existing or generate new)
         post("/{id}/assign-class") {
             val id = call.parameters["id"] ?: return@post call.respond(HttpStatusCode.BadRequest)

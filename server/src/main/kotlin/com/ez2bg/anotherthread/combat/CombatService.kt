@@ -2025,6 +2025,89 @@ object CombatService {
     }
 
     /**
+     * Handle voluntary death (player gives up while downed).
+     * Only allowed when player HP is <= 0.
+     * Respawns player at Tun du Lac with full HP and optionally drops items/gold based on config.
+     *
+     * @return PlayerDeathMessage if successful, null if player is not eligible
+     */
+    suspend fun voluntaryDeath(userId: String): PlayerDeathMessage? {
+        val user = UserRepository.findById(userId) ?: return null
+
+        // Only allow if player is downed (HP <= 0)
+        if (user.currentHp > 0) {
+            log.warn("Player ${user.name} tried to voluntarily die but HP is ${user.currentHp}")
+            return null
+        }
+
+        // Respawn at Tun du Lac (the starting town)
+        val respawnLocation = LocationRepository.findById(TunDuLacSeed.TUN_DU_LAC_OVERWORLD_ID)
+            ?: LocationRepository.findByCoordinates(0, 0, "overworld")
+        if (respawnLocation == null) {
+            log.error("Cannot respawn player - Tun du Lac location not found!")
+            return null
+        }
+
+        // Get the player's death location
+        val deathLocationId = user.currentLocationId
+        val deathLocation = deathLocationId?.let { LocationRepository.findById(it) }
+
+        var itemsDropped = 0
+        var goldLost = 0
+
+        // Only drop items if config flag is enabled
+        if (DeathConfig.itemsDropOnDeath) {
+            val droppedItemIds = user.itemIds.toList()
+            if (droppedItemIds.isNotEmpty() && deathLocationId != null) {
+                // Use new LocationItem system for tracked ground items
+                LocationItemRepository.addItems(deathLocationId, droppedItemIds, user.id)
+                // Also update the legacy itemIds for backwards compatibility
+                LocationRepository.addItems(deathLocationId, droppedItemIds)
+                log.info("Player ${user.name} dropped ${droppedItemIds.size} items at location $deathLocationId")
+            }
+            // Clear inventory (also clears equipped items)
+            UserRepository.clearInventory(userId)
+            itemsDropped = droppedItemIds.size
+        }
+
+        // Only lose gold if config flag is enabled
+        if (DeathConfig.goldLostOnDeath) {
+            goldLost = user.gold
+            if (goldLost > 0) {
+                UserRepository.addGold(userId, -goldLost)
+                log.info("Player ${user.name} lost $goldLost gold")
+            }
+        }
+
+        // Remove from combat if in one
+        removePlayerFromCombat(userId)
+
+        // Respawn at Tun du Lac with full HP
+        UserRepository.updateCurrentLocation(userId, respawnLocation.id)
+        UserRepository.healToFull(userId)
+        UserRepository.updateCombatState(userId, user.maxHp, null)
+        playerSessions.remove(userId)
+
+        val deathMessage = PlayerDeathMessage(
+            playerId = userId,
+            playerName = user.name,
+            deathLocationId = deathLocationId,
+            deathLocationName = deathLocation?.name,
+            respawnLocationId = respawnLocation.id,
+            respawnLocationName = respawnLocation.name,
+            itemsDropped = itemsDropped,
+            goldLost = goldLost
+        )
+
+        // Notify the player about their death via WebSocket
+        sendToPlayer(userId, deathMessage)
+
+        log.info("Player ${user.name} voluntarily died and respawned at ${respawnLocation.name}")
+
+        return deathMessage
+    }
+
+    /**
      * Process creature wandering - move creatures to random adjacent locations.
      * Non-aggressive creatures always wander.
      * Aggressive CR1 creatures also wander (roaming mobs).
