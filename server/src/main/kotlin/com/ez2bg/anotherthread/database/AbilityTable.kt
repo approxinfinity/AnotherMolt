@@ -23,6 +23,7 @@ object AbilityTable : Table("ability") {
     val manaCost = integer("mana_cost").default(0)               // Mana cost for spells
     val staminaCost = integer("stamina_cost").default(0)         // Stamina cost for physical abilities
     val attribution = text("attribution").nullable()             // Content attribution source
+    val minLevel = integer("min_level").default(1)               // Minimum player level to use this ability
 
     override val primaryKey = PrimaryKey(id)
 }

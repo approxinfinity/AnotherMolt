@@ -312,6 +312,13 @@ object CombatStateHolder {
                 // Show level-up notification if player leveled up
                 if (response.leveledUp && response.newLevel != null) {
                     addEventLogEntry("*** LEVEL UP! You are now level ${response.newLevel}! ***", EventLogType.BUFF)
+
+                    // Show newly unlocked abilities
+                    if (response.unlockedAbilities.isNotEmpty()) {
+                        response.unlockedAbilities.forEach { abilityName ->
+                            addEventLogEntry("New ability unlocked: $abilityName", EventLogType.BUFF)
+                        }
+                    }
                 }
 
                 if (response.loot.goldEarned > 0) {

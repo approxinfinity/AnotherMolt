@@ -3,8 +3,10 @@ package com.ez2bg.anotherthread.database
 import kotlinx.serialization.Serializable
 import org.jetbrains.exposed.sql.ResultRow
 import org.jetbrains.exposed.sql.SqlExpressionBuilder.eq
+import org.jetbrains.exposed.sql.and
 import org.jetbrains.exposed.sql.deleteWhere
 import org.jetbrains.exposed.sql.insert
+import org.jetbrains.exposed.sql.or
 import org.jetbrains.exposed.sql.selectAll
 import org.jetbrains.exposed.sql.transactions.transaction
 import org.jetbrains.exposed.sql.update
@@ -30,7 +32,8 @@ data class Ability(
     val powerCost: Int = 10,    // Calculated total, default to average
     val manaCost: Int = 0,      // Mana cost for spells
     val staminaCost: Int = 0,   // Stamina cost for physical abilities
-    val attribution: String? = null  // Content attribution source
+    val attribution: String? = null,  // Content attribution source
+    val minLevel: Int = 1       // Minimum player level to use this ability
 ) {
     /**
      * Calculate the power cost based on ability attributes.
@@ -133,7 +136,8 @@ object AbilityRepository {
         powerCost = this[AbilityTable.powerCost],
         manaCost = this[AbilityTable.manaCost],
         staminaCost = this[AbilityTable.staminaCost],
-        attribution = this[AbilityTable.attribution]
+        attribution = this[AbilityTable.attribution],
+        minLevel = this[AbilityTable.minLevel]
     )
 
     fun create(ability: Ability): Ability = transaction {
@@ -157,6 +161,7 @@ object AbilityRepository {
             it[manaCost] = abilityWithCost.manaCost
             it[staminaCost] = abilityWithCost.staminaCost
             it[attribution] = abilityWithCost.attribution
+            it[minLevel] = abilityWithCost.minLevel
         }
         abilityWithCost
     }
@@ -179,6 +184,16 @@ object AbilityRepository {
     }
 
     /**
+     * Find abilities for a class that are available at a given player level.
+     * Only returns abilities where minLevel <= playerLevel.
+     */
+    fun findByClassIdAndLevel(classId: String, playerLevel: Int): List<Ability> = transaction {
+        AbilityTable.selectAll()
+            .where { (AbilityTable.classId eq classId) and (AbilityTable.minLevel lessEq playerLevel) }
+            .map { it.toAbility() }
+    }
+
+    /**
      * Find all universal abilities (classId is null).
      * These are available to all players regardless of class.
      */
@@ -186,6 +201,36 @@ object AbilityRepository {
         AbilityTable.selectAll()
             .where { AbilityTable.classId.isNull() }
             .map { it.toAbility() }
+    }
+
+    /**
+     * Find universal abilities available at a given player level.
+     */
+    fun findUniversalByLevel(playerLevel: Int): List<Ability> = transaction {
+        AbilityTable.selectAll()
+            .where { AbilityTable.classId.isNull() and (AbilityTable.minLevel lessEq playerLevel) }
+            .map { it.toAbility() }
+    }
+
+    /**
+     * Find abilities that unlock at a specific level for a class.
+     * Useful for level-up notifications.
+     */
+    fun findNewlyUnlockedAbilities(classId: String?, newLevel: Int): List<Ability> = transaction {
+        if (classId != null) {
+            // Class-specific + universal abilities that unlock at exactly this level
+            AbilityTable.selectAll()
+                .where {
+                    ((AbilityTable.classId eq classId) or AbilityTable.classId.isNull()) and
+                    (AbilityTable.minLevel eq newLevel)
+                }
+                .map { it.toAbility() }
+        } else {
+            // Only universal abilities
+            AbilityTable.selectAll()
+                .where { AbilityTable.classId.isNull() and (AbilityTable.minLevel eq newLevel) }
+                .map { it.toAbility() }
+        }
     }
 
     fun findByType(abilityType: String): List<Ability> = transaction {
@@ -218,6 +263,7 @@ object AbilityRepository {
             it[manaCost] = abilityWithCost.manaCost
             it[staminaCost] = abilityWithCost.staminaCost
             it[attribution] = abilityWithCost.attribution
+            it[minLevel] = abilityWithCost.minLevel
         } > 0
     }
 

@@ -2398,12 +2398,22 @@ object CombatService {
         val xpGained = ExperienceService.calculateCreatureXp(killerUser.level, creatureData)
         var leveledUp = false
         var newLevel: Int? = null
+        var unlockedAbilities: List<String> = emptyList()
         if (xpGained > 0) {
             val xpResult = ExperienceService.awardXp(killer.id, xpGained)
             if (xpResult.leveledUp) {
                 leveledUp = true
                 newLevel = xpResult.newLevel
                 log.info("Player ${killerUser.name} leveled up to ${xpResult.newLevel}!")
+
+                // Find abilities that unlock at this new level
+                unlockedAbilities = AbilityRepository.findNewlyUnlockedAbilities(
+                    killerUser.characterClassId,
+                    xpResult.newLevel
+                ).map { it.name }
+                if (unlockedAbilities.isNotEmpty()) {
+                    log.info("Unlocked abilities: ${unlockedAbilities.joinToString(", ")}")
+                }
             }
         }
 
@@ -2480,7 +2490,8 @@ object CombatService {
             loot = lootResult,
             remainingEnemies = remainingEnemies,
             leveledUp = leveledUp,
-            newLevel = newLevel
+            newLevel = newLevel,
+            unlockedAbilities = unlockedAbilities
         ))
 
         log.info("${creature.name} defeated by ${killer.name}! XP: $xpGained, Gold: $goldDropped, Items: ${droppedItems.size}, Remaining enemies: $remainingEnemies")

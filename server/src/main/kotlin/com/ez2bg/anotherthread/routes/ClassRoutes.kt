@@ -194,7 +194,38 @@ fun Route.abilityRoutes() {
 
         get("/class/{classId}") {
             val classId = call.parameters["classId"] ?: return@get call.respond(HttpStatusCode.BadRequest)
+
+            // If user ID is provided, filter by their level
+            val userId = call.request.header("X-User-Id")
+            if (userId != null) {
+                val user = UserRepository.findById(userId)
+                if (user != null) {
+                    call.respond(AbilityRepository.findByClassIdAndLevel(classId, user.level))
+                    return@get
+                }
+            }
+
+            // Fallback: return all abilities for the class (for admin/preview use)
             call.respond(AbilityRepository.findByClassId(classId))
+        }
+
+        /**
+         * Get abilities that unlock at a specific level.
+         * Useful for level-up notifications.
+         */
+        get("/unlocked-at/{level}") {
+            val level = call.parameters["level"]?.toIntOrNull()
+                ?: return@get call.respond(HttpStatusCode.BadRequest, "Invalid level")
+
+            val userId = call.request.header("X-User-Id")
+            val classId = if (userId != null) {
+                UserRepository.findById(userId)?.characterClassId
+            } else {
+                call.request.queryParameters["classId"]
+            }
+
+            val abilities = AbilityRepository.findNewlyUnlockedAbilities(classId, level)
+            call.respond(abilities)
         }
 
         post {

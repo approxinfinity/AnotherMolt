@@ -63,7 +63,8 @@ object ClassAbilitySeed {
                 range = 60,
                 cooldownType = "long",
                 cooldownRounds = 0,
-                effects = """[{"type":"control","effect":"prevent_movement","duration":10}]"""
+                effects = """[{"type":"control","effect":"prevent_movement","duration":10}]""",
+                minLevel = 1  // Starter ability
             ),
             Ability(
                 name = "Soul Tether",
@@ -74,7 +75,8 @@ object ClassAbilitySeed {
                 range = 30,
                 cooldownType = "medium",
                 cooldownRounds = 3,
-                effects = """[{"type":"protection","effect":"damage_split","ratio":0.5,"duration":3}]"""
+                effects = """[{"type":"protection","effect":"damage_split","ratio":0.5,"duration":3}]""",
+                minLevel = 3  // Unlocks at level 3
             ),
             Ability(
                 name = "Temporal Echo",
@@ -85,7 +87,8 @@ object ClassAbilitySeed {
                 range = 0,
                 cooldownType = "long",
                 cooldownRounds = 0,
-                effects = """[{"type":"utility","effect":"save_state","duration":2}]"""
+                effects = """[{"type":"utility","effect":"save_state","duration":2}]""",
+                minLevel = 7  // Powerful ability unlocks at level 7
             ),
             Ability(
                 name = "Mind Mirror",
@@ -118,7 +121,8 @@ object ClassAbilitySeed {
                 range = 30,
                 cooldownType = "long",
                 cooldownRounds = 0,
-                effects = """[{"type":"summon","creatureType":"spirit","duration":3,"ai":true}]"""
+                effects = """[{"type":"summon","creatureType":"spirit","duration":3,"ai":true}]""",
+                minLevel = 5  // Summon unlocks at level 5
             ),
             Ability(
                 name = "Prescient Warning",
@@ -242,7 +246,8 @@ object ClassAbilitySeed {
                 range = 60,
                 cooldownType = "short",
                 cooldownRounds = 1,
-                effects = """[{"type":"utility","effect":"reveal_info"},{"type":"buff","stat":"attack","bonus":"advantage","duration":1}]"""
+                effects = """[{"type":"utility","effect":"reveal_info"},{"type":"buff","stat":"attack","bonus":"advantage","duration":1}]""",
+                minLevel = 1  // Starter ability
             ),
             Ability(
                 name = "Shield Wall",
@@ -286,7 +291,8 @@ object ClassAbilitySeed {
                 range = 30,
                 cooldownType = "long",
                 cooldownRounds = 0,
-                effects = """[{"type":"debuff","stat":"attacks","penalty":"disadvantage","duration":2,"saveType":"wisdom"}]"""
+                effects = """[{"type":"debuff","stat":"attacks","penalty":"disadvantage","duration":2,"saveType":"wisdom"}]""",
+                minLevel = 4  // AoE ability unlocks at level 4
             ),
             Ability(
                 name = "Vital Strike",
@@ -341,7 +347,8 @@ object ClassAbilitySeed {
                 range = 0,
                 cooldownType = "long",
                 cooldownRounds = 0,
-                effects = """[{"type":"immunity","conditions":["fear","charm","dominate"],"duration":3,"breakOnUse":true}]"""
+                effects = """[{"type":"immunity","conditions":["fear","charm","dominate"],"duration":3,"breakOnUse":true}]""",
+                minLevel = 6  // Powerful defensive ability at level 6
             ),
             // Shield, Reflect, and Lifesteal abilities
             Ability(

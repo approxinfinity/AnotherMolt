@@ -378,7 +378,8 @@ data class CreatureDefeatedMessage(
     val loot: LootResult = LootResult(),
     val remainingEnemies: Int,        // How many enemies left in combat
     val leveledUp: Boolean = false,   // True if this kill caused a level up
-    val newLevel: Int? = null         // New level if leveledUp is true
+    val newLevel: Int? = null,        // New level if leveledUp is true
+    val unlockedAbilities: List<String> = emptyList()  // Names of abilities unlocked at new level
 ) : ServerCombatMessage()
 
 /**

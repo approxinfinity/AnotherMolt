@@ -2023,7 +2023,8 @@ data class CreatureDefeatedResponse(
     val loot: LootResultDto = LootResultDto(),
     val remainingEnemies: Int,
     val leveledUp: Boolean = false,
-    val newLevel: Int? = null
+    val newLevel: Int? = null,
+    val unlockedAbilities: List<String> = emptyList()
 )
 
 @Serializable
