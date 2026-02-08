@@ -521,6 +521,7 @@ fun Route.userRoutes() {
         put("/{id}/location") {
             val id = call.parameters["id"] ?: return@put call.respond(HttpStatusCode.BadRequest)
             val request = call.receive<UpdateLocationRequest>()
+            log.info("Location update request: userId=$id, newLocation=${request.locationId}")
 
             // Check encumbrance - block movement if over-encumbered
             val user = UserRepository.findById(id)
