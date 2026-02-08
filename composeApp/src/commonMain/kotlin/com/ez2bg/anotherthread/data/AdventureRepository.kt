@@ -180,16 +180,20 @@ object AdventureRepository {
             statesDeferred.join()
 
             // Set initial location with fallback to origin
-            val validLocationId = if (initialLocationId != null && _locations.value.any { it.id == initialLocationId }) {
+            val locationExists = initialLocationId != null && _locations.value.any { it.id == initialLocationId }
+            println("[AdventureRepository] initialize: initialLocationId=$initialLocationId, locationExists=$locationExists, totalLocations=${_locations.value.size}")
+            val validLocationId = if (locationExists) {
                 initialLocationId
             } else {
                 // Fallback: find a (0,0) location in any area, preferring "overworld"
                 val originLocation = _locations.value.find { it.gridX == 0 && it.gridY == 0 && it.areaId == "overworld" }
                     ?: _locations.value.find { it.gridX == 0 && it.gridY == 0 }
                     ?: _locations.value.firstOrNull()
+                println("[AdventureRepository] Falling back to origin: ${originLocation?.id} (grid ${originLocation?.gridX},${originLocation?.gridY})")
                 originLocation?.id
             }
             _currentLocationId.value = validLocationId
+            println("[AdventureRepository] Set currentLocationId=$validLocationId")
 
             _isLoading.value = false
             _isInitialized.value = true

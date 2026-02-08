@@ -38,6 +38,31 @@ data class UpdateLocationResponse(
     val message: String? = null
 )
 
+@Serializable
+data class EncumbranceErrorResponse(
+    val error: String,
+    val currentWeight: Int,
+    val maxCapacity: Int
+)
+
+@Serializable
+data class LogoutAllResponse(
+    val success: Boolean,
+    val message: String,
+    val sessionsInvalidated: Int
+)
+
+@Serializable
+data class SimpleSuccessResponse(
+    val success: Boolean,
+    val message: String
+)
+
+@Serializable
+data class ErrorResponse(
+    val error: String
+)
+
 /**
  * Auth routes for user registration and login.
  * Base path: /auth
@@ -197,7 +222,7 @@ fun Route.authRoutes() {
                 )
             )
 
-            call.respond(HttpStatusCode.OK, mapOf("success" to true, "message" to "Logged out"))
+            call.respond(HttpStatusCode.OK, SimpleSuccessResponse(success = true, message = "Logged out"))
         }
 
         // Logout from all devices
@@ -218,16 +243,16 @@ fun Route.authRoutes() {
                             path = "/"
                         )
                     )
-                    call.respond(HttpStatusCode.OK, mapOf(
-                        "success" to true,
-                        "message" to "Logged out from all devices",
-                        "sessionsInvalidated" to count
+                    call.respond(HttpStatusCode.OK, LogoutAllResponse(
+                        success = true,
+                        message = "Logged out from all devices",
+                        sessionsInvalidated = count
                     ))
                     return@post
                 }
             }
 
-            call.respond(HttpStatusCode.Unauthorized, mapOf("success" to false, "message" to "Not authenticated"))
+            call.respond(HttpStatusCode.Unauthorized, SimpleSuccessResponse(success = false, message = "Not authenticated"))
         }
 
         // Validate current session and get user info
@@ -502,10 +527,10 @@ fun Route.userRoutes() {
             if (user != null) {
                 val encumbranceInfo = com.ez2bg.anotherthread.game.EncumbranceService.getEncumbranceInfo(user)
                 if (!encumbranceInfo.canMove) {
-                    return@put call.respond(HttpStatusCode.BadRequest, mapOf(
-                        "error" to "You are over-encumbered and cannot move. Drop some items first.",
-                        "currentWeight" to encumbranceInfo.currentWeight,
-                        "maxCapacity" to encumbranceInfo.maxCapacity
+                    return@put call.respond(HttpStatusCode.BadRequest, EncumbranceErrorResponse(
+                        error = "You are over-encumbered and cannot move. Drop some items first.",
+                        currentWeight = encumbranceInfo.currentWeight,
+                        maxCapacity = encumbranceInfo.maxCapacity
                     ))
                 }
             }

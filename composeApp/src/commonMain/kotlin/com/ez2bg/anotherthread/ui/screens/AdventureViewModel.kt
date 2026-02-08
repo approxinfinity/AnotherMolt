@@ -325,6 +325,8 @@ class AdventureViewModel {
                     val currentGold = user.gold
                     val currentLocationId = user.currentLocationId
 
+                    println("[AdventureViewModel] User emission: isFirst=$isFirstEmission, hasPerformedSync=$hasPerformedInitialLocationSync, locationId=$currentLocationId")
+
                     // Ensure WebSocket is connected (may have failed at init if user was null)
                     if (isFirstEmission) {
                         connectCombatWebSocket()
@@ -360,6 +362,7 @@ class AdventureViewModel {
                     // in case the user's location drifts during a disconnect/reconnect cycle.
                     if (!hasPerformedInitialLocationSync && currentLocationId != null && !isFirstEmission) {
                         hasPerformedInitialLocationSync = true
+                        println("[AdventureViewModel] Performing initial location sync from server: $currentLocationId")
 
                         // Now we have fresh server data - sync to the server's location
                         val serverLocationId = currentLocationId // capture for lambda
@@ -367,9 +370,12 @@ class AdventureViewModel {
                             // Wait for repository to initialize
                             AdventureRepository.isInitialized.first { it }
                             val currentRepoLocationId = AdventureRepository.currentLocationId.value
+                            println("[AdventureViewModel] Server location sync check: server=$serverLocationId, repo=$currentRepoLocationId")
                             if (currentRepoLocationId != null && currentRepoLocationId != serverLocationId) {
-                                println("[AdventureViewModel] Server location sync: server=$serverLocationId, repo=$currentRepoLocationId - correcting to server location")
+                                println("[AdventureViewModel] Server location sync: correcting repo from $currentRepoLocationId to $serverLocationId")
                                 AdventureRepository.setCurrentLocation(serverLocationId)
+                            } else {
+                                println("[AdventureViewModel] Server location sync: no correction needed")
                             }
                         }
                     }
