@@ -19,17 +19,39 @@ class V002_AddDamageDiceColumns : Migration(
 ) {
     override fun up() {
         transaction {
-            // Add damage_dice column to ability table
-            exec("""
-                ALTER TABLE ability
-                ADD COLUMN damage_dice TEXT DEFAULT NULL
-            """.trimIndent())
+            // Check if columns already exist (Exposed's createMissingTablesAndColumns may have added them)
+            // SQLite PRAGMA table_info returns column info
+            val abilityColumns = exec("PRAGMA table_info(ability)") { rs ->
+                val columns = mutableListOf<String>()
+                while (rs.next()) {
+                    columns.add(rs.getString("name"))
+                }
+                columns
+            } ?: emptyList()
 
-            // Add damage_dice column to creature table
-            exec("""
-                ALTER TABLE creature
-                ADD COLUMN damage_dice TEXT DEFAULT NULL
-            """.trimIndent())
+            val creatureColumns = exec("PRAGMA table_info(creature)") { rs ->
+                val columns = mutableListOf<String>()
+                while (rs.next()) {
+                    columns.add(rs.getString("name"))
+                }
+                columns
+            } ?: emptyList()
+
+            // Add damage_dice column to ability table if it doesn't exist
+            if ("damage_dice" !in abilityColumns) {
+                exec("""
+                    ALTER TABLE ability
+                    ADD COLUMN damage_dice TEXT DEFAULT NULL
+                """.trimIndent())
+            }
+
+            // Add damage_dice column to creature table if it doesn't exist
+            if ("damage_dice" !in creatureColumns) {
+                exec("""
+                    ALTER TABLE creature
+                    ADD COLUMN damage_dice TEXT DEFAULT NULL
+                """.trimIndent())
+            }
         }
     }
 
