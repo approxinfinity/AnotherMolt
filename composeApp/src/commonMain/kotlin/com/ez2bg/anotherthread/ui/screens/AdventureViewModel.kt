@@ -321,6 +321,8 @@ class AdventureViewModel {
                     val userId = UserStateHolder.userId
                     if (firstLocationUpdate && userId != null && locationId != initialUserLocationId) {
                         ApiClient.updateUserLocation(userId, locationId)
+                        // Persist the fallback location locally so it survives page refresh
+                        UserStateHolder.updateLocationLocally(locationId)
                     }
                     firstLocationUpdate = false
                 }
@@ -477,11 +479,15 @@ class AdventureViewModel {
                 loadShopItems(exit.locationId)
             }
 
-            // Update user presence on server
+            // Update user presence on server and persist locally
             UserStateHolder.userId?.let { userId ->
                 println("[Navigation] Updating server location: userId=$userId, locationId=${exit.locationId}")
                 ApiClient.updateUserLocation(userId, exit.locationId)
-                    .onSuccess { println("[Navigation] Location update succeeded") }
+                    .onSuccess {
+                        println("[Navigation] Location update succeeded")
+                        // Persist location locally so it survives page refresh
+                        UserStateHolder.updateLocationLocally(exit.locationId)
+                    }
                     .onFailure { println("[Navigation] Location update failed: ${it.message}") }
             } ?: println("[Navigation] WARNING: userId is null, cannot update server location")
 
@@ -615,6 +621,8 @@ class AdventureViewModel {
 
                     // NOTE: Don't call updateUserLocation here - phasewalk already updated it on server
                     // Calling it again would trigger checkAggressiveCreatures and send duplicate combat messages
+                    // But we do need to persist the location locally so it survives page refresh
+                    UserStateHolder.updateLocationLocally(response.newLocationId)
 
                     // Load phasewalk destinations for the new location
                     loadPhasewalkDestinations()
@@ -936,6 +944,8 @@ class AdventureViewModel {
                 if (response.success && response.newLocationId != null) {
                     // Update location
                     AdventureRepository.setCurrentLocation(response.newLocationId)
+                    // Persist locally so it survives page refresh
+                    UserStateHolder.updateLocationLocally(response.newLocationId)
 
                     // Arrival message
                     CombatStateHolder.addEventLogEntry(

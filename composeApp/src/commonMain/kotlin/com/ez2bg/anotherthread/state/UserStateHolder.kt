@@ -262,6 +262,18 @@ object UserStateHolder {
     }
 
     /**
+     * Update location locally (for immediate persistence).
+     * Should be called when the user navigates to a new location.
+     * This ensures the location is saved to AuthStorage so it persists across page refreshes.
+     */
+    fun updateLocationLocally(locationId: String) {
+        val current = _currentUser.value ?: return
+        println("[UserStateHolder] updateLocationLocally: ${current.currentLocationId} -> $locationId")
+        _currentUser.value = current.copy(currentLocationId = locationId)
+        AuthStorage.saveUser(_currentUser.value!!)
+    }
+
+    /**
      * Get the current user ID (convenience method).
      */
     val userId: String?
