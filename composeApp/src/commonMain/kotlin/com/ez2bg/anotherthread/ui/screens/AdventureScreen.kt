@@ -97,6 +97,8 @@ import com.ez2bg.anotherthread.state.CombatStateHolder
 import com.ez2bg.anotherthread.ui.admin.getTerrainColor
 import com.ez2bg.anotherthread.ui.admin.UserProfileView
 import com.ez2bg.anotherthread.state.UserStateHolder
+import com.ez2bg.anotherthread.api.AsyncOperationRepository
+import com.ez2bg.anotherthread.storage.AuthStorage
 import kotlinx.coroutines.launch
 import kotlin.math.PI
 import kotlin.math.abs
@@ -192,6 +194,16 @@ fun AdventureScreen(
             while (true) {
                 kotlinx.coroutines.delay(3000) // Match server tick interval
                 UserStateHolder.refreshUser()
+            }
+        }
+    }
+
+    // Resume class generation polling when entering ghost mode if generation was in progress
+    LaunchedEffect(ghostMode, currentUser?.id) {
+        if (ghostMode && currentUser != null) {
+            val startedAt = currentUser.classGenerationStartedAt
+            if (startedAt != null && currentUser.characterClassId == null) {
+                AsyncOperationRepository.resumeClassGenerationPolling(currentUser.id, startedAt)
             }
         }
     }
@@ -859,15 +871,34 @@ fun AdventureScreen(
             }
         }
 
-        // Ghost mode "Create Character" button - centered floating at bottom of location view
-        if (ghostMode && onGhostModeBack != null) {
+        // Ghost mode floating indicator - show progress if generating, otherwise show Create Character button
+        if (ghostMode && onGhostModeBack != null && currentUser != null) {
+            // Check if class generation is in progress
+            val classGenerationStatus by AsyncOperationRepository.classGenerationStatus.collectAsState()
+            val isGenerating = classGenerationStatus.containsKey(currentUser.id)
+            val generationMessage = classGenerationStatus[currentUser.id]?.message ?: "Creating your character..."
+
+            // Listen for class generation completion
+            LaunchedEffect(currentUser.id) {
+                AsyncOperationRepository.classGenerationCompletions.collect { result ->
+                    if (result.userId == currentUser.id && result.success) {
+                        // Class generation completed - update user and trigger navigation
+                        result.user?.let { updatedUser ->
+                            AuthStorage.saveUser(updatedUser)
+                            UserStateHolder.updateUser(updatedUser)
+                            // The App.kt AuthEvent.UserUpdated listener will handle navigation to Main
+                        }
+                    }
+                }
+            }
+
             Surface(
-                onClick = onGhostModeBack,
+                onClick = if (isGenerating) { {} } else onGhostModeBack,
                 modifier = Modifier
                     .align(Alignment.BottomCenter)
                     .padding(bottom = 100.dp),  // Above event log
                 shape = RoundedCornerShape(24.dp),
-                color = Color(0xFF6366F1),  // Accent purple matching onboarding
+                color = if (isGenerating) Color(0xFF4A4A6A) else Color(0xFF6366F1),  // Dimmer when generating
                 shadowElevation = 8.dp
             ) {
                 Row(
@@ -875,17 +906,31 @@ fun AdventureScreen(
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
-                    Icon(
-                        imageVector = Icons.Filled.Person,
-                        contentDescription = null,
-                        tint = Color.White,
-                        modifier = Modifier.size(20.dp)
-                    )
-                    Text(
-                        text = "Create Character",
-                        color = Color.White,
-                        style = MaterialTheme.typography.titleMedium
-                    )
+                    if (isGenerating) {
+                        // Show spinning progress indicator
+                        CircularProgressIndicator(
+                            modifier = Modifier.size(20.dp),
+                            color = Color.White,
+                            strokeWidth = 2.dp
+                        )
+                        Text(
+                            text = generationMessage,
+                            color = Color.White.copy(alpha = 0.9f),
+                            style = MaterialTheme.typography.titleMedium
+                        )
+                    } else {
+                        Icon(
+                            imageVector = Icons.Filled.Person,
+                            contentDescription = null,
+                            tint = Color.White,
+                            modifier = Modifier.size(20.dp)
+                        )
+                        Text(
+                            text = "Create Character",
+                            color = Color.White,
+                            style = MaterialTheme.typography.titleMedium
+                        )
+                    }
                 }
             }
         }
