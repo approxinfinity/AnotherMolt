@@ -71,6 +71,10 @@ When the user asks to restart or check servers, ALWAYS:
 
 3. **Migration leftovers**: When moving code to new files, ensure old definitions are removed. Look for comments like "(MOVED TO ...)" that indicate incomplete migrations.
 
+## UX Principles
+
+**Never require browser refresh as a solution.** When users re-authenticate or perform any action, data should refresh automatically. Telling users to clear localStorage or refresh the browser is never an acceptable fix - always solve data staleness issues in code.
+
 ## Future Musings / Known Issues
 
 For known issues, future feature ideas, and design decisions still to be made, see [MUSINGS.md](MUSINGS.md).

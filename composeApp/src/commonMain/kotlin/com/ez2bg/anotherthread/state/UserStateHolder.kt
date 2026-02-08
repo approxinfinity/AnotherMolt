@@ -73,6 +73,7 @@ object UserStateHolder {
     fun initialize() {
         val savedUser = AuthStorage.getUser()
         if (savedUser != null) {
+            println("[UserStateHolder] Loaded cached user: ${savedUser.name}, items: ${savedUser.itemIds.size}")
             _currentUser.value = savedUser
             ApiClient.setUserContext(savedUser.id, savedUser.name)
 
@@ -94,7 +95,8 @@ object UserStateHolder {
 
         result.onSuccess { response ->
             if (response.success && response.user != null) {
-                // Update user data
+                // Update user data from server (fresh data with all items)
+                println("[UserStateHolder] Session valid - refreshing user data. Items: ${response.user.itemIds.size}")
                 _currentUser.value = response.user
                 AuthStorage.saveUser(response.user)
 
