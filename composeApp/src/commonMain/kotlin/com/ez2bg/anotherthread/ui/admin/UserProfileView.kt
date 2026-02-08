@@ -348,6 +348,10 @@ fun UserProfileView(
             }
         }
 
+        // Character Stats Section
+        Spacer(modifier = Modifier.height(16.dp))
+        CharacterStatsSection(user = user)
+
         // Generation checkboxes and save button - only show for editable users WITHOUT a class assigned
         if (canEdit && characterClassId == null) {
             // Checkboxes row
@@ -1309,5 +1313,147 @@ private fun InventoryItemCard(
                 }
             }
         }
+    }
+}
+
+@Composable
+private fun CharacterStatsSection(user: UserDto) {
+    Column(
+        modifier = Modifier.fillMaxWidth(),
+        verticalArrangement = Arrangement.spacedBy(12.dp)
+    ) {
+        // Level and XP row
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween
+        ) {
+            StatBadge(label = "Level", value = user.level.toString())
+            StatBadge(label = "XP", value = "${user.experience}")
+            StatBadge(label = "Gold", value = user.gold.toString())
+        }
+
+        // HP/Mana/Stamina bars
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            ResourceBar(
+                label = "HP",
+                current = user.currentHp,
+                max = user.maxHp,
+                color = androidx.compose.ui.graphics.Color(0xFFE57373),
+                modifier = Modifier.weight(1f)
+            )
+            ResourceBar(
+                label = "MP",
+                current = user.currentMana,
+                max = user.maxMana,
+                color = androidx.compose.ui.graphics.Color(0xFF64B5F6),
+                modifier = Modifier.weight(1f)
+            )
+            ResourceBar(
+                label = "SP",
+                current = user.currentStamina,
+                max = user.maxStamina,
+                color = androidx.compose.ui.graphics.Color(0xFF81C784),
+                modifier = Modifier.weight(1f)
+            )
+        }
+
+        // D&D Attributes in 2 rows
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceEvenly
+        ) {
+            AttributeStat(abbrev = "STR", value = user.strength)
+            AttributeStat(abbrev = "DEX", value = user.dexterity)
+            AttributeStat(abbrev = "CON", value = user.constitution)
+        }
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceEvenly
+        ) {
+            AttributeStat(abbrev = "INT", value = user.intelligence)
+            AttributeStat(abbrev = "WIS", value = user.wisdom)
+            AttributeStat(abbrev = "CHA", value = user.charisma)
+        }
+    }
+}
+
+@Composable
+private fun StatBadge(label: String, value: String) {
+    Column(
+        horizontalAlignment = Alignment.CenterHorizontally
+    ) {
+        Text(
+            text = label,
+            style = MaterialTheme.typography.labelSmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
+        Text(
+            text = value,
+            style = MaterialTheme.typography.titleMedium
+        )
+    }
+}
+
+@Composable
+private fun ResourceBar(
+    label: String,
+    current: Int,
+    max: Int,
+    color: androidx.compose.ui.graphics.Color,
+    modifier: Modifier = Modifier
+) {
+    Column(
+        modifier = modifier,
+        horizontalAlignment = Alignment.CenterHorizontally
+    ) {
+        Text(
+            text = "$current/$max",
+            style = MaterialTheme.typography.labelSmall
+        )
+        LinearProgressIndicator(
+            progress = { if (max > 0) current.toFloat() / max else 0f },
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(6.dp),
+            color = color,
+            trackColor = color.copy(alpha = 0.2f)
+        )
+        Text(
+            text = label,
+            style = MaterialTheme.typography.labelSmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
+    }
+}
+
+@Composable
+private fun AttributeStat(abbrev: String, value: Int) {
+    val modifier = (value - 10) / 2
+    val modifierText = if (modifier >= 0) "+$modifier" else "$modifier"
+
+    Column(
+        horizontalAlignment = Alignment.CenterHorizontally,
+        modifier = Modifier.width(60.dp)
+    ) {
+        Text(
+            text = abbrev,
+            style = MaterialTheme.typography.labelSmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
+        Text(
+            text = value.toString(),
+            style = MaterialTheme.typography.titleMedium
+        )
+        Text(
+            text = "($modifierText)",
+            style = MaterialTheme.typography.labelSmall,
+            color = if (modifier >= 0)
+                androidx.compose.ui.graphics.Color(0xFF81C784)
+            else
+                androidx.compose.ui.graphics.Color(0xFFE57373)
+        )
     }
 }
