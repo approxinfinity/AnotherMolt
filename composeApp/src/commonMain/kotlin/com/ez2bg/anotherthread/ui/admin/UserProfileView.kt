@@ -627,40 +627,44 @@ fun UserProfileView(
             }
         }
 
-        // Class abilities section - show when class is assigned with abilities
+        // Unified Abilities section - show when class is assigned with abilities
+        // Combines: ability list, action bar selection, and icon customization
         if (assignedClass != null && classAbilities.isNotEmpty()) {
             Spacer(modifier = Modifier.height(8.dp))
-            Card(modifier = Modifier.fillMaxWidth()) {
-                Column(modifier = Modifier.padding(16.dp)) {
-                    // Header with expand/collapse
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .clickable { abilitiesExpanded = !abilitiesExpanded },
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Text(
-                            text = if (assignedClass!!.isSpellcaster) "Spells (${classAbilities.size})" else "Abilities (${classAbilities.size})",
-                            style = MaterialTheme.typography.titleMedium
-                        )
-                        Icon(
-                            imageVector = if (abilitiesExpanded) Icons.Filled.ExpandLess else Icons.Filled.ExpandMore,
-                            contentDescription = if (abilitiesExpanded) "Collapse" else "Expand"
-                        )
+            UnifiedAbilitiesSection(
+                user = user,
+                assignedClass = assignedClass!!,
+                classAbilities = classAbilities,
+                learnedAbilityIds = user.learnedAbilityIds,
+                visibleAbilityIds = user.visibleAbilityIds,
+                iconMappings = iconMappings,
+                isOwnProfile = isOwnProfile,
+                onVisibleAbilitiesChanged = { newIds ->
+                    scope.launch {
+                        ApiClient.updateVisibleAbilities(user.id, newIds).onSuccess { updatedUser ->
+                            UserStateHolder.updateUser(updatedUser)
+                            onUserUpdated(updatedUser)
+                            message = "Action bar updated!"
+                        }.onFailure { error ->
+                            message = "Error: ${error.message}"
+                        }
                     }
-
-                    // Abilities list (when expanded)
-                    if (abilitiesExpanded) {
-                        Spacer(modifier = Modifier.height(12.dp))
-                        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                            classAbilities.forEach { ability ->
-                                AbilityDisplayCard(ability)
-                            }
+                },
+                onIconMappingChanged = { abilityId, iconName ->
+                    scope.launch {
+                        ApiClient.setIconMapping(user.id, abilityId, iconName).onSuccess {
+                            iconMappings = iconMappings + (abilityId to iconName)
+                        }
+                    }
+                },
+                onIconMappingReset = { abilityId ->
+                    scope.launch {
+                        ApiClient.deleteIconMapping(user.id, abilityId).onSuccess {
+                            iconMappings = iconMappings - abilityId
                         }
                     }
                 }
-            }
+            )
         }
 
         // Inventory section - show for own profile when items exist
@@ -795,178 +799,6 @@ fun UserProfileView(
             }
         }
 
-        // Configure Action Mappings section - only for own profile with abilities
-        if (isOwnProfile && classAbilities.isNotEmpty()) {
-            Spacer(modifier = Modifier.height(8.dp))
-            Card(modifier = Modifier.fillMaxWidth()) {
-                Column(modifier = Modifier.padding(16.dp)) {
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .clickable { iconMappingsExpanded = !iconMappingsExpanded },
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Text(
-                            text = "Configure Action Icons",
-                            style = MaterialTheme.typography.titleMedium
-                        )
-                        Icon(
-                            imageVector = if (iconMappingsExpanded) Icons.Filled.ExpandLess else Icons.Filled.ExpandMore,
-                            contentDescription = if (iconMappingsExpanded) "Collapse" else "Expand"
-                        )
-                    }
-
-                    if (iconMappingsExpanded) {
-                        Spacer(modifier = Modifier.height(12.dp))
-                        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                            classAbilities.filter { it.abilityType != "passive" }.forEach { ability ->
-                                val currentIconName = iconMappings[ability.id]
-                                val currentIcon = AbilityIconMapper.getIcon(ability, currentIconName)
-                                val typeColor = AbilityIconMapper.getAbilityTypeColor(ability.abilityType)
-
-                                Card(
-                                    modifier = Modifier.fillMaxWidth(),
-                                    colors = CardDefaults.cardColors(
-                                        containerColor = MaterialTheme.colorScheme.surfaceVariant
-                                    )
-                                ) {
-                                    Row(
-                                        modifier = Modifier
-                                            .fillMaxWidth()
-                                            .padding(12.dp),
-                                        verticalAlignment = Alignment.CenterVertically,
-                                        horizontalArrangement = Arrangement.spacedBy(12.dp)
-                                    ) {
-                                        // Current icon
-                                        Surface(
-                                            shape = CircleShape,
-                                            color = typeColor.copy(alpha = 0.2f),
-                                            modifier = Modifier.size(40.dp)
-                                        ) {
-                                            Box(contentAlignment = Alignment.Center) {
-                                                Icon(
-                                                    imageVector = currentIcon,
-                                                    contentDescription = ability.name,
-                                                    tint = typeColor,
-                                                    modifier = Modifier.size(24.dp)
-                                                )
-                                            }
-                                        }
-
-                                        // Ability name
-                                        Text(
-                                            text = ability.name,
-                                            style = MaterialTheme.typography.bodyMedium,
-                                            modifier = Modifier.weight(1f)
-                                        )
-
-                                        // Edit button
-                                        IconButton(
-                                            onClick = {
-                                                iconPickerAbilityId = if (iconPickerAbilityId == ability.id) null else ability.id
-                                            }
-                                        ) {
-                                            Icon(Icons.Filled.Edit, "Change icon")
-                                        }
-                                    }
-
-                                    // Icon picker grid (expanded inline)
-                                    if (iconPickerAbilityId == ability.id) {
-                                        val availableIcons = AbilityIconMapper.getAllAvailableIcons()
-                                        Column(
-                                            modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp)
-                                        ) {
-                                            // Grid of icons
-                                            val chunked = availableIcons.chunked(7)
-                                            chunked.forEach { row ->
-                                                Row(
-                                                    horizontalArrangement = Arrangement.spacedBy(4.dp),
-                                                    modifier = Modifier.padding(vertical = 2.dp)
-                                                ) {
-                                                    row.forEach { (name, icon) ->
-                                                        val isSelected = currentIconName == name
-                                                        Surface(
-                                                            shape = CircleShape,
-                                                            color = if (isSelected) typeColor.copy(alpha = 0.3f)
-                                                                    else MaterialTheme.colorScheme.surface,
-                                                            modifier = Modifier
-                                                                .size(36.dp)
-                                                                .then(
-                                                                    if (isSelected) Modifier.border(2.dp, typeColor, CircleShape)
-                                                                    else Modifier
-                                                                )
-                                                                .clickable {
-                                                                    scope.launch {
-                                                                        ApiClient.setIconMapping(user.id, ability.id, name)
-                                                                            .onSuccess {
-                                                                                iconMappings = iconMappings + (ability.id to name)
-                                                                                iconPickerAbilityId = null
-                                                                            }
-                                                                    }
-                                                                }
-                                                        ) {
-                                                            Box(contentAlignment = Alignment.Center) {
-                                                                Icon(
-                                                                    imageVector = icon,
-                                                                    contentDescription = name,
-                                                                    tint = MaterialTheme.colorScheme.onSurface,
-                                                                    modifier = Modifier.size(20.dp)
-                                                                )
-                                                            }
-                                                        }
-                                                    }
-                                                }
-                                            }
-
-                                            // Reset to default button
-                                            if (currentIconName != null) {
-                                                TextButton(
-                                                    onClick = {
-                                                        scope.launch {
-                                                            ApiClient.deleteIconMapping(user.id, ability.id)
-                                                                .onSuccess {
-                                                                    iconMappings = iconMappings - ability.id
-                                                                    iconPickerAbilityId = null
-                                                                }
-                                                        }
-                                                    },
-                                                    modifier = Modifier.padding(top = 4.dp)
-                                                ) {
-                                                    Text("Reset to Default")
-                                                }
-                                            }
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-        }
-
-        // Action Bar Abilities section - only for own profile with class abilities
-        if (isOwnProfile && classAbilities.isNotEmpty()) {
-            Spacer(modifier = Modifier.height(8.dp))
-            ActionBarAbilitiesSection(
-                user = user,
-                classAbilities = classAbilities,
-                learnedAbilityIds = user.learnedAbilityIds,
-                visibleAbilityIds = user.visibleAbilityIds,
-                onVisibleAbilitiesChanged = { newIds ->
-                    scope.launch {
-                        ApiClient.updateVisibleAbilities(user.id, newIds).onSuccess { updatedUser ->
-                            UserStateHolder.updateUser(updatedUser)
-                            onUserUpdated(updatedUser)
-                            message = "Action bar updated!"
-                        }.onFailure { error ->
-                            message = "Error: ${error.message}"
-                        }
-                    }
-                }
-            )
-        }
 
         // Encounters section - only for own profile with encounters
         if (isOwnProfile && encounters.isNotEmpty()) {
@@ -1638,22 +1470,27 @@ private fun EncumbranceBar(
 }
 
 /**
- * Action Bar Abilities section - allows users to select up to 10 abilities to show on action bar.
- * Empty selection = show all abilities.
+ * Unified Abilities section - consolidates ability listing, action bar selection, and icon customization.
+ * Shows all abilities with their descriptions, checkboxes for action bar visibility, and icon picker.
  */
 @Composable
-private fun ActionBarAbilitiesSection(
+private fun UnifiedAbilitiesSection(
     user: UserDto,
+    assignedClass: CharacterClassDto,
     classAbilities: List<AbilityDto>,
     learnedAbilityIds: List<String>,
     visibleAbilityIds: List<String>,
-    onVisibleAbilitiesChanged: (List<String>) -> Unit
+    iconMappings: Map<String, String>,
+    isOwnProfile: Boolean,
+    onVisibleAbilitiesChanged: (List<String>) -> Unit,
+    onIconMappingChanged: (abilityId: String, iconName: String) -> Unit,
+    onIconMappingReset: (abilityId: String) -> Unit
 ) {
     var expanded by remember { mutableStateOf(false) }
     var localVisibleIds by remember(visibleAbilityIds) { mutableStateOf(visibleAbilityIds.toMutableList()) }
     var allAbilities by remember { mutableStateOf<List<AbilityDto>>(emptyList()) }
     var isLoading by remember { mutableStateOf(false) }
-    val scope = rememberCoroutineScope()
+    var iconPickerAbilityId by remember { mutableStateOf<String?>(null) }
 
     // Load all abilities (class + learned)
     LaunchedEffect(classAbilities, learnedAbilityIds) {
@@ -1662,16 +1499,18 @@ private fun ActionBarAbilitiesSection(
         for (abilityId in learnedAbilityIds) {
             ApiClient.getAbility(abilityId).getOrNull()?.let { learnedAbilities.add(it) }
         }
-        // Combine and deduplicate, filter out passives
+        // Combine and deduplicate
         allAbilities = (classAbilities + learnedAbilities)
             .distinctBy { it.id }
-            .filter { it.abilityType != "passive" }
             .sortedBy { it.name.lowercase() }
         isLoading = false
     }
 
     val maxAbilities = 10
     val selectedCount = localVisibleIds.size
+    val activeAbilities = allAbilities.filter { it.abilityType != "passive" }
+    val passiveAbilities = allAbilities.filter { it.abilityType == "passive" }
+    val hasUnsavedChanges = localVisibleIds.toSet() != visibleAbilityIds.toSet()
 
     Card(modifier = Modifier.fillMaxWidth()) {
         Column(modifier = Modifier.padding(16.dp)) {
@@ -1682,16 +1521,26 @@ private fun ActionBarAbilitiesSection(
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                Column {
-                    Text(
-                        text = "Action Bar Abilities",
-                        style = MaterialTheme.typography.titleMedium
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    Icon(
+                        imageVector = Icons.Filled.Star,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.primary
                     )
-                    Text(
-                        text = if (selectedCount == 0) "Showing all abilities" else "$selectedCount/$maxAbilities selected",
-                        style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
+                    Column {
+                        Text(
+                            text = "Abilities",
+                            style = MaterialTheme.typography.titleMedium
+                        )
+                        Text(
+                            text = "${allAbilities.size} abilities • ${if (selectedCount == 0) "all on action bar" else "$selectedCount/$maxAbilities on action bar"}",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
                 }
                 Icon(
                     imageVector = if (expanded) Icons.Filled.ExpandLess else Icons.Filled.ExpandMore,
@@ -1710,36 +1559,35 @@ private fun ActionBarAbilitiesSection(
                         CircularProgressIndicator(modifier = Modifier.size(24.dp))
                     }
                 } else {
-                    Text(
-                        text = "Select up to 10 abilities to show on your action bar. Leave all unchecked to show all abilities.",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        modifier = Modifier.padding(bottom = 8.dp)
-                    )
+                    // Help text for action bar selection (only for own profile)
+                    if (isOwnProfile && activeAbilities.isNotEmpty()) {
+                        Text(
+                            text = "Check abilities to show on action bar (max 10). Unchecked = show all.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.padding(bottom = 8.dp)
+                        )
+                    }
 
-                    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                        allAbilities.forEach { ability ->
-                            val isSelected = ability.id in localVisibleIds
-                            val canSelect = selectedCount < maxAbilities || isSelected
+                    // Active abilities section
+                    if (activeAbilities.isNotEmpty()) {
+                        Text(
+                            text = "Active Abilities",
+                            style = MaterialTheme.typography.labelMedium,
+                            color = MaterialTheme.colorScheme.primary,
+                            modifier = Modifier.padding(bottom = 8.dp)
+                        )
 
-                            Row(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .clickable(enabled = canSelect) {
-                                        localVisibleIds = if (isSelected) {
-                                            localVisibleIds.toMutableList().apply { remove(ability.id) }
-                                        } else {
-                                            localVisibleIds.toMutableList().apply { add(ability.id) }
-                                        }
-                                    }
-                                    .padding(vertical = 4.dp),
-                                verticalAlignment = Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.spacedBy(8.dp)
-                            ) {
-                                Checkbox(
-                                    checked = isSelected,
-                                    onCheckedChange = { checked ->
-                                        localVisibleIds = if (checked) {
+                        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                            activeAbilities.forEach { ability ->
+                                UnifiedAbilityCard(
+                                    ability = ability,
+                                    isSelected = ability.id in localVisibleIds,
+                                    canSelect = selectedCount < maxAbilities || ability.id in localVisibleIds,
+                                    customIcon = iconMappings[ability.id],
+                                    isOwnProfile = isOwnProfile,
+                                    onToggleSelection = { selected ->
+                                        localVisibleIds = if (selected) {
                                             if (selectedCount < maxAbilities) {
                                                 localVisibleIds.toMutableList().apply { add(ability.id) }
                                             } else {
@@ -1749,56 +1597,321 @@ private fun ActionBarAbilitiesSection(
                                             localVisibleIds.toMutableList().apply { remove(ability.id) }
                                         }
                                     },
-                                    enabled = canSelect
+                                    onEditIcon = { iconPickerAbilityId = ability.id }
                                 )
+                            }
+                        }
+                    }
 
-                                Column(modifier = Modifier.weight(1f)) {
-                                    Text(
-                                        text = ability.name,
-                                        style = MaterialTheme.typography.bodyMedium,
-                                        color = if (canSelect) MaterialTheme.colorScheme.onSurface
-                                                else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f)
+                    // Passive abilities section
+                    if (passiveAbilities.isNotEmpty()) {
+                        if (activeAbilities.isNotEmpty()) {
+                            Spacer(modifier = Modifier.height(16.dp))
+                        }
+                        Text(
+                            text = "Passive Abilities",
+                            style = MaterialTheme.typography.labelMedium,
+                            color = MaterialTheme.colorScheme.secondary,
+                            modifier = Modifier.padding(bottom = 8.dp)
+                        )
+
+                        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                            passiveAbilities.forEach { ability ->
+                                // Passive abilities don't have action bar selection or icon customization
+                                Card(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    colors = CardDefaults.cardColors(
+                                        containerColor = MaterialTheme.colorScheme.surfaceVariant
                                     )
-                                    Text(
-                                        text = ability.abilityType.replaceFirstChar { it.uppercase() } +
-                                               if (ability.powerCost > 0) " - Cost: ${ability.powerCost}" else "",
-                                        style = MaterialTheme.typography.labelSmall,
-                                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                                    )
+                                ) {
+                                    Column(modifier = Modifier.padding(12.dp)) {
+                                        Row(
+                                            modifier = Modifier.fillMaxWidth(),
+                                            horizontalArrangement = Arrangement.SpaceBetween,
+                                            verticalAlignment = Alignment.CenterVertically
+                                        ) {
+                                            Text(
+                                                text = ability.name,
+                                                style = MaterialTheme.typography.titleSmall
+                                            )
+                                            Surface(
+                                                shape = RoundedCornerShape(4.dp),
+                                                color = MaterialTheme.colorScheme.secondaryContainer
+                                            ) {
+                                                Text(
+                                                    text = "Passive",
+                                                    style = MaterialTheme.typography.labelSmall,
+                                                    modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                                                )
+                                            }
+                                        }
+                                        Spacer(modifier = Modifier.height(4.dp))
+                                        Text(
+                                            text = ability.description,
+                                            style = MaterialTheme.typography.bodySmall,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                                        )
+                                    }
                                 }
                             }
                         }
                     }
 
-                    Spacer(modifier = Modifier.height(12.dp))
+                    // Save/Clear buttons for action bar changes (only for own profile)
+                    if (isOwnProfile && activeAbilities.isNotEmpty()) {
+                        Spacer(modifier = Modifier.height(12.dp))
 
-                    // Buttons row
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(8.dp)
-                    ) {
-                        // Clear all button
-                        OutlinedButton(
-                            onClick = { localVisibleIds = mutableListOf() },
-                            modifier = Modifier.weight(1f),
-                            enabled = localVisibleIds.isNotEmpty()
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
                         ) {
-                            Text("Clear All")
-                        }
+                            OutlinedButton(
+                                onClick = { localVisibleIds = mutableListOf() },
+                                modifier = Modifier.weight(1f),
+                                enabled = localVisibleIds.isNotEmpty()
+                            ) {
+                                Text("Show All")
+                            }
 
-                        // Save button
-                        Button(
-                            onClick = { onVisibleAbilitiesChanged(localVisibleIds) },
-                            modifier = Modifier.weight(1f),
-                            enabled = localVisibleIds != visibleAbilityIds
-                        ) {
-                            Text("Save")
+                            Button(
+                                onClick = { onVisibleAbilitiesChanged(localVisibleIds) },
+                                modifier = Modifier.weight(1f),
+                                enabled = hasUnsavedChanges
+                            ) {
+                                Text("Save Action Bar")
+                            }
                         }
                     }
                 }
             }
         }
     }
+
+    // Icon picker dialog
+    iconPickerAbilityId?.let { abilityId ->
+        val ability = allAbilities.find { it.id == abilityId }
+        if (ability != null) {
+            IconPickerDialog(
+                ability = ability,
+                currentIcon = iconMappings[abilityId],
+                onIconSelected = { iconName ->
+                    onIconMappingChanged(abilityId, iconName)
+                    iconPickerAbilityId = null
+                },
+                onReset = {
+                    onIconMappingReset(abilityId)
+                    iconPickerAbilityId = null
+                },
+                onDismiss = { iconPickerAbilityId = null }
+            )
+        }
+    }
+}
+
+/**
+ * Individual ability card with action bar checkbox and icon customization.
+ */
+@Composable
+private fun UnifiedAbilityCard(
+    ability: AbilityDto,
+    isSelected: Boolean,
+    canSelect: Boolean,
+    customIcon: String?,
+    isOwnProfile: Boolean,
+    onToggleSelection: (Boolean) -> Unit,
+    onEditIcon: () -> Unit
+) {
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        colors = CardDefaults.cardColors(
+            containerColor = if (isSelected)
+                MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.3f)
+            else
+                MaterialTheme.colorScheme.surfaceVariant
+        )
+    ) {
+        Column(modifier = Modifier.padding(12.dp)) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                // Action bar checkbox (only for own profile)
+                if (isOwnProfile) {
+                    Checkbox(
+                        checked = isSelected,
+                        onCheckedChange = onToggleSelection,
+                        enabled = canSelect
+                    )
+                }
+
+                // Icon preview with edit button
+                Box(
+                    modifier = Modifier
+                        .size(40.dp)
+                        .background(
+                            MaterialTheme.colorScheme.surface,
+                            RoundedCornerShape(8.dp)
+                        )
+                        .border(
+                            1.dp,
+                            MaterialTheme.colorScheme.outline.copy(alpha = 0.3f),
+                            RoundedCornerShape(8.dp)
+                        )
+                        .then(
+                            if (isOwnProfile) Modifier.clickable(onClick = onEditIcon)
+                            else Modifier
+                        ),
+                    contentAlignment = Alignment.Center
+                ) {
+                    val icon = AbilityIconMapper.getIcon(ability, customIcon)
+                    Icon(
+                        imageVector = icon,
+                        contentDescription = ability.name,
+                        modifier = Modifier.size(24.dp),
+                        tint = MaterialTheme.colorScheme.primary
+                    )
+                    // Show edit indicator for own profile
+                    if (isOwnProfile) {
+                        Icon(
+                            imageVector = Icons.Filled.Edit,
+                            contentDescription = "Change icon",
+                            modifier = Modifier
+                                .size(12.dp)
+                                .align(Alignment.BottomEnd),
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f)
+                        )
+                    }
+                }
+
+                Column(modifier = Modifier.weight(1f)) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(
+                            text = ability.name,
+                            style = MaterialTheme.typography.titleSmall
+                        )
+                        // Cost badge
+                        Surface(
+                            shape = RoundedCornerShape(4.dp),
+                            color = MaterialTheme.colorScheme.primaryContainer
+                        ) {
+                            Text(
+                                text = "Cost: ${ability.powerCost}",
+                                style = MaterialTheme.typography.labelSmall,
+                                modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                            )
+                        }
+                    }
+                    // Type indicator
+                    Text(
+                        text = ability.abilityType.replaceFirstChar { it.uppercase() },
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+            }
+
+            Spacer(modifier = Modifier.height(8.dp))
+
+            Text(
+                text = ability.description,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
+    }
+}
+
+/**
+ * Icon picker dialog for selecting ability icons.
+ */
+@Composable
+private fun IconPickerDialog(
+    ability: AbilityDto,
+    currentIcon: String?,
+    onIconSelected: (String) -> Unit,
+    onReset: () -> Unit,
+    onDismiss: () -> Unit
+) {
+    val availableIcons = AbilityIconMapper.getAllAvailableIcons()
+    // Default icon is determined by the ability itself when no custom icon is set
+    val defaultIcon = AbilityIconMapper.getIcon(ability, null)
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Choose Icon for ${ability.name}") },
+        text = {
+            Column {
+                Text(
+                    text = "Select an icon to represent this ability on your action bar.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(bottom = 12.dp)
+                )
+
+                // Icon grid - show available icons in a flow layout
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    availableIcons.chunked(5).forEach { row ->
+                        Row(
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            row.forEach { (iconName, icon) ->
+                                val isCurrentlySelected = if (currentIcon != null) {
+                                    iconName == currentIcon
+                                } else {
+                                    icon == defaultIcon
+                                }
+
+                                Surface(
+                                    modifier = Modifier
+                                        .size(48.dp)
+                                        .clickable { onIconSelected(iconName) },
+                                    shape = RoundedCornerShape(8.dp),
+                                    color = if (isCurrentlySelected)
+                                        MaterialTheme.colorScheme.primaryContainer
+                                    else
+                                        MaterialTheme.colorScheme.surfaceVariant,
+                                    border = if (isCurrentlySelected)
+                                        androidx.compose.foundation.BorderStroke(2.dp, MaterialTheme.colorScheme.primary)
+                                    else
+                                        null
+                                ) {
+                                    Box(contentAlignment = Alignment.Center) {
+                                        Icon(
+                                            imageVector = icon,
+                                            contentDescription = iconName,
+                                            modifier = Modifier.size(24.dp),
+                                            tint = if (isCurrentlySelected)
+                                                MaterialTheme.colorScheme.primary
+                                            else
+                                                MaterialTheme.colorScheme.onSurfaceVariant
+                                        )
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = onDismiss) {
+                Text("Done")
+            }
+        },
+        dismissButton = {
+            if (currentIcon != null) {
+                TextButton(onClick = onReset) {
+                    Text("Reset to Default")
+                }
+            }
+        }
+    )
 }
 
 /**
