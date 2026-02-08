@@ -137,6 +137,7 @@ data class CombatSession(
     val creatures: List<Combatant> get() = combatants.filter { it.type == CombatantType.CREATURE }
     val alivePlayers: List<Combatant> get() = players.filter { it.isAlive }
     val aliveCreatures: List<Combatant> get() = creatures.filter { it.isAlive }
+    val downedPlayers: List<Combatant> get() = players.filter { it.isDowned }
 }
 
 // ============================================================================

@@ -1612,6 +1612,12 @@ object CombatService {
                         healerName = null
                     ))
                 }
+
+                // Player died from bleeding (was downed, now dead)
+                if (wasDowned && !isAlive) {
+                    log.info("${combatant.name} died from bleeding at HP=$hp (death threshold=${combatant.deathThreshold})")
+                    // Death will be handled by checkEndConditions when alivePlayers becomes empty
+                }
             }
 
             combatant.copy(
@@ -1863,12 +1869,13 @@ object CombatService {
     private fun checkEndConditions(session: CombatSession): CombatSession {
         val alivePlayers = session.alivePlayers
         val aliveCreatures = session.aliveCreatures
+        val downedPlayers = session.downedPlayers
 
         // Debug: log all player states
         for (player in session.players) {
             log.info("CHECK_END: Player ${player.name}: HP=${player.currentHp}, isAlive=${player.isAlive}, isDowned=${player.isDowned}, deathThreshold=${player.deathThreshold}")
         }
-        log.info("CHECK_END: alivePlayers.size=${alivePlayers.size}, aliveCreatures.size=${aliveCreatures.size}, session.creatures.size=${session.creatures.size}")
+        log.info("CHECK_END: alivePlayers.size=${alivePlayers.size}, downedPlayers.size=${downedPlayers.size}, aliveCreatures.size=${aliveCreatures.size}, session.creatures.size=${session.creatures.size}")
 
         val (state, endReason) = when {
             // No players left at all - combat ends
@@ -1877,7 +1884,11 @@ object CombatService {
             // All players dead/fled
             alivePlayers.isEmpty() ->
                 CombatState.ENDED to CombatEndReason.ALL_PLAYERS_DEFEATED
-            // All creatures dead (and there were creatures to fight)
+            // All creatures dead BUT there are downed players bleeding out - keep combat running
+            // so the bleeding tick continues until they either die or are stabilized
+            aliveCreatures.isEmpty() && session.creatures.isNotEmpty() && downedPlayers.isNotEmpty() ->
+                session.state to session.endReason  // Keep combat running
+            // All creatures dead (and there were creatures to fight) and no downed players
             aliveCreatures.isEmpty() && session.creatures.isNotEmpty() ->
                 CombatState.ENDED to CombatEndReason.ALL_ENEMIES_DEFEATED
             // No creatures at all - nothing to fight, end combat
