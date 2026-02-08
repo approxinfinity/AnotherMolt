@@ -1052,6 +1052,28 @@ class AdventureViewModel(
         showSnackbar("${ability.name} -> ${creature.name}")
     }
 
+    /**
+     * Initiate a basic attack against a creature.
+     * Uses the universal basic attack ability.
+     */
+    fun initiateBasicAttack(creatureId: String) {
+        val creature = uiState.value.allCreatures.find { it.id == creatureId }
+        val creatureName = creature?.name ?: "enemy"
+
+        if (!CombatStateHolder.isInCombat) {
+            // Start combat by joining with this creature
+            CombatStateHolder.joinCombat(listOf(creatureId))
+            showSnackbar("Engaging $creatureName!")
+        }
+
+        // Use the basic attack ability
+        CombatStateHolder.useAbility(BASIC_ATTACK_ID, creatureId)
+    }
+
+    companion object {
+        const val BASIC_ATTACK_ID = "universal-basic-attack"
+    }
+
     // =========================================================================
     // SNACKBAR
     // =========================================================================

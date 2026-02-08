@@ -22,7 +22,9 @@ import androidx.compose.material.icons.filled.ArrowUpward
 import androidx.compose.material.icons.filled.AutoStories
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Dangerous
+import androidx.compose.material.icons.filled.Gavel
 import androidx.compose.material.icons.filled.MeetingRoom
+import androidx.compose.material.icons.filled.SportsMartialArts
 import androidx.compose.material.icons.filled.NorthEast
 import androidx.compose.material.icons.filled.NorthWest
 import androidx.compose.material.icons.filled.Person
@@ -151,6 +153,9 @@ fun AdventureScreen(
 
     // Character sheet overlay state
     var showCharacterSheet by remember { mutableStateOf(false) }
+
+    // Basic attack target selection modal state
+    var showBasicAttackTargetModal by remember { mutableStateOf(false) }
 
     // Custom icon mappings
     var iconMappings by remember { mutableStateOf<Map<String, String>>(emptyMap()) }
@@ -513,14 +518,28 @@ fun AdventureScreen(
                         )
                     }
 
-                    // Abilities row
-                    if (uiState.playerAbilities.isNotEmpty() && !ghostMode) {
+                    // Abilities row - show even without class abilities (for basic attack)
+                    if (!ghostMode) {
+                        // Check if user has a weapon equipped
+                        val hasWeaponEquipped = displayUser?.equippedItemIds?.any { equippedId ->
+                            uiState.allItems.find { it.id == equippedId }?.equipmentType == "weapon"
+                        } ?: false
+
                         AbilityRow(
                             abilities = uiState.playerAbilities,
                             cooldowns = cooldowns,
                             queuedAbilityId = queuedAbilityId,
                             currentMana = playerCombatant?.currentMana ?: displayUser?.currentMana ?: 0,
                             currentStamina = playerCombatant?.currentStamina ?: displayUser?.currentStamina ?: 0,
+                            hasWeaponEquipped = hasWeaponEquipped,
+                            onBasicAttackClick = {
+                                // If only one creature, attack immediately. Otherwise show target modal.
+                                if (uiState.creaturesHere.size == 1) {
+                                    viewModel.initiateBasicAttack(uiState.creaturesHere.first().id)
+                                } else if (uiState.creaturesHere.isNotEmpty()) {
+                                    showBasicAttackTargetModal = true
+                                }
+                            },
                             onAbilityClick = { viewModel.handleAbilityClick(it) },
                             onSpellbookToggle = { showSpellbook = !showSpellbook },
                             showSpellbook = showSpellbook,
@@ -735,6 +754,18 @@ fun AdventureScreen(
                     onAreaSelected = { viewModel.selectRiftToOpen(it) },
                     onRiftSelected = { viewModel.selectRiftToSeal(it) },
                     onCancel = { viewModel.dismissRiftSelection() }
+                )
+            }
+
+            // === BASIC ATTACK TARGET SELECTION MODAL ===
+            if (showBasicAttackTargetModal && uiState.creaturesHere.isNotEmpty()) {
+                BasicAttackTargetModal(
+                    creatures = uiState.creaturesHere,
+                    onTargetSelected = { creatureId ->
+                        showBasicAttackTargetModal = false
+                        viewModel.initiateBasicAttack(creatureId)
+                    },
+                    onDismiss = { showBasicAttackTargetModal = false }
                 )
             }
 
@@ -1962,6 +1993,8 @@ private fun AbilityRow(
     queuedAbilityId: String?,
     currentMana: Int = 0,
     currentStamina: Int = 0,
+    hasWeaponEquipped: Boolean = false,
+    onBasicAttackClick: () -> Unit = {},
     onAbilityClick: (AbilityDto) -> Unit,
     onSpellbookToggle: () -> Unit = {},
     showSpellbook: Boolean = false,
@@ -2001,6 +2034,13 @@ private fun AbilityRow(
             horizontalArrangement = Arrangement.spacedBy(6.dp),
             verticalArrangement = Arrangement.spacedBy(4.dp)
         ) {
+            // Basic Attack button - first in the row
+            BasicAttackButton(
+                hasWeapon = hasWeaponEquipped,
+                onClick = onBasicAttackClick,
+                size = iconSize
+            )
+
             displayAbilities.forEach { ability ->
                 val canAfford = (ability.manaCost <= currentMana) && (ability.staminaCost <= currentStamina)
                 AbilityIconButton(
@@ -2035,6 +2075,116 @@ private fun AbilityRow(
                 tint = Color.White,
                 modifier = Modifier.size(16.dp)
             )
+        }
+    }
+}
+
+/**
+ * Basic attack button - shows sword if weapon equipped, fist if not.
+ */
+@Composable
+private fun BasicAttackButton(
+    hasWeapon: Boolean,
+    onClick: () -> Unit,
+    size: Dp = 32.dp
+) {
+    val attackColor = Color(0xFFE53935) // Red for attack
+
+    Box(
+        modifier = Modifier
+            .size(size)
+            .clip(CircleShape)
+            .background(attackColor.copy(alpha = 0.9f))
+            .clickable(onClick = onClick),
+        contentAlignment = Alignment.Center
+    ) {
+        Icon(
+            imageVector = if (hasWeapon) Icons.Filled.Gavel else Icons.Filled.SportsMartialArts,
+            contentDescription = if (hasWeapon) "Attack with weapon" else "Attack with fists",
+            tint = Color.White,
+            modifier = Modifier.size(size * 0.6f)
+        )
+    }
+}
+
+/**
+ * Modal overlay for selecting a target for basic attack when multiple creatures are present.
+ */
+@Composable
+private fun BasicAttackTargetModal(
+    creatures: List<CreatureDto>,
+    onTargetSelected: (String) -> Unit,
+    onDismiss: () -> Unit
+) {
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(Color.Black.copy(alpha = 0.6f))
+            .clickable(onClick = onDismiss),
+        contentAlignment = Alignment.Center
+    ) {
+        Card(
+            modifier = Modifier
+                .widthIn(max = 300.dp)
+                .clickable(enabled = false) { /* Prevent click-through */ },
+            shape = RoundedCornerShape(16.dp),
+            colors = CardDefaults.cardColors(
+                containerColor = Color(0xFF2A2A3E)
+            )
+        ) {
+            Column(
+                modifier = Modifier.padding(16.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                Text(
+                    text = "Select Target",
+                    style = MaterialTheme.typography.titleMedium,
+                    color = Color.White
+                )
+
+                Spacer(modifier = Modifier.height(8.dp))
+
+                // List of creatures to attack
+                creatures.forEach { creature ->
+                    Surface(
+                        onClick = { onTargetSelected(creature.id) },
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(8.dp),
+                        color = Color(0xFF3A3A4E)
+                    ) {
+                        Row(
+                            modifier = Modifier.padding(12.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(12.dp)
+                        ) {
+                            Icon(
+                                imageVector = Icons.Filled.Gavel,
+                                contentDescription = null,
+                                tint = Color(0xFFE53935),
+                                modifier = Modifier.size(24.dp)
+                            )
+                            Text(
+                                text = creature.name,
+                                style = MaterialTheme.typography.bodyLarge,
+                                color = Color.White
+                            )
+                        }
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(8.dp))
+
+                // Nevermind button
+                OutlinedButton(
+                    onClick = onDismiss,
+                    modifier = Modifier.fillMaxWidth(),
+                    colors = ButtonDefaults.outlinedButtonColors(
+                        contentColor = Color.White
+                    )
+                ) {
+                    Text("Nevermind")
+                }
+            }
         }
     }
 }
