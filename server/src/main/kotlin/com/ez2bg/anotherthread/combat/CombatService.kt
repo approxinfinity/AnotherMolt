@@ -29,6 +29,9 @@ object DeathConfig {
 
     /** If true, gold is lost on death. If false, player keeps all gold. */
     val goldLostOnDeath: Boolean get() = GameConfig.death.dropGoldOnDeath
+
+    /** Percentage of gold lost on death (0.0-1.0). Default: 10% */
+    val goldDropPercent: Double get() = GameConfig.death.goldDropPercent
 }
 
 /**
@@ -2006,10 +2009,11 @@ object CombatService {
 
             // Only lose gold if config flag is enabled
             if (DeathConfig.goldLostOnDeath) {
-                goldLost = user.gold
+                // Use configured percentage (default 10%)
+                goldLost = (user.gold * DeathConfig.goldDropPercent).toInt()
                 if (goldLost > 0) {
                     UserRepository.addGold(playerCombatant.id, -goldLost)
-                    log.info("Player ${user.name} lost $goldLost gold")
+                    log.info("Player ${user.name} lost $goldLost gold (${(DeathConfig.goldDropPercent * 100).toInt()}% of ${user.gold})")
                 }
             }
 
@@ -2083,10 +2087,11 @@ object CombatService {
 
         // Only lose gold if config flag is enabled
         if (DeathConfig.goldLostOnDeath) {
-            goldLost = user.gold
+            // Use configured percentage (default 10%)
+            goldLost = (user.gold * DeathConfig.goldDropPercent).toInt()
             if (goldLost > 0) {
                 UserRepository.addGold(userId, -goldLost)
-                log.info("Player ${user.name} lost $goldLost gold")
+                log.info("Player ${user.name} lost $goldLost gold (${(DeathConfig.goldDropPercent * 100).toInt()}% of ${user.gold})")
             }
         }
 

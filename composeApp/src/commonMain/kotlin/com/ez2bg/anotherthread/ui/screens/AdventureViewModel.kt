@@ -266,10 +266,9 @@ class AdventureViewModel {
     init {
         initializeRepository()
         connectCombatWebSocket()
-        loadPlayerAbilities()
+        loadPlayerAbilities()  // This handles phasewalk destinations after abilities are loaded
         loadAbilitiesMap()
         loadPlayerGold()
-        loadPhasewalkDestinations()
         // Load shop items if starting at a shop location
         val initialLocationId = UserStateHolder.currentLocationId
         if (initialLocationId in shopLocationIds) {
