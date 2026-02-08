@@ -403,7 +403,9 @@ class AdventureViewModel {
         // 1. Load all world data from the server
         // 2. Subscribe to WebSocket events for real-time updates
         // 3. Fall back to (0,0) origin if location is invalid
-        AdventureRepository.initialize(UserStateHolder.currentLocationId)
+        val cachedLocationId = UserStateHolder.currentLocationId
+        println("[AdventureViewModel] initializeRepository() - UserStateHolder.currentLocationId=$cachedLocationId")
+        AdventureRepository.initialize(cachedLocationId)
 
         // Sync with AdventureStateHolder for event log filtering
         // Also update server if location was changed due to fallback

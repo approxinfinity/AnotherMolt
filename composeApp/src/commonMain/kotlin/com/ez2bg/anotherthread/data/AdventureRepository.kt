@@ -132,7 +132,11 @@ object AdventureRepository {
      * This should be called once when entering adventure mode.
      */
     fun initialize(initialLocationId: String? = null) {
-        if (_isInitialized.value) return
+        println("[AdventureRepository] initialize() called with initialLocationId=$initialLocationId")
+        if (_isInitialized.value) {
+            println("[AdventureRepository] Already initialized, skipping")
+            return
+        }
 
         subscribeToWebSocketEvents()
 
