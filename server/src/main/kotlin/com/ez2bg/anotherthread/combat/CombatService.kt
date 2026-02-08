@@ -819,6 +819,17 @@ object CombatService {
                             sourceId = actor.id,
                             sourceName = actor.name
                         ))
+
+                        // Check if this killed a creature - handle death immediately
+                        if (currentTarget.type == CombatantType.CREATURE &&
+                            !updatedTarget.isAlive &&
+                            actor.type == CombatantType.PLAYER) {
+                            // Count remaining alive enemies
+                            val remainingEnemies = currentCombatants.count {
+                                it.type == CombatantType.CREATURE && it.isAlive && it.id != currentTarget.id
+                            }
+                            handleCreatureDeathMidCombat(session, updatedTarget, actor, remainingEnemies)
+                        }
                     }
                 }
 
@@ -1874,9 +1885,9 @@ object CombatService {
     }
 
     /**
-     * Handle combat ending - cleanup, rewards, loot distribution.
-     * XP is calculated individually per player based on their level vs creature CR.
-     * Loot is distributed to all surviving players.
+     * Handle combat ending - cleanup and broadcast end message.
+     * XP and loot are now awarded immediately when each creature dies (handleCreatureDeathMidCombat),
+     * so this method just handles cleanup and broadcasting the end signal.
      */
     private suspend fun handleCombatEnd(session: CombatSession) {
         val victors = when (session.endReason) {
@@ -1896,132 +1907,24 @@ object CombatService {
             handlePlayerDeath(session)
         }
 
-        // Get defeated creatures for XP and loot calculation
-        val defeatedCreatures = if (session.endReason == CombatEndReason.ALL_ENEMIES_DEFEATED) {
-            session.creatures.mapNotNull { CreatureRepository.findById(it.id) }
-        } else emptyList()
-
-        // Remove dead creatures from the location and schedule respawns
-        if (defeatedCreatures.isNotEmpty()) {
-            val location = LocationRepository.findById(session.locationId)
-            if (location != null) {
-                val deadCreatureIds = defeatedCreatures.map { it.id }.toSet()
-                val updatedCreatureIds = location.creatureIds.filter { it !in deadCreatureIds }
-                val updatedLocation = location.copy(creatureIds = updatedCreatureIds)
-                LocationRepository.update(updatedLocation)
-                log.info("Removed ${deadCreatureIds.size} dead creature(s) from ${location.name}: ${defeatedCreatures.map { it.name }}")
-
-                // Record deaths for respawn system
-                val currentTick = GameTickService.getCurrentTick()
-                for (creature in defeatedCreatures) {
-                    CreatureRespawnService.recordCreatureDeath(session.locationId, creature.id, currentTick)
-                }
-            }
-        }
-
-        // Calculate total loot from all defeated creatures
-        var totalGold = 0
-        val droppedItems = mutableListOf<Item>()
-
-        for (creature in defeatedCreatures) {
-            // Roll gold drop
-            if (creature.maxGoldDrop > creature.minGoldDrop) {
-                totalGold += kotlin.random.Random.nextInt(creature.minGoldDrop, creature.maxGoldDrop + 1)
-            } else {
-                totalGold += creature.minGoldDrop
-            }
-
-            // Roll loot table
-            creature.lootTableId?.let { lootTableId ->
-                val lootTable = LootTableRepository.findById(lootTableId)
-                lootTable?.entries?.forEach { entry ->
-                    if (kotlin.random.Random.nextFloat() < entry.chance) {
-                        val qty = if (entry.maxQty > entry.minQty) {
-                            kotlin.random.Random.nextInt(entry.minQty, entry.maxQty + 1)
-                        } else entry.minQty
-
-                        repeat(qty) {
-                            ItemRepository.findById(entry.itemId)?.let { item ->
-                                droppedItems.add(item)
-                            }
-                        }
-                    }
-                }
-            }
-        }
-
-        val lootResult = LootResult(
-            goldEarned = totalGold,
-            itemIds = droppedItems.map { it.id },
-            itemNames = droppedItems.map { it.name }
-        )
-
-        // Award experience and loot to surviving players
-        val xpResults = mutableMapOf<String, Int>()
+        // Clear combat state for all surviving players
         val survivingPlayers = session.alivePlayers
-
-        // Split gold among surviving players (rounded up)
-        val goldPerPlayer = if (survivingPlayers.isNotEmpty()) {
-            (totalGold + survivingPlayers.size - 1) / survivingPlayers.size
-        } else 0
-
         for (playerCombatant in survivingPlayers) {
-            val user = UserRepository.findById(playerCombatant.id) ?: continue
-
-            // Calculate XP from each creature individually based on player level
-            val totalXp = defeatedCreatures.sumOf { creature ->
-                ExperienceService.calculateCreatureXp(user.level, creature)
-            }
-
-            if (totalXp > 0) {
-                val result = ExperienceService.awardXp(playerCombatant.id, totalXp)
-                xpResults[playerCombatant.id] = result.xpAwarded
-
-                if (result.leveledUp) {
-                    log.info("Player ${user.name} leveled up to ${result.newLevel}!")
-                }
-            }
-
-            // Award gold
-            if (goldPerPlayer > 0) {
-                UserRepository.addGold(playerCombatant.id, goldPerPlayer)
-                log.info("Player ${user.name} received $goldPerPlayer gold")
-            }
-
-            // Award items (all players get copies of dropped items for now)
-            if (droppedItems.isNotEmpty()) {
-                UserRepository.addItems(playerCombatant.id, droppedItems.map { it.id })
-                log.info("Player ${user.name} received ${droppedItems.size} item(s)")
-            }
-
-            // Clear combat state
             UserRepository.updateCombatState(playerCombatant.id, playerCombatant.currentHp, null)
             playerSessions.remove(playerCombatant.id)
         }
 
-        // For broadcast, use average XP (or first player's XP if solo)
-        val avgXp = if (xpResults.isNotEmpty()) xpResults.values.average().toInt() else 0
+        // Note: XP, loot, and creature removal are now handled per-creature in handleCreatureDeathMidCombat
+        // The CombatEndedMessage signals combat end without duplicating rewards
 
-        // Mark defeated creatures in FeatureState for each surviving player
-        // This is used for chest visibility (guardian must be defeated)
-        if (session.endReason == CombatEndReason.ALL_ENEMIES_DEFEATED) {
-            for (playerCombatant in survivingPlayers) {
-                for (creature in defeatedCreatures) {
-                    val defeatedKey = "defeated_${creature.id}"
-                    FeatureStateRepository.setState(playerCombatant.id, defeatedKey, "true")
-                    log.debug("Marked ${creature.name} as defeated for player ${playerCombatant.id}")
-                }
-            }
-        }
-
-        // Broadcast combat end with loot
+        // Broadcast combat end (loot/XP were already awarded per-creature)
         broadcastToSession(session.id, CombatEndedMessage(
             sessionId = session.id,
             reason = session.endReason!!,
             victors = victors,
             defeated = defeated,
-            loot = lootResult,
-            experienceGained = avgXp
+            loot = LootResult(),  // Empty - loot already awarded per creature
+            experienceGained = 0   // Already awarded per creature
         ))
 
         // Log combat end event
@@ -2033,15 +1936,11 @@ object CombatService {
             eventData = mapOf(
                 "endReason" to session.endReason!!.name,
                 "victors" to victors,
-                "defeated" to defeated,
-                "goldDropped" to totalGold,
-                "itemsDropped" to droppedItems.map { it.name },
-                "xpAwarded" to avgXp
+                "defeated" to defeated
             )
         )
 
-        log.info("Combat session ${session.id} ended: ${session.endReason}. " +
-            "Loot distributed: ${totalGold}g, ${droppedItems.size} items")
+        log.info("Combat session ${session.id} ended: ${session.endReason}")
     }
 
     /**
@@ -2468,5 +2367,116 @@ object CombatService {
         val recoveredFromDowned = wasDowned && !isDowned && newHp > 0
 
         return Pair(updated, recoveredFromDowned)
+    }
+
+    /**
+     * Handle immediate creature death during combat.
+     * Awards XP and loot to the killer, broadcasts the defeat, and records for respawn.
+     * This is called mid-round when a creature's HP reaches 0.
+     */
+    private suspend fun handleCreatureDeathMidCombat(
+        session: CombatSession,
+        creature: Combatant,
+        killer: Combatant,
+        remainingEnemies: Int
+    ) {
+        // Get creature data for XP/loot calculation
+        val creatureData = CreatureRepository.findById(creature.id)
+        if (creatureData == null) {
+            log.warn("Cannot find creature ${creature.id} for death processing")
+            return
+        }
+
+        // Get killer player data
+        val killerUser = UserRepository.findById(killer.id)
+        if (killerUser == null) {
+            log.warn("Cannot find killer ${killer.id} for XP award")
+            return
+        }
+
+        // Calculate and award XP
+        val xpGained = ExperienceService.calculateCreatureXp(killerUser.level, creatureData)
+        if (xpGained > 0) {
+            val xpResult = ExperienceService.awardXp(killer.id, xpGained)
+            if (xpResult.leveledUp) {
+                log.info("Player ${killerUser.name} leveled up to ${xpResult.newLevel}!")
+            }
+        }
+
+        // Roll loot
+        var goldDropped = 0
+        val droppedItems = mutableListOf<Item>()
+
+        // Roll gold drop
+        if (creatureData.maxGoldDrop > creatureData.minGoldDrop) {
+            goldDropped = kotlin.random.Random.nextInt(creatureData.minGoldDrop, creatureData.maxGoldDrop + 1)
+        } else {
+            goldDropped = creatureData.minGoldDrop
+        }
+
+        // Award gold to killer
+        if (goldDropped > 0) {
+            UserRepository.addGold(killer.id, goldDropped)
+        }
+
+        // Roll loot table
+        creatureData.lootTableId?.let { lootTableId ->
+            val lootTable = LootTableRepository.findById(lootTableId)
+            lootTable?.entries?.forEach { entry ->
+                if (kotlin.random.Random.nextFloat() < entry.chance) {
+                    val qty = if (entry.maxQty > entry.minQty) {
+                        kotlin.random.Random.nextInt(entry.minQty, entry.maxQty + 1)
+                    } else entry.minQty
+
+                    repeat(qty) {
+                        ItemRepository.findById(entry.itemId)?.let { item ->
+                            droppedItems.add(item)
+                        }
+                    }
+                }
+            }
+        }
+
+        // Award items to killer
+        if (droppedItems.isNotEmpty()) {
+            UserRepository.addItems(killer.id, droppedItems.map { it.id })
+        }
+
+        val lootResult = LootResult(
+            goldEarned = goldDropped,
+            itemIds = droppedItems.map { it.id },
+            itemNames = droppedItems.map { it.name }
+        )
+
+        // Record death for respawn system
+        val currentTick = GameTickService.getCurrentTick()
+        CreatureRespawnService.recordCreatureDeath(session.locationId, creature.id, currentTick)
+
+        // Remove creature from location immediately
+        val location = LocationRepository.findById(session.locationId)
+        if (location != null) {
+            val updatedCreatureIds = location.creatureIds.filter { it != creature.id }
+            val updatedLocation = location.copy(creatureIds = updatedCreatureIds)
+            LocationRepository.update(updatedLocation)
+            log.info("Removed dead creature ${creature.name} from ${location.name}")
+        }
+
+        // Mark creature as defeated for chest visibility
+        val defeatedKey = "defeated_${creature.id}"
+        FeatureStateRepository.setState(killer.id, defeatedKey, "true")
+
+        // Broadcast creature defeated message
+        broadcastToSession(session.id, CreatureDefeatedMessage(
+            sessionId = session.id,
+            creatureId = creature.id,
+            creatureName = creature.name,
+            killerPlayerId = killer.id,
+            killerPlayerName = killer.name,
+            experienceGained = xpGained,
+            loot = lootResult,
+            remainingEnemies = remainingEnemies
+        ))
+
+        log.info("${creature.name} defeated by ${killer.name}! XP: $xpGained, Gold: $goldDropped, Items: ${droppedItems.size}, Remaining enemies: $remainingEnemies")
     }
 }

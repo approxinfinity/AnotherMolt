@@ -299,19 +299,12 @@ object CombatStateHolder {
                 }
             }
 
-            is GlobalEvent.CombatEnded -> {
+            is GlobalEvent.CreatureDefeated -> {
                 val response = event.response
+                // Announce creature death immediately
+                addEventLogEntry("${response.creatureName} has been defeated!", EventLogType.COMBAT_END)
 
-                // Log defeated enemies using names from combatants list (before we clear it)
-                val currentCombatants = _combatants.value
-                val defeatedNames = response.defeated.mapNotNull { id ->
-                    currentCombatants.find { it.id == id }?.name
-                }
-                defeatedNames.forEach { name ->
-                    addEventLogEntry("$name has been defeated!", EventLogType.COMBAT_END)
-                }
-
-                // Log XP and loot if any
+                // Log XP and loot for this creature
                 if (response.experienceGained > 0) {
                     addEventLogEntry("Gained ${response.experienceGained} XP", EventLogType.INFO)
                 }
@@ -322,10 +315,26 @@ object CombatStateHolder {
                     addEventLogEntry("Looted: $itemName", EventLogType.LOOT)
                 }
 
+                // Remove dead creature from combatants list
+                _combatants.value = _combatants.value.filter { it.id != response.creatureId }
+
+                // Announce remaining enemies
+                if (response.remainingEnemies > 0) {
+                    addEventLogEntry("${response.remainingEnemies} enemy(s) remaining!", EventLogType.INFO)
+                }
+
+                // Refresh user data to update XP/gold/items
+                scope.launch {
+                    UserStateHolder.refreshUser()
+                }
+            }
+
+            is GlobalEvent.CombatEnded -> {
+                // Note: Individual creature defeats with XP/loot are now handled by CreatureDefeated events
                 addEventLogEntry("Combat ended!", EventLogType.COMBAT_END)
                 clearCombatState()
 
-                // Refresh user data and location to sync HP, XP, gold, items, and remove dead creatures
+                // Refresh user data and location to sync any remaining state and remove dead creatures
                 scope.launch {
                     UserStateHolder.refreshUser()
                     // Use AdventureRepository.refresh() to rebuild creature locations from server

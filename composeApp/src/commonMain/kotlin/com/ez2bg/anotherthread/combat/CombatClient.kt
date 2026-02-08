@@ -35,6 +35,7 @@ sealed class GlobalEvent {
     data class AbilityResolved(val result: AbilityResolvedResponse) : GlobalEvent()
     data class StatusEffectChanged(val effect: StatusEffectResponse) : GlobalEvent()
     data class RoundEnded(val sessionId: String, val roundNumber: Int, val combatants: List<CombatantDto>, val logEntries: List<CombatLogEntryDto>) : GlobalEvent()
+    data class CreatureDefeated(val response: CreatureDefeatedResponse) : GlobalEvent()
     data class CombatEnded(val response: CombatEndedResponse) : GlobalEvent()
     data class FleeResult(val response: FleeResultResponse) : GlobalEvent()
     data class AbilityQueued(val abilityId: String, val targetId: String?) : GlobalEvent()
@@ -357,6 +358,11 @@ class CombatClient(
                     lastKnownCombatants = response.combatants
                     println("$TAG: Parsed RoundEndMessage - round ${response.roundNumber}")
                     _events.emit(GlobalEvent.RoundEnded(response.sessionId, response.roundNumber, response.combatants, response.logEntries))
+                }
+
+                text.contains("CreatureDefeatedMessage") || (text.contains("\"remainingEnemies\"") && text.contains("\"killerPlayerId\"")) -> {
+                    val response = json.decodeFromString<CreatureDefeatedResponse>(extractPayload(text))
+                    _events.emit(GlobalEvent.CreatureDefeated(response))
                 }
 
                 text.contains("CombatEndedMessage") || (text.contains("\"victors\"") && text.contains("\"reason\"")) -> {

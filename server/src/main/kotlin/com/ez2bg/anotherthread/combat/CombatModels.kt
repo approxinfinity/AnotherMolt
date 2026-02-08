@@ -364,6 +364,22 @@ data class CombatEndedMessage(
 ) : ServerCombatMessage()
 
 /**
+ * Sent when a creature is defeated mid-combat.
+ * Announces XP and loot immediately so player sees per-kill rewards.
+ */
+@Serializable
+data class CreatureDefeatedMessage(
+    val sessionId: String,
+    val creatureId: String,
+    val creatureName: String,
+    val killerPlayerId: String,
+    val killerPlayerName: String,
+    val experienceGained: Int,
+    val loot: LootResult = LootResult(),
+    val remainingEnemies: Int         // How many enemies left in combat
+) : ServerCombatMessage()
+
+/**
  * Sent when a player successfully flees.
  */
 @Serializable

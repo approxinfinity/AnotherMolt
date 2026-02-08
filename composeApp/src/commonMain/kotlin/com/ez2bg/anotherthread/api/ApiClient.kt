@@ -2013,6 +2013,18 @@ data class CombatEndedResponse(
 )
 
 @Serializable
+data class CreatureDefeatedResponse(
+    val sessionId: String,
+    val creatureId: String,
+    val creatureName: String,
+    val killerPlayerId: String,
+    val killerPlayerName: String,
+    val experienceGained: Int,
+    val loot: LootResultDto = LootResultDto(),
+    val remainingEnemies: Int
+)
+
+@Serializable
 data class FleeResultResponse(
     val sessionId: String,
     val combatantId: String,
