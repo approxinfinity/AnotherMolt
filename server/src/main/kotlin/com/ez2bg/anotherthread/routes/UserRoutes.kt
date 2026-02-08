@@ -264,6 +264,9 @@ fun Route.authRoutes() {
                 return@get
             }
 
+            // Update last active timestamp (session validation = activity)
+            UserRepository.updateLastActiveAt(user.id)
+
             // Refresh the cookie expiry
             call.response.cookies.append(
                 Cookie(
@@ -505,6 +508,9 @@ fun Route.userRoutes() {
             val userName = user?.name ?: "Unknown"
 
             if (UserRepository.updateCurrentLocation(id, request.locationId)) {
+                // Update last active timestamp so player shows in active users list
+                UserRepository.updateLastActiveAt(id)
+
                 // Remove player from any active combat when they change location
                 CombatService.removePlayerFromCombat(id)
 
