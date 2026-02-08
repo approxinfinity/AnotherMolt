@@ -205,10 +205,15 @@ object AdventureRepository {
 
     /**
      * Refresh all data from the server.
+     * Only shows loading indicator on initial load, not during background refreshes.
      */
     fun refresh() {
         scope.launch {
-            _isLoading.value = true
+            // Only show loading indicator if we don't have data yet
+            val isInitialLoad = !_isInitialized.value
+            if (isInitialLoad) {
+                _isLoading.value = true
+            }
 
             ApiClient.getLocations().onSuccess { locationList ->
                 _locations.value = locationList
@@ -235,7 +240,10 @@ object AdventureRepository {
                 _creatureStates.value = states
             }
 
-            _isLoading.value = false
+            if (isInitialLoad) {
+                _isLoading.value = false
+                _isInitialized.value = true
+            }
         }
     }
 
