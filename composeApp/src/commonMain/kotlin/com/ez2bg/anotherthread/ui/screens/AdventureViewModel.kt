@@ -266,48 +266,70 @@ class AdventureViewModel {
     init {
         initializeRepository()
         connectCombatWebSocket()
-        loadPlayerAbilities()  // This handles phasewalk destinations after abilities are loaded
         loadAbilitiesMap()
-        loadPlayerGold()
         // Load shop items if starting at a shop location
         val initialLocationId = UserStateHolder.currentLocationId
         if (initialLocationId in shopLocationIds) {
             loadShopItemsFromApi(initialLocationId ?: "")
         }
-        // Listen for user state changes to reload abilities when user data is refreshed
-        // This handles the case where session validation updates learnedAbilityIds after initial load
+        // Listen for user state changes - this handles ALL user-dependent state reactively
+        // including: gold, abilities (class/learned/equipped/visible), character class
         listenForUserUpdates()
     }
 
     /**
-     * Listen for changes to the current user and reload abilities when learnedAbilityIds or visibleAbilityIds changes.
-     * Also syncs gold to the local state when it changes.
-     * This ensures abilities are reloaded after session validation refreshes user data.
+     * Listen for changes to the current user and sync all relevant state.
+     * Tracks: gold, learnedAbilityIds, visibleAbilityIds, equippedItemIds, characterClassId
+     * This ensures all user-dependent UI stays in sync after any user data changes.
+     *
+     * On first emission: loads initial state
+     * On subsequent emissions: only reloads what changed
      */
     private fun listenForUserUpdates() {
         scope.launch {
             var previousLearnedAbilityIds: List<String>? = null
             var previousVisibleAbilityIds: List<String>? = null
+            var previousEquippedItemIds: List<String>? = null
+            var previousCharacterClassId: String? = null
             var previousGold: Int? = null
+            var isFirstEmission = true
+
             UserStateHolder.currentUser.collect { user ->
                 if (user != null) {
                     val currentLearnedIds = user.learnedAbilityIds
                     val currentVisibleIds = user.visibleAbilityIds
+                    val currentEquippedIds = user.equippedItemIds
+                    val currentClassId = user.characterClassId
                     val currentGold = user.gold
-                    // Reload abilities if learned abilities or visible abilities changed (and we had previous values)
-                    val learnedChanged = previousLearnedAbilityIds != null && previousLearnedAbilityIds != currentLearnedIds
-                    val visibleChanged = previousVisibleAbilityIds != null && previousVisibleAbilityIds != currentVisibleIds
-                    if (learnedChanged || visibleChanged) {
-                        println("[AdventureViewModel] User abilities changed (learned=$learnedChanged, visible=$visibleChanged), reloading abilities")
+
+                    // On first emission, load everything
+                    // On subsequent emissions, only reload if relevant properties changed
+                    val learnedChanged = previousLearnedAbilityIds != currentLearnedIds
+                    val visibleChanged = previousVisibleAbilityIds != currentVisibleIds
+                    val equippedChanged = previousEquippedItemIds != currentEquippedIds
+                    val classChanged = previousCharacterClassId != currentClassId
+                    val goldChanged = previousGold != currentGold
+
+                    // Reload abilities if first load or any ability-related property changed
+                    if (isFirstEmission || learnedChanged || visibleChanged || equippedChanged || classChanged) {
+                        if (!isFirstEmission) {
+                            println("[AdventureViewModel] User abilities changed (learned=$learnedChanged, visible=$visibleChanged, equipped=$equippedChanged, class=$classChanged), reloading abilities")
+                        }
                         loadPlayerAbilities()
                     }
-                    // Sync gold to local state whenever it changes
-                    if (previousGold != currentGold) {
+
+                    // Sync gold to local state on first load or when it changes
+                    if (isFirstEmission || goldChanged) {
                         _localState.update { it.copy(playerGold = currentGold) }
                     }
+
+                    // Update previous values for next comparison
                     previousLearnedAbilityIds = currentLearnedIds
                     previousVisibleAbilityIds = currentVisibleIds
+                    previousEquippedItemIds = currentEquippedIds
+                    previousCharacterClassId = currentClassId
                     previousGold = currentGold
+                    isFirstEmission = false
                 }
             }
         }
@@ -460,18 +482,6 @@ class AdventureViewModel {
         scope.launch {
             ApiClient.getAbilities().onSuccess { abilities ->
                 _localState.update { it.copy(allAbilitiesMap = abilities.associateBy { it.id }) }
-            }
-        }
-    }
-
-    private fun loadPlayerGold() {
-        val user = currentUser ?: return
-        _localState.update { it.copy(playerGold = user.gold) }
-        scope.launch {
-            ApiClient.getUser(user.id).onSuccess { freshUser ->
-                if (freshUser != null) {
-                    _localState.update { it.copy(playerGold = freshUser.gold) }
-                }
             }
         }
     }
