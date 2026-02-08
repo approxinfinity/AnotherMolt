@@ -17,7 +17,9 @@ enum class LocationEventType {
     EXIT_ADDED,            // New exit added to location
     EXIT_REMOVED,          // Exit removed from location
     ITEM_ADDED,            // Item added to location
-    ITEM_REMOVED           // Item removed from location
+    ITEM_REMOVED,          // Item removed from location
+    CREATURE_REMOVED,      // Creature killed/left location
+    CREATURE_ADDED         // Creature spawned/entered location
 }
 
 /**
@@ -35,7 +37,10 @@ data class LocationMutationEvent(
     val exitAdded: Exit? = null,
     val exitRemoved: Exit? = null,
     val itemIdAdded: String? = null,
-    val itemIdRemoved: String? = null
+    val itemIdRemoved: String? = null,
+    val creatureIdRemoved: String? = null,
+    val creatureIdAdded: String? = null,
+    val creatureName: String? = null      // For display purposes
 )
 
 /**
@@ -161,6 +166,42 @@ object LocationEventService {
             gridX = location.gridX,
             gridY = location.gridY,
             locationName = location.name
+        )
+        broadcastToLocationObservers(location.id, event)
+    }
+
+    /**
+     * Broadcast that a creature was removed from a location (killed or left).
+     */
+    suspend fun broadcastCreatureRemoved(location: Location, creatureId: String, creatureName: String) {
+        val event = LocationMutationEvent(
+            type = "LOCATION_MUTATION",
+            eventType = LocationEventType.CREATURE_REMOVED,
+            locationId = location.id,
+            areaId = location.areaId,
+            gridX = location.gridX,
+            gridY = location.gridY,
+            locationName = location.name,
+            creatureIdRemoved = creatureId,
+            creatureName = creatureName
+        )
+        broadcastToLocationObservers(location.id, event)
+    }
+
+    /**
+     * Broadcast that a creature was added to a location (spawned or entered).
+     */
+    suspend fun broadcastCreatureAdded(location: Location, creatureId: String, creatureName: String) {
+        val event = LocationMutationEvent(
+            type = "LOCATION_MUTATION",
+            eventType = LocationEventType.CREATURE_ADDED,
+            locationId = location.id,
+            areaId = location.areaId,
+            gridX = location.gridX,
+            gridY = location.gridY,
+            locationName = location.name,
+            creatureIdAdded = creatureId,
+            creatureName = creatureName
         )
         broadcastToLocationObservers(location.id, event)
     }

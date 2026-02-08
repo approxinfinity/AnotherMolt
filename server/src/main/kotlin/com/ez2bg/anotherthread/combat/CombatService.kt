@@ -1,6 +1,7 @@
 package com.ez2bg.anotherthread.combat
 
 import com.ez2bg.anotherthread.database.*
+import com.ez2bg.anotherthread.events.LocationEventService
 import com.ez2bg.anotherthread.experience.ExperienceService
 import com.ez2bg.anotherthread.game.CreatureRespawnService
 import com.ez2bg.anotherthread.game.GameTickService
@@ -2472,6 +2473,9 @@ object CombatService {
             val updatedLocation = location.copy(creatureIds = updatedCreatureIds)
             LocationRepository.update(updatedLocation)
             log.info("Removed dead creature ${creature.name} from ${location.name}")
+
+            // Broadcast creature removal to all players at this location
+            LocationEventService.broadcastCreatureRemoved(updatedLocation, creature.id, creature.name)
         }
 
         // Mark creature as defeated for chest visibility

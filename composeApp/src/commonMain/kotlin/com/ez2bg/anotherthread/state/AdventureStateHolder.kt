@@ -331,6 +331,25 @@ object AdventureStateHolder {
                     )
                 } ?: currentLoc
             }
+            LocationEventType.CREATURE_REMOVED -> {
+                event.creatureIdRemoved?.let { creatureId ->
+                    currentLoc.copy(
+                        creatureIds = currentLoc.creatureIds.filter { it != creatureId }
+                    )
+                } ?: currentLoc
+            }
+            LocationEventType.CREATURE_ADDED -> {
+                event.creatureIdAdded?.let { creatureId ->
+                    // Only add if not already present
+                    if (creatureId !in currentLoc.creatureIds) {
+                        currentLoc.copy(
+                            creatureIds = currentLoc.creatureIds + creatureId
+                        )
+                    } else {
+                        currentLoc
+                    }
+                } ?: currentLoc
+            }
             LocationEventType.LOCATION_UPDATED -> {
                 // For general updates, refresh from server
                 scope.launch { refreshCurrentLocation() }
@@ -384,6 +403,20 @@ object AdventureStateHolder {
             LocationEventType.ITEM_REMOVED -> {
                 event.itemIdRemoved?.let { itemId ->
                     location.copy(itemIds = location.itemIds.filter { it != itemId })
+                } ?: location
+            }
+            LocationEventType.CREATURE_REMOVED -> {
+                event.creatureIdRemoved?.let { creatureId ->
+                    location.copy(creatureIds = location.creatureIds.filter { it != creatureId })
+                } ?: location
+            }
+            LocationEventType.CREATURE_ADDED -> {
+                event.creatureIdAdded?.let { creatureId ->
+                    if (creatureId !in location.creatureIds) {
+                        location.copy(creatureIds = location.creatureIds + creatureId)
+                    } else {
+                        location
+                    }
                 } ?: location
             }
             LocationEventType.LOCATION_UPDATED -> {

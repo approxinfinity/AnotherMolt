@@ -2189,7 +2189,9 @@ enum class LocationEventType {
     EXIT_ADDED,
     EXIT_REMOVED,
     ITEM_ADDED,
-    ITEM_REMOVED
+    ITEM_REMOVED,
+    CREATURE_REMOVED,
+    CREATURE_ADDED
 }
 
 @Serializable
@@ -2204,5 +2206,8 @@ data class LocationMutationEvent(
     val exitAdded: ExitDto? = null,
     val exitRemoved: ExitDto? = null,
     val itemIdAdded: String? = null,
-    val itemIdRemoved: String? = null
+    val itemIdRemoved: String? = null,
+    val creatureIdRemoved: String? = null,
+    val creatureIdAdded: String? = null,
+    val creatureName: String? = null
 )

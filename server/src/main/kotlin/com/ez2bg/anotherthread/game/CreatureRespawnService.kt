@@ -4,6 +4,8 @@ import com.ez2bg.anotherthread.database.Creature
 import com.ez2bg.anotherthread.database.CreatureRepository
 import com.ez2bg.anotherthread.database.Location
 import com.ez2bg.anotherthread.database.LocationRepository
+import com.ez2bg.anotherthread.events.LocationEventService
+import kotlinx.coroutines.runBlocking
 import org.slf4j.LoggerFactory
 import java.util.concurrent.ConcurrentHashMap
 
@@ -126,6 +128,11 @@ object CreatureRespawnService {
                             creatureIds = location.creatureIds + creatureId
                         )
                         LocationRepository.update(updatedLocation)
+
+                        // Broadcast creature spawn to all players at this location
+                        runBlocking {
+                            LocationEventService.broadcastCreatureAdded(updatedLocation, creature.id, creature.name)
+                        }
 
                         // Remove from pending
                         synchronized(pending) {
