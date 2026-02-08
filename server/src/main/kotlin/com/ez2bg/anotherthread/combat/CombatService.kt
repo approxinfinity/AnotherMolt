@@ -2,6 +2,8 @@ package com.ez2bg.anotherthread.combat
 
 import com.ez2bg.anotherthread.database.*
 import com.ez2bg.anotherthread.experience.ExperienceService
+import com.ez2bg.anotherthread.game.CreatureRespawnService
+import com.ez2bg.anotherthread.game.GameTickService
 import io.ktor.websocket.*
 import kotlinx.coroutines.*
 import kotlinx.coroutines.sync.Mutex
@@ -1897,7 +1899,7 @@ object CombatService {
             session.creatures.mapNotNull { CreatureRepository.findById(it.id) }
         } else emptyList()
 
-        // Remove dead creatures from the location
+        // Remove dead creatures from the location and schedule respawns
         if (defeatedCreatures.isNotEmpty()) {
             val location = LocationRepository.findById(session.locationId)
             if (location != null) {
@@ -1906,6 +1908,12 @@ object CombatService {
                 val updatedLocation = location.copy(creatureIds = updatedCreatureIds)
                 LocationRepository.update(updatedLocation)
                 log.info("Removed ${deadCreatureIds.size} dead creature(s) from ${location.name}: ${defeatedCreatures.map { it.name }}")
+
+                // Record deaths for respawn system
+                val currentTick = GameTickService.getCurrentTick()
+                for (creature in defeatedCreatures) {
+                    CreatureRespawnService.recordCreatureDeath(session.locationId, creature.id, currentTick)
+                }
             }
         }
 

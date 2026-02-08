@@ -51,6 +51,11 @@ object GameTickService {
                     // 3. Process creature wandering
                     combatService.processCreatureWandering()
 
+                    // 4. Process creature respawns (every N ticks)
+                    if (currentTickNumber % RespawnConfig.RESPAWN_CHECK_INTERVAL_TICKS == 0L) {
+                        CreatureRespawnService.processRespawns(currentTickNumber)
+                    }
+
                 } catch (e: Exception) {
                     log.error("Error in game tick $currentTickNumber: ${e.message}", e)
                 }

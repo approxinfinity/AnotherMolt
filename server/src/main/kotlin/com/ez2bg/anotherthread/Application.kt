@@ -2,7 +2,9 @@ package com.ez2bg.anotherthread
 
 import com.ez2bg.anotherthread.combat.*
 import com.ez2bg.anotherthread.database.*
+import com.ez2bg.anotherthread.game.CreatureRespawnService
 import com.ez2bg.anotherthread.game.GameTickService
+import com.ez2bg.anotherthread.game.RespawnConfig
 import com.ez2bg.anotherthread.routes.abilityRoutes
 import com.ez2bg.anotherthread.routes.adminRoutes
 import com.ez2bg.anotherthread.routes.auditLogRoutes
@@ -1120,7 +1122,10 @@ fun Application.module() {
     val uploadsDir = File(fileDir, "uploads").also { it.mkdirs() }
     log.info("Files directory: ${fileDir.absolutePath}")
 
-    // Start global game tick loop (handles combat, regen, creature wandering)
+    // Initialize creature respawn quotas before starting the tick loop
+    CreatureRespawnService.initializeQuotas()
+
+    // Start global game tick loop (handles combat, regen, creature wandering, respawns)
     GameTickService.startTickLoop(CombatService)
     log.info("Game tick service started")
 
