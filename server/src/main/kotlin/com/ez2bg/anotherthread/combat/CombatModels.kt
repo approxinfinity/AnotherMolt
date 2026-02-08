@@ -75,7 +75,8 @@ data class Combatant(
     val accuracy: Int = 0,                    // Bonus to hit chance
     val evasion: Int = 0,                     // Bonus to avoid attacks
     val critBonus: Int = 0,                   // Bonus to critical hit chance
-    val baseDamage: Int = 5,                  // Base damage for auto-attacks
+    val baseDamage: Int = 5,                  // Base damage for auto-attacks (fallback if damageDice is null)
+    val damageDice: String? = null,           // XdY+Z format (e.g., "1d6+2"), preferred over baseDamage
     val armor: Int = 0,                       // Damage reduction (flat amount subtracted from incoming damage)
     // Resource regeneration per round (stat-based)
     val hpRegen: Int = 0,                     // HP restored per round (CON-based)

@@ -16,7 +16,8 @@ object AbilityTable : Table("ability") {
     val imageUrl = text("image_url").nullable()
 
     // Power budget fields for balance
-    val baseDamage = integer("base_damage").default(0)           // Raw damage value
+    val baseDamage = integer("base_damage").default(0)           // Raw damage value (fallback if damageDice is null)
+    val damageDice = text("damage_dice").nullable()              // XdY+Z format (e.g., "2d6+3"), preferred over baseDamage
     val durationRounds = integer("duration_rounds").default(0)   // How long effect lasts
     val powerCost = integer("power_cost").default(10)            // Calculated total power cost
     val manaCost = integer("mana_cost").default(0)               // Mana cost for spells

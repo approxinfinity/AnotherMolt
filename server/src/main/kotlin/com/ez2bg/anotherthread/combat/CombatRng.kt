@@ -208,6 +208,162 @@ object CombatRng {
     }
 
     /**
+     * Parse result of a dice string roll.
+     */
+    data class DiceRollResult(
+        val total: Int,           // Final total after all rolls and modifiers
+        val diceTotal: Int,       // Sum of just the dice (before modifier)
+        val modifier: Int,        // The +/- modifier
+        val rolls: List<Int>,     // Individual die results
+        val formula: String       // Original formula
+    )
+
+    // Regex to parse dice notation: XdY or XdY+Z or XdY-Z
+    // Examples: "2d6", "1d8+3", "3d4-1", "d20" (treated as 1d20)
+    private val diceRegex = Regex("""^(\d*)d(\d+)([+-]\d+)?$""", RegexOption.IGNORE_CASE)
+
+    /**
+     * Parse and roll a dice string in XdY+Z format.
+     *
+     * Supported formats:
+     * - "2d6" - Roll 2 six-sided dice
+     * - "1d8+3" - Roll 1d8 and add 3
+     * - "3d4-1" - Roll 3d4 and subtract 1
+     * - "d20" - Same as 1d20
+     *
+     * @param diceString The dice notation string (e.g., "2d6+3")
+     * @return DiceRollResult with total, individual rolls, and formula details
+     * @throws IllegalArgumentException if the format is invalid
+     */
+    fun rollDiceString(diceString: String): DiceRollResult {
+        val trimmed = diceString.trim().lowercase()
+
+        val match = diceRegex.matchEntire(trimmed)
+            ?: throw IllegalArgumentException("Invalid dice format: '$diceString'. Expected format like '2d6' or '1d8+3'")
+
+        val countStr = match.groupValues[1]
+        val count = if (countStr.isEmpty()) 1 else countStr.toInt()
+        val sides = match.groupValues[2].toInt()
+        val modifierStr = match.groupValues[3]
+        val modifier = if (modifierStr.isEmpty()) 0 else modifierStr.toInt()
+
+        if (count <= 0 || sides <= 0) {
+            throw IllegalArgumentException("Dice count and sides must be positive: '$diceString'")
+        }
+
+        // Roll each die individually
+        val rolls = (1..count).map { Random.nextInt(1, sides + 1) }
+        val diceTotal = rolls.sum()
+        val total = (diceTotal + modifier).coerceAtLeast(1) // Minimum 1 damage
+
+        return DiceRollResult(
+            total = total,
+            diceTotal = diceTotal,
+            modifier = modifier,
+            rolls = rolls,
+            formula = diceString
+        )
+    }
+
+    /**
+     * Safely roll a dice string, returning null if the format is invalid.
+     */
+    fun rollDiceStringSafe(diceString: String?): DiceRollResult? {
+        if (diceString.isNullOrBlank()) return null
+        return try {
+            rollDiceString(diceString)
+        } catch (e: IllegalArgumentException) {
+            null
+        }
+    }
+
+    /**
+     * Calculate the average roll for a dice string.
+     * Useful for display and balance calculations.
+     *
+     * @param diceString The dice notation string (e.g., "2d6+3")
+     * @return The average expected roll, or null if format is invalid
+     */
+    fun averageDiceRoll(diceString: String?): Double? {
+        if (diceString.isNullOrBlank()) return null
+        val trimmed = diceString.trim().lowercase()
+
+        val match = diceRegex.matchEntire(trimmed) ?: return null
+
+        val countStr = match.groupValues[1]
+        val count = if (countStr.isEmpty()) 1 else countStr.toInt()
+        val sides = match.groupValues[2].toInt()
+        val modifierStr = match.groupValues[3]
+        val modifier = if (modifierStr.isEmpty()) 0 else modifierStr.toInt()
+
+        // Average of a die is (1 + sides) / 2
+        val avgPerDie = (1 + sides) / 2.0
+        return (count * avgPerDie) + modifier
+    }
+
+    /**
+     * Perform a complete attack roll using dice notation.
+     * If damageDice is provided, uses dice rolling. Otherwise falls back to baseDamage.
+     *
+     * @param damageDice Dice notation string (e.g., "2d6+3"), or null to use baseDamage
+     * @param baseDamage Fallback base damage if damageDice is null
+     * @param attackerAccuracy Attacker's accuracy stat
+     * @param defenderEvasion Defender's evasion stat
+     * @param attackerLevel Attacker's level
+     * @param defenderLevel Defender's level
+     * @param critBonus Bonus to critical hit chance
+     * @return Complete AttackResult with damage and details
+     */
+    fun rollAttackWithDice(
+        damageDice: String?,
+        baseDamage: Int,
+        attackerAccuracy: Int = 0,
+        defenderEvasion: Int = 0,
+        attackerLevel: Int = 1,
+        defenderLevel: Int = 1,
+        critBonus: Int = 0
+    ): AttackResult {
+        val hitChance = calculateHitChance(attackerAccuracy, defenderEvasion, attackerLevel, defenderLevel)
+        val critChance = calculateCritChance(critBonus)
+
+        val (hitResult, rolls) = rollToHit(hitChance, critChance)
+        val (hitRoll, critRoll) = rolls
+
+        // Calculate damage based on hit result
+        val rawDamage = if (hitResult == HitResult.MISS) {
+            0
+        } else {
+            // Roll dice if available, otherwise use baseDamage
+            val diceResult = rollDiceStringSafe(damageDice)
+            diceResult?.total ?: baseDamage
+        }
+
+        // Apply hit modifiers (glancing = 50%, crit = 200%)
+        val multiplier = when (hitResult) {
+            HitResult.MISS -> 0.0
+            HitResult.GLANCING -> GLANCING_BLOW_MULTIPLIER
+            HitResult.HIT -> 1.0
+            HitResult.CRITICAL -> CRIT_MULTIPLIER
+        }
+
+        val finalDamage = (rawDamage * multiplier).toInt().coerceAtLeast(if (hitResult == HitResult.MISS) 0 else 1)
+
+        return AttackResult(
+            hitResult = hitResult,
+            damage = finalDamage,
+            rollDetails = RollDetails(
+                hitRoll = hitRoll,
+                hitChance = hitChance,
+                critRoll = critRoll,
+                critChance = critChance,
+                baseDamage = rawDamage,  // This now reflects the dice roll result
+                damageRoll = multiplier,
+                finalDamage = finalDamage
+            )
+        )
+    }
+
+    /**
      * Roll a single die.
      */
     fun rollD20(): Int = Random.nextInt(1, 21)

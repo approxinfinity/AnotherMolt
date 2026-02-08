@@ -1,0 +1,44 @@
+package com.ez2bg.anotherthread.database.migrations
+
+import org.jetbrains.exposed.sql.transactions.transaction
+
+/**
+ * Migration to add damageDice columns to ability and creature tables.
+ *
+ * The damageDice field uses XdY+Z notation (e.g., "2d6+3") for variable damage.
+ * This provides more interesting combat variance compared to flat baseDamage.
+ *
+ * - ability.damage_dice: Dice formula for ability damage
+ * - creature.damage_dice: Dice formula for creature auto-attacks
+ *
+ * If damageDice is null, the system falls back to baseDamage.
+ */
+class V002_AddDamageDiceColumns : Migration(
+    version = 2,
+    name = "Add damage_dice columns for XdY dice notation"
+) {
+    override fun up() {
+        transaction {
+            // Add damage_dice column to ability table
+            exec("""
+                ALTER TABLE ability
+                ADD COLUMN damage_dice TEXT DEFAULT NULL
+            """.trimIndent())
+
+            // Add damage_dice column to creature table
+            exec("""
+                ALTER TABLE creature
+                ADD COLUMN damage_dice TEXT DEFAULT NULL
+            """.trimIndent())
+        }
+    }
+
+    override fun down() {
+        transaction {
+            // SQLite doesn't support DROP COLUMN directly in older versions,
+            // but newer SQLite 3.35+ does. For safety, we'll just leave the columns.
+            // To fully rollback, you'd need to recreate the tables without the columns.
+            exec("SELECT 1") // No-op
+        }
+    }
+}

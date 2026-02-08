@@ -22,6 +22,7 @@ data class Creature(
     // Combat stats
     val maxHp: Int = 10,
     val baseDamage: Int = 5,
+    val damageDice: String? = null,  // XdY+Z format (e.g., "1d6+2"), preferred over baseDamage
     val abilityIds: List<String> = emptyList(),
     val level: Int = 1,
     val experienceValue: Int = 10,
@@ -59,6 +60,7 @@ object CreatureRepository {
         lockedBy = this[CreatureTable.lockedBy],
         maxHp = this[CreatureTable.maxHp],
         baseDamage = this[CreatureTable.baseDamage],
+        damageDice = this[CreatureTable.damageDice],
         abilityIds = jsonToList(this[CreatureTable.abilityIds]),
         level = this[CreatureTable.level],
         experienceValue = this[CreatureTable.experienceValue],
@@ -81,6 +83,7 @@ object CreatureRepository {
             it[lockedBy] = creature.lockedBy
             it[maxHp] = creature.maxHp
             it[baseDamage] = creature.baseDamage
+            it[damageDice] = creature.damageDice
             it[abilityIds] = listToJson(creature.abilityIds)
             it[level] = creature.level
             it[experienceValue] = creature.experienceValue
@@ -115,6 +118,7 @@ object CreatureRepository {
             it[lockedBy] = creature.lockedBy
             it[maxHp] = creature.maxHp
             it[baseDamage] = creature.baseDamage
+            it[damageDice] = creature.damageDice
             it[abilityIds] = listToJson(creature.abilityIds)
             it[level] = creature.level
             it[experienceValue] = creature.experienceValue

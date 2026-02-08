@@ -974,11 +974,15 @@ object CombatService {
         var wasCritical = false
         var wasGlancing = false
 
-        // Calculate damage using RNG system
-        // Use actor's baseDamage if ability has no baseDamage (for basic attacks)
+        // Calculate damage using RNG system with dice notation
+        // Priority: ability.damageDice > actor.damageDice > ability.baseDamage > actor.baseDamage
+        val effectiveDamageDice = ability.damageDice ?: actor.damageDice
         val effectiveBaseDamage = if (ability.baseDamage > 0) ability.baseDamage else actor.baseDamage
-        if (!isHealingAbility && effectiveBaseDamage > 0 && target != null) {
-            val attackResult = CombatRng.rollAttack(
+        val hasDamage = effectiveDamageDice != null || effectiveBaseDamage > 0
+
+        if (!isHealingAbility && hasDamage && target != null) {
+            val attackResult = CombatRng.rollAttackWithDice(
+                damageDice = effectiveDamageDice,
                 baseDamage = effectiveBaseDamage,
                 attackerAccuracy = actor.accuracy,
                 defenderEvasion = target.evasion,
@@ -991,7 +995,8 @@ object CombatService {
             wasCritical = attackResult.wasCritical
             wasGlancing = attackResult.wasGlancing
 
-            log.debug("Attack roll: ${actor.name} vs ${target.name} - " +
+            val diceInfo = if (effectiveDamageDice != null) " dice=$effectiveDamageDice," else ""
+            log.debug("Attack roll: ${actor.name} vs ${target.name} -$diceInfo " +
                 "hitRoll=${attackResult.rollDetails.hitRoll}/${attackResult.rollDetails.hitChance}, " +
                 "result=$hitResult, damage=$damage" +
                 (if (wasCritical) " CRITICAL!" else "") +
@@ -1657,8 +1662,9 @@ object CombatService {
             }
             val currentTarget = updatedCombatants.find { it.id == target.id } ?: continue
 
-            // Use RNG system for creature attacks
-            val attackResult = CombatRng.rollAttack(
+            // Use RNG system for creature attacks (with dice if available)
+            val attackResult = CombatRng.rollAttackWithDice(
+                damageDice = creature.damageDice,
                 baseDamage = creature.baseDamage,
                 attackerAccuracy = creature.accuracy,
                 defenderEvasion = currentTarget.evasion,
@@ -2322,7 +2328,8 @@ object CombatService {
             accuracy = creatureAccuracy,
             evasion = creatureEvasion,
             critBonus = creatureCritBonus,
-            baseDamage = baseDamage
+            baseDamage = baseDamage,
+            damageDice = damageDice
         )
     }
 

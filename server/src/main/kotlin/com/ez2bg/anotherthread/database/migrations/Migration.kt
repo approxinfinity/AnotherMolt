@@ -42,9 +42,9 @@ object MigrationRunner {
      * Add new migrations to this list.
      */
     private val migrations: List<Migration> = listOf(
-        V001_AddCombatEventLogTable()
+        V001_AddCombatEventLogTable(),
+        V002_AddDamageDiceColumns()
         // Add future migrations here:
-        // V002_AddSomeNewTable(),
         // V003_AlterSomeColumn(),
     )
 

@@ -13,6 +13,7 @@ object CreatureTable : Table("creature") {
     // Combat stats
     val maxHp = integer("max_hp").default(10)
     val baseDamage = integer("base_damage").default(5)
+    val damageDice = text("damage_dice").nullable()  // XdY+Z format (e.g., "1d6+2"), preferred over baseDamage
     val abilityIds = text("ability_ids").default("[]")
     val level = integer("level").default(1)
     val experienceValue = integer("experience_value").default(10)  // Base XP, scaled by level difference

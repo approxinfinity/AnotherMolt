@@ -25,6 +25,7 @@ data class Ability(
     val imageUrl: String? = null,
     // Power budget fields
     val baseDamage: Int = 0,
+    val damageDice: String? = null,  // XdY+Z format (e.g., "2d6+3"), preferred over baseDamage
     val durationRounds: Int = 0,
     val powerCost: Int = 10,    // Calculated total, default to average
     val manaCost: Int = 0,      // Mana cost for spells
@@ -127,6 +128,7 @@ object AbilityRepository {
         effects = this[AbilityTable.effects],
         imageUrl = this[AbilityTable.imageUrl],
         baseDamage = this[AbilityTable.baseDamage],
+        damageDice = this[AbilityTable.damageDice],
         durationRounds = this[AbilityTable.durationRounds],
         powerCost = this[AbilityTable.powerCost],
         manaCost = this[AbilityTable.manaCost],
@@ -149,6 +151,7 @@ object AbilityRepository {
             it[effects] = abilityWithCost.effects
             it[imageUrl] = abilityWithCost.imageUrl
             it[baseDamage] = abilityWithCost.baseDamage
+            it[damageDice] = abilityWithCost.damageDice
             it[durationRounds] = abilityWithCost.durationRounds
             it[powerCost] = abilityWithCost.powerCost
             it[manaCost] = abilityWithCost.manaCost
@@ -209,6 +212,7 @@ object AbilityRepository {
             it[effects] = abilityWithCost.effects
             it[imageUrl] = abilityWithCost.imageUrl
             it[baseDamage] = abilityWithCost.baseDamage
+            it[damageDice] = abilityWithCost.damageDice
             it[durationRounds] = abilityWithCost.durationRounds
             it[powerCost] = abilityWithCost.powerCost
             it[manaCost] = abilityWithCost.manaCost
