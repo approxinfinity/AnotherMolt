@@ -771,13 +771,20 @@ class AdventureViewModel(
             return
         }
 
-        if (!CombatStateHolder.isInCombat) {
+        val needToJoinCombat = !CombatStateHolder.isInCombat
+        if (needToJoinCombat) {
             // AoE abilities can initiate combat with all hostiles
             if (ability.targetType in listOf("area", "all_enemies")) {
                 val creatureIds = state.creaturesHere.map { it.id }
                 if (creatureIds.isNotEmpty()) {
-                    CombatStateHolder.joinCombat(creatureIds)
+                    // Join combat and queue the ability to use when combat starts
+                    CombatStateHolder.joinCombat(
+                        targetCreatureIds = creatureIds,
+                        withAbility = ability.id,
+                        targetId = null
+                    )
                     showSnackbar("Engaging all enemies with ${ability.name}!")
+                    return
                 } else {
                     showSnackbar("No enemies nearby")
                     return
@@ -788,6 +795,7 @@ class AdventureViewModel(
             }
         }
 
+        // Already in combat, use ability directly
         when (ability.targetType) {
             "self", "area", "all_enemies", "all_allies" -> {
                 CombatStateHolder.useAbility(ability.id, null)
@@ -1042,14 +1050,18 @@ class AdventureViewModel(
         }
 
         if (!CombatStateHolder.isInCombat) {
-            // Start combat by joining with this creature
-            CombatStateHolder.joinCombat(listOf(creature.id))
+            // Start combat by joining with this creature, and queue the ability
+            CombatStateHolder.joinCombat(
+                targetCreatureIds = listOf(creature.id),
+                withAbility = ability.id,
+                targetId = creature.id
+            )
             showSnackbar("Engaging ${creature.name}!")
+        } else {
+            // Already in combat, use the ability directly
+            CombatStateHolder.useAbility(ability.id, creature.id)
+            showSnackbar("${ability.name} -> ${creature.name}")
         }
-
-        // Use the ability on the creature
-        CombatStateHolder.useAbility(ability.id, creature.id)
-        showSnackbar("${ability.name} -> ${creature.name}")
     }
 
     /**
@@ -1061,13 +1073,17 @@ class AdventureViewModel(
         val creatureName = creature?.name ?: "enemy"
 
         if (!CombatStateHolder.isInCombat) {
-            // Start combat by joining with this creature
-            CombatStateHolder.joinCombat(listOf(creatureId))
+            // Start combat by joining with this creature, and queue the attack
+            CombatStateHolder.joinCombat(
+                targetCreatureIds = listOf(creatureId),
+                withAbility = BASIC_ATTACK_ID,
+                targetId = creatureId
+            )
             showSnackbar("Engaging $creatureName!")
+        } else {
+            // Already in combat, just use the ability
+            CombatStateHolder.useAbility(BASIC_ATTACK_ID, creatureId)
         }
-
-        // Use the basic attack ability
-        CombatStateHolder.useAbility(BASIC_ATTACK_ID, creatureId)
     }
 
     companion object {

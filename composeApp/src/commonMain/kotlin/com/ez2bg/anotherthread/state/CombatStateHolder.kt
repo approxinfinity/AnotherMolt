@@ -89,6 +89,10 @@ object CombatStateHolder {
     // Track connected user
     private var connectedUserId: String? = null
 
+    // Pending ability to use when combat starts (for join + attack combo)
+    private data class PendingAbility(val abilityId: String, val targetId: String?)
+    private var pendingFirstAbility: PendingAbility? = null
+
     /**
      * Connect to combat WebSocket for a user.
      */
@@ -152,8 +156,13 @@ object CombatStateHolder {
 
     /**
      * Join combat at current location.
+     * If an ability is provided, it will be queued and sent after combat starts.
      */
-    fun joinCombat(targetCreatureIds: List<String> = emptyList()) {
+    fun joinCombat(targetCreatureIds: List<String> = emptyList(), withAbility: String? = null, targetId: String? = null) {
+        // Store pending ability to use when combat starts
+        if (withAbility != null) {
+            pendingFirstAbility = PendingAbility(withAbility, targetId)
+        }
         scope.launch {
             combatClient?.joinCombat(targetCreatureIds)
         }
@@ -197,6 +206,12 @@ object CombatStateHolder {
                     addEventLogEntry(message, EventLogType.DAMAGE_RECEIVED)
                 }
                 addEventLogEntry("Combat started!", EventLogType.COMBAT_START)
+
+                // If we have a pending ability from joining combat, use it now
+                pendingFirstAbility?.let { pending ->
+                    useAbility(pending.abilityId, pending.targetId)
+                    pendingFirstAbility = null
+                }
             }
 
             is GlobalEvent.RoundStarted -> {
@@ -460,6 +475,7 @@ object CombatStateHolder {
         _isDisoriented.value = false
         _disorientRounds.value = 0
         _currentRound.value = 0
+        pendingFirstAbility = null
     }
 
     /**
