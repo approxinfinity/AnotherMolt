@@ -341,6 +341,7 @@ class AdventureViewModel {
 
             val classAbilities = mutableListOf<AbilityDto>()
             val itemAbilities = mutableListOf<AbilityDto>()
+            val learnedAbilities = mutableListOf<AbilityDto>()
 
             // 1. Load class abilities
             val classId = user.characterClassId
@@ -372,8 +373,25 @@ class AdventureViewModel {
                 }
             }
 
-            // 3. Combine class + item abilities
-            val allAbilities = (classAbilities + itemAbilities)
+            // 3. Load learned abilities from trainers
+            val learnedAbilityIds = user.learnedAbilityIds
+            if (learnedAbilityIds.isNotEmpty()) {
+                // Check if player has phasewalk ability from learned abilities
+                if ("ability-phasewalk" in learnedAbilityIds) {
+                    hasPhasewalk = true
+                }
+
+                // Fetch each learned ability
+                for (abilityId in learnedAbilityIds) {
+                    ApiClient.getAbility(abilityId).getOrNull()?.let { ability ->
+                        learnedAbilities.add(ability)
+                    }
+                }
+            }
+
+            // 4. Combine class + item + learned abilities (deduplicate by ID)
+            val allAbilities = (classAbilities + itemAbilities + learnedAbilities)
+                .distinctBy { it.id }
                 .filter { it.abilityType != "passive" }
                 .sortedBy { it.name.lowercase() }
             _localState.update {
