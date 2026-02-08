@@ -1143,10 +1143,22 @@ object ApiClient {
     }
 
     suspend fun pickupItem(userId: String, itemId: String, locationId: String): Result<UserDto> = apiCall {
-        client.post("$baseUrl/users/$userId/pickup/$itemId") {
+        val response = client.post("$baseUrl/users/$userId/pickup/$itemId") {
             contentType(ContentType.Application.Json)
             setBody(mapOf("locationId" to locationId))
-        }.body()
+        }
+        if (response.status.isSuccess()) {
+            response.body()
+        } else {
+            // Parse error response and throw with the error message
+            val errorBody = response.bodyAsText()
+            val errorMessage = try {
+                Json.decodeFromString<Map<String, String>>(errorBody)["error"] ?: errorBody
+            } catch (e: Exception) {
+                errorBody
+            }
+            throw Exception(errorMessage)
+        }
     }
 
     // =========================================================================
