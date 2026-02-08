@@ -314,6 +314,7 @@ class AdventureViewModel {
             var previousGold: Int? = null
             var previousLocationId: String? = null
             var isFirstEmission = true
+            var hasPerformedInitialLocationSync = false
 
             UserStateHolder.currentUser.collect { user ->
                 if (user != null) {
@@ -331,7 +332,6 @@ class AdventureViewModel {
                     val equippedChanged = previousEquippedItemIds != currentEquippedIds
                     val classChanged = previousCharacterClassId != currentClassId
                     val goldChanged = previousGold != currentGold
-                    val locationChanged = previousLocationId != currentLocationId
 
                     // Reload abilities if first load or any ability-related property changed
                     if (isFirstEmission || learnedChanged || visibleChanged || equippedChanged || classChanged) {
@@ -346,29 +346,23 @@ class AdventureViewModel {
                         _localState.update { it.copy(playerGold = currentGold) }
                     }
 
-                    // Navigate to correct location when server provides a different location
-                    // This handles session restore where cached location was stale
-                    // Check on EVERY emission (including first) since the repository may have
-                    // already initialized with a fallback location before we got server data
-                    if (currentLocationId != null) {
+                    // ONE-TIME location sync on startup only
+                    // This fixes the case where the repository fell back to (0,0) before
+                    // we got the user's actual location from the server.
+                    // We only do this ONCE because after that, the user is navigating
+                    // and we don't want to fight with their navigation.
+                    if (!hasPerformedInitialLocationSync && currentLocationId != null) {
+                        hasPerformedInitialLocationSync = true
+
                         // Wait for repository to be initialized before checking location
-                        // Otherwise currentLocationId.value will be null and we'll miss the mismatch
-                        if (AdventureRepository.isInitialized.value) {
+                        val serverLocationId = currentLocationId // capture for lambda
+                        scope.launch {
+                            // Wait for repository to initialize
+                            AdventureRepository.isInitialized.first { it }
                             val currentRepoLocationId = AdventureRepository.currentLocationId.value
-                            if (currentRepoLocationId != null && currentRepoLocationId != currentLocationId) {
-                                println("[AdventureViewModel] Server location differs from repository (server=$currentLocationId, repo=$currentRepoLocationId), navigating to correct location")
-                                AdventureRepository.setCurrentLocation(currentLocationId)
-                            }
-                        } else {
-                            // Repository not initialized yet - launch a coroutine to wait and then check
-                            val serverLocationId = currentLocationId // capture for lambda
-                            scope.launch {
-                                AdventureRepository.isInitialized.first { it }
-                                val currentRepoLocationId = AdventureRepository.currentLocationId.value
-                                if (currentRepoLocationId != null && currentRepoLocationId != serverLocationId) {
-                                    println("[AdventureViewModel] (delayed) Server location differs from repository (server=$serverLocationId, repo=$currentRepoLocationId), navigating to correct location")
-                                    AdventureRepository.setCurrentLocation(serverLocationId)
-                                }
+                            if (currentRepoLocationId != null && currentRepoLocationId != serverLocationId) {
+                                println("[AdventureViewModel] Initial location sync: server=$serverLocationId, repo=$currentRepoLocationId - correcting to server location")
+                                AdventureRepository.setCurrentLocation(serverLocationId)
                             }
                         }
                     }
