@@ -371,6 +371,7 @@ fun AdventureScreen(
                             LocationInfoPanel(
                                 location = currentLocation,
                                 creaturesHere = uiState.creaturesHere,
+                                playersHere = uiState.playersHere,
                                 itemsHere = uiState.itemsHere,
                                 creatureStates = uiState.creatureStates,
                                 isBlinded = isBlinded,
@@ -994,6 +995,7 @@ fun AdventureScreen(
 private fun LocationInfoPanel(
     location: LocationDto,
     creaturesHere: List<CreatureDto>,
+    playersHere: List<UserDto>,
     itemsHere: List<ItemDto>,
     creatureStates: Map<String, String>,
     isBlinded: Boolean,
@@ -1029,13 +1031,13 @@ private fun LocationInfoPanel(
             )
         }
 
-        // Creatures section - horizontal scrolling row
+        // Others section - shows both players and creatures
         Text(
             text = if (isBlinded) "Presences" else "Others",
             color = Color.Gray,
             fontSize = 10.sp
         )
-        if (creaturesHere.isEmpty()) {
+        if (creaturesHere.isEmpty() && playersHere.isEmpty()) {
             Text(
                 text = if (isBlinded) "You sense nothing nearby" else "None",
                 color = Color.White.copy(alpha = if (isBlinded) 0.6f else 1f),
@@ -1048,9 +1050,31 @@ private fun LocationInfoPanel(
                     .horizontalScroll(rememberScrollState()),
                 horizontalArrangement = Arrangement.spacedBy(12.dp)
             ) {
+                // Show players first (in green)
+                playersHere.forEach { player ->
+                    key("player-${player.id}") {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            modifier = Modifier.padding(vertical = 2.dp)
+                        ) {
+                            if (!isBlinded) {
+                                Text(
+                                    text = "\uD83D\uDC64",  // Person silhouette emoji
+                                    fontSize = 12.sp,
+                                    modifier = Modifier.padding(end = 4.dp)
+                                )
+                            }
+                            Text(
+                                text = if (isBlinded) "A presence" else player.name,
+                                color = if (isBlinded) Color.White.copy(alpha = 0.6f) else Color(0xFF4CAF50),  // Green for players
+                                fontSize = 14.sp
+                            )
+                        }
+                    }
+                }
+                // Show creatures (in blue)
                 creaturesHere.forEachIndexed { index, creature ->
-                    // Use key() to help Compose track individual creatures and avoid full recomposition
-                    key(creature.id) {
+                    key("creature-${creature.id}") {
                         val state = creatureStates[creature.id] ?: "idle"
                         Row(
                             verticalAlignment = Alignment.CenterVertically,
@@ -4292,6 +4316,7 @@ private fun LocationInfoPanelPreview() {
             LocationInfoPanel(
                 location = PreviewData.sampleLocation,
                 creaturesHere = PreviewData.sampleCreatures,
+                playersHere = emptyList(),
                 itemsHere = PreviewData.sampleItems,
                 creatureStates = emptyMap(),
                 isBlinded = false,

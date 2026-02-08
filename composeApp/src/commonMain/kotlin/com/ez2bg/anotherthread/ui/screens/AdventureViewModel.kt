@@ -66,7 +66,9 @@ data class AdventureLocalState(
     // Trainer state
     val showTrainerModal: Boolean = false,
     val trainerInfo: TrainerInfoResponse? = null,
-    val isLoadingTrainer: Boolean = false
+    val isLoadingTrainer: Boolean = false,
+    // Other players at this location (excludes self)
+    val playersHere: List<UserDto> = emptyList()
 )
 
 /**
@@ -120,7 +122,9 @@ data class AdventureUiState(
     // Trainer state
     val showTrainerModal: Boolean = false,
     val trainerInfo: TrainerInfoResponse? = null,
-    val isLoadingTrainer: Boolean = false
+    val isLoadingTrainer: Boolean = false,
+    // Other players at this location (excludes self)
+    val playersHere: List<UserDto> = emptyList()
 ) {
     // Derived properties
     val currentLocation: LocationDto?
@@ -246,7 +250,8 @@ class AdventureViewModel {
             sealableRifts = local.sealableRifts,
             showTrainerModal = local.showTrainerModal,
             trainerInfo = local.trainerInfo,
-            isLoadingTrainer = local.isLoadingTrainer
+            isLoadingTrainer = local.isLoadingTrainer,
+            playersHere = local.playersHere
         )
     }.stateIn(
         scope = scope,
@@ -307,6 +312,9 @@ class AdventureViewModel {
                     if (isShop) {
                         loadShopItems(locationId)
                     }
+
+                    // Load other players at this location
+                    loadPlayersAtLocation(locationId)
 
                     // If this is the first update and it differs from user's stored location,
                     // update the server (this handles the fallback case)
@@ -403,6 +411,26 @@ class AdventureViewModel {
         }
     }
 
+    /**
+     * Load other players at the given location.
+     * Excludes the current user from the list.
+     */
+    private fun loadPlayersAtLocation(locationId: String) {
+        val myUserId = UserStateHolder.userId
+        scope.launch {
+            ApiClient.getActiveUsersAtLocation(locationId)
+                .onSuccess { users ->
+                    // Exclude self from the list
+                    val otherPlayers = users.filter { it.id != myUserId }
+                    _localState.update { it.copy(playersHere = otherPlayers) }
+                }
+                .onFailure {
+                    // On failure, clear the list
+                    _localState.update { it.copy(playersHere = emptyList()) }
+                }
+        }
+    }
+
     // =========================================================================
     // NAVIGATION
     // =========================================================================
@@ -451,8 +479,11 @@ class AdventureViewModel {
 
             // Update user presence on server
             UserStateHolder.userId?.let { userId ->
+                println("[Navigation] Updating server location: userId=$userId, locationId=${exit.locationId}")
                 ApiClient.updateUserLocation(userId, exit.locationId)
-            }
+                    .onSuccess { println("[Navigation] Location update succeeded") }
+                    .onFailure { println("[Navigation] Location update failed: ${it.message}") }
+            } ?: println("[Navigation] WARNING: userId is null, cannot update server location")
 
             // Load phasewalk destinations for the new location
             loadPhasewalkDestinations()
