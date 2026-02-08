@@ -330,10 +330,13 @@ object CombatService {
 
         // If we have both players and creatures, start combat
         if (session.players.isNotEmpty() && session.creatures.isNotEmpty()) {
+            log.info("Starting combat: session ${session.id} now ACTIVE with ${session.players.size} players and ${session.creatures.size} creatures")
             session = session.copy(
                 state = CombatState.ACTIVE,
                 roundStartTime = System.currentTimeMillis()
             )
+        } else {
+            log.warn("Combat session ${session.id} staying in ${session.state} state: players=${session.players.size}, creatures=${session.creatures.size}")
         }
 
         sessions[session.id] = session
@@ -454,7 +457,9 @@ object CombatService {
             ?: return Result.failure(Exception("Combat session not found"))
 
         if (session.state != CombatState.ACTIVE) {
-            return Result.failure(Exception("Combat is not active"))
+            log.warn("queueAbility rejected: session $sessionId state is ${session.state}, not ACTIVE. " +
+                "Players: ${session.players.size}, Creatures: ${session.creatures.size}")
+            return Result.failure(Exception("Combat is not active (session state: ${session.state})"))
         }
 
         val combatant = session.combatants.find { it.id == userId }
