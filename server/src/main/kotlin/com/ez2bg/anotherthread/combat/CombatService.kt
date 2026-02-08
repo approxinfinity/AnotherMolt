@@ -948,9 +948,11 @@ object CombatService {
         var wasGlancing = false
 
         // Calculate damage using RNG system
-        if (!isHealingAbility && ability.baseDamage > 0 && target != null) {
+        // Use actor's baseDamage if ability has no baseDamage (for basic attacks)
+        val effectiveBaseDamage = if (ability.baseDamage > 0) ability.baseDamage else actor.baseDamage
+        if (!isHealingAbility && effectiveBaseDamage > 0 && target != null) {
             val attackResult = CombatRng.rollAttack(
-                baseDamage = ability.baseDamage,
+                baseDamage = effectiveBaseDamage,
                 attackerAccuracy = actor.accuracy,
                 defenderEvasion = target.evasion,
                 attackerLevel = actor.level,
