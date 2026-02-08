@@ -308,6 +308,12 @@ object CombatStateHolder {
                 if (response.experienceGained > 0) {
                     addEventLogEntry("Gained ${response.experienceGained} XP", EventLogType.INFO)
                 }
+
+                // Show level-up notification if player leveled up
+                if (response.leveledUp && response.newLevel != null) {
+                    addEventLogEntry("*** LEVEL UP! You are now level ${response.newLevel}! ***", EventLogType.BUFF)
+                }
+
                 if (response.loot.goldEarned > 0) {
                     addEventLogEntry("Looted ${response.loot.goldEarned} gold", EventLogType.LOOT)
                 }

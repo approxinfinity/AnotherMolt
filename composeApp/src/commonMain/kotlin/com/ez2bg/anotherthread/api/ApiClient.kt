@@ -2021,7 +2021,9 @@ data class CreatureDefeatedResponse(
     val killerPlayerName: String,
     val experienceGained: Int,
     val loot: LootResultDto = LootResultDto(),
-    val remainingEnemies: Int
+    val remainingEnemies: Int,
+    val leveledUp: Boolean = false,
+    val newLevel: Int? = null
 )
 
 @Serializable

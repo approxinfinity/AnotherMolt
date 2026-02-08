@@ -2396,9 +2396,13 @@ object CombatService {
 
         // Calculate and award XP
         val xpGained = ExperienceService.calculateCreatureXp(killerUser.level, creatureData)
+        var leveledUp = false
+        var newLevel: Int? = null
         if (xpGained > 0) {
             val xpResult = ExperienceService.awardXp(killer.id, xpGained)
             if (xpResult.leveledUp) {
+                leveledUp = true
+                newLevel = xpResult.newLevel
                 log.info("Player ${killerUser.name} leveled up to ${xpResult.newLevel}!")
             }
         }
@@ -2474,7 +2478,9 @@ object CombatService {
             killerPlayerName = killer.name,
             experienceGained = xpGained,
             loot = lootResult,
-            remainingEnemies = remainingEnemies
+            remainingEnemies = remainingEnemies,
+            leveledUp = leveledUp,
+            newLevel = newLevel
         ))
 
         log.info("${creature.name} defeated by ${killer.name}! XP: $xpGained, Gold: $goldDropped, Items: ${droppedItems.size}, Remaining enemies: $remainingEnemies")
