@@ -160,9 +160,16 @@ fun UserProfileView(
         user.itemIds.groupingBy { it }.eachCount()
     }
 
-    // Calculate encumbrance
-    val currentEncumbrance = user.itemIds.size
-    val maxEncumbrance = 5 + (user.constitution / 2)
+    // Calculate weight-based encumbrance
+    val currentWeight = remember(inventoryItems, itemCounts) {
+        inventoryItems.sumOf { item ->
+            val count = itemCounts[item.id] ?: 1
+            item.weight * count
+        }
+    }
+    val maxCapacity = user.strength * 5  // STR * 5 = max weight in stone
+    val encumbrancePercent = if (maxCapacity > 0) (currentWeight * 100) / maxCapacity else 100
+    val encumbranceTier = getEncumbranceTier(encumbrancePercent)
 
     // Load abilities granted by inventory items
     LaunchedEffect(inventoryItems) {
@@ -362,8 +369,10 @@ fun UserProfileView(
         Spacer(modifier = Modifier.height(16.dp))
         CharacterStatsSection(
             user = user,
-            currentEncumbrance = currentEncumbrance,
-            maxEncumbrance = maxEncumbrance
+            currentWeight = currentWeight,
+            maxCapacity = maxCapacity,
+            encumbrancePercent = encumbrancePercent,
+            encumbranceTier = encumbranceTier
         )
 
         // Generation checkboxes and save button - only show for editable users WITHOUT a class assigned
@@ -641,7 +650,7 @@ fun UserProfileView(
                                 tint = MaterialTheme.colorScheme.primary
                             )
                             Text(
-                                text = "Inventory ($currentEncumbrance/$maxEncumbrance)",
+                                text = "Inventory ($currentWeight/$maxCapacity stone)",
                                 style = MaterialTheme.typography.titleMedium
                             )
                         }
@@ -1338,8 +1347,10 @@ private fun InventoryItemCard(
 @Composable
 private fun CharacterStatsSection(
     user: UserDto,
-    currentEncumbrance: Int,
-    maxEncumbrance: Int
+    currentWeight: Int,
+    maxCapacity: Int,
+    encumbrancePercent: Int,
+    encumbranceTier: EncumbranceTier
 ) {
     Column(
         modifier = Modifier.fillMaxWidth(),
@@ -1353,7 +1364,6 @@ private fun CharacterStatsSection(
             StatBadge(label = "Level", value = user.level.toString())
             StatBadge(label = "XP", value = "${user.experience}")
             StatBadge(label = "Gold", value = user.gold.toString())
-            StatBadge(label = "Carry", value = "$currentEncumbrance/$maxEncumbrance")
         }
 
         // HP/Mana/Stamina bars
@@ -1383,6 +1393,14 @@ private fun CharacterStatsSection(
                 modifier = Modifier.weight(1f)
             )
         }
+
+        // Encumbrance bar with tier display
+        EncumbranceBar(
+            currentWeight = currentWeight,
+            maxCapacity = maxCapacity,
+            percent = encumbrancePercent,
+            tier = encumbranceTier
+        )
 
         // D&D Attributes in 2 rows
         Row(
@@ -1479,5 +1497,115 @@ private fun AttributeStat(abbrev: String, value: Int) {
             else
                 androidx.compose.ui.graphics.Color(0xFFE57373)
         )
+    }
+}
+
+@Composable
+private fun EncumbranceBar(
+    currentWeight: Int,
+    maxCapacity: Int,
+    percent: Int,
+    tier: EncumbranceTier
+) {
+    val tierColor = androidx.compose.ui.graphics.Color(tier.color)
+
+    Column(
+        modifier = Modifier.fillMaxWidth()
+    ) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Text(
+                text = "Encumbrance",
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+            Row(
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    text = "$currentWeight/$maxCapacity stone",
+                    style = MaterialTheme.typography.labelSmall
+                )
+                Surface(
+                    shape = RoundedCornerShape(4.dp),
+                    color = tierColor.copy(alpha = 0.2f)
+                ) {
+                    Text(
+                        text = tier.displayName,
+                        style = MaterialTheme.typography.labelSmall,
+                        color = tierColor,
+                        modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                    )
+                }
+            }
+        }
+        Spacer(modifier = Modifier.height(4.dp))
+        LinearProgressIndicator(
+            progress = { (percent.coerceAtMost(100)).toFloat() / 100f },
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(8.dp),
+            color = tierColor,
+            trackColor = tierColor.copy(alpha = 0.2f)
+        )
+        // Show penalties if encumbered
+        if (tier != EncumbranceTier.UNENCUMBERED) {
+            Spacer(modifier = Modifier.height(4.dp))
+            Row(
+                horizontalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
+                Text(
+                    text = "ATK ${tier.attackModifier}",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = tierColor
+                )
+                Text(
+                    text = "Dodge ${tier.dodgeModifier}%",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = tierColor
+                )
+                if (!tier.canMove) {
+                    Text(
+                        text = "Cannot Move!",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.error
+                    )
+                }
+            }
+        }
+    }
+}
+
+/**
+ * Encumbrance tiers based on MajorMUD-style system.
+ */
+enum class EncumbranceTier(
+    val displayName: String,
+    val color: Long,          // Color as ARGB long
+    val attackModifier: Int,
+    val dodgeModifier: Int,
+    val canMove: Boolean
+) {
+    UNENCUMBERED("Unencumbered", 0xFF81C784, 0, 0, true),
+    LIGHT("Light", 0xFFFFEB3B, -1, -5, true),
+    MEDIUM("Medium", 0xFFFF9800, -2, -10, true),
+    HEAVY("Heavy", 0xFFE57373, -3, -20, true),
+    OVER_ENCUMBERED("Over!", 0xFFD32F2F, -5, -50, false)
+}
+
+/**
+ * Get encumbrance tier from percentage of capacity used.
+ */
+private fun getEncumbranceTier(percent: Int): EncumbranceTier {
+    return when {
+        percent <= 50 -> EncumbranceTier.UNENCUMBERED
+        percent <= 75 -> EncumbranceTier.LIGHT
+        percent <= 90 -> EncumbranceTier.MEDIUM
+        percent <= 100 -> EncumbranceTier.HEAVY
+        else -> EncumbranceTier.OVER_ENCUMBERED
     }
 }

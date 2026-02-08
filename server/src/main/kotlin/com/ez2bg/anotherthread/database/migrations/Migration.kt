@@ -45,9 +45,10 @@ object MigrationRunner {
         V001_AddCombatEventLogTable(),
         V002_AddDamageDiceColumns(),
         V003_AddAbilityMinLevel(),
-        V004_AddLearnedAbilityIds()
+        V004_AddLearnedAbilityIds(),
+        V005_AddItemWeight()
         // Add future migrations here:
-        // V005_AlterSomeColumn(),
+        // V006_AlterSomeColumn(),
     )
 
     /**

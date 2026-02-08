@@ -37,6 +37,7 @@ data class Item(
     val equipmentSlot: String? = null,
     val statBonuses: StatBonuses? = null,
     val value: Int = 0,  // Gold value
+    val weight: Int = 1,  // Weight in stone (encumbrance unit), default 1
     val attribution: String? = null  // Content attribution source
 )
 
@@ -77,6 +78,7 @@ object ItemRepository {
         equipmentSlot = this[ItemTable.equipmentSlot],
         statBonuses = jsonToStatBonuses(this[ItemTable.statBonuses]),
         value = this[ItemTable.value],
+        weight = this[ItemTable.weight],
         attribution = this[ItemTable.attribution]
     )
 
@@ -93,6 +95,7 @@ object ItemRepository {
             it[equipmentSlot] = item.equipmentSlot
             it[statBonuses] = statBonusesToJson(item.statBonuses)
             it[value] = item.value
+            it[weight] = item.weight
             it[attribution] = item.attribution
         }
         item
@@ -121,6 +124,7 @@ object ItemRepository {
             it[equipmentSlot] = item.equipmentSlot
             it[statBonuses] = statBonusesToJson(item.statBonuses)
             it[value] = item.value
+            it[weight] = item.weight
             it[attribution] = item.attribution
         } > 0
     }

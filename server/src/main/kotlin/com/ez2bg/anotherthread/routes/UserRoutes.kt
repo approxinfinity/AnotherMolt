@@ -328,6 +328,19 @@ fun Route.userRoutes() {
             val id = call.parameters["id"] ?: return@put call.respond(HttpStatusCode.BadRequest)
             val request = call.receive<UpdateLocationRequest>()
 
+            // Check encumbrance - block movement if over-encumbered
+            val user = UserRepository.findById(id)
+            if (user != null) {
+                val encumbranceInfo = com.ez2bg.anotherthread.game.EncumbranceService.getEncumbranceInfo(user)
+                if (!encumbranceInfo.canMove) {
+                    return@put call.respond(HttpStatusCode.BadRequest, mapOf(
+                        "error" to "You are over-encumbered and cannot move. Drop some items first.",
+                        "currentWeight" to encumbranceInfo.currentWeight,
+                        "maxCapacity" to encumbranceInfo.maxCapacity
+                    ))
+                }
+            }
+
             if (UserRepository.updateCurrentLocation(id, request.locationId)) {
                 // Remove player from any active combat when they change location
                 CombatService.removePlayerFromCombat(id)

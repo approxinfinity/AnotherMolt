@@ -829,13 +829,18 @@ object UserRepository {
 
     // Combat stat calculations (used by CombatService.toCombatant)
     fun calculateAccuracy(user: User, equipmentAttackBonus: Int = 0): Int {
-        return attributeModifier(user.dexterity) + user.level / 2 + equipmentAttackBonus
+        val encumbranceInfo = com.ez2bg.anotherthread.game.EncumbranceService.getEncumbranceInfo(user)
+        return attributeModifier(user.dexterity) + user.level / 2 + equipmentAttackBonus + encumbranceInfo.attackModifier
     }
 
     fun calculateEvasion(user: User, equipmentDefenseBonus: Int = 0): Int {
         // Evasion scales with DEX modifier, level, and equipment
         // Level adds +1 evasion per 2 levels to match creature accuracy scaling
-        return attributeModifier(user.dexterity) + (user.level / 2) + equipmentDefenseBonus
+        val baseEvasion = attributeModifier(user.dexterity) + (user.level / 2) + equipmentDefenseBonus
+        // Apply encumbrance dodge penalty (percentage reduction)
+        val encumbranceInfo = com.ez2bg.anotherthread.game.EncumbranceService.getEncumbranceInfo(user)
+        val dodgePenaltyMultiplier = (100 + encumbranceInfo.dodgeModifier) / 100.0
+        return (baseEvasion * dodgePenaltyMultiplier).toInt()
     }
 
     fun calculateCritBonus(user: User): Int {

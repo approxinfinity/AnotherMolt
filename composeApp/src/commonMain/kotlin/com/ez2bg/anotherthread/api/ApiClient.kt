@@ -112,7 +112,8 @@ data class ItemDto(
     val equipmentType: String? = null,  // "weapon", "armor", "accessory", or null
     val equipmentSlot: String? = null,  // "main_hand", "off_hand", "head", etc.
     val statBonuses: StatBonusesDto? = null,
-    val value: Int = 0  // Gold value
+    val value: Int = 0,  // Gold value
+    val weight: Int = 1  // Weight in stone (encumbrance unit)
 )
 
 @Serializable

@@ -15,6 +15,7 @@ object ItemTable : Table("item") {
     val equipmentSlot = text("equipment_slot").nullable()  // "main_hand", "off_hand", "head", "chest", "legs", "feet", "ring", "amulet"
     val statBonuses = text("stat_bonuses").nullable()  // JSON: {"attack": 5, "defense": 3, "maxHp": 10}
     val value = integer("value").default(0)  // Gold value
+    val weight = integer("weight").default(1)  // Weight in stone (encumbrance unit), default 1
     val attribution = text("attribution").nullable()  // Content attribution source
 
     override val primaryKey = PrimaryKey(id)
