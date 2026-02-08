@@ -1840,6 +1840,7 @@ enum class CombatEndReason {
     ALL_ENEMIES_DEFEATED,
     ALL_PLAYERS_DEFEATED,
     ALL_PLAYERS_FLED,
+    PLAYER_LEFT,    // Player left the location (disengaged from combat)
     TIMEOUT,
     CANCELLED
 }

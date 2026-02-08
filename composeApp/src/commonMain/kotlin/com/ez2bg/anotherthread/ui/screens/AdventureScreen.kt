@@ -583,16 +583,26 @@ fun AdventureScreen(
                                 verticalArrangement = Arrangement.spacedBy(4.dp)
                             ) {
                                 // Copy All button
+                                var copyFeedback by remember { mutableStateOf<String?>(null) }
+                                LaunchedEffect(copyFeedback) {
+                                    if (copyFeedback != null) {
+                                        kotlinx.coroutines.delay(2000)
+                                        copyFeedback = null
+                                    }
+                                }
                                 Text(
-                                    text = "Copy",
-                                    color = Color(0xFF888888),
+                                    text = copyFeedback ?: "Copy",
+                                    color = if (copyFeedback != null) Color(0xFF69F0AE) else Color(0xFF888888),
                                     fontSize = 9.sp,
                                     modifier = Modifier
                                         .clip(RoundedCornerShape(4.dp))
                                         .background(Color.Black.copy(alpha = 0.5f))
                                         .clickable {
-                                            val allText = eventLogEntries.joinToString("\n") { it.message }
-                                            copyToClipboard(allText)
+                                            // Get entries directly from the StateFlow to avoid stale captures
+                                            val currentEntries = viewModel.eventLog.value
+                                            val allText = currentEntries.joinToString("\n") { it.message }
+                                            val success = copyToClipboard(allText)
+                                            copyFeedback = if (success) "Copied ${currentEntries.size}!" else "Failed"
                                         }
                                         .padding(horizontal = 6.dp, vertical = 2.dp)
                                 )

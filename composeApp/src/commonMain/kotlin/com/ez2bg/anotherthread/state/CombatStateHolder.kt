@@ -1,5 +1,6 @@
 package com.ez2bg.anotherthread.state
 
+import com.ez2bg.anotherthread.api.CombatEndReason
 import com.ez2bg.anotherthread.api.CombatSessionDto
 import com.ez2bg.anotherthread.api.CombatantDto
 import com.ez2bg.anotherthread.api.StatusEffectDto
@@ -344,7 +345,14 @@ object CombatStateHolder {
 
             is GlobalEvent.CombatEnded -> {
                 // Note: Individual creature defeats with XP/loot are now handled by CreatureDefeated events
-                addEventLogEntry("Combat ended!", EventLogType.COMBAT_END)
+                val message = when (event.response.reason) {
+                    CombatEndReason.ALL_ENEMIES_DEFEATED -> "Victory!"
+                    CombatEndReason.ALL_PLAYERS_DEFEATED -> "Defeated..."
+                    CombatEndReason.ALL_PLAYERS_FLED -> "Everyone fled!"
+                    CombatEndReason.PLAYER_LEFT -> "Disengaged from combat"
+                    else -> "Combat ended!"
+                }
+                addEventLogEntry(message, EventLogType.COMBAT_END)
                 clearCombatState()
 
                 // Refresh user data and location to sync any remaining state and remove dead creatures

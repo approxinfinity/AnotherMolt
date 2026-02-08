@@ -235,6 +235,7 @@ fun LocationGraphView(
                                     CombatEndReason.ALL_ENEMIES_DEFEATED -> "Victory! +${r.experienceGained} XP"
                                     CombatEndReason.ALL_PLAYERS_DEFEATED -> "Defeated..."
                                     CombatEndReason.ALL_PLAYERS_FLED -> "Escaped!"
+                                    CombatEndReason.PLAYER_LEFT -> "Disengaged from combat"
                                     else -> "Combat ended"
                                 }
                                 addEventLog(msg, EventType.COMBAT)
