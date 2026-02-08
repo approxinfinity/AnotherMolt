@@ -382,6 +382,60 @@ Keep JSON if:
 
 ---
 
+## Hidden Ground Items System (Implemented)
+
+Items dropped on the ground become hidden after 24 hours, requiring the Search action to discover them. This adds exploration depth and rewards observant players.
+
+### How It Works
+1. **Fresh items (< 24 hours)**: Visible to everyone
+2. **Old items (>= 24 hours)**: Hidden unless discovered
+3. **Once discovered**: Permanently visible to that player until picked up
+
+### Search Mechanics
+Base formula: `30% + (INT mod * 6) + (INT breakpoint * 8) + (level * 2) + classBonus`
+
+**Example search chances:**
+- INT 10, Level 1, Warrior: 32%
+- INT 10, Level 1, Rogue: 57% (+25 class bonus)
+- INT 18, Level 1, Warrior: 72%
+- INT 18, Level 10, Rogue: 95% (capped)
+
+**Thief-type classes with search bonus (+25%):**
+- Rogue, Thief, Assassin, Ranger, Scout, Ninja, Shadow, Treasure Hunter
+
+### Database Schema
+```sql
+location_item (
+    id VARCHAR(36) PRIMARY KEY,
+    location_id VARCHAR(64) NOT NULL,
+    item_id VARCHAR(36) NOT NULL,
+    dropped_at INTEGER NOT NULL,  -- timestamp
+    dropped_by_user_id VARCHAR(36)  -- null = spawned
+)
+
+discovered_item (
+    user_id VARCHAR(36) NOT NULL,
+    location_item_id VARCHAR(36) NOT NULL,
+    discovered_at INTEGER NOT NULL,
+    PRIMARY KEY (user_id, location_item_id)
+)
+```
+
+### API Endpoints
+- `POST /users/{id}/search` - Search current location for hidden items
+
+### Files
+- `server/src/main/kotlin/com/ez2bg/anotherthread/database/LocationItem.kt` - Tables and repository
+- `server/src/main/kotlin/com/ez2bg/anotherthread/game/SearchService.kt` - Search logic
+- `server/src/main/kotlin/com/ez2bg/anotherthread/database/migrations/V007_AddLocationItems.kt` - Migration
+
+### Integration Points
+- **Item Pickup**: Cleans up LocationItem records when items are picked up
+- **Combat Death**: Dropped items are tracked in LocationItem table
+- **Stat Summary**: `searchChance` included in player stat summaries
+
+---
+
 ## Wilderness Naming Ideas
 
 Currently all auto-generated wilderness is named "Wilderness". Could vary:
