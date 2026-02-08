@@ -300,11 +300,35 @@ object CombatStateHolder {
             }
 
             is GlobalEvent.CombatEnded -> {
+                val response = event.response
+
+                // Log defeated enemies using names from combatants list (before we clear it)
+                val currentCombatants = _combatants.value
+                val defeatedNames = response.defeated.mapNotNull { id ->
+                    currentCombatants.find { it.id == id }?.name
+                }
+                defeatedNames.forEach { name ->
+                    addEventLogEntry("$name has been defeated!", EventLogType.COMBAT_END)
+                }
+
+                // Log XP and loot if any
+                if (response.experienceGained > 0) {
+                    addEventLogEntry("Gained ${response.experienceGained} XP", EventLogType.INFO)
+                }
+                if (response.loot.goldEarned > 0) {
+                    addEventLogEntry("Looted ${response.loot.goldEarned} gold", EventLogType.LOOT)
+                }
+                response.loot.itemNames.forEach { itemName ->
+                    addEventLogEntry("Looted: $itemName", EventLogType.LOOT)
+                }
+
                 addEventLogEntry("Combat ended!", EventLogType.COMBAT_END)
                 clearCombatState()
-                // Refresh user data to sync HP, XP, gold, items from server
+
+                // Refresh user data and location to sync HP, XP, gold, items, and remove dead creatures
                 scope.launch {
                     UserStateHolder.refreshUser()
+                    AdventureStateHolder.refreshCurrentLocation()
                 }
             }
 
