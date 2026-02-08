@@ -97,8 +97,16 @@ object UserStateHolder {
             if (response.success && response.user != null) {
                 // Update user data from server (fresh data with all items)
                 println("[UserStateHolder] Session valid - refreshing user data. Items: ${response.user.itemIds.size}")
+                val previousUser = _currentUser.value
                 _currentUser.value = response.user
                 AuthStorage.saveUser(response.user)
+
+                // Emit UserUpdated if the user data changed (e.g., characterClassId was set)
+                // This allows App.kt to react and switch screens appropriately
+                if (previousUser?.characterClassId != response.user.characterClassId) {
+                    println("[UserStateHolder] Character class changed: ${previousUser?.characterClassId} -> ${response.user.characterClassId}")
+                    _authEvents.emit(AuthEvent.UserUpdated(response.user))
+                }
 
                 // Update session expiry for native platforms
                 if (response.sessionToken != null && response.expiresAt != null) {
