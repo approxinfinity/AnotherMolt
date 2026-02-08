@@ -18,6 +18,7 @@ import com.ez2bg.anotherthread.data.AdventureRepository
 import com.ez2bg.anotherthread.state.AdventureStateHolder
 import com.ez2bg.anotherthread.state.CombatStateHolder
 import com.ez2bg.anotherthread.state.EventLogType
+import com.ez2bg.anotherthread.state.PlayerPresenceEvent
 import com.ez2bg.anotherthread.state.UserStateHolder
 import com.ez2bg.anotherthread.ui.components.EventLogEntry
 import com.ez2bg.anotherthread.ui.components.EventType
@@ -275,6 +276,8 @@ class AdventureViewModel {
         // Listen for user state changes - this handles ALL user-dependent state reactively
         // including: gold, abilities (class/learned/equipped/visible), character class
         listenForUserUpdates()
+        // Listen for real-time player presence events (enter/leave)
+        listenForPlayerPresenceEvents()
     }
 
     /**
@@ -383,6 +386,58 @@ class AdventureViewModel {
                         UserStateHolder.updateLocationLocally(locationId)
                     }
                     firstLocationUpdate = false
+                }
+            }
+        }
+    }
+
+    /**
+     * Listen for real-time player presence events (enter/leave).
+     * Updates the playersHere list when other players enter or leave the current location.
+     */
+    private fun listenForPlayerPresenceEvents() {
+        scope.launch {
+            AdventureStateHolder.playerPresenceEvents.collect { event ->
+                val currentLocationId = AdventureRepository.currentLocationId.value
+                when (event) {
+                    is PlayerPresenceEvent.PlayerEntered -> {
+                        // Only update if the event is for our current location
+                        if (event.locationId == currentLocationId) {
+                            // Fetch the full user data and add to playersHere
+                            ApiClient.getUser(event.playerId).onSuccess { user ->
+                                if (user != null) {
+                                    _localState.update { state ->
+                                        // Don't add if already present or if it's ourselves
+                                        if (state.playersHere.any { it.id == user.id } || user.id == UserStateHolder.userId) {
+                                            state
+                                        } else {
+                                            state.copy(playersHere = state.playersHere + user)
+                                        }
+                                    }
+                                }
+                            }
+                            // Add event log entry
+                            CombatStateHolder.addEventLogEntry(
+                                "${event.playerName} arrives.",
+                                EventLogType.NAVIGATION
+                            )
+                        }
+                    }
+                    is PlayerPresenceEvent.PlayerLeft -> {
+                        // Only update if the event is for our current location
+                        if (event.locationId == currentLocationId) {
+                            _localState.update { state ->
+                                state.copy(
+                                    playersHere = state.playersHere.filter { it.id != event.playerId }
+                                )
+                            }
+                            // Add event log entry
+                            CombatStateHolder.addEventLogEntry(
+                                "${event.playerName} leaves.",
+                                EventLogType.NAVIGATION
+                            )
+                        }
+                    }
                 }
             }
         }

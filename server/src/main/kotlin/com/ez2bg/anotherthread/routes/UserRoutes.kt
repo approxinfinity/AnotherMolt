@@ -491,13 +491,29 @@ fun Route.userRoutes() {
                 }
             }
 
+            // Capture old location before updating (for player left notification)
+            val oldLocationId = user?.currentLocationId
+            val oldLocation = oldLocationId?.let { LocationRepository.findById(it) }
+            val userName = user?.name ?: "Unknown"
+
             if (UserRepository.updateCurrentLocation(id, request.locationId)) {
                 // Remove player from any active combat when they change location
                 CombatService.removePlayerFromCombat(id)
 
+                // Broadcast player left old location (before updating location tracking)
+                if (oldLocation != null && oldLocationId != request.locationId) {
+                    LocationEventService.broadcastPlayerLeft(oldLocation, id, userName)
+                }
+
                 // Update location tracking for WebSocket events
                 request.locationId?.let { locationId ->
                     LocationEventService.updatePlayerLocation(id, locationId)
+                }
+
+                // Broadcast player entered new location
+                val newLocation = request.locationId?.let { LocationRepository.findById(it) }
+                if (newLocation != null && request.locationId != oldLocationId) {
+                    LocationEventService.broadcastPlayerEntered(newLocation, id, userName)
                 }
 
                 // Record encounters with other players at this location

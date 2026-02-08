@@ -20,7 +20,9 @@ enum class LocationEventType {
     ITEM_REMOVED,          // Item removed from location
     CREATURE_REMOVED,      // Creature killed/left location
     CREATURE_ADDED,        // Creature spawned/entered location
-    STEALTH_DETECTED       // Observer detected a hidden/sneaking character
+    STEALTH_DETECTED,      // Observer detected a hidden/sneaking character
+    PLAYER_ENTERED,        // Player entered the location
+    PLAYER_LEFT            // Player left the location
 }
 
 /**
@@ -54,7 +56,9 @@ data class LocationMutationEvent(
     val itemIdRemoved: String? = null,
     val creatureIdRemoved: String? = null,
     val creatureIdAdded: String? = null,
-    val creatureName: String? = null      // For display purposes
+    val creatureName: String? = null,     // For display purposes
+    val playerId: String? = null,         // Player who entered/left
+    val playerName: String? = null        // Player name for display
 )
 
 /**
@@ -221,13 +225,54 @@ object LocationEventService {
     }
 
     /**
-     * Broadcast to all players observing a specific location.
+     * Broadcast that a player entered a location.
+     * Notifies all OTHER players at that location (excludes the entering player).
      */
-    private suspend fun broadcastToLocationObservers(locationId: String, event: LocationMutationEvent) {
+    suspend fun broadcastPlayerEntered(location: Location, playerId: String, playerName: String) {
+        val event = LocationMutationEvent(
+            type = "LOCATION_MUTATION",
+            eventType = LocationEventType.PLAYER_ENTERED,
+            locationId = location.id,
+            areaId = location.areaId,
+            gridX = location.gridX,
+            gridY = location.gridY,
+            locationName = location.name,
+            playerId = playerId,
+            playerName = playerName
+        )
+        broadcastToLocationObservers(location.id, event, excludeUserId = playerId)
+    }
+
+    /**
+     * Broadcast that a player left a location.
+     * Notifies all OTHER players at that location (excludes the leaving player).
+     */
+    suspend fun broadcastPlayerLeft(location: Location, playerId: String, playerName: String) {
+        val event = LocationMutationEvent(
+            type = "LOCATION_MUTATION",
+            eventType = LocationEventType.PLAYER_LEFT,
+            locationId = location.id,
+            areaId = location.areaId,
+            gridX = location.gridX,
+            gridY = location.gridY,
+            locationName = location.name,
+            playerId = playerId,
+            playerName = playerName
+        )
+        broadcastToLocationObservers(location.id, event, excludeUserId = playerId)
+    }
+
+    /**
+     * Broadcast to all players observing a specific location.
+     * Optionally excludes a specific user (e.g., the player entering/leaving).
+     */
+    private suspend fun broadcastToLocationObservers(locationId: String, event: LocationMutationEvent, excludeUserId: String? = null) {
         val jsonMessage = json.encodeToString(event)
 
-        // Find all players at this location
-        val observersAtLocation = playerLocations.filter { it.value == locationId }.keys
+        // Find all players at this location (excluding the specified user if any)
+        val observersAtLocation = playerLocations
+            .filter { it.value == locationId && (excludeUserId == null || it.key != excludeUserId) }
+            .keys
 
         for (userId in observersAtLocation) {
             val connection = playerConnections[userId]

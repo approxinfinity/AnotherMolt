@@ -29,6 +29,14 @@ sealed class NavigationEvent {
 }
 
 /**
+ * Player presence event for real-time player enter/leave notifications.
+ */
+sealed class PlayerPresenceEvent {
+    data class PlayerEntered(val locationId: String, val playerId: String, val playerName: String) : PlayerPresenceEvent()
+    data class PlayerLeft(val locationId: String, val playerId: String, val playerName: String) : PlayerPresenceEvent()
+}
+
+/**
  * Singleton state holder for Adventure mode business logic.
  * Manages current location, navigation, and entities at location.
  *
@@ -83,6 +91,10 @@ object AdventureStateHolder {
     // Navigation events (for one-time event handling)
     private val _navigationEvents = MutableSharedFlow<NavigationEvent>(extraBufferCapacity = 10)
     val navigationEvents: SharedFlow<NavigationEvent> = _navigationEvents.asSharedFlow()
+
+    // Player presence events (for real-time player enter/leave notifications)
+    private val _playerPresenceEvents = MutableSharedFlow<PlayerPresenceEvent>(extraBufferCapacity = 10)
+    val playerPresenceEvents: SharedFlow<PlayerPresenceEvent> = _playerPresenceEvents.asSharedFlow()
 
     // Track current user ID for API calls
     private var currentUserId: String? = null
@@ -355,6 +367,32 @@ object AdventureStateHolder {
                 scope.launch { refreshCurrentLocation() }
                 currentLoc
             }
+            LocationEventType.PLAYER_ENTERED -> {
+                // Emit player entered event for ViewModel to handle
+                val playerId = event.playerId
+                val playerName = event.playerName
+                if (playerId != null && playerName != null) {
+                    scope.launch {
+                        _playerPresenceEvents.emit(
+                            PlayerPresenceEvent.PlayerEntered(event.locationId, playerId, playerName)
+                        )
+                    }
+                }
+                currentLoc // Location data unchanged
+            }
+            LocationEventType.PLAYER_LEFT -> {
+                // Emit player left event for ViewModel to handle
+                val playerId = event.playerId
+                val playerName = event.playerName
+                if (playerId != null && playerName != null) {
+                    scope.launch {
+                        _playerPresenceEvents.emit(
+                            PlayerPresenceEvent.PlayerLeft(event.locationId, playerId, playerName)
+                        )
+                    }
+                }
+                currentLoc // Location data unchanged
+            }
         }
 
         // Update current location state
@@ -421,6 +459,11 @@ object AdventureStateHolder {
             }
             LocationEventType.LOCATION_UPDATED -> {
                 // For general updates, we'd need to fetch from server
+                location
+            }
+            LocationEventType.PLAYER_ENTERED,
+            LocationEventType.PLAYER_LEFT -> {
+                // Player events don't affect location data
                 location
             }
         }

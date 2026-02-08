@@ -2394,7 +2394,9 @@ enum class LocationEventType {
     ITEM_ADDED,
     ITEM_REMOVED,
     CREATURE_REMOVED,
-    CREATURE_ADDED
+    CREATURE_ADDED,
+    PLAYER_ENTERED,
+    PLAYER_LEFT
 }
 
 @Serializable
@@ -2412,5 +2414,7 @@ data class LocationMutationEvent(
     val itemIdRemoved: String? = null,
     val creatureIdRemoved: String? = null,
     val creatureIdAdded: String? = null,
-    val creatureName: String? = null
+    val creatureName: String? = null,
+    val playerId: String? = null,        // Player who entered/left
+    val playerName: String? = null       // Player name for display
 )
