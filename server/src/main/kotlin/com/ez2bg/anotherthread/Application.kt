@@ -1177,7 +1177,9 @@ fun Application.module() {
                 // This handles the case where a player reconnects (session restore)
                 val location = LocationRepository.findById(locationId)
                 if (location != null) {
-                    LocationEventService.broadcastPlayerEntered(location, userId, user.name)
+                    launch {
+                        LocationEventService.broadcastPlayerEntered(location, userId, user.name)
+                    }
                 }
             }
             // Update last active timestamp on WebSocket connect
@@ -1257,7 +1259,9 @@ fun Application.module() {
                 if (locationId != null && disconnectingUser != null) {
                     val location = LocationRepository.findById(locationId)
                     if (location != null) {
-                        LocationEventService.broadcastPlayerLeft(location, userId, disconnectingUser.name)
+                        kotlinx.coroutines.runBlocking {
+                            LocationEventService.broadcastPlayerLeft(location, userId, disconnectingUser.name)
+                        }
                     }
                 }
                 CombatService.unregisterConnection(userId)
