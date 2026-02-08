@@ -409,19 +409,30 @@ object CombatService {
 
     /**
      * Create a new combat session with creatures at a location.
+     * Only includes creatures that are actually at this location (prevents stale data bugs).
      */
     private fun createSession(locationId: String, targetCreatureIds: List<String>): CombatSession {
-        // Get creatures at location
+        // Get fresh location data to verify which creatures are actually here
         val location = LocationRepository.findById(locationId)
+        val creaturesActuallyAtLocation = location?.creatureIds?.toSet() ?: emptySet()
+
+        // If specific targets requested, verify they're actually at this location
         val creatureIds = if (targetCreatureIds.isNotEmpty()) {
-            targetCreatureIds
+            val verified = targetCreatureIds.filter { it in creaturesActuallyAtLocation }
+            if (verified.size != targetCreatureIds.size) {
+                val missing = targetCreatureIds.filter { it !in creaturesActuallyAtLocation }
+                log.warn("Combat session creation: ${missing.size} creature(s) not at location $locationId: $missing")
+            }
+            verified
         } else {
-            location?.creatureIds ?: emptyList()
+            creaturesActuallyAtLocation.toList()
         }
 
         val creatureCombatants = creatureIds.mapNotNull { creatureId ->
             CreatureRepository.findById(creatureId)?.toCombatant()
         }
+
+        log.info("Creating combat session at $locationId with ${creatureCombatants.size} creature(s): ${creatureCombatants.map { it.name }}")
 
         return CombatSession(
             locationId = locationId,
