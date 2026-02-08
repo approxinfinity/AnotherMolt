@@ -346,24 +346,24 @@ class AdventureViewModel {
                         _localState.update { it.copy(playerGold = currentGold) }
                     }
 
-                    // ONE-TIME location sync on startup only
-                    // This fixes the case where the repository fell back to (0,0) before
-                    // we got the user's actual location from the server.
-                    // We only do this ONCE because after that, the user is navigating
-                    // and we don't want to fight with their navigation.
+                    // ONE-TIME location sync after server validation
+                    // The first emission is from cached data (AuthStorage) which may be stale.
+                    // The second emission is after validateSession() updates with fresh server data.
+                    // We sync the location ONLY from the second emission (after server validation).
+                    // This ensures we use the server's authoritative location, not a cached one.
                     // TODO: Explore re-syncing location on WebSocket reconnection as well,
                     // in case the user's location drifts during a disconnect/reconnect cycle.
-                    if (!hasPerformedInitialLocationSync && currentLocationId != null) {
+                    if (!hasPerformedInitialLocationSync && currentLocationId != null && !isFirstEmission) {
                         hasPerformedInitialLocationSync = true
 
-                        // Wait for repository to be initialized before checking location
+                        // Now we have fresh server data - sync to the server's location
                         val serverLocationId = currentLocationId // capture for lambda
                         scope.launch {
                             // Wait for repository to initialize
                             AdventureRepository.isInitialized.first { it }
                             val currentRepoLocationId = AdventureRepository.currentLocationId.value
                             if (currentRepoLocationId != null && currentRepoLocationId != serverLocationId) {
-                                println("[AdventureViewModel] Initial location sync: server=$serverLocationId, repo=$currentRepoLocationId - correcting to server location")
+                                println("[AdventureViewModel] Server location sync: server=$serverLocationId, repo=$currentRepoLocationId - correcting to server location")
                                 AdventureRepository.setCurrentLocation(serverLocationId)
                             }
                         }
