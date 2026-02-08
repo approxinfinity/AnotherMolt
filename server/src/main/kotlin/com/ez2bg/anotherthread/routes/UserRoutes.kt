@@ -751,6 +751,68 @@ fun Route.userRoutes() {
             call.respond(HttpStatusCode.OK, updatedUser.toResponse())
         }
 
+        // Give an item to another player at the same location
+        post("/{id}/give/{receiverId}/{itemId}") {
+            val giverId = call.parameters["id"] ?: return@post call.respond(HttpStatusCode.BadRequest)
+            val receiverId = call.parameters["receiverId"] ?: return@post call.respond(HttpStatusCode.BadRequest)
+            val itemId = call.parameters["itemId"] ?: return@post call.respond(HttpStatusCode.BadRequest)
+
+            val giver = UserRepository.findById(giverId)
+            if (giver == null) {
+                call.respond(HttpStatusCode.NotFound, mapOf("error" to "Giver not found"))
+                return@post
+            }
+
+            val receiver = UserRepository.findById(receiverId)
+            if (receiver == null) {
+                call.respond(HttpStatusCode.NotFound, mapOf("error" to "Receiver not found"))
+                return@post
+            }
+
+            // Check giver has the item
+            if (itemId !in giver.itemIds) {
+                call.respond(HttpStatusCode.BadRequest, mapOf("error" to "You don't have that item"))
+                return@post
+            }
+
+            // Check if item is equipped - must unequip first
+            if (itemId in giver.equippedItemIds) {
+                call.respond(HttpStatusCode.BadRequest, mapOf("error" to "You must unequip this item before giving it"))
+                return@post
+            }
+
+            // Verify both players are at the same location
+            if (giver.currentLocationId == null || giver.currentLocationId != receiver.currentLocationId) {
+                call.respond(HttpStatusCode.BadRequest, mapOf("error" to "You must be at the same location to give items"))
+                return@post
+            }
+
+            // Get item info for response
+            val item = ItemRepository.findById(itemId)
+            val itemName = item?.name ?: "Unknown Item"
+
+            // Transfer item: remove from giver, add to receiver
+            val giverUpdatedItems = giver.itemIds.toMutableList()
+            giverUpdatedItems.remove(itemId)
+            UserRepository.update(giver.copy(itemIds = giverUpdatedItems))
+
+            val receiverUpdatedItems = receiver.itemIds + itemId
+            UserRepository.update(receiver.copy(itemIds = receiverUpdatedItems))
+
+            // Notify receiver via WebSocket
+            LocationEventService.sendItemReceived(receiverId, giverId, giver.name, itemId, itemName)
+
+            val updatedGiver = UserRepository.findById(giverId)!!
+            call.respond(HttpStatusCode.OK, mapOf(
+                "success" to true,
+                "giver" to updatedGiver.toResponse(),
+                "receiverId" to receiverId,
+                "receiverName" to receiver.name,
+                "itemId" to itemId,
+                "itemName" to itemName
+            ))
+        }
+
         // Get identified entities for a user
         get("/{id}/identified") {
             val userId = call.parameters["id"] ?: return@get call.respond(HttpStatusCode.BadRequest)

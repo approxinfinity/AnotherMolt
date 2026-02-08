@@ -430,6 +430,27 @@ data class GiveUpResponse(
 )
 
 @Serializable
+data class GiveItemResponse(
+    val success: Boolean,
+    val giver: UserDto,
+    val receiverId: String,
+    val receiverName: String,
+    val itemId: String,
+    val itemName: String
+)
+
+@Serializable
+data class ItemReceivedEvent(
+    val type: String = "ITEM_RECEIVED",
+    val receiverId: String,
+    val giverId: String,
+    val giverName: String,
+    val itemId: String,
+    val itemName: String,
+    val message: String
+)
+
+@Serializable
 data class RegisterRequest(
     val name: String,
     val password: String
@@ -1318,6 +1339,25 @@ object ApiClient {
      */
     suspend fun dropItem(userId: String, itemId: String): Result<UserDto> = apiCall {
         val response = client.post("$baseUrl/users/$userId/drop/$itemId")
+        if (response.status.isSuccess()) {
+            response.body()
+        } else {
+            val errorBody = response.bodyAsText()
+            val errorMessage = try {
+                Json.decodeFromString<Map<String, String>>(errorBody)["error"] ?: errorBody
+            } catch (e: Exception) {
+                errorBody
+            }
+            throw Exception(errorMessage)
+        }
+    }
+
+    /**
+     * Give an item to another player at the same location.
+     * Returns updated giver user and item info.
+     */
+    suspend fun giveItem(giverId: String, receiverId: String, itemId: String): Result<GiveItemResponse> = apiCall {
+        val response = client.post("$baseUrl/users/$giverId/give/$receiverId/$itemId")
         if (response.status.isSuccess()) {
             response.body()
         } else {

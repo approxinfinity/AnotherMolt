@@ -45,6 +45,7 @@ sealed class GlobalEvent {
     data class PlayerDragged(val response: PlayerDraggedResponse) : GlobalEvent()
     data class PlayerDied(val response: PlayerDeathResponse) : GlobalEvent()
     data class LocationMutated(val event: LocationMutationEvent) : GlobalEvent()
+    data class ItemReceived(val giverId: String, val giverName: String, val itemId: String, val itemName: String, val message: String) : GlobalEvent()
     data class Error(val message: String, val code: String?) : GlobalEvent()
 }
 
@@ -427,6 +428,17 @@ class CombatClient(
                 text.contains("LOCATION_MUTATION") || (text.contains("\"eventType\"") && text.contains("\"locationId\"") && text.contains("\"locationName\"")) -> {
                     val event = json.decodeFromString<LocationMutationEvent>(extractPayload(text))
                     _events.emit(GlobalEvent.LocationMutated(event))
+                }
+
+                text.contains("ITEM_RECEIVED") -> {
+                    val event = json.decodeFromString<ItemReceivedEvent>(extractPayload(text))
+                    _events.emit(GlobalEvent.ItemReceived(
+                        giverId = event.giverId,
+                        giverName = event.giverName,
+                        itemId = event.itemId,
+                        itemName = event.itemName,
+                        message = event.message
+                    ))
                 }
 
                 else -> {

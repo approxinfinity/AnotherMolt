@@ -69,7 +69,11 @@ data class AdventureLocalState(
     val trainerInfo: TrainerInfoResponse? = null,
     val isLoadingTrainer: Boolean = false,
     // Other players at this location (excludes self)
-    val playersHere: List<UserDto> = emptyList()
+    val playersHere: List<UserDto> = emptyList(),
+    // Player interaction state
+    val selectedPlayer: UserDto? = null,
+    val showPlayerInteractionModal: Boolean = false,
+    val showGiveItemModal: Boolean = false
 )
 
 /**
@@ -125,7 +129,11 @@ data class AdventureUiState(
     val trainerInfo: TrainerInfoResponse? = null,
     val isLoadingTrainer: Boolean = false,
     // Other players at this location (excludes self)
-    val playersHere: List<UserDto> = emptyList()
+    val playersHere: List<UserDto> = emptyList(),
+    // Player interaction state
+    val selectedPlayer: UserDto? = null,
+    val showPlayerInteractionModal: Boolean = false,
+    val showGiveItemModal: Boolean = false
 ) {
     // Derived properties
     val currentLocation: LocationDto?
@@ -252,7 +260,10 @@ class AdventureViewModel {
             showTrainerModal = local.showTrainerModal,
             trainerInfo = local.trainerInfo,
             isLoadingTrainer = local.isLoadingTrainer,
-            playersHere = local.playersHere
+            playersHere = local.playersHere,
+            selectedPlayer = local.selectedPlayer,
+            showPlayerInteractionModal = local.showPlayerInteractionModal,
+            showGiveItemModal = local.showGiveItemModal
         )
     }.stateIn(
         scope = scope,
@@ -1445,6 +1456,103 @@ class AdventureViewModel {
     val isDisoriented = CombatStateHolder.isDisoriented
     val disorientRounds = CombatStateHolder.disorientRounds
     val eventLog = CombatStateHolder.eventLog
+
+    // =========================================================================
+    // PLAYER INTERACTION
+    // =========================================================================
+
+    /**
+     * Select a player to interact with (shows the player interaction modal).
+     */
+    fun selectPlayer(player: UserDto) {
+        _localState.update {
+            it.copy(
+                selectedPlayer = player,
+                showPlayerInteractionModal = true
+            )
+        }
+    }
+
+    /**
+     * Dismiss the player interaction modal.
+     */
+    fun dismissPlayerInteractionModal() {
+        _localState.update {
+            it.copy(
+                showPlayerInteractionModal = false,
+                showGiveItemModal = false
+            )
+        }
+    }
+
+    /**
+     * Show the give item modal for the selected player.
+     */
+    fun showGiveItemModal() {
+        _localState.update {
+            it.copy(showGiveItemModal = true)
+        }
+    }
+
+    /**
+     * Dismiss just the give item modal (back to player interaction).
+     */
+    fun dismissGiveItemModal() {
+        _localState.update {
+            it.copy(showGiveItemModal = false)
+        }
+    }
+
+    /**
+     * Give an item to the selected player.
+     */
+    fun giveItemToPlayer(itemId: String) {
+        val targetPlayer = _localState.value.selectedPlayer ?: return
+        val myUserId = UserStateHolder.userId ?: return
+
+        scope.launch {
+            ApiClient.giveItem(myUserId, targetPlayer.id, itemId)
+                .onSuccess { response ->
+                    // Update our user state with new inventory
+                    UserStateHolder.updateUser(response.giver)
+                    logMessage("Gave ${response.itemName} to ${targetPlayer.name}")
+                    dismissPlayerInteractionModal()
+                }
+                .onFailure { error ->
+                    logError("Failed to give item: ${error.message}")
+                }
+        }
+    }
+
+    /**
+     * Initiate attack against another player (PvP).
+     * Note: Full PvP combat implementation may need additional work.
+     */
+    fun attackPlayer(player: UserDto) {
+        logMessage("Attacking ${player.name}!")
+        // TODO: Implement PvP combat when ready
+        dismissPlayerInteractionModal()
+    }
+
+    /**
+     * Attempt to rob the selected player.
+     * Note: Rob mechanics implementation may need additional work.
+     */
+    fun robPlayer(player: UserDto) {
+        logMessage("Attempting to rob ${player.name}...")
+        // TODO: Implement rob mechanics when ready
+        dismissPlayerInteractionModal()
+    }
+
+    /**
+     * Invite the selected player to party.
+     * Note: Party system implementation may need additional work.
+     */
+    fun inviteToParty(player: UserDto) {
+        logMessage("Invited ${player.name} to party")
+        // TODO: Implement party system when ready
+        dismissPlayerInteractionModal()
+    }
 }
 
 /**

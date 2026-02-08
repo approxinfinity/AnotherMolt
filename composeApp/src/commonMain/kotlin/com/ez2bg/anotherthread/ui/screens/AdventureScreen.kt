@@ -389,6 +389,7 @@ fun AdventureScreen(
                                 isBlinded = isBlinded,
                                 onCreatureClick = { if (!ghostMode) viewModel.selectCreature(it) },
                                 onItemClick = { if (!ghostMode) viewModel.pickupItem(it) },
+                                onPlayerClick = { if (!ghostMode && !isBlinded) viewModel.selectPlayer(it) },
                                 onLocationNameClick = { showLocationDetailPopup = true },
                                 modifier = Modifier
                                     .fillMaxWidth()
@@ -890,6 +891,32 @@ fun AdventureScreen(
                 )
             }
 
+            // === PLAYER INTERACTION MODAL ===
+            val selectedPlayer = uiState.selectedPlayer
+            if (uiState.showPlayerInteractionModal && selectedPlayer != null) {
+                PlayerInteractionModal(
+                    player = selectedPlayer,
+                    isInSameParty = false, // TODO: Implement party checking when party system is ready
+                    onAttack = { viewModel.attackPlayer(selectedPlayer) },
+                    onRob = { viewModel.robPlayer(selectedPlayer) },
+                    onInviteToParty = { viewModel.inviteToParty(selectedPlayer) },
+                    onHeal = { /* TODO: Implement party heal */ },
+                    onGive = { viewModel.showGiveItemModal() },
+                    onDismiss = { viewModel.dismissPlayerInteractionModal() }
+                )
+            }
+
+            // === GIVE ITEM MODAL ===
+            if (uiState.showGiveItemModal && selectedPlayer != null && displayUser != null) {
+                GiveItemModal(
+                    playerInventory = uiState.allItems.filter { it.id in displayUser.itemIds },
+                    equippedItemIds = displayUser.equippedItemIds,
+                    receiverName = selectedPlayer.name,
+                    onGiveItem = { itemId -> viewModel.giveItemToPlayer(itemId) },
+                    onDismiss = { viewModel.dismissGiveItemModal() }
+                )
+            }
+
             // === SNACKBAR HOST ===
             SnackbarHost(
                 hostState = snackbarHostState,
@@ -1013,6 +1040,7 @@ private fun LocationInfoPanel(
     isBlinded: Boolean,
     onCreatureClick: (CreatureDto) -> Unit,
     onItemClick: (ItemDto) -> Unit,
+    onPlayerClick: (UserDto) -> Unit = {},
     onLocationNameClick: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
@@ -1062,12 +1090,14 @@ private fun LocationInfoPanel(
                     .horizontalScroll(rememberScrollState()),
                 horizontalArrangement = Arrangement.spacedBy(12.dp)
             ) {
-                // Show players first (in green)
+                // Show players first (in green) - clickable to open interaction modal
                 playersHere.forEach { player ->
                     key("player-${player.id}") {
                         Row(
                             verticalAlignment = Alignment.CenterVertically,
-                            modifier = Modifier.padding(vertical = 2.dp)
+                            modifier = Modifier
+                                .clickable { onPlayerClick(player) }
+                                .padding(vertical = 2.dp)
                         ) {
                             if (!isBlinded) {
                                 Text(
@@ -2479,6 +2509,389 @@ private fun GiveUpConfirmationModal(
                 }
             }
         }
+    }
+}
+
+// =============================================================================
+// PLAYER INTERACTION MODAL
+// =============================================================================
+
+/**
+ * Modal for interacting with another player.
+ * Shows action icons: attack, rob, party
+ * Expandable to show player picture and description
+ * If in same party, shows additional party actions: heal, give
+ */
+@Composable
+private fun PlayerInteractionModal(
+    player: UserDto,
+    isInSameParty: Boolean,
+    onAttack: () -> Unit,
+    onRob: () -> Unit,
+    onInviteToParty: () -> Unit,
+    onHeal: () -> Unit,
+    onGive: () -> Unit,
+    onDismiss: () -> Unit
+) {
+    var isExpanded by remember { mutableStateOf(false) }
+
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(Color.Black.copy(alpha = 0.7f))
+            .clickable(onClick = onDismiss),
+        contentAlignment = Alignment.Center
+    ) {
+        Card(
+            modifier = Modifier
+                .widthIn(max = 340.dp)
+                .clickable(enabled = false) { /* Prevent click-through */ },
+            shape = RoundedCornerShape(16.dp),
+            colors = CardDefaults.cardColors(
+                containerColor = Color(0xFF2A2A3E)
+            )
+        ) {
+            Column(
+                modifier = Modifier.padding(20.dp),
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.spacedBy(16.dp)
+            ) {
+                // Player name header
+                Text(
+                    text = player.name,
+                    style = MaterialTheme.typography.titleLarge,
+                    color = Color(0xFF4CAF50), // Green for players
+                    fontWeight = FontWeight.Bold
+                )
+
+                // Main action icons row
+                Row(
+                    horizontalArrangement = Arrangement.spacedBy(24.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    // Attack action
+                    PlayerActionButton(
+                        icon = Icons.Filled.SportsMartialArts,
+                        label = "Attack",
+                        color = Color(0xFFE53935), // Red
+                        onClick = {
+                            onAttack()
+                            onDismiss()
+                        }
+                    )
+
+                    // Rob action
+                    PlayerActionButton(
+                        icon = Icons.Filled.Gavel,
+                        label = "Rob",
+                        color = Color(0xFFFF9800), // Orange
+                        onClick = {
+                            onRob()
+                            onDismiss()
+                        }
+                    )
+
+                    // Party action
+                    PlayerActionButton(
+                        icon = Icons.Filled.Person,
+                        label = "Party",
+                        color = Color(0xFF2196F3), // Blue
+                        onClick = {
+                            onInviteToParty()
+                            onDismiss()
+                        }
+                    )
+                }
+
+                // Party actions row (only when in same party)
+                if (isInSameParty) {
+                    HorizontalDivider(
+                        modifier = Modifier.padding(vertical = 4.dp),
+                        color = Color.White.copy(alpha = 0.2f)
+                    )
+
+                    Text(
+                        text = "Party Actions",
+                        style = MaterialTheme.typography.labelMedium,
+                        color = Color.White.copy(alpha = 0.6f)
+                    )
+
+                    Row(
+                        horizontalArrangement = Arrangement.spacedBy(24.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        // Heal action
+                        PlayerActionButton(
+                            icon = Icons.Filled.Dangerous, // Will replace with heart/heal icon
+                            label = "Heal",
+                            color = Color(0xFF4CAF50), // Green
+                            onClick = {
+                                onHeal()
+                                onDismiss()
+                            }
+                        )
+
+                        // Give action
+                        PlayerActionButton(
+                            icon = Icons.AutoMirrored.Filled.ArrowForward,
+                            label = "Give",
+                            color = Color(0xFF9C27B0), // Purple
+                            onClick = onGive
+                        )
+                    }
+                }
+
+                // Expand/collapse button
+                TextButton(
+                    onClick = { isExpanded = !isExpanded }
+                ) {
+                    Text(
+                        text = if (isExpanded) "Hide Details" else "Show Details",
+                        color = Color.White.copy(alpha = 0.7f)
+                    )
+                }
+
+                // Expanded section with player picture and description
+                if (isExpanded) {
+                    HorizontalDivider(
+                        modifier = Modifier.padding(vertical = 4.dp),
+                        color = Color.White.copy(alpha = 0.2f)
+                    )
+
+                    // Player picture
+                    if (player.imageUrl != null) {
+                        AsyncImage(
+                            model = "${AppConfig.api.baseUrl}${player.imageUrl}",
+                            contentDescription = "Player portrait",
+                            modifier = Modifier
+                                .size(120.dp)
+                                .clip(RoundedCornerShape(8.dp)),
+                            contentScale = ContentScale.Crop
+                        )
+                    } else {
+                        // Placeholder
+                        Box(
+                            modifier = Modifier
+                                .size(120.dp)
+                                .clip(RoundedCornerShape(8.dp))
+                                .background(Color.Gray.copy(alpha = 0.3f)),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Text(
+                                text = "\uD83D\uDC64",
+                                fontSize = 48.sp
+                            )
+                        }
+                    }
+
+                    // Player description
+                    val description = player.appearanceDescription.ifEmpty {
+                        player.desc.ifEmpty { "No description available" }
+                    }
+                    Text(
+                        text = description,
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = Color.White.copy(alpha = 0.8f),
+                        textAlign = TextAlign.Center,
+                        modifier = Modifier.padding(top = 8.dp)
+                    )
+
+                    // Level info
+                    Text(
+                        text = "Level ${player.level}",
+                        style = MaterialTheme.typography.labelMedium,
+                        color = Color.White.copy(alpha = 0.5f),
+                        modifier = Modifier.padding(top = 4.dp)
+                    )
+                }
+            }
+        }
+    }
+}
+
+/**
+ * Individual action button for player interaction modal.
+ */
+@Composable
+private fun PlayerActionButton(
+    icon: ImageVector,
+    label: String,
+    color: Color,
+    onClick: () -> Unit
+) {
+    Column(
+        horizontalAlignment = Alignment.CenterHorizontally,
+        modifier = Modifier.clickable(onClick = onClick)
+    ) {
+        Box(
+            modifier = Modifier
+                .size(56.dp)
+                .clip(CircleShape)
+                .background(color.copy(alpha = 0.2f))
+                .border(2.dp, color, CircleShape),
+            contentAlignment = Alignment.Center
+        ) {
+            Icon(
+                imageVector = icon,
+                contentDescription = label,
+                tint = color,
+                modifier = Modifier.size(28.dp)
+            )
+        }
+        Spacer(modifier = Modifier.height(4.dp))
+        Text(
+            text = label,
+            style = MaterialTheme.typography.labelSmall,
+            color = color
+        )
+    }
+}
+
+// =============================================================================
+// GIVE ITEM MODAL
+// =============================================================================
+
+/**
+ * Modal for selecting an item to give to another player.
+ */
+@Composable
+private fun GiveItemModal(
+    playerInventory: List<ItemDto>,
+    equippedItemIds: List<String>,
+    receiverName: String,
+    onGiveItem: (String) -> Unit,
+    onDismiss: () -> Unit
+) {
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(Color.Black.copy(alpha = 0.7f))
+            .clickable(onClick = onDismiss),
+        contentAlignment = Alignment.Center
+    ) {
+        Card(
+            modifier = Modifier
+                .widthIn(max = 340.dp)
+                .heightIn(max = 400.dp)
+                .clickable(enabled = false) { /* Prevent click-through */ },
+            shape = RoundedCornerShape(16.dp),
+            colors = CardDefaults.cardColors(
+                containerColor = Color(0xFF2A2A3E)
+            )
+        ) {
+            Column(
+                modifier = Modifier.padding(20.dp),
+                horizontalAlignment = Alignment.CenterHorizontally
+            ) {
+                // Header
+                Text(
+                    text = "Give Item to $receiverName",
+                    style = MaterialTheme.typography.titleMedium,
+                    color = Color.White,
+                    fontWeight = FontWeight.Bold
+                )
+
+                Spacer(modifier = Modifier.height(16.dp))
+
+                // Filter out equipped items - can't give those
+                val giveableItems = playerInventory.filter { it.id !in equippedItemIds }
+
+                if (giveableItems.isEmpty()) {
+                    Text(
+                        text = "No items to give",
+                        color = Color.White.copy(alpha = 0.6f),
+                        style = MaterialTheme.typography.bodyMedium,
+                        modifier = Modifier.padding(vertical = 32.dp)
+                    )
+                } else {
+                    LazyColumn(
+                        verticalArrangement = Arrangement.spacedBy(8.dp),
+                        modifier = Modifier.weight(1f, fill = false)
+                    ) {
+                        items(giveableItems) { item ->
+                            GiveItemRow(
+                                item = item,
+                                onClick = {
+                                    onGiveItem(item.id)
+                                    onDismiss()
+                                }
+                            )
+                        }
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(16.dp))
+
+                // Cancel button
+                OutlinedButton(
+                    onClick = onDismiss,
+                    modifier = Modifier.fillMaxWidth(),
+                    colors = ButtonDefaults.outlinedButtonColors(
+                        contentColor = Color.White
+                    )
+                ) {
+                    Text("Cancel")
+                }
+            }
+        }
+    }
+}
+
+/**
+ * Row displaying an item that can be given to another player.
+ */
+@Composable
+private fun GiveItemRow(
+    item: ItemDto,
+    onClick: () -> Unit
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(8.dp))
+            .background(Color.White.copy(alpha = 0.1f))
+            .clickable(onClick = onClick)
+            .padding(12.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(12.dp)
+    ) {
+        // Item icon based on equipment type
+        val itemEmoji = when (item.equipmentType) {
+            "weapon" -> "\u2694\uFE0F"  // Crossed swords
+            "armor" -> "\uD83D\uDEE1\uFE0F"  // Shield
+            "accessory" -> "\uD83D\uDC8D"  // Ring
+            else -> "\uD83D\uDCE6"  // Package (generic item)
+        }
+        Text(
+            text = itemEmoji,
+            fontSize = 24.sp
+        )
+
+        Column(modifier = Modifier.weight(1f)) {
+            Text(
+                text = item.name,
+                color = Color.White,
+                style = MaterialTheme.typography.bodyMedium,
+                fontWeight = FontWeight.Medium
+            )
+            if (item.desc.isNotEmpty()) {
+                Text(
+                    text = item.desc,
+                    color = Color.White.copy(alpha = 0.6f),
+                    style = MaterialTheme.typography.bodySmall,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+            }
+        }
+
+        // Arrow indicator
+        Icon(
+            imageVector = Icons.AutoMirrored.Filled.ArrowForward,
+            contentDescription = "Give",
+            tint = Color(0xFF9C27B0), // Purple
+            modifier = Modifier.size(20.dp)
+        )
     }
 }
 

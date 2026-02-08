@@ -495,6 +495,15 @@ object CombatStateHolder {
                 AdventureStateHolder.handleLocationMutation(event.event)
             }
 
+            is GlobalEvent.ItemReceived -> {
+                // Show message in event log and refresh user data
+                addEventLogEntry(event.message, EventLogType.LOOT)
+                // Refresh user data to get the new item
+                scope.launch {
+                    UserStateHolder.refreshUser()
+                }
+            }
+
             is GlobalEvent.Error -> {
                 addEventLogEntry("Error: ${event.message}", EventLogType.ERROR)
             }

@@ -39,6 +39,20 @@ data class StealthDetectionEvent(
 )
 
 /**
+ * Item received event sent to a specific player when given an item.
+ */
+@Serializable
+data class ItemReceivedEvent(
+    val type: String = "ITEM_RECEIVED",
+    val receiverId: String,
+    val giverId: String,
+    val giverName: String,
+    val itemId: String,
+    val itemName: String,
+    val message: String
+)
+
+/**
  * Location mutation event sent to clients.
  */
 @Serializable
@@ -324,6 +338,31 @@ object LocationEventService {
                 log.debug("Sent stealth detection to ${detection.observerName}: ${detection.message}")
             } catch (e: Exception) {
                 log.debug("Failed to send stealth detection to ${detection.observerName}: ${e.message}")
+            }
+        }
+    }
+
+    /**
+     * Send item received notification to a specific player (blocking version for use in routes).
+     */
+    fun sendItemReceived(receiverId: String, giverId: String, giverName: String, itemId: String, itemName: String) {
+        kotlinx.coroutines.runBlocking {
+            val connection = playerConnections[receiverId] ?: return@runBlocking
+
+            val event = ItemReceivedEvent(
+                receiverId = receiverId,
+                giverId = giverId,
+                giverName = giverName,
+                itemId = itemId,
+                itemName = itemName,
+                message = "$giverName gave you $itemName"
+            )
+
+            try {
+                connection.send(Frame.Text(json.encodeToString(event)))
+                log.debug("Sent item received notification to $receiverId: $giverName gave $itemName")
+            } catch (e: Exception) {
+                log.debug("Failed to send item received notification to $receiverId: ${e.message}")
             }
         }
     }
