@@ -328,7 +328,8 @@ object CombatStateHolder {
                 // Refresh user data and location to sync HP, XP, gold, items, and remove dead creatures
                 scope.launch {
                     UserStateHolder.refreshUser()
-                    AdventureStateHolder.refreshCurrentLocation()
+                    // Use AdventureRepository.refresh() to rebuild creature locations from server
+                    com.ez2bg.anotherthread.data.AdventureRepository.refresh()
                 }
             }
 
