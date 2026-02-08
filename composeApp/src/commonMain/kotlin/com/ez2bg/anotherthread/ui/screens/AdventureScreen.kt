@@ -43,10 +43,15 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.scale
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.animation.core.LinearEasing
+import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
@@ -177,6 +182,18 @@ fun AdventureScreen(
     // Convert event log entries to UI format
     val eventLogEntries = remember(eventLogState) {
         convertEventLogEntries(eventLogState)
+    }
+
+    // Poll for user updates (HP/mana/stamina regen) when not in combat
+    // This syncs client with server's global tick regen
+    val isInCombat = combatants.isNotEmpty()
+    LaunchedEffect(isInCombat, currentUser?.id) {
+        if (!isInCombat && currentUser != null) {
+            while (true) {
+                kotlinx.coroutines.delay(3000) // Match server tick interval
+                UserStateHolder.refreshUser()
+            }
+        }
     }
 
     // Snackbar handling
@@ -349,33 +366,49 @@ fun AdventureScreen(
                             )
                         }
 
-                        // Player avatar in top-right corner (overlaid on top section)
+                        // Player avatar and tick indicator in top-right corner (overlaid on top section)
                         if (currentUser != null && !ghostMode) {
-                            Box(
+                            Row(
                                 modifier = Modifier
                                     .align(Alignment.TopEnd)
-                                    .padding(top = 8.dp, end = 8.dp)
-                                    .size(40.dp)
-                                    .clip(CircleShape)
-                                    .background(Color.Black.copy(alpha = 0.6f))
-                                    .border(1.5.dp, Color.White.copy(alpha = 0.5f), CircleShape)
-                                    .clickable { showCharacterSheet = true },
-                                contentAlignment = Alignment.Center
+                                    .padding(top = 8.dp, end = 8.dp),
+                                horizontalArrangement = Arrangement.spacedBy(6.dp),
+                                verticalAlignment = Alignment.CenterVertically
                             ) {
-                                if (currentUser.imageUrl != null) {
-                                    AsyncImage(
-                                        model = "${AppConfig.api.baseUrl}${currentUser.imageUrl}",
-                                        contentDescription = "Player avatar",
-                                        modifier = Modifier.fillMaxSize().clip(CircleShape),
-                                        contentScale = ContentScale.Crop
-                                    )
-                                } else {
-                                    Icon(
-                                        Icons.Filled.Person,
-                                        contentDescription = "Player",
-                                        tint = Color.White,
-                                        modifier = Modifier.size(24.dp)
-                                    )
+                                // Tick indicator (pizza timer) - ghostly/subtle appearance
+                                TickIndicator(
+                                    tickDurationMs = 3000,
+                                    size = 18.dp,
+                                    fillColor = Color.White.copy(alpha = 0.25f),
+                                    backgroundColor = Color.Black.copy(alpha = 0.3f),
+                                    borderColor = Color.White.copy(alpha = 0.15f)
+                                )
+
+                                // Player avatar
+                                Box(
+                                    modifier = Modifier
+                                        .size(40.dp)
+                                        .clip(CircleShape)
+                                        .background(Color.Black.copy(alpha = 0.6f))
+                                        .border(1.5.dp, Color.White.copy(alpha = 0.5f), CircleShape)
+                                        .clickable { showCharacterSheet = true },
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    if (currentUser.imageUrl != null) {
+                                        AsyncImage(
+                                            model = "${AppConfig.api.baseUrl}${currentUser.imageUrl}",
+                                            contentDescription = "Player avatar",
+                                            modifier = Modifier.fillMaxSize().clip(CircleShape),
+                                            contentScale = ContentScale.Crop
+                                        )
+                                    } else {
+                                        Icon(
+                                            Icons.Filled.Person,
+                                            contentDescription = "Player",
+                                            tint = Color.White,
+                                            modifier = Modifier.size(24.dp)
+                                        )
+                                    }
                                 }
                             }
                         }
@@ -3907,6 +3940,67 @@ private fun TrainerAbilityRow(
                 )
             }
         }
+    }
+}
+
+// =============================================================================
+// TICK INDICATOR
+// =============================================================================
+
+/**
+ * A pizza/pie indicator that shows the global game tick progress.
+ * Fills up clockwise starting from 12 o'clock and resets every 3 seconds.
+ */
+@Composable
+private fun TickIndicator(
+    modifier: Modifier = Modifier,
+    tickDurationMs: Int = 3000,
+    size: Dp = 24.dp,
+    fillColor: Color = Color(0xFF4CAF50),
+    backgroundColor: Color = Color.Black.copy(alpha = 0.6f),
+    borderColor: Color = Color.White.copy(alpha = 0.3f)
+) {
+    val infiniteTransition = rememberInfiniteTransition(label = "tickTransition")
+    val progress by infiniteTransition.animateFloat(
+        initialValue = 0f,
+        targetValue = 1f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(durationMillis = tickDurationMs, easing = LinearEasing)
+        ),
+        label = "tickProgress"
+    )
+
+    Canvas(
+        modifier = modifier.size(size)
+    ) {
+        val strokeWidth = 1.5.dp.toPx()
+        val padding = strokeWidth / 2
+
+        // Background circle
+        drawCircle(
+            color = backgroundColor,
+            radius = (this.size.minDimension - strokeWidth) / 2,
+            center = center
+        )
+
+        // Progress arc (pizza slice) - starts at 12 o'clock (-90 degrees) and fills clockwise
+        val sweepAngle = progress * 360f
+        drawArc(
+            color = fillColor,
+            startAngle = -90f,  // 12 o'clock position
+            sweepAngle = sweepAngle,
+            useCenter = true,  // Makes it a pie slice, not just an arc
+            topLeft = Offset(padding, padding),
+            size = Size(this.size.width - strokeWidth, this.size.height - strokeWidth)
+        )
+
+        // Border circle
+        drawCircle(
+            color = borderColor,
+            radius = (this.size.minDimension - strokeWidth) / 2,
+            center = center,
+            style = Stroke(width = strokeWidth)
+        )
     }
 }
 
