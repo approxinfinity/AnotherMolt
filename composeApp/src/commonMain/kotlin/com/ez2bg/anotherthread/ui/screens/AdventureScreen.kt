@@ -615,7 +615,10 @@ fun AdventureScreen(
                             viewModel.loadPlayerAbilities()
                             viewModel.loadPhasewalkDestinations()
                         },
-                        onLogout = { },
+                        onLogout = {
+                            showCharacterSheet = false
+                            UserStateHolder.logout()
+                        },
                         onNavigateToItem = { },
                         onBack = { showCharacterSheet = false },
                         onNavigateToAdmin = if (isAdmin) {

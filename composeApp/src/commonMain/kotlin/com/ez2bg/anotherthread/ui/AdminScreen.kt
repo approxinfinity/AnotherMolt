@@ -8,6 +8,7 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import com.ez2bg.anotherthread.api.*
+import com.ez2bg.anotherthread.state.UserStateHolder
 import com.ez2bg.anotherthread.storage.AuthStorage
 
 // Import all admin composables from the admin package
@@ -220,9 +221,8 @@ fun AdminScreen() {
                     viewState = ViewState.UserProfile(user)
                 },
                 onLogout = {
-                    AuthStorage.clearUser()
-                    currentUser = null
-                    viewState = ViewState.UserAuth
+                    UserStateHolder.logout()
+                    // Navigation to login will be handled by App listening to authEvents
                 },
                 onNavigateToItem = { id ->
                     selectedTab = AdminTab.ITEM

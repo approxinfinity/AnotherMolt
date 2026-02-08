@@ -11,6 +11,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.tooling.preview.Preview
 import com.ez2bg.anotherthread.api.UserDto
+import com.ez2bg.anotherthread.state.AuthEvent
 import com.ez2bg.anotherthread.state.UserStateHolder
 import com.ez2bg.anotherthread.storage.AuthStorage
 import com.ez2bg.anotherthread.storage.OnboardingStorage
@@ -32,11 +33,6 @@ private sealed class AppScreen {
 @Composable
 @Preview
 fun App() {
-    // Initialize UserStateHolder at app startup to sync with AuthStorage
-    LaunchedEffect(Unit) {
-        UserStateHolder.initialize()
-    }
-
     // Determine initial screen based on stored state
     val initialScreen = remember {
         if (!OnboardingStorage.hasSeenOnboarding()) {
@@ -52,6 +48,41 @@ fun App() {
     }
 
     var currentScreen by remember { mutableStateOf(initialScreen) }
+
+    // Initialize UserStateHolder at app startup to sync with AuthStorage
+    LaunchedEffect(Unit) {
+        UserStateHolder.initialize()
+    }
+
+    // Listen for auth events (logout, session expired, etc.)
+    LaunchedEffect(Unit) {
+        UserStateHolder.authEvents.collect { event ->
+            when (event) {
+                is AuthEvent.LoggedOut -> {
+                    // Navigate back to onboarding/login
+                    currentScreen = AppScreen.Onboarding
+                }
+                is AuthEvent.AuthError -> {
+                    // Session expired or invalid - go to login
+                    currentScreen = AppScreen.Onboarding
+                }
+                is AuthEvent.LoggedIn -> {
+                    // User logged in - navigate appropriately
+                    if (event.user.characterClassId == null) {
+                        currentScreen = AppScreen.GhostExploration(event.user)
+                    } else {
+                        currentScreen = AppScreen.Main
+                    }
+                }
+                is AuthEvent.UserUpdated -> {
+                    // User updated - check if we need to change screens
+                    if (currentScreen is AppScreen.GhostExploration && event.user.characterClassId != null) {
+                        currentScreen = AppScreen.Main
+                    }
+                }
+            }
+        }
+    }
 
     // Dark theme background color matching onboarding
     val darkBackground = Color(0xFF1A1A2E)
