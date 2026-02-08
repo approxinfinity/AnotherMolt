@@ -9,6 +9,7 @@ import com.ez2bg.anotherthread.api.LocationDto
 import com.ez2bg.anotherthread.api.AbilityDto
 import com.ez2bg.anotherthread.api.LocationEventType
 import com.ez2bg.anotherthread.api.LocationMutationEvent
+import com.ez2bg.anotherthread.data.AdventureRepository
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -305,8 +306,34 @@ object AdventureStateHolder {
      */
     fun handleLocationMutation(event: LocationMutationEvent) {
         val currentLoc = _currentLocation.value
+        val currentLocId = currentLoc?.id ?: AdventureRepository.currentLocationId.value
 
-        // Only process if this mutation is for our current location
+        // For player enter/leave events, we need to emit them even if _currentLocation
+        // isn't set yet (could happen during initialization). We compare against
+        // currentLocationId from either source.
+        if (event.eventType == LocationEventType.PLAYER_ENTERED ||
+            event.eventType == LocationEventType.PLAYER_LEFT) {
+            val playerId = event.playerId
+            val playerName = event.playerName
+            if (playerId != null && playerName != null && currentLocId == event.locationId) {
+                scope.launch {
+                    if (event.eventType == LocationEventType.PLAYER_ENTERED) {
+                        _playerPresenceEvents.emit(
+                            PlayerPresenceEvent.PlayerEntered(event.locationId, playerId, playerName)
+                        )
+                    } else {
+                        _playerPresenceEvents.emit(
+                            PlayerPresenceEvent.PlayerLeft(event.locationId, playerId, playerName)
+                        )
+                    }
+                }
+            }
+            // Still update cache but don't need to update currentLocation for these events
+            updateLocationInCache(event)
+            return
+        }
+
+        // For other event types, only process if this mutation is for our current location
         if (currentLoc == null || currentLoc.id != event.locationId) {
             // Still update allLocations cache for minimap consistency
             updateLocationInCache(event)
@@ -367,32 +394,9 @@ object AdventureStateHolder {
                 scope.launch { refreshCurrentLocation() }
                 currentLoc
             }
-            LocationEventType.PLAYER_ENTERED -> {
-                // Emit player entered event for ViewModel to handle
-                val playerId = event.playerId
-                val playerName = event.playerName
-                if (playerId != null && playerName != null) {
-                    scope.launch {
-                        _playerPresenceEvents.emit(
-                            PlayerPresenceEvent.PlayerEntered(event.locationId, playerId, playerName)
-                        )
-                    }
-                }
-                currentLoc // Location data unchanged
-            }
-            LocationEventType.PLAYER_LEFT -> {
-                // Emit player left event for ViewModel to handle
-                val playerId = event.playerId
-                val playerName = event.playerName
-                if (playerId != null && playerName != null) {
-                    scope.launch {
-                        _playerPresenceEvents.emit(
-                            PlayerPresenceEvent.PlayerLeft(event.locationId, playerId, playerName)
-                        )
-                    }
-                }
-                currentLoc // Location data unchanged
-            }
+            // PLAYER_ENTERED and PLAYER_LEFT are handled at the top of this function
+            LocationEventType.PLAYER_ENTERED,
+            LocationEventType.PLAYER_LEFT -> currentLoc
         }
 
         // Update current location state

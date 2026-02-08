@@ -30,6 +30,14 @@ data class DiscoveredItemInfo(
     val name: String
 )
 
+@Serializable
+data class UpdateLocationResponse(
+    val success: Boolean,
+    val combatStarted: Boolean = false,
+    val combatSessionId: String? = null,
+    val message: String? = null
+)
+
 /**
  * Auth routes for user registration and login.
  * Base path: /auth
@@ -548,16 +556,16 @@ fun Route.userRoutes() {
 
                 if (combatSession != null) {
                     // Return info about the auto-started combat
-                    call.respond(HttpStatusCode.OK, mapOf(
-                        "success" to true,
-                        "combatStarted" to true,
-                        "combatSessionId" to combatSession.id,
-                        "message" to "Aggressive creatures attack!"
+                    call.respond(HttpStatusCode.OK, UpdateLocationResponse(
+                        success = true,
+                        combatStarted = true,
+                        combatSessionId = combatSession.id,
+                        message = "Aggressive creatures attack!"
                     ))
                 } else {
-                    call.respond(HttpStatusCode.OK, mapOf(
-                        "success" to true,
-                        "combatStarted" to false
+                    call.respond(HttpStatusCode.OK, UpdateLocationResponse(
+                        success = true,
+                        combatStarted = false
                     ))
                 }
             } else {

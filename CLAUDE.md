@@ -54,6 +54,40 @@ When the user asks to restart or check servers, ALWAYS:
 - Ktor backend with SQLite
 - Terrain rendering uses SimplexNoise and VoronoiNoise for procedural generation
 
+## Serialization Rules (CRITICAL)
+
+**NEVER use `mapOf()` for API responses.** Ktor's kotlinx.serialization cannot serialize `Map<String, Any>` with mixed value types. This causes 400 Bad Request errors that are hard to debug.
+
+**ALWAYS:**
+1. Create a `@Serializable data class` for API responses
+2. Use typed response classes, not anonymous maps
+3. When adding new endpoints, define proper request/response DTOs
+
+**Bad:**
+```kotlin
+call.respond(HttpStatusCode.OK, mapOf(
+    "success" to true,
+    "count" to 5,
+    "message" to "Done"
+))  // FAILS: mixed types Boolean, Int, String
+```
+
+**Good:**
+```kotlin
+@Serializable
+data class MyResponse(
+    val success: Boolean,
+    val count: Int,
+    val message: String
+)
+
+call.respond(HttpStatusCode.OK, MyResponse(
+    success = true,
+    count = 5,
+    message = "Done"
+))
+```
+
 ## Code Hygiene Checks
 
 **Periodically check for duplicate code patterns:**

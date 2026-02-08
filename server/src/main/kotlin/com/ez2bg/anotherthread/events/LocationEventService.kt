@@ -127,7 +127,9 @@ object LocationEventService {
      * Update which location a player is observing.
      */
     fun updatePlayerLocation(userId: String, locationId: String) {
+        val oldLocation = playerLocations[userId]
         playerLocations[userId] = locationId
+        log.info("Player $userId location updated: $oldLocation -> $locationId (total tracked: ${playerLocations.size})")
     }
 
     /**
@@ -295,10 +297,15 @@ object LocationEventService {
     private suspend fun broadcastToLocationObservers(locationId: String, event: LocationMutationEvent, excludeUserId: String? = null) {
         val jsonMessage = json.encodeToString(event)
 
+        // Debug: log all tracked player locations
+        log.info("All tracked player locations: ${playerLocations.entries.joinToString { "${it.key}=${it.value}" }}")
+
         // Find all players at this location (excluding the specified user if any)
         val observersAtLocation = playerLocations
             .filter { it.value == locationId && (excludeUserId == null || it.key != excludeUserId) }
             .keys
+
+        log.info("Looking for observers at $locationId (excluding $excludeUserId): found ${observersAtLocation.size} - $observersAtLocation")
 
         for (userId in observersAtLocation) {
             val connection = playerConnections[userId]

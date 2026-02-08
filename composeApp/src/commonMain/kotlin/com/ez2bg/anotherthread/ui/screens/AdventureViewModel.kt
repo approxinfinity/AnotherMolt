@@ -325,6 +325,11 @@ class AdventureViewModel {
                     val currentGold = user.gold
                     val currentLocationId = user.currentLocationId
 
+                    // Ensure WebSocket is connected (may have failed at init if user was null)
+                    if (isFirstEmission) {
+                        connectCombatWebSocket()
+                    }
+
                     // On first emission, load everything
                     // On subsequent emissions, only reload if relevant properties changed
                     val learnedChanged = previousLearnedAbilityIds != currentLearnedIds
