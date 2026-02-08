@@ -143,16 +143,26 @@ fun UserProfileView(
         }
     }
 
-    // Load inventory items for this user
+    // Load inventory items for this user (need unique items for display)
     LaunchedEffect(user.id, user.itemIds) {
         if (user.itemIds.isNotEmpty()) {
+            val uniqueItemIds = user.itemIds.toSet()
             ApiClient.getItems().onSuccess { allItems ->
-                inventoryItems = allItems.filter { it.id in user.itemIds }
+                inventoryItems = allItems.filter { it.id in uniqueItemIds }
             }
         } else {
             inventoryItems = emptyList()
         }
     }
+
+    // Calculate item counts for stacking display
+    val itemCounts: Map<String, Int> = remember(user.itemIds) {
+        user.itemIds.groupingBy { it }.eachCount()
+    }
+
+    // Calculate encumbrance
+    val currentEncumbrance = user.itemIds.size
+    val maxEncumbrance = 5 + (user.constitution / 2)
 
     // Load abilities granted by inventory items
     LaunchedEffect(inventoryItems) {
@@ -350,7 +360,11 @@ fun UserProfileView(
 
         // Character Stats Section
         Spacer(modifier = Modifier.height(16.dp))
-        CharacterStatsSection(user = user)
+        CharacterStatsSection(
+            user = user,
+            currentEncumbrance = currentEncumbrance,
+            maxEncumbrance = maxEncumbrance
+        )
 
         // Generation checkboxes and save button - only show for editable users WITHOUT a class assigned
         if (canEdit && characterClassId == null) {
@@ -627,7 +641,7 @@ fun UserProfileView(
                                 tint = MaterialTheme.colorScheme.primary
                             )
                             Text(
-                                text = "Inventory (${inventoryItems.size})",
+                                text = "Inventory ($currentEncumbrance/$maxEncumbrance)",
                                 style = MaterialTheme.typography.titleMedium
                             )
                         }
@@ -637,9 +651,11 @@ fun UserProfileView(
                         )
                     }
 
-                    // Collapsed summary: comma-delimited list of items with slots (only for equipped)
+                    // Collapsed summary: comma-delimited list of items with counts
                     if (!inventoryExpanded) {
                         val summaryText = inventoryItems.joinToString(", ") { item ->
+                            val count = itemCounts[item.id] ?: 1
+                            val countSuffix = if (count > 1) " x$count" else ""
                             // Only show slot suffix for equipped items
                             val isEquipped = item.id in equippedItemIds
                             val slotSuffix = if (isEquipped) {
@@ -647,7 +663,7 @@ fun UserProfileView(
                                     " (${slot.replace("_", " ")})"
                                 } ?: ""
                             } else ""
-                            "${item.name}$slotSuffix"
+                            "${item.name}$countSuffix$slotSuffix"
                         }
                         Spacer(modifier = Modifier.height(8.dp))
                         Text(
@@ -676,6 +692,7 @@ fun UserProfileView(
                                 equippedItems.forEach { item ->
                                     InventoryItemCard(
                                         item = item,
+                                        count = itemCounts[item.id] ?: 1,
                                         isEquipped = true,
                                         abilities = item.abilityIds.mapNotNull { itemAbilitiesMap[it] },
                                         onEquipToggle = {
@@ -709,6 +726,7 @@ fun UserProfileView(
                                 unequippedItems.forEach { item ->
                                     InventoryItemCard(
                                         item = item,
+                                        count = itemCounts[item.id] ?: 1,
                                         isEquipped = false,
                                         abilities = item.abilityIds.mapNotNull { itemAbilitiesMap[it] },
                                         onEquipToggle = if (item.equipmentSlot != null) {
@@ -1142,6 +1160,7 @@ private fun AbilityDisplayCard(ability: AbilityDto) {
 @Composable
 private fun InventoryItemCard(
     item: ItemDto,
+    count: Int = 1,
     isEquipped: Boolean,
     abilities: List<AbilityDto> = emptyList(),
     onEquipToggle: (() -> Unit)?
@@ -1202,7 +1221,7 @@ private fun InventoryItemCard(
                             horizontalArrangement = Arrangement.spacedBy(8.dp)
                         ) {
                             Text(
-                                text = item.name,
+                                text = if (count > 1) "${item.name} x$count" else item.name,
                                 style = MaterialTheme.typography.titleSmall
                             )
                             if (isEquipped) {
@@ -1317,7 +1336,11 @@ private fun InventoryItemCard(
 }
 
 @Composable
-private fun CharacterStatsSection(user: UserDto) {
+private fun CharacterStatsSection(
+    user: UserDto,
+    currentEncumbrance: Int,
+    maxEncumbrance: Int
+) {
     Column(
         modifier = Modifier.fillMaxWidth(),
         verticalArrangement = Arrangement.spacedBy(12.dp)
@@ -1330,6 +1353,7 @@ private fun CharacterStatsSection(user: UserDto) {
             StatBadge(label = "Level", value = user.level.toString())
             StatBadge(label = "XP", value = "${user.experience}")
             StatBadge(label = "Gold", value = user.gold.toString())
+            StatBadge(label = "Carry", value = "$currentEncumbrance/$maxEncumbrance")
         }
 
         // HP/Mana/Stamina bars
