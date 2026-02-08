@@ -207,6 +207,67 @@ data class DerivedAttributesDto(
     val missingAreas: List<String> = emptyList()
 )
 
+/**
+ * Full stat summary with all MajorMUD-style derived values.
+ * Returned by GET /users/{id}/stats
+ */
+@Serializable
+data class StatSummaryDto(
+    // Base stats
+    val strength: Int,
+    val dexterity: Int,
+    val constitution: Int,
+    val intelligence: Int,
+    val wisdom: Int,
+    val charisma: Int,
+
+    // STR-derived
+    val meleeDamageBonus: Int,
+    val carryCapacity: Int,
+    val bashChance: Int,
+
+    // INT-derived
+    val manaPoolBonus: Int,
+    val spellDamageMultiplier: Int,  // Percentage (100 = normal)
+    val charmResistance: Int,        // Percentage
+
+    // WIS-derived
+    val manaRegen: Int,
+    val spellResistance: Int,        // Percentage
+    val mentalResistance: Int,       // Percentage
+    val healingEffectiveness: Int,   // Percentage
+
+    // DEX-derived
+    val dodgeBonus: Int,
+    val attacksPerRound: Int,
+    val initiative: Int,
+    val sneakChance: Int,            // Percentage
+
+    // CON-derived
+    val hpBonus: Int,                // Per level
+    val hpRegen: Int,
+    val poisonResistance: Int,       // Percentage
+    val diseaseResistance: Int,      // Percentage
+    val deathThreshold: Int,         // Negative HP at which death occurs
+    val staminaBonus: Int,
+    val staminaRegen: Int,
+
+    // CHA-derived
+    val shopPriceModifier: Int,      // Percentage (lower = better)
+    val critBonus: Int,              // Percentage bonus to crit chance
+    val maxPartySize: Int,
+    val npcModifier: Int,            // -20 to +20
+
+    // Combined
+    val critChance: Int,             // Percentage
+
+    // Encumbrance
+    val encumbranceTier: String,
+    val encumbranceAttackMod: Int,
+    val encumbranceDodgeMod: Int,
+    val canMove: Boolean
+)
+
 @Serializable
 data class DeriveAttributesRequestDto(
     val description: String,
@@ -1081,6 +1142,14 @@ object ApiClient {
 
     suspend fun getUser(id: String): Result<UserDto?> = apiCall {
         client.get("$baseUrl/users/$id").body()
+    }
+
+    /**
+     * Get full stat summary for a user.
+     * Returns all MajorMUD-style derived stats.
+     */
+    suspend fun getUserStats(id: String): Result<StatSummaryDto> = apiCall {
+        client.get("$baseUrl/users/$id/stats").body()
     }
 
     suspend fun updateUser(id: String, request: UpdateUserRequest): Result<UserDto> = apiCall {

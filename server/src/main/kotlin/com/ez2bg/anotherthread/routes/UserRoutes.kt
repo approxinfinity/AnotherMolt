@@ -282,6 +282,23 @@ fun Route.userRoutes() {
             }
         }
 
+        /**
+         * Get full stat summary for a user.
+         * Returns all MajorMUD-style derived stats for character sheet display.
+         */
+        get("/{id}/stats") {
+            val id = call.parameters["id"] ?: return@get call.respond(HttpStatusCode.BadRequest)
+            val user = UserRepository.findById(id)
+            if (user == null) {
+                call.respond(HttpStatusCode.NotFound)
+                return@get
+            }
+
+            val characterClass = user.characterClassId?.let { CharacterClassRepository.findById(it) }
+            val statSummary = UserRepository.getStatSummary(user, characterClass)
+            call.respond(statSummary)
+        }
+
         put("/{id}") {
             val id = call.parameters["id"] ?: return@put call.respond(HttpStatusCode.BadRequest)
             val request = call.receive<UpdateUserRequest>()

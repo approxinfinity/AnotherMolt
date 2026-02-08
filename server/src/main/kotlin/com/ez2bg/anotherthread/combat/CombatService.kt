@@ -2189,35 +2189,28 @@ object CombatService {
         val equipHpBonus = equippedItems.sumOf { it.statBonuses?.maxHp ?: 0 }
 
         // Calculate combat stats from D&D attributes + level + equipment
+        // Uses StatModifierService for MajorMUD-style calculations with breakpoints
         val playerAccuracy = UserRepository.calculateAccuracy(this, equipAttack)
         val playerEvasion = UserRepository.calculateEvasion(this, equipDefense)
         val playerCritBonus = UserRepository.calculateCritBonus(this)
         val playerBaseDamage = UserRepository.calculateBaseDamage(this, equipAttack)
         val playerAttacksPerRound = UserRepository.calculateAttacksPerRound(this)
+        val playerInitiative = UserRepository.calculateInitiative(this)
 
-        // Calculate resource regeneration based on stats (MajorMUD style)
-        // All regen rates scale with level to keep pace with increasing resource pools
-        val conMod = UserRepository.attributeModifier(constitution)
-        val intMod = UserRepository.attributeModifier(intelligence)
-        val wisMod = UserRepository.attributeModifier(wisdom)
-        val levelBonus = level / 3  // +1 regen per 3 levels
+        // Calculate resource regeneration using StatModifierService
+        // Combat regen is reduced compared to out-of-combat
+        val hpRegenRate = com.ez2bg.anotherthread.game.StatModifierService.calculateHpRegen(
+            constitution, level, isResting = false, isInCombat = true
+        )
+        val manaRegenRate = com.ez2bg.anotherthread.game.StatModifierService.calculateManaRegen(
+            wisdom, level, isResting = false, isInCombat = true
+        )
+        val staminaRegenRate = com.ez2bg.anotherthread.game.StatModifierService.calculateStaminaRegen(
+            constitution, isResting = false, isInCombat = true
+        )
 
-        // HP regen: base 1 + CON modifier + level/3
-        // Everyone gets at least 1 HP per round, CON and level add more
-        val hpRegenRate = (1 + conMod + levelBonus).coerceAtLeast(1)
-
-        // Mana regen: base 1 + higher of INT or WIS modifier + level/3
-        // Both arcane (INT) and divine (WIS) casters benefit
-        val spellMod = maxOf(intMod, wisMod)
-        val manaRegenRate = (1 + spellMod + levelBonus).coerceAtLeast(1)
-
-        // Stamina regen: base 2 + CON modifier + level/3
-        // Martial classes regenerate stamina faster, scales with level
-        val staminaRegenRate = (2 + conMod + levelBonus).coerceAtLeast(1)
-
-        // Death threshold: -(10 + CON * 2)
-        // Higher CON = more negative threshold = harder to kill
-        val playerDeathThreshold = -(10 + constitution * 2)
+        // Death threshold from StatModifierService: -(10 + CON * 2)
+        val playerDeathThreshold = UserRepository.calculateDeathThreshold(this)
 
         // Apply equipment HP bonus to max HP (current HP stays as-is from DB)
         val effectiveMaxHp = maxHp + equipHpBonus
@@ -2234,7 +2227,7 @@ object CombatService {
             currentStamina = currentStamina,
             characterClassId = characterClassId,
             abilityIds = usableAbilities,
-            initiative = CombatRng.rollD20() + UserRepository.attributeModifier(dexterity),
+            initiative = CombatRng.rollD20() + playerInitiative,
             level = level,
             accuracy = playerAccuracy,
             evasion = playerEvasion,

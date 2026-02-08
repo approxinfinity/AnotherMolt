@@ -793,50 +793,50 @@ object UserRepository {
     // Level calculation: every 100 exp = 1 level
     private fun calculateLevel(experience: Int): Int = (experience / 100) + 1
 
-    // D&D attribute modifier: (stat - 10) / 2
-    fun attributeModifier(stat: Int): Int = (stat - 10) / 2
+    // D&D attribute modifier: (stat - 10) / 2 - delegates to StatModifierService
+    fun attributeModifier(stat: Int): Int = com.ez2bg.anotherthread.game.StatModifierService.attributeModifier(stat)
 
-    // Max HP: (hitDie + CON mod) at level 1, then (hitDie/2+1 + CON mod) per level
+    // Max HP: Uses StatModifierService for MajorMUD-style calculation with breakpoints
     fun calculateMaxHp(user: User, characterClass: CharacterClass?): Int {
-        val conMod = attributeModifier(user.constitution)
         val hitDie = characterClass?.hitDie ?: 8
-        val baseHp = hitDie + conMod
-        val perLevelHp = (hitDie / 2 + 1) + conMod
-        return (baseHp + (user.level - 1) * perLevelHp).coerceAtLeast(1)
+        return com.ez2bg.anotherthread.game.StatModifierService.calculateMaxHp(user.constitution, user.level, hitDie)
     }
 
-    // Max Mana: baseMana + spellcastingMod*2 + level*2
+    // Max Mana: baseMana + INT bonus (from StatModifierService) + spellcasting mod + level scaling
     fun calculateMaxMana(user: User, characterClass: CharacterClass?): Int {
         val baseMana = characterClass?.baseMana ?: 10
+        val intBonus = com.ez2bg.anotherthread.game.StatModifierService.manaPoolBonus(user.intelligence)
         val spellMod = when (characterClass?.primaryAttribute) {
             "intelligence" -> attributeModifier(user.intelligence)
             "wisdom" -> attributeModifier(user.wisdom)
             "charisma" -> attributeModifier(user.charisma)
             else -> 0
         }
-        return (baseMana + (spellMod * 2) + (user.level * 2)).coerceAtLeast(0)
+        return (baseMana + intBonus + (spellMod * 2) + (user.level * 2)).coerceAtLeast(0)
     }
 
-    // Max Stamina: baseStamina + avgPhysicalMod*2 + level*2
+    // Max Stamina: baseStamina + CON bonus (from StatModifierService) + physical mod + level scaling
     fun calculateMaxStamina(user: User, characterClass: CharacterClass?): Int {
         val strMod = attributeModifier(user.strength)
         val dexMod = attributeModifier(user.dexterity)
-        val conMod = attributeModifier(user.constitution)
-        val avgPhysicalMod = (strMod + dexMod + conMod) / 3
+        val avgPhysicalMod = (strMod + dexMod) / 2
+        val conBonus = com.ez2bg.anotherthread.game.StatModifierService.staminaPoolBonus(user.constitution)
         val baseStamina = characterClass?.baseStamina ?: 10
-        return (baseStamina + (avgPhysicalMod * 2) + (user.level * 2)).coerceAtLeast(0)
+        return (baseStamina + conBonus + (avgPhysicalMod * 2) + (user.level * 2)).coerceAtLeast(0)
     }
 
     // Combat stat calculations (used by CombatService.toCombatant)
+    // Now uses StatModifierService for MajorMUD-style calculations
     fun calculateAccuracy(user: User, equipmentAttackBonus: Int = 0): Int {
         val encumbranceInfo = com.ez2bg.anotherthread.game.EncumbranceService.getEncumbranceInfo(user)
-        return attributeModifier(user.dexterity) + user.level / 2 + equipmentAttackBonus + encumbranceInfo.attackModifier
+        val baseAccuracy = attributeModifier(user.dexterity) + user.level / 2 + equipmentAttackBonus
+        return baseAccuracy + encumbranceInfo.attackModifier
     }
 
     fun calculateEvasion(user: User, equipmentDefenseBonus: Int = 0): Int {
-        // Evasion scales with DEX modifier, level, and equipment
-        // Level adds +1 evasion per 2 levels to match creature accuracy scaling
-        val baseEvasion = attributeModifier(user.dexterity) + (user.level / 2) + equipmentDefenseBonus
+        // Uses StatModifierService dodge bonus + level scaling + equipment
+        val dodgeBonus = com.ez2bg.anotherthread.game.StatModifierService.dodgeBonus(user.dexterity)
+        val baseEvasion = dodgeBonus + (user.level / 2) + equipmentDefenseBonus
         // Apply encumbrance dodge penalty (percentage reduction)
         val encumbranceInfo = com.ez2bg.anotherthread.game.EncumbranceService.getEncumbranceInfo(user)
         val dodgePenaltyMultiplier = (100 + encumbranceInfo.dodgeModifier) / 100.0
@@ -844,26 +844,100 @@ object UserRepository {
     }
 
     fun calculateCritBonus(user: User): Int {
-        return attributeModifier(user.charisma) + user.level / 5
+        // Uses StatModifierService for CHA-based crit chance
+        return com.ez2bg.anotherthread.game.StatModifierService.critChanceBonus(user.charisma) + user.level / 5
     }
 
     fun calculateBaseDamage(user: User, equipmentAttackBonus: Int = 0): Int {
-        return (5 + user.level + attributeModifier(user.strength) + equipmentAttackBonus).coerceAtLeast(1)
+        // Uses StatModifierService for STR-based melee damage
+        val strBonus = com.ez2bg.anotherthread.game.StatModifierService.meleeDamageBonus(user.strength)
+        return (5 + user.level + strBonus + equipmentAttackBonus).coerceAtLeast(1)
     }
 
     /**
      * Calculate attacks per round (MajorMUD-style).
-     * Formula: 1 base + (level / 5) + (DEX modifier / 2)
-     * - Level 1-4: 1 attack
-     * - Level 5-9: 2 attacks (with DEX 10)
-     * - Level 10-14: 3 attacks (with DEX 10)
-     * - High DEX adds bonus attacks
-     * Maximum capped at 5 attacks per round.
+     * Delegates to StatModifierService.
      */
     fun calculateAttacksPerRound(user: User): Int {
-        val levelBonus = user.level / 5
-        val dexBonus = attributeModifier(user.dexterity) / 2
-        return (1 + levelBonus + dexBonus).coerceIn(1, 5)
+        return com.ez2bg.anotherthread.game.StatModifierService.attacksPerRound(user.dexterity, user.level)
+    }
+
+    /**
+     * Calculate initiative for combat order.
+     * Uses StatModifierService for DEX-based initiative.
+     */
+    fun calculateInitiative(user: User): Int {
+        return com.ez2bg.anotherthread.game.StatModifierService.initiativeBonus(user.dexterity, user.level)
+    }
+
+    /**
+     * Calculate death threshold (HP at which character truly dies).
+     * Uses StatModifierService for CON-based calculation.
+     */
+    fun calculateDeathThreshold(user: User): Int {
+        return com.ez2bg.anotherthread.game.StatModifierService.deathThreshold(user.constitution)
+    }
+
+    /**
+     * Calculate HP regeneration per tick.
+     */
+    fun calculateHpRegen(user: User, isResting: Boolean = false): Int {
+        return com.ez2bg.anotherthread.game.StatModifierService.calculateHpRegen(
+            user.constitution, user.level, isResting, isInCombat = false
+        )
+    }
+
+    /**
+     * Calculate mana regeneration per tick.
+     */
+    fun calculateManaRegen(user: User, isResting: Boolean = false): Int {
+        return com.ez2bg.anotherthread.game.StatModifierService.calculateManaRegen(
+            user.wisdom, user.level, isResting, isInCombat = false
+        )
+    }
+
+    /**
+     * Calculate stamina regeneration per tick.
+     */
+    fun calculateStaminaRegen(user: User, isResting: Boolean = false): Int {
+        return com.ez2bg.anotherthread.game.StatModifierService.calculateStaminaRegen(
+            user.constitution, isResting, isInCombat = false
+        )
+    }
+
+    /**
+     * Calculate spell damage multiplier (percentage, 100 = normal).
+     */
+    fun calculateSpellDamageMultiplier(user: User): Int {
+        return com.ez2bg.anotherthread.game.StatModifierService.spellDamageMultiplier(user.intelligence)
+    }
+
+    /**
+     * Calculate spell resistance (percentage reduction).
+     */
+    fun calculateSpellResistance(user: User): Int {
+        return com.ez2bg.anotherthread.game.StatModifierService.spellResistance(user.wisdom)
+    }
+
+    /**
+     * Calculate poison resistance (percentage reduction).
+     */
+    fun calculatePoisonResistance(user: User): Int {
+        return com.ez2bg.anotherthread.game.StatModifierService.poisonResistance(user.constitution)
+    }
+
+    /**
+     * Calculate shop price modifier for buying/selling.
+     */
+    fun calculateShopPriceModifier(user: User): Int {
+        return com.ez2bg.anotherthread.game.StatModifierService.shopPriceModifier(user.charisma)
+    }
+
+    /**
+     * Get full stat summary for character sheet display.
+     */
+    fun getStatSummary(user: User, characterClass: CharacterClass? = null): com.ez2bg.anotherthread.game.StatSummary {
+        return com.ez2bg.anotherthread.game.StatModifierService.getStatSummary(user, characterClass)
     }
 
     // Legacy HP calculation for backward compat
