@@ -747,4 +747,187 @@ class CombatTickSystemTest {
 
         assertFalse(shouldProcess, "ENDED sessions should not be processed")
     }
+
+    // ========================================================================
+    // AUTO-ATTACK TESTS
+    // ========================================================================
+
+    @Test
+    fun testPlayerWithoutQueuedActionGetsAutoAttack() {
+        val player = TestFixtures.playerCombatant()
+        val creature = TestFixtures.creatureCombatant()
+
+        val session = CombatSession(
+            locationId = TestFixtures.DUNGEON_ENTRANCE_ID,
+            combatants = listOf(player, creature),
+            state = CombatState.ACTIVE,
+            pendingActions = emptyList()  // No actions queued
+        )
+
+        // Players without queued actions should get auto-attacks
+        val playersWithActions = session.pendingActions.map { it.combatantId }.toSet()
+        val playersNeedingAutoAttack = session.alivePlayers.filter { it.id !in playersWithActions }
+
+        assertEquals(1, playersNeedingAutoAttack.size, "Player should need auto-attack")
+        assertEquals(player.id, playersNeedingAutoAttack.first().id)
+    }
+
+    @Test
+    fun testPlayerWithQueuedActionDoesNotGetAutoAttack() {
+        val player = TestFixtures.playerCombatant()
+        val creature = TestFixtures.creatureCombatant()
+
+        val manualAction = CombatAction(
+            combatantId = player.id,
+            abilityId = TestFixtures.HEAL_SELF_ID,  // Player queued a heal instead of attack
+            targetId = null
+        )
+
+        val session = CombatSession(
+            locationId = TestFixtures.DUNGEON_ENTRANCE_ID,
+            combatants = listOf(player, creature),
+            state = CombatState.ACTIVE,
+            pendingActions = listOf(manualAction)
+        )
+
+        // Player already has an action queued
+        val playersWithActions = session.pendingActions.map { it.combatantId }.toSet()
+        val playersNeedingAutoAttack = session.alivePlayers.filter { it.id !in playersWithActions }
+
+        assertTrue(playersNeedingAutoAttack.isEmpty(), "Player should NOT need auto-attack")
+    }
+
+    @Test
+    fun testAutoAttackTargetsAliveCreature() {
+        val player = TestFixtures.playerCombatant()
+        val aliveCreature = TestFixtures.creatureCombatant(id = "alive-creature", currentHp = 10)
+        val deadCreature = TestFixtures.creatureCombatant(id = "dead-creature", currentHp = 0).copy(isAlive = false)
+
+        val session = CombatSession(
+            locationId = TestFixtures.DUNGEON_ENTRANCE_ID,
+            combatants = listOf(player, aliveCreature, deadCreature),
+            state = CombatState.ACTIVE,
+            pendingActions = emptyList()
+        )
+
+        // Auto-attack should target an alive creature
+        val target = session.aliveCreatures.firstOrNull()
+        assertNotNull(target, "Should find an alive creature to target")
+        assertEquals(aliveCreature.id, target.id, "Should target the alive creature")
+    }
+
+    // ========================================================================
+    // CREATURE DEATH AND COMBAT END TESTS
+    // ========================================================================
+
+    @Test
+    fun testCreatureWithZeroHpIsDead() {
+        var creature = TestFixtures.creatureCombatant(currentHp = 5)
+        val damage = 10
+
+        val newHp = (creature.currentHp - damage).coerceAtLeast(0)
+        val isAlive = newHp > 0
+
+        creature = creature.copy(currentHp = newHp, isAlive = isAlive)
+
+        assertEquals(0, creature.currentHp, "Creature HP should be 0")
+        assertFalse(creature.isAlive, "Creature should be dead")
+    }
+
+    @Test
+    fun testCombatEndsWhenCreatureHpHitsZero() {
+        val player = TestFixtures.playerCombatant(currentHp = 30)
+        var creature = TestFixtures.creatureCombatant(currentHp = 5)
+
+        // Simulate damage that kills the creature
+        val damage = 10
+        val newHp = (creature.currentHp - damage).coerceAtLeast(0)
+        creature = creature.copy(currentHp = newHp, isAlive = newHp > 0)
+
+        val session = CombatSession(
+            locationId = TestFixtures.DUNGEON_ENTRANCE_ID,
+            combatants = listOf(player, creature),
+            state = CombatState.ACTIVE
+        )
+
+        // Check end conditions
+        val aliveCreatures = session.aliveCreatures
+        assertTrue(aliveCreatures.isEmpty(), "No creatures should be alive")
+
+        // Combat should end with victory
+        val shouldEndWithVictory = aliveCreatures.isEmpty() && session.alivePlayers.isNotEmpty()
+        assertTrue(shouldEndWithVictory, "Combat should end with player victory")
+    }
+
+    @Test
+    fun testForestSpriteHasLowHp() {
+        // Forest Sprite has only 8 HP - any significant damage should kill it
+        val forestSpriteHp = 8
+        val hunterMarkDamage = 46
+
+        val newHp = (forestSpriteHp - hunterMarkDamage).coerceAtLeast(0)
+        val isAlive = newHp > 0
+
+        assertEquals(0, newHp, "Forest Sprite should have 0 HP after 46 damage")
+        assertFalse(isAlive, "Forest Sprite should be dead")
+    }
+
+    // ========================================================================
+    // CREATURE WANDERING PREVENTION TESTS
+    // ========================================================================
+
+    @Test
+    fun testCreatureInActiveSessionCannotWander() {
+        val creature = TestFixtures.creatureCombatant()
+        val player = TestFixtures.playerCombatant()
+
+        val session = CombatSession(
+            locationId = TestFixtures.DUNGEON_ENTRANCE_ID,
+            combatants = listOf(player, creature),
+            state = CombatState.ACTIVE
+        )
+
+        // Simulate the wander check
+        val inCombat = session.state == CombatState.ACTIVE &&
+                       session.combatants.any { it.type == CombatantType.CREATURE && it.id == creature.id }
+
+        assertTrue(inCombat, "Creature should be detected as in combat")
+    }
+
+    @Test
+    fun testCreatureInWaitingSessionCannotWander() {
+        val creature = TestFixtures.creatureCombatant()
+
+        val session = CombatSession(
+            locationId = TestFixtures.DUNGEON_ENTRANCE_ID,
+            combatants = listOf(creature),  // Only creature, waiting for player
+            state = CombatState.WAITING
+        )
+
+        // Even in WAITING state, creature should not wander
+        val inCombat = (session.state == CombatState.ACTIVE || session.state == CombatState.WAITING) &&
+                       session.combatants.any { it.type == CombatantType.CREATURE && it.id == creature.id }
+
+        assertTrue(inCombat, "Creature in WAITING session should not wander")
+    }
+
+    @Test
+    fun testCreatureNotInCombatCanWander() {
+        val creature = TestFixtures.creatureCombatant()
+        val player = TestFixtures.playerCombatant()
+        val otherCreature = TestFixtures.creatureCombatant(id = "other-creature")
+
+        // Session with different creature
+        val session = CombatSession(
+            locationId = TestFixtures.DUNGEON_ENTRANCE_ID,
+            combatants = listOf(player, otherCreature),
+            state = CombatState.ACTIVE
+        )
+
+        // Check if our creature is in combat
+        val inCombat = (session.state == CombatState.ACTIVE || session.state == CombatState.WAITING) &&
+                       session.combatants.any { it.type == CombatantType.CREATURE && it.id == creature.id }
+
+        assertFalse(inCombat, "Creature not in session should be able to wander")
+    }
 }

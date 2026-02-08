@@ -611,6 +611,11 @@ object CombatService {
         val roundNumber = session.currentRound + 1
         val logEntries = mutableListOf<CombatLogEntry>()
 
+        log.info("=== ROUND $roundNumber START === Session ${session.id}")
+        log.info("  Players: ${session.players.map { "${it.name}(HP:${it.currentHp}/${it.maxHp})" }}")
+        log.info("  Creatures: ${session.creatures.map { "${it.name}(HP:${it.currentHp}/${it.maxHp}, alive:${it.isAlive})" }}")
+        log.info("  Pending actions: ${session.pendingActions.size}")
+
         // Broadcast round start
         broadcastToSession(session.id, RoundStartMessage(
             sessionId = session.id,
@@ -627,8 +632,30 @@ object CombatService {
             includeAllCombatants = true
         )
 
+        // Add auto-attacks for players who didn't queue an action
+        // MajorMUD-style: if a player is in combat and doesn't specify an action, they auto-attack
+        val playersWithActions = session.pendingActions.map { it.combatantId }.toSet()
+        val autoAttackActions = session.alivePlayers
+            .filter { player -> player.id !in playersWithActions }
+            .mapNotNull { player ->
+                // Find the first alive enemy to target
+                val target = session.aliveCreatures.firstOrNull()
+                if (target != null) {
+                    log.debug("Auto-attack: ${player.name} attacks ${target.name}")
+                    CombatAction(
+                        combatantId = player.id,
+                        abilityId = "universal-basic-attack",  // Use the universal basic attack
+                        targetId = target.id
+                    )
+                } else null
+            }
+
+        // Combine manual actions with auto-attacks
+        val allActions = session.pendingActions + autoAttackActions
+        log.info("  Total actions (manual + auto): ${allActions.size} (${session.pendingActions.size} manual, ${autoAttackActions.size} auto)")
+
         // Sort actions by combatant initiative
-        val sortedActions = session.pendingActions.sortedByDescending { action ->
+        val sortedActions = allActions.sortedByDescending { action ->
             session.combatants.find { it.id == action.combatantId }?.initiative ?: 0
         }
 
@@ -2083,11 +2110,15 @@ object CombatService {
             if (creature.id in movedCreatures) continue
 
             // Skip if creature is in active combat
+            // Check both ACTIVE and WAITING states - creatures should never wander during combat
             val inCombat = sessions.values.any { session ->
-                session.state != CombatState.ENDED &&
-                session.creatures.any { it.id == creature.id }
+                (session.state == CombatState.ACTIVE || session.state == CombatState.WAITING) &&
+                session.combatants.any { it.type == CombatantType.CREATURE && it.id == creature.id }
             }
-            if (inCombat) continue
+            if (inCombat) {
+                log.debug("Skipping wander for ${creature.name} - in active combat")
+                continue
+            }
 
             // 50% chance to wander each cycle
             if (kotlin.random.Random.nextFloat() > 0.5f) continue
