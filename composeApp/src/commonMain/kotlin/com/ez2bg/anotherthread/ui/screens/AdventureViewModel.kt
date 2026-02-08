@@ -628,6 +628,22 @@ class AdventureViewModel {
             return
         }
 
+        // Block movement if player is over-encumbered (>100% capacity)
+        val user = UserStateHolder.currentUser.value
+        if (user != null) {
+            val strength = user.strength
+            val maxCapacity = strength * 5  // Max capacity in stone
+            val allItems = AdventureRepository.items.value
+            val itemsMap = allItems.associateBy { it.id }
+            val totalWeight = user.itemIds.sumOf { itemId -> itemsMap[itemId]?.weight ?: 0 }
+
+            if (totalWeight > maxCapacity) {
+                val overAmount = totalWeight - maxCapacity
+                logError("You are over-encumbered by $overAmount stone. Drop items to move.")
+                return
+            }
+        }
+
         scope.launch {
             // Update repository's current location
             AdventureRepository.setCurrentLocation(exit.locationId)
@@ -766,6 +782,22 @@ class AdventureViewModel {
         if (playerHp <= 0) {
             logError("You cannot phasewalk while incapacitated")
             return
+        }
+
+        // Block movement if player is over-encumbered (>100% capacity)
+        val user = UserStateHolder.currentUser.value
+        if (user != null) {
+            val strength = user.strength
+            val maxCapacity = strength * 5  // Max capacity in stone
+            val allItems = AdventureRepository.items.value
+            val itemsMap = allItems.associateBy { it.id }
+            val totalWeight = user.itemIds.sumOf { itemId -> itemsMap[itemId]?.weight ?: 0 }
+
+            if (totalWeight > maxCapacity) {
+                val overAmount = totalWeight - maxCapacity
+                logError("You are over-encumbered by $overAmount stone. Drop items to phasewalk.")
+                return
+            }
         }
 
         val userId = UserStateHolder.userId ?: return
@@ -1107,6 +1139,23 @@ class AdventureViewModel {
     fun selectTeleportDestination(destination: TeleportDestinationDto) {
         val userId = UserStateHolder.userId ?: return
         val abilityId = _localState.value.teleportAbilityId ?: return
+
+        // Block movement if player is over-encumbered (>100% capacity)
+        val user = UserStateHolder.currentUser.value
+        if (user != null) {
+            val strength = user.strength
+            val maxCapacity = strength * 5  // Max capacity in stone
+            val allItems = AdventureRepository.items.value
+            val itemsMap = allItems.associateBy { it.id }
+            val totalWeight = user.itemIds.sumOf { itemId -> itemsMap[itemId]?.weight ?: 0 }
+
+            if (totalWeight > maxCapacity) {
+                val overAmount = totalWeight - maxCapacity
+                logError("You are over-encumbered by $overAmount stone. Drop items to teleport.")
+                _localState.update { it.copy(showMapSelection = false) }
+                return
+            }
+        }
 
         scope.launch {
             // Dismiss overlay immediately
