@@ -384,7 +384,7 @@ object UserRepository {
     /**
      * Find all users who are currently at a specific location and have been active recently
      */
-    fun findActiveUsersAtLocation(locationId: String, activeThresholdMs: Long = 30000): List<User> = transaction {
+    fun findActiveUsersAtLocation(locationId: String, activeThresholdMs: Long = 300000): List<User> = transaction {
         val cutoff = System.currentTimeMillis() - activeThresholdMs
         UserTable.selectAll()
             .where { (UserTable.currentLocationId eq locationId) }
