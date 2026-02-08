@@ -38,6 +38,8 @@ object UserTable : Table("user") {
     val equippedItemIds = text("equipped_item_ids").default("[]")  // JSON array
     // Trainer system: abilities the user has learned from trainers
     val learnedAbilityIds = text("learned_ability_ids").default("[]")  // JSON array
+    // Action bar customization: which abilities to show (max 10, empty = show all)
+    val visibleAbilityIds = text("visible_ability_ids").default("[]")  // JSON array
     // Stealth status
     val isHidden = bool("is_hidden").default(false)      // Currently hiding in place
     val isSneaking = bool("is_sneaking").default(false)  // Moving stealthily

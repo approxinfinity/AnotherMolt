@@ -280,21 +280,26 @@ class AdventureViewModel {
     }
 
     /**
-     * Listen for changes to the current user and reload abilities when learnedAbilityIds changes.
+     * Listen for changes to the current user and reload abilities when learnedAbilityIds or visibleAbilityIds changes.
      * This ensures abilities are reloaded after session validation refreshes user data.
      */
     private fun listenForUserUpdates() {
         scope.launch {
             var previousLearnedAbilityIds: List<String>? = null
+            var previousVisibleAbilityIds: List<String>? = null
             UserStateHolder.currentUser.collect { user ->
                 if (user != null) {
                     val currentLearnedIds = user.learnedAbilityIds
-                    // Reload abilities if learned abilities changed (and we had a previous value)
-                    if (previousLearnedAbilityIds != null && previousLearnedAbilityIds != currentLearnedIds) {
-                        println("[AdventureViewModel] User learnedAbilityIds changed, reloading abilities")
+                    val currentVisibleIds = user.visibleAbilityIds
+                    // Reload abilities if learned abilities or visible abilities changed (and we had previous values)
+                    val learnedChanged = previousLearnedAbilityIds != null && previousLearnedAbilityIds != currentLearnedIds
+                    val visibleChanged = previousVisibleAbilityIds != null && previousVisibleAbilityIds != currentVisibleIds
+                    if (learnedChanged || visibleChanged) {
+                        println("[AdventureViewModel] User abilities changed (learned=$learnedChanged, visible=$visibleChanged), reloading abilities")
                         loadPlayerAbilities()
                     }
                     previousLearnedAbilityIds = currentLearnedIds
+                    previousVisibleAbilityIds = currentVisibleIds
                 }
             }
         }
@@ -418,9 +423,18 @@ class AdventureViewModel {
                 .distinctBy { it.id }
                 .filter { it.abilityType != "passive" }
                 .sortedBy { it.name.lowercase() }
+
+            // 5. Filter by visible abilities if user has selected specific ones
+            val visibleIds = user.visibleAbilityIds
+            val displayedAbilities = if (visibleIds.isEmpty()) {
+                allAbilities  // Show all when none selected
+            } else {
+                allAbilities.filter { it.id in visibleIds }
+            }
+
             _localState.update {
                 it.copy(
-                    playerAbilities = allAbilities,
+                    playerAbilities = displayedAbilities,
                     hasPhasewalkAbility = hasPhasewalk
                 )
             }

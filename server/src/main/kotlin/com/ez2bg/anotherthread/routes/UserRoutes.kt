@@ -814,6 +814,35 @@ fun Route.userRoutes() {
             call.respond(HttpStatusCode.OK)
         }
 
+        // Update visible abilities for action bar (max 10, empty = show all)
+        put("/{id}/visible-abilities") {
+            val userId = call.parameters["id"] ?: return@put call.respond(HttpStatusCode.BadRequest)
+
+            @Serializable
+            data class VisibleAbilitiesRequest(val abilityIds: List<String>)
+
+            val request = call.receive<VisibleAbilitiesRequest>()
+
+            val user = UserRepository.findById(userId)
+            if (user == null) {
+                call.respond(HttpStatusCode.NotFound, mapOf("error" to "User not found"))
+                return@put
+            }
+
+            // Limit to 10 abilities (enforced in repository too, but check here for clear error)
+            if (request.abilityIds.size > 10) {
+                call.respond(HttpStatusCode.BadRequest, mapOf("error" to "Maximum 10 visible abilities allowed"))
+                return@put
+            }
+
+            if (UserRepository.updateVisibleAbilities(userId, request.abilityIds)) {
+                val updatedUser = UserRepository.findById(userId)!!
+                call.respond(HttpStatusCode.OK, updatedUser.toResponse())
+            } else {
+                call.respond(HttpStatusCode.InternalServerError, mapOf("error" to "Failed to update visible abilities"))
+            }
+        }
+
         // Voluntary death - player gives up while downed
         post("/{id}/give-up") {
             val id = call.parameters["id"] ?: return@post call.respond(HttpStatusCode.BadRequest)

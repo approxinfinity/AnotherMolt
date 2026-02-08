@@ -49,9 +49,8 @@ object MigrationRunner {
         V005_AddItemWeight(),
         V006_AddStealthStatus(),
         V007_AddLocationItems(),
-        V008_DropClassGenerationStartedAt()
-        // Add future migrations here:
-        // V009_NextMigration(),
+        V008_DropClassGenerationStartedAt(),
+        V009_AddVisibleAbilityIds()
     )
 
     /**

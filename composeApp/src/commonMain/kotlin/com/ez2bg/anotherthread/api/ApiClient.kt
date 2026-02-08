@@ -189,6 +189,8 @@ data class UserDto(
     val equippedItemIds: List<String> = emptyList(),
     // Trainer system: abilities the user has learned
     val learnedAbilityIds: List<String> = emptyList(),
+    // Action bar customization: which abilities to show (max 10, empty = show all)
+    val visibleAbilityIds: List<String> = emptyList(),
     // Stealth status
     val isHidden: Boolean = false,    // Currently hiding in place
     val isSneaking: Boolean = false,  // Moving stealthily
@@ -454,6 +456,11 @@ data class UpdateUserLocationRequest(
 @Serializable
 data class UpdateUserClassRequest(
     val classId: String? = null
+)
+
+@Serializable
+data class UpdateVisibleAbilitiesRequest(
+    val abilityIds: List<String>
 )
 
 @Serializable
@@ -1238,6 +1245,13 @@ object ApiClient {
         client.put("$baseUrl/users/$id/class") {
             contentType(ContentType.Application.Json)
             setBody(UpdateUserClassRequest(classId))
+        }.body()
+    }
+
+    suspend fun updateVisibleAbilities(userId: String, abilityIds: List<String>): Result<UserDto> = apiCall {
+        client.put("$baseUrl/users/$userId/visible-abilities") {
+            contentType(ContentType.Application.Json)
+            setBody(UpdateVisibleAbilitiesRequest(abilityIds))
         }.body()
     }
 

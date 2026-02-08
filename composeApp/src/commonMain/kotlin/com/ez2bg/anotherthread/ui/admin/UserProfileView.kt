@@ -70,6 +70,9 @@ fun UserProfileView(
     var iconMappingsExpanded by remember { mutableStateOf(false) }
     var iconMappings by remember { mutableStateOf<Map<String, String>>(emptyMap()) }
     var iconPickerAbilityId by remember { mutableStateOf<String?>(null) }
+    var actionBarExpanded by remember { mutableStateOf(false) }
+    var visibleAbilityIds by remember(user.id) { mutableStateOf(user.visibleAbilityIds) }
+    var allAvailableAbilities by remember { mutableStateOf<List<AbilityDto>>(emptyList()) }
     var encountersExpanded by remember { mutableStateOf(false) }
     var encounters by remember { mutableStateOf<List<PlayerEncounterDto>>(emptyList()) }
     var inventoryExpanded by remember { mutableStateOf(false) }
@@ -180,6 +183,39 @@ fun UserProfileView(
         } else {
             itemAbilitiesMap = emptyMap()
         }
+    }
+
+    // Load all available abilities for action bar configuration (class + learned + item abilities)
+    LaunchedEffect(characterClassId, user.learnedAbilityIds, inventoryItems) {
+        val abilityList = mutableListOf<AbilityDto>()
+
+        // Class abilities
+        characterClassId?.let { classId ->
+            ApiClient.getAbilitiesByClass(classId).getOrNull()?.let { abilities ->
+                abilityList.addAll(abilities)
+            }
+        }
+
+        // Learned abilities
+        user.learnedAbilityIds.forEach { abilityId ->
+            ApiClient.getAbility(abilityId).getOrNull()?.let { ability ->
+                abilityList.add(ability)
+            }
+        }
+
+        // Item abilities
+        val itemAbilityIds = inventoryItems.flatMap { it.abilityIds }.distinct()
+        itemAbilityIds.forEach { abilityId ->
+            ApiClient.getAbility(abilityId).getOrNull()?.let { ability ->
+                abilityList.add(ability)
+            }
+        }
+
+        // Dedupe and filter to non-passive abilities only, sorted by name
+        allAvailableAbilities = abilityList
+            .distinctBy { it.id }
+            .filter { it.abilityType != "passive" }
+            .sortedBy { it.name.lowercase() }
     }
 
     // Profile incomplete warning - only show for own profile when no class assigned
@@ -910,6 +946,28 @@ fun UserProfileView(
             }
         }
 
+        // Action Bar Abilities section - only for own profile with class abilities
+        if (isOwnProfile && classAbilities.isNotEmpty()) {
+            Spacer(modifier = Modifier.height(8.dp))
+            ActionBarAbilitiesSection(
+                user = user,
+                classAbilities = classAbilities,
+                learnedAbilityIds = user.learnedAbilityIds,
+                visibleAbilityIds = user.visibleAbilityIds,
+                onVisibleAbilitiesChanged = { newIds ->
+                    scope.launch {
+                        ApiClient.updateVisibleAbilities(user.id, newIds).onSuccess { updatedUser ->
+                            UserStateHolder.updateUser(updatedUser)
+                            onUserUpdated(updatedUser)
+                            message = "Action bar updated!"
+                        }.onFailure { error ->
+                            message = "Error: ${error.message}"
+                        }
+                    }
+                }
+            )
+        }
+
         // Encounters section - only for own profile with encounters
         if (isOwnProfile && encounters.isNotEmpty()) {
             Spacer(modifier = Modifier.height(8.dp))
@@ -1573,6 +1631,170 @@ private fun EncumbranceBar(
                         style = MaterialTheme.typography.labelSmall,
                         color = MaterialTheme.colorScheme.error
                     )
+                }
+            }
+        }
+    }
+}
+
+/**
+ * Action Bar Abilities section - allows users to select up to 10 abilities to show on action bar.
+ * Empty selection = show all abilities.
+ */
+@Composable
+private fun ActionBarAbilitiesSection(
+    user: UserDto,
+    classAbilities: List<AbilityDto>,
+    learnedAbilityIds: List<String>,
+    visibleAbilityIds: List<String>,
+    onVisibleAbilitiesChanged: (List<String>) -> Unit
+) {
+    var expanded by remember { mutableStateOf(false) }
+    var localVisibleIds by remember(visibleAbilityIds) { mutableStateOf(visibleAbilityIds.toMutableList()) }
+    var allAbilities by remember { mutableStateOf<List<AbilityDto>>(emptyList()) }
+    var isLoading by remember { mutableStateOf(false) }
+    val scope = rememberCoroutineScope()
+
+    // Load all abilities (class + learned)
+    LaunchedEffect(classAbilities, learnedAbilityIds) {
+        isLoading = true
+        val learnedAbilities = mutableListOf<AbilityDto>()
+        for (abilityId in learnedAbilityIds) {
+            ApiClient.getAbility(abilityId).getOrNull()?.let { learnedAbilities.add(it) }
+        }
+        // Combine and deduplicate, filter out passives
+        allAbilities = (classAbilities + learnedAbilities)
+            .distinctBy { it.id }
+            .filter { it.abilityType != "passive" }
+            .sortedBy { it.name.lowercase() }
+        isLoading = false
+    }
+
+    val maxAbilities = 10
+    val selectedCount = localVisibleIds.size
+
+    Card(modifier = Modifier.fillMaxWidth()) {
+        Column(modifier = Modifier.padding(16.dp)) {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clickable { expanded = !expanded },
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Column {
+                    Text(
+                        text = "Action Bar Abilities",
+                        style = MaterialTheme.typography.titleMedium
+                    )
+                    Text(
+                        text = if (selectedCount == 0) "Showing all abilities" else "$selectedCount/$maxAbilities selected",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+                Icon(
+                    imageVector = if (expanded) Icons.Filled.ExpandLess else Icons.Filled.ExpandMore,
+                    contentDescription = if (expanded) "Collapse" else "Expand"
+                )
+            }
+
+            if (expanded) {
+                Spacer(modifier = Modifier.height(12.dp))
+
+                if (isLoading) {
+                    Box(
+                        modifier = Modifier.fillMaxWidth().padding(16.dp),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        CircularProgressIndicator(modifier = Modifier.size(24.dp))
+                    }
+                } else {
+                    Text(
+                        text = "Select up to 10 abilities to show on your action bar. Leave all unchecked to show all abilities.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.padding(bottom = 8.dp)
+                    )
+
+                    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                        allAbilities.forEach { ability ->
+                            val isSelected = ability.id in localVisibleIds
+                            val canSelect = selectedCount < maxAbilities || isSelected
+
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clickable(enabled = canSelect) {
+                                        localVisibleIds = if (isSelected) {
+                                            localVisibleIds.toMutableList().apply { remove(ability.id) }
+                                        } else {
+                                            localVisibleIds.toMutableList().apply { add(ability.id) }
+                                        }
+                                    }
+                                    .padding(vertical = 4.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                            ) {
+                                Checkbox(
+                                    checked = isSelected,
+                                    onCheckedChange = { checked ->
+                                        localVisibleIds = if (checked) {
+                                            if (selectedCount < maxAbilities) {
+                                                localVisibleIds.toMutableList().apply { add(ability.id) }
+                                            } else {
+                                                localVisibleIds
+                                            }
+                                        } else {
+                                            localVisibleIds.toMutableList().apply { remove(ability.id) }
+                                        }
+                                    },
+                                    enabled = canSelect
+                                )
+
+                                Column(modifier = Modifier.weight(1f)) {
+                                    Text(
+                                        text = ability.name,
+                                        style = MaterialTheme.typography.bodyMedium,
+                                        color = if (canSelect) MaterialTheme.colorScheme.onSurface
+                                                else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f)
+                                    )
+                                    Text(
+                                        text = ability.abilityType.replaceFirstChar { it.uppercase() } +
+                                               if (ability.powerCost > 0) " - Cost: ${ability.powerCost}" else "",
+                                        style = MaterialTheme.typography.labelSmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                }
+                            }
+                        }
+                    }
+
+                    Spacer(modifier = Modifier.height(12.dp))
+
+                    // Buttons row
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        // Clear all button
+                        OutlinedButton(
+                            onClick = { localVisibleIds = mutableListOf() },
+                            modifier = Modifier.weight(1f),
+                            enabled = localVisibleIds.isNotEmpty()
+                        ) {
+                            Text("Clear All")
+                        }
+
+                        // Save button
+                        Button(
+                            onClick = { onVisibleAbilitiesChanged(localVisibleIds) },
+                            modifier = Modifier.weight(1f),
+                            enabled = localVisibleIds != visibleAbilityIds
+                        ) {
+                            Text("Save")
+                        }
+                    }
                 }
             }
         }

@@ -48,6 +48,8 @@ data class User(
     val equippedItemIds: List<String> = emptyList(),
     // Trainer system: abilities the user has learned from trainers
     val learnedAbilityIds: List<String> = emptyList(),
+    // Action bar customization: which abilities to show (max 10, empty = show all)
+    val visibleAbilityIds: List<String> = emptyList(),
     // Stealth status
     val isHidden: Boolean = false,    // Currently hiding in place
     val isSneaking: Boolean = false   // Moving stealthily
@@ -92,6 +94,8 @@ data class UserResponse(
     val equippedItemIds: List<String>,
     // Trainer system: abilities the user has learned from trainers
     val learnedAbilityIds: List<String>,
+    // Action bar customization: which abilities to show (max 10, empty = show all)
+    val visibleAbilityIds: List<String>,
     // Stealth status
     val isHidden: Boolean,
     val isSneaking: Boolean,
@@ -135,6 +139,7 @@ fun User.toResponse(): UserResponse {
         gold = gold,
         equippedItemIds = equippedItemIds,
         learnedAbilityIds = learnedAbilityIds,
+        visibleAbilityIds = visibleAbilityIds,
         isHidden = isHidden,
         isSneaking = isSneaking,
         appearanceDescription = UserRepository.generateAppearanceDescription(this)
@@ -188,6 +193,7 @@ object UserRepository {
         gold = this[UserTable.gold],
         equippedItemIds = jsonToList(this[UserTable.equippedItemIds]),
         learnedAbilityIds = jsonToList(this[UserTable.learnedAbilityIds]),
+        visibleAbilityIds = jsonToList(this[UserTable.visibleAbilityIds]),
         isHidden = this[UserTable.isHidden],
         isSneaking = this[UserTable.isSneaking]
     )
@@ -225,6 +231,7 @@ object UserRepository {
             it[gold] = user.gold
             it[equippedItemIds] = listToJson(user.equippedItemIds)
             it[learnedAbilityIds] = listToJson(user.learnedAbilityIds)
+            it[visibleAbilityIds] = listToJson(user.visibleAbilityIds)
             it[isHidden] = user.isHidden
             it[isSneaking] = user.isSneaking
         }
@@ -278,6 +285,7 @@ object UserRepository {
             it[gold] = user.gold
             it[equippedItemIds] = listToJson(user.equippedItemIds)
             it[learnedAbilityIds] = listToJson(user.learnedAbilityIds)
+            it[visibleAbilityIds] = listToJson(user.visibleAbilityIds)
             it[isHidden] = user.isHidden
             it[isSneaking] = user.isSneaking
         } > 0
@@ -663,6 +671,28 @@ object UserRepository {
         user.learnedAbilityIds
             .mapNotNull { AbilityRepository.findById(it) }
             .filter { it.minLevel <= user.level }
+    }
+
+    /**
+     * Update the list of visible abilities for the action bar
+     * @param abilityIds List of ability IDs to show (max 10, empty = show all)
+     */
+    fun updateVisibleAbilities(id: String, abilityIds: List<String>): Boolean = transaction {
+        val user = findById(id) ?: return@transaction false
+        // Limit to 10 abilities
+        val limitedIds = abilityIds.take(10)
+        UserTable.update({ UserTable.id eq id }) {
+            it[visibleAbilityIds] = listToJson(limitedIds)
+            it[lastActiveAt] = System.currentTimeMillis()
+        } > 0
+    }
+
+    /**
+     * Get the visible ability IDs for action bar display
+     */
+    fun getVisibleAbilityIds(id: String): List<String> = transaction {
+        val user = findById(id) ?: return@transaction emptyList()
+        user.visibleAbilityIds
     }
 
     /**
