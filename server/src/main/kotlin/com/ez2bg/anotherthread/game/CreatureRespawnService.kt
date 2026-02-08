@@ -9,16 +9,17 @@ import java.util.concurrent.ConcurrentHashMap
 
 /**
  * Configuration for creature respawn mechanics.
+ * Now delegates to GameConfig for DB-backed values.
  */
 object RespawnConfig {
     /** How many ticks between respawn checks (e.g., 10 ticks = 30 seconds at 3s/tick) */
-    var RESPAWN_CHECK_INTERVAL_TICKS: Int = 10
+    val RESPAWN_CHECK_INTERVAL_TICKS: Int get() = GameConfig.respawn.checkIntervalTicks
 
     /** Minimum time (in ticks) before a creature can respawn after being killed */
-    var MIN_RESPAWN_DELAY_TICKS: Int = 20  // ~1 minute
+    val MIN_RESPAWN_DELAY_TICKS: Int get() = GameConfig.respawn.minDelayTicks
 
     /** Maximum creatures to respawn per tick (prevents sudden mob swarms) */
-    var MAX_RESPAWNS_PER_TICK: Int = 3
+    val MAX_RESPAWNS_PER_TICK: Int get() = GameConfig.respawn.maxPerTick
 }
 
 /**

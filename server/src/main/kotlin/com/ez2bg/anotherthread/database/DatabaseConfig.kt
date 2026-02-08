@@ -64,7 +64,8 @@ object DatabaseConfig {
                 IdentifiedEntityTable,
                 SessionTable,
                 CustomIconMappingTable,
-                PlayerEncounterTable
+                PlayerEncounterTable,
+                GameConfigTable
                 // Note: CombatEventLogTable is added via migration V001
             )
         }
@@ -99,7 +100,8 @@ object DatabaseConfig {
                 SessionTable,
                 CustomIconMappingTable,
                 PlayerEncounterTable,
-                CombatEventLogTable
+                CombatEventLogTable,
+                GameConfigTable
             )
         }
     }

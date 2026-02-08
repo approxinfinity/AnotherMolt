@@ -3,6 +3,7 @@ package com.ez2bg.anotherthread
 import com.ez2bg.anotherthread.combat.*
 import com.ez2bg.anotherthread.database.*
 import com.ez2bg.anotherthread.game.CreatureRespawnService
+import com.ez2bg.anotherthread.game.GameConfig
 import com.ez2bg.anotherthread.game.GameTickService
 import com.ez2bg.anotherthread.game.RespawnConfig
 import com.ez2bg.anotherthread.routes.abilityRoutes
@@ -1121,6 +1122,10 @@ fun Application.module() {
     val imageGenDir = File(fileDir, "imageGen").also { it.mkdirs() }
     val uploadsDir = File(fileDir, "uploads").also { it.mkdirs() }
     log.info("Files directory: ${fileDir.absolutePath}")
+
+    // Initialize game config (loads defaults if not present, caches values)
+    GameConfig.initialize()
+    log.info("Game config initialized")
 
     // Initialize creature respawn quotas before starting the tick loop
     CreatureRespawnService.initializeQuotas()

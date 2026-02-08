@@ -1,5 +1,6 @@
 package com.ez2bg.anotherthread.combat
 
+import com.ez2bg.anotherthread.game.GameConfig
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 import java.util.UUID
@@ -471,15 +472,18 @@ data class PlayerDeathMessage(
 // Combat Configuration
 // ============================================================================
 
+/**
+ * Combat configuration values.
+ * Now delegates to GameConfig for DB-backed values.
+ */
 object CombatConfig {
-    const val ROUND_DURATION_MS = 3000L           // 3 seconds per round
-    const val MAX_ROUND_DURATION_MS = 5000L       // Max wait for slow connections
-    const val FLEE_SUCCESS_CHANCE = 0.5           // 50% base flee chance
-    const val FLEE_COOLDOWN_ROUNDS = 2            // Can't flee again for 2 rounds after failure
-    const val MAX_COMBAT_ROUNDS = 100             // Timeout after 100 rounds (~5 minutes)
-    const val SESSION_TIMEOUT_MS = 300000L        // 5 minute session timeout
-    const val HP_PER_HIT_DIE = 6                  // Average HP per hit die
-    // Resource regeneration (per combat round) - balanced for meaningful resource management
-    const val MANA_REGEN_PER_ROUND = 1            // Mana restored per round (was 2 - reduced to increase tactical value)
-    const val STAMINA_REGEN_PER_ROUND = 2         // Stamina restored per round (was 3 - maintains martial advantage)
+    val ROUND_DURATION_MS: Long get() = GameConfig.combat.roundDurationMs
+    val MAX_ROUND_DURATION_MS: Long get() = GameConfig.combat.maxRoundDurationMs
+    val FLEE_SUCCESS_CHANCE: Double get() = GameConfig.combat.fleeSuccessChance
+    val FLEE_COOLDOWN_ROUNDS: Int get() = GameConfig.combat.fleeCooldownRounds
+    val MAX_COMBAT_ROUNDS: Int get() = GameConfig.combat.maxCombatRounds
+    val SESSION_TIMEOUT_MS: Long get() = GameConfig.combat.sessionTimeoutMs
+    val HP_PER_HIT_DIE: Int get() = GameConfig.combat.hpPerHitDie
+    val MANA_REGEN_PER_ROUND: Int get() = GameConfig.combat.manaRegenPerRound
+    val STAMINA_REGEN_PER_ROUND: Int get() = GameConfig.combat.staminaRegenPerRound
 }

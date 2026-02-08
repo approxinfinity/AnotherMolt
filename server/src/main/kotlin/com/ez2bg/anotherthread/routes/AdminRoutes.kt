@@ -2,6 +2,7 @@ package com.ez2bg.anotherthread.routes
 
 import com.ez2bg.anotherthread.*
 import com.ez2bg.anotherthread.database.*
+import com.ez2bg.anotherthread.game.GameConfig
 import io.ktor.http.*
 import io.ktor.http.content.*
 import io.ktor.server.application.*
@@ -34,6 +35,12 @@ data class MigrationRunResponse(val success: Boolean, val migrationsApplied: Int
 
 @Serializable
 data class MigrationErrorResponse(val success: Boolean, val error: String)
+
+@Serializable
+data class GameConfigUpdateRequest(
+    val value: String,
+    val description: String? = null
+)
 
 /**
  * Admin routes for file management, service control, database operations, and user management.
@@ -891,6 +898,174 @@ fun Route.adminRoutes() {
                 "message" to "Fixed ${fixed.size} Tun du Lac location coordinates",
                 "fixed" to fixed
             ))
+        }
+    }
+
+    // =========================================================================
+    // Game Config routes
+    // =========================================================================
+
+    route("/admin/config") {
+        // Get all config entries
+        get {
+            try {
+                val configs = GameConfigRepository.findAll()
+                call.respond(configs)
+            } catch (e: Exception) {
+                log.error("Error fetching configs: ${e.message}", e)
+                call.respond(HttpStatusCode.InternalServerError, mapOf("error" to e.message))
+            }
+        }
+
+        // Get configs by category
+        get("/category/{category}") {
+            val category = call.parameters["category"] ?: return@get call.respond(
+                HttpStatusCode.BadRequest, mapOf("error" to "Category required")
+            )
+            try {
+                val configs = GameConfigRepository.findByCategory(category)
+                call.respond(configs)
+            } catch (e: Exception) {
+                log.error("Error fetching configs for category $category: ${e.message}", e)
+                call.respond(HttpStatusCode.InternalServerError, mapOf("error" to e.message))
+            }
+        }
+
+        // Get a single config value
+        get("/{key}") {
+            val key = call.parameters["key"] ?: return@get call.respond(
+                HttpStatusCode.BadRequest, mapOf("error" to "Key required")
+            )
+            try {
+                val config = GameConfigRepository.get(key)
+                if (config != null) {
+                    call.respond(config)
+                } else {
+                    call.respond(HttpStatusCode.NotFound, mapOf("error" to "Config not found: $key"))
+                }
+            } catch (e: Exception) {
+                log.error("Error fetching config $key: ${e.message}", e)
+                call.respond(HttpStatusCode.InternalServerError, mapOf("error" to e.message))
+            }
+        }
+
+        // Update a config value
+        put("/{key}") {
+            val key = call.parameters["key"] ?: return@put call.respond(
+                HttpStatusCode.BadRequest, mapOf("error" to "Key required")
+            )
+            try {
+                val request = call.receive<GameConfigUpdateRequest>()
+                val existing = GameConfigRepository.get(key)
+                if (existing == null) {
+                    call.respond(HttpStatusCode.NotFound, mapOf("error" to "Config not found: $key"))
+                    return@put
+                }
+
+                GameConfigRepository.set(
+                    key = key,
+                    value = request.value,
+                    description = request.description ?: existing.description,
+                    category = existing.category,
+                    valueType = existing.valueType
+                )
+
+                // Refresh the cache
+                GameConfig.refresh()
+
+                log.info("Config updated: $key = ${request.value}")
+                call.respond(mapOf(
+                    "success" to true,
+                    "key" to key,
+                    "value" to request.value
+                ))
+            } catch (e: Exception) {
+                log.error("Error updating config $key: ${e.message}", e)
+                call.respond(HttpStatusCode.InternalServerError, mapOf("error" to e.message))
+            }
+        }
+
+        // Create a new config value
+        post {
+            try {
+                val request = call.receive<GameConfigEntry>()
+                val existing = GameConfigRepository.get(request.key)
+                if (existing != null) {
+                    call.respond(HttpStatusCode.Conflict, mapOf("error" to "Config already exists: ${request.key}"))
+                    return@post
+                }
+
+                GameConfigRepository.set(
+                    key = request.key,
+                    value = request.value,
+                    description = request.description,
+                    category = request.category,
+                    valueType = request.valueType
+                )
+
+                // Refresh the cache
+                GameConfig.refresh()
+
+                log.info("Config created: ${request.key} = ${request.value}")
+                call.respond(HttpStatusCode.Created, mapOf(
+                    "success" to true,
+                    "key" to request.key,
+                    "value" to request.value
+                ))
+            } catch (e: Exception) {
+                log.error("Error creating config: ${e.message}", e)
+                call.respond(HttpStatusCode.InternalServerError, mapOf("error" to e.message))
+            }
+        }
+
+        // Delete a config value
+        delete("/{key}") {
+            val key = call.parameters["key"] ?: return@delete call.respond(
+                HttpStatusCode.BadRequest, mapOf("error" to "Key required")
+            )
+            try {
+                val deleted = GameConfigRepository.delete(key)
+                if (deleted) {
+                    GameConfig.refresh()
+                    log.info("Config deleted: $key")
+                    call.respond(mapOf("success" to true, "key" to key))
+                } else {
+                    call.respond(HttpStatusCode.NotFound, mapOf("error" to "Config not found: $key"))
+                }
+            } catch (e: Exception) {
+                log.error("Error deleting config $key: ${e.message}", e)
+                call.respond(HttpStatusCode.InternalServerError, mapOf("error" to e.message))
+            }
+        }
+
+        // Refresh config cache
+        post("/refresh") {
+            try {
+                GameConfig.refresh()
+                log.info("Config cache refreshed")
+                call.respond(mapOf("success" to true, "message" to "Config cache refreshed"))
+            } catch (e: Exception) {
+                log.error("Error refreshing config cache: ${e.message}", e)
+                call.respond(HttpStatusCode.InternalServerError, mapOf("error" to e.message))
+            }
+        }
+
+        // Reset to defaults (reinitialize)
+        post("/reset-defaults") {
+            try {
+                GameConfigRepository.initializeDefaults()
+                GameConfig.refresh()
+                log.info("Config defaults reinitialized")
+                val configs = GameConfigRepository.findAll()
+                call.respond(mapOf(
+                    "success" to true,
+                    "message" to "Config defaults reinitialized",
+                    "count" to configs.size
+                ))
+            } catch (e: Exception) {
+                log.error("Error resetting config defaults: ${e.message}", e)
+                call.respond(HttpStatusCode.InternalServerError, mapOf("error" to e.message))
+            }
         }
     }
 

@@ -16,16 +16,18 @@ import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.intOrNull
 import org.slf4j.LoggerFactory
 import java.util.concurrent.ConcurrentHashMap
+import com.ez2bg.anotherthread.game.GameConfig
 
 /**
  * Configuration for death mechanics.
+ * Now delegates to GameConfig for DB-backed values.
  */
 object DeathConfig {
     /** If true, items are dropped at death location. If false, player keeps all items. */
-    var itemsDropOnDeath: Boolean = false
+    val itemsDropOnDeath: Boolean get() = GameConfig.death.dropItemsOnDeath
 
     /** If true, gold is lost on death. If false, player keeps all gold. */
-    var goldLostOnDeath: Boolean = false
+    val goldLostOnDeath: Boolean get() = GameConfig.death.dropGoldOnDeath
 }
 
 /**
