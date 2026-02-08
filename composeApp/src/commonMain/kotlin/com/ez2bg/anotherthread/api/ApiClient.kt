@@ -569,7 +569,8 @@ data class AbilityDto(
     val durationRounds: Int = 0,
     val powerCost: Int = 10,
     val manaCost: Int = 0,
-    val staminaCost: Int = 0
+    val staminaCost: Int = 0,
+    val minLevel: Int = 1  // Minimum player level to use this ability
 )
 
 @Serializable

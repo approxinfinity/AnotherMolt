@@ -10,6 +10,8 @@ import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.shape.CircleShape
@@ -20,8 +22,10 @@ import androidx.compose.material.icons.automirrored.filled.ArrowForward
 import androidx.compose.material.icons.filled.ArrowDownward
 import androidx.compose.material.icons.filled.ArrowUpward
 import androidx.compose.material.icons.filled.AutoStories
+import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Dangerous
+import androidx.compose.material.icons.filled.School
 import androidx.compose.material.icons.filled.Gavel
 import androidx.compose.material.icons.filled.MeetingRoom
 import androidx.compose.material.icons.filled.SportsMartialArts
@@ -48,6 +52,7 @@ import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -64,6 +69,8 @@ import com.ez2bg.anotherthread.api.PhasewalkDestinationDto
 import com.ez2bg.anotherthread.api.ShopLayoutDirection
 import com.ez2bg.anotherthread.api.UnconnectedAreaDto
 import com.ez2bg.anotherthread.api.SealableRiftDto
+import com.ez2bg.anotherthread.api.TrainerAbilityInfo
+import com.ez2bg.anotherthread.api.TrainerInfoResponse
 import com.ez2bg.anotherthread.api.UserDto
 import com.ez2bg.anotherthread.api.ADMIN_FEATURE_ID
 import com.ez2bg.anotherthread.ui.CreatureStateIcon
@@ -662,7 +669,8 @@ fun AdventureScreen(
                     onBack = { viewModel.clearSelection() },
                     onShowDescription = { viewModel.showDescriptionPopup() },
                     onHideDescription = { viewModel.hideDescriptionPopup() },
-                    onAbilityClick = { ability -> viewModel.useAbilityOnCreature(ability, uiState.selectedCreature) }
+                    onAbilityClick = { ability -> viewModel.useAbilityOnCreature(ability, uiState.selectedCreature) },
+                    onTrainClick = { creature -> viewModel.openTrainerModal(creature) }
                 )
             }
 
@@ -766,6 +774,17 @@ fun AdventureScreen(
                         viewModel.initiateBasicAttack(creatureId)
                     },
                     onDismiss = { showBasicAttackTargetModal = false }
+                )
+            }
+
+            // === TRAINER MODAL ===
+            if (uiState.showTrainerModal) {
+                TrainerModal(
+                    trainerInfo = uiState.trainerInfo,
+                    isLoading = uiState.isLoadingTrainer,
+                    playerGold = currentUser?.gold ?: 0,
+                    onLearnAbility = { abilityId -> viewModel.learnAbility(abilityId) },
+                    onDismiss = { viewModel.dismissTrainerModal() }
                 )
             }
 
@@ -2847,10 +2866,14 @@ private fun DetailView(
     onBack: () -> Unit,
     onShowDescription: () -> Unit,
     onHideDescription: () -> Unit,
-    onAbilityClick: (AbilityDto) -> Unit
+    onAbilityClick: (AbilityDto) -> Unit,
+    onTrainClick: (CreatureDto) -> Unit
 ) {
     val detailName = creature?.name ?: item?.name ?: ""
     val detailImageUrl = creature?.imageUrl ?: item?.imageUrl
+
+    // Check if this is a non-aggressive creature (potential trainer)
+    val isNonAggressive = creature != null && !creature.isAggressive
 
     // Filter combat abilities for the ring display (exclude passive, utility for non-combat scenarios)
     val combatAbilities = playerAbilities.filter { ability ->
@@ -2879,13 +2902,39 @@ private fun DetailView(
         )
 
         // Combat ability ring around creature (similar to location ability ring)
-        if (creature != null && combatAbilities.isNotEmpty()) {
+        // Only show for aggressive creatures - non-aggressive NPCs show Train button instead
+        if (creature != null && !isNonAggressive && combatAbilities.isNotEmpty()) {
             CreatureCombatRing(
                 abilities = combatAbilities,
                 cooldowns = cooldowns,
                 queuedAbilityId = queuedAbilityId,
                 onAbilityClick = onAbilityClick
             )
+        }
+
+        // Train button for non-aggressive creatures (trainers, shopkeepers, etc.)
+        if (isNonAggressive && creature != null) {
+            Box(
+                modifier = Modifier
+                    .align(Alignment.CenterEnd)
+                    .padding(end = 24.dp)
+            ) {
+                Button(
+                    onClick = { onTrainClick(creature) },
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = Color(0xFF4CAF50)
+                    ),
+                    shape = RoundedCornerShape(8.dp)
+                ) {
+                    Icon(
+                        imageVector = Icons.Filled.School,
+                        contentDescription = "Train",
+                        modifier = Modifier.size(20.dp)
+                    )
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text("Train")
+                }
+            }
         }
 
         // 100x100 detail image
@@ -3561,6 +3610,291 @@ private fun RiftSelectionOverlay(
                 ) {
                     Text("Cancel", color = Color.White.copy(alpha = 0.7f))
                 }
+            }
+        }
+    }
+}
+
+// =============================================================================
+// TRAINER MODAL
+// =============================================================================
+
+/**
+ * Modal for learning abilities from a trainer NPC.
+ * Shows available abilities, their costs, and learn status.
+ */
+@Composable
+private fun TrainerModal(
+    trainerInfo: TrainerInfoResponse?,
+    isLoading: Boolean,
+    playerGold: Int,
+    onLearnAbility: (String) -> Unit,
+    onDismiss: () -> Unit
+) {
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(Color.Black.copy(alpha = 0.85f))
+            .pointerInput(Unit) {
+                detectTapGestures(onTap = { onDismiss() })
+            },
+        contentAlignment = Alignment.Center
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth(0.9f)
+                .fillMaxHeight(0.8f)
+                .background(Color(0xFF1A1A1A), RoundedCornerShape(16.dp))
+                .border(2.dp, Color(0xFF4CAF50), RoundedCornerShape(16.dp))
+                .padding(16.dp)
+                .pointerInput(Unit) {
+                    detectTapGestures { /* Consume taps to prevent dismissal */ }
+                },
+            horizontalAlignment = Alignment.CenterHorizontally
+        ) {
+            // Header
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Icon(
+                        imageVector = Icons.Filled.School,
+                        contentDescription = "Trainer",
+                        tint = Color(0xFF4CAF50),
+                        modifier = Modifier.size(28.dp)
+                    )
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text(
+                        text = trainerInfo?.trainerName ?: "Trainer",
+                        color = Color.White,
+                        fontSize = 20.sp,
+                        fontWeight = FontWeight.Bold
+                    )
+                }
+                // Gold display
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text(
+                        text = "$playerGold",
+                        color = Color(0xFFFFD700),
+                        fontSize = 16.sp,
+                        fontWeight = FontWeight.Bold
+                    )
+                    Spacer(modifier = Modifier.width(4.dp))
+                    Text(
+                        text = "gold",
+                        color = Color(0xFFFFD700).copy(alpha = 0.7f),
+                        fontSize = 12.sp
+                    )
+                }
+            }
+
+            Spacer(modifier = Modifier.height(16.dp))
+
+            // Content
+            if (isLoading) {
+                Box(
+                    modifier = Modifier.weight(1f),
+                    contentAlignment = Alignment.Center
+                ) {
+                    CircularProgressIndicator(color = Color(0xFF4CAF50))
+                }
+            } else if (trainerInfo == null || trainerInfo.abilities.isEmpty()) {
+                Box(
+                    modifier = Modifier.weight(1f),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Text(
+                        text = "This trainer has no abilities to teach.",
+                        color = Color.Gray,
+                        textAlign = TextAlign.Center
+                    )
+                }
+            } else {
+                // Ability list
+                LazyColumn(
+                    modifier = Modifier.weight(1f),
+                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    items(trainerInfo.abilities) { abilityInfo ->
+                        TrainerAbilityRow(
+                            abilityInfo = abilityInfo,
+                            playerGold = playerGold,
+                            onLearn = { onLearnAbility(abilityInfo.ability.id) }
+                        )
+                    }
+                }
+            }
+
+            Spacer(modifier = Modifier.height(16.dp))
+
+            // Close button
+            TextButton(onClick = onDismiss) {
+                Text("Close", color = Color.White.copy(alpha = 0.7f))
+            }
+        }
+    }
+}
+
+/**
+ * A single ability row in the trainer modal.
+ */
+@Composable
+private fun TrainerAbilityRow(
+    abilityInfo: TrainerAbilityInfo,
+    playerGold: Int,
+    onLearn: () -> Unit
+) {
+    val ability = abilityInfo.ability
+    val canAfford = playerGold >= abilityInfo.goldCost
+    val canLearn = !abilityInfo.alreadyLearned && abilityInfo.meetsLevelRequirement && canAfford
+
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .background(
+                when {
+                    abilityInfo.alreadyLearned -> Color(0xFF2E7D32).copy(alpha = 0.3f)
+                    !abilityInfo.meetsLevelRequirement -> Color.Gray.copy(alpha = 0.2f)
+                    else -> Color(0xFF2A2A2A)
+                },
+                RoundedCornerShape(8.dp)
+            )
+            .border(
+                1.dp,
+                when {
+                    abilityInfo.alreadyLearned -> Color(0xFF4CAF50)
+                    !abilityInfo.meetsLevelRequirement -> Color.Gray.copy(alpha = 0.5f)
+                    else -> Color(0xFF444444)
+                },
+                RoundedCornerShape(8.dp)
+            )
+            .padding(12.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        // Ability icon placeholder
+        Box(
+            modifier = Modifier
+                .size(48.dp)
+                .background(
+                    when (ability.abilityType) {
+                        "spell" -> Color(0xFF2196F3).copy(alpha = 0.3f)
+                        "combat" -> Color(0xFFFF5722).copy(alpha = 0.3f)
+                        else -> Color.Gray.copy(alpha = 0.3f)
+                    },
+                    RoundedCornerShape(8.dp)
+                ),
+            contentAlignment = Alignment.Center
+        ) {
+            Text(
+                text = ability.name.take(2).uppercase(),
+                color = Color.White,
+                fontSize = 14.sp,
+                fontWeight = FontWeight.Bold
+            )
+        }
+
+        Spacer(modifier = Modifier.width(12.dp))
+
+        // Ability info
+        Column(modifier = Modifier.weight(1f)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(
+                    text = ability.name,
+                    color = if (abilityInfo.alreadyLearned) Color(0xFF4CAF50) else Color.White,
+                    fontSize = 14.sp,
+                    fontWeight = FontWeight.Medium
+                )
+                if (abilityInfo.alreadyLearned) {
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Icon(
+                        imageVector = Icons.Filled.Check,
+                        contentDescription = "Learned",
+                        tint = Color(0xFF4CAF50),
+                        modifier = Modifier.size(16.dp)
+                    )
+                }
+            }
+            Text(
+                text = ability.description,
+                color = Color.Gray,
+                fontSize = 11.sp,
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis
+            )
+            Spacer(modifier = Modifier.height(4.dp))
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                // Level requirement
+                Text(
+                    text = "Lv ${ability.minLevel}",
+                    color = if (abilityInfo.meetsLevelRequirement) Color(0xFF69F0AE) else Color(0xFFFF5252),
+                    fontSize = 10.sp
+                )
+                Spacer(modifier = Modifier.width(8.dp))
+                // Type badge
+                Text(
+                    text = ability.abilityType.replaceFirstChar { it.uppercase() },
+                    color = when (ability.abilityType) {
+                        "spell" -> Color(0xFF2196F3)
+                        "combat" -> Color(0xFFFF5722)
+                        else -> Color.Gray
+                    },
+                    fontSize = 10.sp
+                )
+                // Resource cost
+                if (ability.manaCost > 0) {
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text(
+                        text = "${ability.manaCost} mana",
+                        color = Color(0xFF2196F3).copy(alpha = 0.7f),
+                        fontSize = 10.sp
+                    )
+                }
+                if (ability.staminaCost > 0) {
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text(
+                        text = "${ability.staminaCost} stam",
+                        color = Color(0xFFFFAB40).copy(alpha = 0.7f),
+                        fontSize = 10.sp
+                    )
+                }
+            }
+        }
+
+        Spacer(modifier = Modifier.width(8.dp))
+
+        // Learn button or status
+        if (abilityInfo.alreadyLearned) {
+            Text(
+                text = "Learned",
+                color = Color(0xFF4CAF50),
+                fontSize = 12.sp,
+                fontWeight = FontWeight.Medium
+            )
+        } else if (!abilityInfo.meetsLevelRequirement) {
+            Text(
+                text = "Lv ${ability.minLevel}",
+                color = Color(0xFFFF5252),
+                fontSize = 12.sp,
+                fontWeight = FontWeight.Medium
+            )
+        } else {
+            Button(
+                onClick = onLearn,
+                enabled = canAfford,
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = Color(0xFF4CAF50),
+                    disabledContainerColor = Color.Gray.copy(alpha = 0.5f)
+                ),
+                contentPadding = PaddingValues(horizontal = 12.dp, vertical = 4.dp),
+                shape = RoundedCornerShape(4.dp)
+            ) {
+                Text(
+                    text = "${abilityInfo.goldCost}g",
+                    color = if (canAfford) Color.White else Color.Gray,
+                    fontSize = 12.sp
+                )
             }
         }
     }

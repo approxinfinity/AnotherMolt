@@ -12,6 +12,7 @@ import com.ez2bg.anotherthread.api.TeleportDestinationDto
 import com.ez2bg.anotherthread.api.PhasewalkDestinationDto
 import com.ez2bg.anotherthread.api.UnconnectedAreaDto
 import com.ez2bg.anotherthread.api.SealableRiftDto
+import com.ez2bg.anotherthread.api.TrainerInfoResponse
 import com.ez2bg.anotherthread.api.UserDto
 import com.ez2bg.anotherthread.data.AdventureRepository
 import com.ez2bg.anotherthread.state.AdventureStateHolder
@@ -61,7 +62,11 @@ data class AdventureLocalState(
     val showRiftSelection: Boolean = false,
     val riftMode: String? = null,  // "open" or "seal"
     val unconnectedAreas: List<UnconnectedAreaDto> = emptyList(),
-    val sealableRifts: List<SealableRiftDto> = emptyList()
+    val sealableRifts: List<SealableRiftDto> = emptyList(),
+    // Trainer state
+    val showTrainerModal: Boolean = false,
+    val trainerInfo: TrainerInfoResponse? = null,
+    val isLoadingTrainer: Boolean = false
 )
 
 /**
@@ -111,7 +116,11 @@ data class AdventureUiState(
     val showRiftSelection: Boolean = false,
     val riftMode: String? = null,  // "open" or "seal"
     val unconnectedAreas: List<UnconnectedAreaDto> = emptyList(),
-    val sealableRifts: List<SealableRiftDto> = emptyList()
+    val sealableRifts: List<SealableRiftDto> = emptyList(),
+    // Trainer state
+    val showTrainerModal: Boolean = false,
+    val trainerInfo: TrainerInfoResponse? = null,
+    val isLoadingTrainer: Boolean = false
 ) {
     // Derived properties
     val currentLocation: LocationDto?
@@ -231,7 +240,10 @@ class AdventureViewModel(
             showRiftSelection = local.showRiftSelection,
             riftMode = local.riftMode,
             unconnectedAreas = local.unconnectedAreas,
-            sealableRifts = local.sealableRifts
+            sealableRifts = local.sealableRifts,
+            showTrainerModal = local.showTrainerModal,
+            trainerInfo = local.trainerInfo,
+            isLoadingTrainer = local.isLoadingTrainer
         )
     }.stateIn(
         scope = scope,
@@ -1035,6 +1047,85 @@ class AdventureViewModel(
                 riftMode = null,
                 unconnectedAreas = emptyList(),
                 sealableRifts = emptyList()
+            )
+        }
+    }
+
+    // =========================================================================
+    // Trainer Methods
+    // =========================================================================
+
+    /**
+     * Open the trainer modal for a creature.
+     * Fetches the trainer info from the server.
+     */
+    fun openTrainerModal(creature: CreatureDto) {
+        val userId = currentUser?.id ?: return
+
+        _localState.update { it.copy(isLoadingTrainer = true, showTrainerModal = true) }
+
+        scope.launch {
+            ApiClient.getTrainerInfo(creature.id, userId)
+                .onSuccess { trainerInfo ->
+                    _localState.update {
+                        it.copy(
+                            trainerInfo = trainerInfo,
+                            isLoadingTrainer = false
+                        )
+                    }
+                }
+                .onFailure { error ->
+                    _localState.update {
+                        it.copy(
+                            showTrainerModal = false,
+                            isLoadingTrainer = false
+                        )
+                    }
+                    showSnackbar("Failed to load trainer info: ${error.message}")
+                }
+        }
+    }
+
+    /**
+     * Learn an ability from the current trainer.
+     */
+    fun learnAbility(abilityId: String) {
+        val trainerInfo = _localState.value.trainerInfo ?: return
+        val userId = currentUser?.id ?: return
+
+        scope.launch {
+            ApiClient.learnAbility(trainerInfo.trainerId, userId, abilityId)
+                .onSuccess { response ->
+                    if (response.success) {
+                        showSnackbar(response.message)
+                        // Refresh trainer info to update learned status
+                        ApiClient.getTrainerInfo(trainerInfo.trainerId, userId)
+                            .onSuccess { updatedInfo ->
+                                _localState.update { it.copy(trainerInfo = updatedInfo) }
+                            }
+                        // Refresh user data to update gold and learned abilities
+                        AdventureRepository.refresh()
+                        // Refresh player abilities
+                        loadPlayerAbilities()
+                    } else {
+                        showSnackbar(response.message)
+                    }
+                }
+                .onFailure { error ->
+                    showSnackbar("Failed to learn ability: ${error.message}")
+                }
+        }
+    }
+
+    /**
+     * Close the trainer modal.
+     */
+    fun dismissTrainerModal() {
+        _localState.update {
+            it.copy(
+                showTrainerModal = false,
+                trainerInfo = null,
+                isLoadingTrainer = false
             )
         }
     }
