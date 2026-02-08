@@ -508,6 +508,11 @@ object CombatStateHolder {
                 addEventLogEntry("Error: ${event.message}", EventLogType.ERROR)
             }
 
+            is GlobalEvent.SessionInvalidated -> {
+                // User signed in on another device - log out locally
+                UserStateHolder.handleSessionInvalidated(event.message)
+            }
+
             is GlobalEvent.ResourceUpdated -> {
                 // Update player combatant mana/stamina if this is about us
                 val update = event.update

@@ -46,6 +46,7 @@ sealed class GlobalEvent {
     data class PlayerDied(val response: PlayerDeathResponse) : GlobalEvent()
     data class LocationMutated(val event: LocationMutationEvent) : GlobalEvent()
     data class ItemReceived(val giverId: String, val giverName: String, val itemId: String, val itemName: String, val message: String) : GlobalEvent()
+    data class SessionInvalidated(val userId: String, val reason: String, val message: String) : GlobalEvent()
     data class Error(val message: String, val code: String?) : GlobalEvent()
 }
 
@@ -437,6 +438,15 @@ class CombatClient(
                         giverName = event.giverName,
                         itemId = event.itemId,
                         itemName = event.itemName,
+                        message = event.message
+                    ))
+                }
+
+                text.contains("SESSION_INVALIDATED") -> {
+                    val event = json.decodeFromString<SessionInvalidatedEvent>(extractPayload(text))
+                    _events.emit(GlobalEvent.SessionInvalidated(
+                        userId = event.userId,
+                        reason = event.reason,
                         message = event.message
                     ))
                 }

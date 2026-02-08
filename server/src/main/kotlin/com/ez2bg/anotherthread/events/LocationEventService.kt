@@ -53,6 +53,18 @@ data class ItemReceivedEvent(
 )
 
 /**
+ * Session invalidated event sent when user logs in on another device.
+ * Notifies existing sessions to log out.
+ */
+@Serializable
+data class SessionInvalidatedEvent(
+    val type: String = "SESSION_INVALIDATED",
+    val userId: String,
+    val reason: String = "signed_in_elsewhere",
+    val message: String
+)
+
+/**
  * Location mutation event sent to clients.
  */
 @Serializable
@@ -363,6 +375,29 @@ object LocationEventService {
                 log.debug("Sent item received notification to $receiverId: $giverName gave $itemName")
             } catch (e: Exception) {
                 log.debug("Failed to send item received notification to $receiverId: ${e.message}")
+            }
+        }
+    }
+
+    /**
+     * Send session invalidation to a user when they log in on another device.
+     * This notifies all existing WebSocket connections for that user to log out.
+     */
+    fun sendSessionInvalidated(userId: String, userName: String) {
+        kotlinx.coroutines.runBlocking {
+            val connection = playerConnections[userId] ?: return@runBlocking
+
+            val event = SessionInvalidatedEvent(
+                userId = userId,
+                reason = "signed_in_elsewhere",
+                message = "$userName signed in on another device"
+            )
+
+            try {
+                connection.send(Frame.Text(json.encodeToString(event)))
+                log.info("Sent session invalidation to $userId: signed in elsewhere")
+            } catch (e: Exception) {
+                log.debug("Failed to send session invalidation to $userId: ${e.message}")
             }
         }
     }

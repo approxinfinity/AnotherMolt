@@ -48,6 +48,8 @@ private val LightBlue = Color(0xFFBFDBFE)
  */
 @Composable
 fun OnboardingScreen(
+    sessionInvalidatedMessage: String? = null,
+    onSessionMessageDismissed: () -> Unit = {},
     onComplete: (UserDto) -> Unit
 ) {
     // If user has seen onboarding before, skip to auth page (page 2)
@@ -158,7 +160,53 @@ fun OnboardingScreen(
                 }
             }
         }
+
+        // Session invalidated modal - shown when user was kicked from another device
+        if (sessionInvalidatedMessage != null) {
+            SessionInvalidatedModal(
+                message = sessionInvalidatedMessage,
+                onDismiss = onSessionMessageDismissed
+            )
+        }
     }
+}
+
+/**
+ * Modal shown when user's session was invalidated due to signing in on another device.
+ */
+@Composable
+private fun SessionInvalidatedModal(
+    message: String,
+    onDismiss: () -> Unit
+) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = {
+            Text(
+                text = "Signed Out",
+                color = Color.White
+            )
+        },
+        text = {
+            Text(
+                text = message,
+                color = Color.White.copy(alpha = 0.8f)
+            )
+        },
+        confirmButton = {
+            Button(
+                onClick = onDismiss,
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = AccentColor
+                )
+            ) {
+                Text("OK")
+            }
+        },
+        containerColor = Color(0xFF2A2A3E),
+        titleContentColor = Color.White,
+        textContentColor = Color.White
+    )
 }
 
 /**

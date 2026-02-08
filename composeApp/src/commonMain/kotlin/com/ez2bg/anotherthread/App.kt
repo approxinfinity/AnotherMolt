@@ -49,6 +49,9 @@ fun App() {
 
     var currentScreen by remember { mutableStateOf(initialScreen) }
 
+    // Session invalidated message to show on login screen
+    var sessionInvalidatedMessage by remember { mutableStateOf<String?>(null) }
+
     // Initialize UserStateHolder at app startup to sync with AuthStorage
     LaunchedEffect(Unit) {
         UserStateHolder.initialize()
@@ -80,6 +83,11 @@ fun App() {
                         currentScreen = AppScreen.Main
                     }
                 }
+                is AuthEvent.SessionInvalidated -> {
+                    // User signed in on another device - show message and go to login
+                    sessionInvalidatedMessage = event.message
+                    currentScreen = AppScreen.Onboarding
+                }
             }
         }
     }
@@ -110,6 +118,8 @@ fun App() {
             when (val screen = currentScreen) {
                 is AppScreen.Onboarding -> {
                     OnboardingScreen(
+                        sessionInvalidatedMessage = sessionInvalidatedMessage,
+                        onSessionMessageDismissed = { sessionInvalidatedMessage = null },
                         onComplete = { user ->
                             OnboardingStorage.markOnboardingSeen()
                             // After auth, check if user needs character creation

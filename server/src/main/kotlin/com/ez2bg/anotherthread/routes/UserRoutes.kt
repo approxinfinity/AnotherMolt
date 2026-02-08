@@ -132,6 +132,10 @@ fun Route.authRoutes() {
                 UserRepository.updateCurrentLocation(user.id, TunDuLacSeed.TUN_DU_LAC_OVERWORLD_ID)
             }
 
+            // Notify any existing sessions for this user that they've been invalidated
+            // This kicks them out when signing in on a new device
+            LocationEventService.sendSessionInvalidated(user.id, user.name)
+
             // Create session
             val session = SessionRepository.create(
                 userId = user.id,

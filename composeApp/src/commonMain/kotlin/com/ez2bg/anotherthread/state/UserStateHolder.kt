@@ -27,6 +27,7 @@ sealed class AuthEvent {
     data object LoggedOut : AuthEvent()
     data class UserUpdated(val user: UserDto) : AuthEvent()
     data class AuthError(val message: String) : AuthEvent()
+    data class SessionInvalidated(val message: String) : AuthEvent()
 }
 
 /**
@@ -210,6 +211,17 @@ object UserStateHolder {
         // Clear related state holders
         AdventureStateHolder.clear()
         CombatStateHolder.disconnect()
+    }
+
+    /**
+     * Handle session invalidated event (user signed in on another device).
+     * Logs out locally and emits SessionInvalidated event with the message.
+     */
+    fun handleSessionInvalidated(message: String) {
+        performLocalLogout()
+        scope.launch {
+            _authEvents.emit(AuthEvent.SessionInvalidated(message))
+        }
     }
 
     /**

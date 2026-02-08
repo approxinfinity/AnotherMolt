@@ -451,6 +451,14 @@ data class ItemReceivedEvent(
 )
 
 @Serializable
+data class SessionInvalidatedEvent(
+    val type: String = "SESSION_INVALIDATED",
+    val userId: String,
+    val reason: String,
+    val message: String
+)
+
+@Serializable
 data class RegisterRequest(
     val name: String,
     val password: String
