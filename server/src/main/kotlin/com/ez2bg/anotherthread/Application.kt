@@ -1092,7 +1092,8 @@ fun Application.module() {
     }
 
     // Ensure existing users have a starting location (fallback for users with null location)
-    val usersGivenLocation = UserRepository.ensureStartingLocation(TunDuLacSeed.TUN_DU_LAC_OVERWORLD_ID)
+    val defaultStartingLocationId = GameConfigRepository.getDefaultStartingLocationId()
+    val usersGivenLocation = UserRepository.ensureStartingLocation(defaultStartingLocationId)
     if (usersGivenLocation > 0) {
         log.info("Assigned starting location to $usersGivenLocation users who had none")
     }

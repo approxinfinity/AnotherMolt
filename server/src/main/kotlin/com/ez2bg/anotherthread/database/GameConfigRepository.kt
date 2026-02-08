@@ -211,7 +211,23 @@ object GameConfigRepository {
         setIfNotExists("regen.baseHpPerTick", "1", "Base HP regeneration per game tick", "regen", "int")
         setIfNotExists("regen.baseManaPerTick", "1", "Base mana regeneration per game tick", "regen", "int")
         setIfNotExists("regen.baseStaminaPerTick", "2", "Base stamina regeneration per game tick", "regen", "int")
+
+        // Spawn/starting location config
+        setIfNotExists("spawn.defaultLocationId", TunDuLacSeed.TUN_DU_LAC_OVERWORLD_ID, "Default starting location for new players", "spawn", "string")
+        setIfNotExists("spawn.defaultRespawnLocationId", TunDuLacSeed.TUN_DU_LAC_OVERWORLD_ID, "Default respawn location after death", "spawn", "string")
     }
+
+    /**
+     * Get the default starting location ID for new players.
+     */
+    fun getDefaultStartingLocationId(): String =
+        getString("spawn.defaultLocationId", TunDuLacSeed.TUN_DU_LAC_OVERWORLD_ID)
+
+    /**
+     * Get the default respawn location ID after death.
+     */
+    fun getDefaultRespawnLocationId(): String =
+        getString("spawn.defaultRespawnLocationId", TunDuLacSeed.TUN_DU_LAC_OVERWORLD_ID)
 
     /**
      * Set a config value only if it doesn't already exist.

@@ -1970,15 +1970,16 @@ object CombatService {
     }
 
     /**
-     * Handle player death: optionally drop items at death location and respawn at Tun du Lac.
+     * Handle player death: optionally drop items at death location and respawn at configured location.
      * Item/gold dropping is controlled by DeathConfig flags.
      */
     private suspend fun handlePlayerDeath(session: CombatSession) {
-        // Respawn at Tun du Lac (the starting town)
-        val respawnLocation = LocationRepository.findById(TunDuLacSeed.TUN_DU_LAC_OVERWORLD_ID)
+        // Respawn at configured respawn location (falls back to 0,0 in overworld)
+        val respawnLocationId = GameConfigRepository.getDefaultRespawnLocationId()
+        val respawnLocation = LocationRepository.findById(respawnLocationId)
             ?: LocationRepository.findByCoordinates(0, 0, "overworld")
         if (respawnLocation == null) {
-            log.error("Cannot respawn players - Tun du Lac location not found!")
+            log.error("Cannot respawn players - respawn location $respawnLocationId not found!")
             return
         }
 
@@ -2055,11 +2056,12 @@ object CombatService {
             return null
         }
 
-        // Respawn at Tun du Lac (the starting town)
-        val respawnLocation = LocationRepository.findById(TunDuLacSeed.TUN_DU_LAC_OVERWORLD_ID)
+        // Respawn at configured respawn location (falls back to 0,0 in overworld)
+        val respawnLocationId = GameConfigRepository.getDefaultRespawnLocationId()
+        val respawnLocation = LocationRepository.findById(respawnLocationId)
             ?: LocationRepository.findByCoordinates(0, 0, "overworld")
         if (respawnLocation == null) {
-            log.error("Cannot respawn player - Tun du Lac location not found!")
+            log.error("Cannot respawn player - respawn location $respawnLocationId not found!")
             return null
         }
 

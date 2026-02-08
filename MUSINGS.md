@@ -45,15 +45,17 @@ Cloudflare aggressively caches responses, causing stale data in the UI.
 
 ## Implementation Gaps
 
-### Exploration Mode 0,0,0 Fallback Risk
+### Exploration Mode 0,0,0 Fallback Risk (PARTIALLY ADDRESSED)
 When a user enters exploration mode with no currentLocationId, the system falls back to (0,0,0) or the first location with coordinates.
 
-**Risks to investigate:**
+**Status:**
+- ✅ Session restore now correctly syncs location from server after validation
+- ✅ Server ensures users have starting location (Tun du Lac) on login/register
+- ⏳ TODO: Admin setting for configurable default starting location
+
+**Remaining considerations:**
 - What if no location exists at 0,0,0?
-- Should there be a designated "starting location" concept?
-- Does this create issues for new users?
 - Should we handle restricted area fallbacks?
-- Consider server-side "default starting location" setting
 
 ### Combat UI (Frontend)
 Real-time combat backend is implemented, but frontend UI is missing.

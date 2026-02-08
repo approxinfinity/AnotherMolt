@@ -293,11 +293,16 @@ class AdventureViewModel {
 
     /**
      * Listen for changes to the current user and sync all relevant state.
-     * Tracks: gold, learnedAbilityIds, visibleAbilityIds, equippedItemIds, characterClassId
+     * Tracks: gold, learnedAbilityIds, visibleAbilityIds, equippedItemIds, characterClassId, currentLocationId
      * This ensures all user-dependent UI stays in sync after any user data changes.
      *
      * On first emission: loads initial state
      * On subsequent emissions: only reloads what changed
+     *
+     * IMPORTANT: Also watches for currentLocationId changes from session restore.
+     * When the session is validated with the server, the user's actual location
+     * may differ from what was cached locally. This ensures we navigate to the
+     * correct location after server validation.
      */
     private fun listenForUserUpdates() {
         scope.launch {
@@ -306,6 +311,7 @@ class AdventureViewModel {
             var previousEquippedItemIds: List<String>? = null
             var previousCharacterClassId: String? = null
             var previousGold: Int? = null
+            var previousLocationId: String? = null
             var isFirstEmission = true
 
             UserStateHolder.currentUser.collect { user ->
@@ -315,6 +321,7 @@ class AdventureViewModel {
                     val currentEquippedIds = user.equippedItemIds
                     val currentClassId = user.characterClassId
                     val currentGold = user.gold
+                    val currentLocationId = user.currentLocationId
 
                     // On first emission, load everything
                     // On subsequent emissions, only reload if relevant properties changed
@@ -323,6 +330,7 @@ class AdventureViewModel {
                     val equippedChanged = previousEquippedItemIds != currentEquippedIds
                     val classChanged = previousCharacterClassId != currentClassId
                     val goldChanged = previousGold != currentGold
+                    val locationChanged = previousLocationId != currentLocationId
 
                     // Reload abilities if first load or any ability-related property changed
                     if (isFirstEmission || learnedChanged || visibleChanged || equippedChanged || classChanged) {
@@ -337,12 +345,23 @@ class AdventureViewModel {
                         _localState.update { it.copy(playerGold = currentGold) }
                     }
 
+                    // Navigate to correct location when server provides a different location
+                    // This handles session restore where cached location was stale
+                    if (!isFirstEmission && locationChanged && currentLocationId != null) {
+                        val currentRepoLocationId = AdventureRepository.currentLocationId.value
+                        if (currentRepoLocationId != currentLocationId) {
+                            println("[AdventureViewModel] Server location differs from cached (server=$currentLocationId, cached=$currentRepoLocationId), navigating to correct location")
+                            AdventureRepository.setCurrentLocation(currentLocationId)
+                        }
+                    }
+
                     // Update previous values for next comparison
                     previousLearnedAbilityIds = currentLearnedIds
                     previousVisibleAbilityIds = currentVisibleIds
                     previousEquippedItemIds = currentEquippedIds
                     previousCharacterClassId = currentClassId
                     previousGold = currentGold
+                    previousLocationId = currentLocationId
                     isFirstEmission = false
                 }
             }

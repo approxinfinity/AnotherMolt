@@ -74,11 +74,14 @@ fun Route.authRoutes() {
             // Get universal abilities that all players start with
             val universalAbilityIds = AbilityRepository.findUniversal().map { it.id }
 
+            // Get configured default starting location
+            val defaultStartingLocationId = GameConfigRepository.getDefaultStartingLocationId()
+
             // Create user with hashed password, starting location, and universal abilities
             val user = User(
                 name = request.name,
                 passwordHash = UserRepository.hashPassword(request.password),
-                currentLocationId = TunDuLacSeed.TUN_DU_LAC_OVERWORLD_ID,  // Default starting location
+                currentLocationId = defaultStartingLocationId,  // Configurable starting location
                 learnedAbilityIds = universalAbilityIds  // Start with universal abilities (Attack, Aid, Drag)
             )
             val createdUser = UserRepository.create(user)
@@ -129,7 +132,8 @@ fun Route.authRoutes() {
 
             // Ensure user has a starting location (fallback for users created before this fix)
             if (user.currentLocationId == null) {
-                UserRepository.updateCurrentLocation(user.id, TunDuLacSeed.TUN_DU_LAC_OVERWORLD_ID)
+                val defaultStartingLocationId = GameConfigRepository.getDefaultStartingLocationId()
+                UserRepository.updateCurrentLocation(user.id, defaultStartingLocationId)
             }
 
             // Notify any existing sessions for this user that they've been invalidated
