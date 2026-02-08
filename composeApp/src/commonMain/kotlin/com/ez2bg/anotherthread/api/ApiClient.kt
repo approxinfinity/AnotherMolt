@@ -1886,7 +1886,9 @@ data class CombatantDto(
     val deathThreshold: Int = -10,           // HP at which player truly dies
     val isAlive: Boolean = true,
     val statusEffects: List<StatusEffectDto> = emptyList(),
-    val cooldowns: Map<String, Int> = emptyMap()
+    val cooldowns: Map<String, Int> = emptyMap(),
+    val dexterity: Int = 10,                 // DEX stat for extra attacks calculation
+    val attacksPerRound: Int = 1             // Number of attacks per combat round (MajorMUD-style)
 )
 
 @Serializable

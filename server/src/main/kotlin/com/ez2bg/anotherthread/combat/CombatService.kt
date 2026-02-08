@@ -644,20 +644,28 @@ object CombatService {
 
         // Add auto-attacks for players who didn't queue an action
         // MajorMUD-style: if a player is in combat and doesn't specify an action, they auto-attack
+        // Players get multiple attacks based on level and DEX (attacksPerRound)
         val playersWithActions = session.pendingActions.map { it.combatantId }.toSet()
         val autoAttackActions = session.alivePlayers
             .filter { player -> player.id !in playersWithActions }
-            .mapNotNull { player ->
-                // Find the first alive enemy to target
-                val target = session.aliveCreatures.firstOrNull()
-                if (target != null) {
-                    log.debug("Auto-attack: ${player.name} attacks ${target.name}")
-                    CombatAction(
-                        combatantId = player.id,
-                        abilityId = "universal-basic-attack",  // Use the universal basic attack
-                        targetId = target.id
-                    )
-                } else null
+            .flatMap { player ->
+                // Find alive enemies to target
+                val targets = session.aliveCreatures
+                if (targets.isEmpty()) return@flatMap emptyList<CombatAction>()
+
+                // Generate multiple attacks based on attacksPerRound
+                (1..player.attacksPerRound).mapNotNull { attackNum ->
+                    // Target the first alive creature (could randomize later)
+                    val target = targets.firstOrNull()
+                    if (target != null) {
+                        log.debug("Auto-attack #$attackNum: ${player.name} attacks ${target.name}")
+                        CombatAction(
+                            combatantId = player.id,
+                            abilityId = "universal-basic-attack",
+                            targetId = target.id
+                        )
+                    } else null
+                }
             }
 
         // Combine manual actions with auto-attacks
@@ -1671,21 +1679,23 @@ object CombatService {
                 continue
             }
 
-            // Find a target (prefer standing players over downed ones)
-            val currentAlivePlayers = updatedCombatants.filter { it.type == CombatantType.PLAYER && it.isAlive }
-            if (currentAlivePlayers.isEmpty()) break
+            // Execute multiple attacks based on attacksPerRound (MajorMUD-style)
+            for (attackNum in 1..creature.attacksPerRound) {
+                // Find a target (prefer standing players over downed ones)
+                val currentAlivePlayers = updatedCombatants.filter { it.type == CombatantType.PLAYER && it.isAlive }
+                if (currentAlivePlayers.isEmpty()) break
 
-            // Prefer standing players, but attack downed players if no one else
-            val standingPlayers = currentAlivePlayers.filter { !it.isDowned }
-            val target = if (standingPlayers.isNotEmpty()) {
-                standingPlayers.random()
-            } else {
-                currentAlivePlayers.random()  // All players are downed, finish them off
-            }
-            val currentTarget = updatedCombatants.find { it.id == target.id } ?: continue
+                // Prefer standing players, but attack downed players if no one else
+                val standingPlayers = currentAlivePlayers.filter { !it.isDowned }
+                val target = if (standingPlayers.isNotEmpty()) {
+                    standingPlayers.random()
+                } else {
+                    currentAlivePlayers.random()  // All players are downed, finish them off
+                }
+                val currentTarget = updatedCombatants.find { it.id == target.id } ?: continue
 
-            // Use RNG system for creature attacks (with dice if available)
-            val attackResult = CombatRng.rollAttackWithDice(
+                // Use RNG system for creature attacks (with dice if available)
+                val attackResult = CombatRng.rollAttackWithDice(
                 damageDice = creature.damageDice,
                 baseDamage = creature.baseDamage,
                 attackerAccuracy = creature.accuracy,
@@ -1841,7 +1851,8 @@ object CombatService {
                 targetName = currentTarget.name,
                 abilityName = "Attack"
             ))
-        }
+            }  // End of attackNum loop
+        }  // End of creature loop
 
         return updatedCombatants
     }
@@ -2182,6 +2193,7 @@ object CombatService {
         val playerEvasion = UserRepository.calculateEvasion(this, equipDefense)
         val playerCritBonus = UserRepository.calculateCritBonus(this)
         val playerBaseDamage = UserRepository.calculateBaseDamage(this, equipAttack)
+        val playerAttacksPerRound = UserRepository.calculateAttacksPerRound(this)
 
         // Calculate resource regeneration based on stats (MajorMUD style)
         // All regen rates scale with level to keep pace with increasing resource pools
@@ -2233,7 +2245,9 @@ object CombatService {
             manaRegen = manaRegenRate,
             staminaRegen = staminaRegenRate,
             deathThreshold = playerDeathThreshold,
-            constitution = constitution
+            constitution = constitution,
+            dexterity = dexterity,
+            attacksPerRound = playerAttacksPerRound
         )
     }
 
@@ -2247,6 +2261,8 @@ object CombatService {
         val creatureAccuracy = level * 2 // +2 accuracy per level
         val creatureEvasion = level // +1 evasion per level
         val creatureCritBonus = level / 3 // +1 crit per 3 levels
+        // Creatures get extra attacks based on level: 1 + level/5, capped at 4
+        val creatureAttacksPerRound = (1 + level / 5).coerceIn(1, 4)
 
         return Combatant(
             id = id,
@@ -2261,7 +2277,8 @@ object CombatService {
             evasion = creatureEvasion,
             critBonus = creatureCritBonus,
             baseDamage = baseDamage,
-            damageDice = damageDice
+            damageDice = damageDice,
+            attacksPerRound = creatureAttacksPerRound
         )
     }
 

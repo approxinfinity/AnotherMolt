@@ -83,7 +83,9 @@ data class Combatant(
     val hpRegen: Int = 0,                     // HP restored per round (CON-based)
     val manaRegen: Int = 1,                   // Mana restored per round (INT/WIS-based)
     val staminaRegen: Int = 2,                // Stamina restored per round (CON-based)
-    val constitution: Int = 10                // CON stat for death threshold calculation
+    val constitution: Int = 10,               // CON stat for death threshold calculation
+    val dexterity: Int = 10,                  // DEX stat for extra attacks calculation
+    val attacksPerRound: Int = 1              // Number of attacks per combat round (MajorMUD-style)
 )
 
 /**

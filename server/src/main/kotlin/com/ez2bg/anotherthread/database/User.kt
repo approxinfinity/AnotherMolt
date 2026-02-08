@@ -851,6 +851,21 @@ object UserRepository {
         return (5 + user.level + attributeModifier(user.strength) + equipmentAttackBonus).coerceAtLeast(1)
     }
 
+    /**
+     * Calculate attacks per round (MajorMUD-style).
+     * Formula: 1 base + (level / 5) + (DEX modifier / 2)
+     * - Level 1-4: 1 attack
+     * - Level 5-9: 2 attacks (with DEX 10)
+     * - Level 10-14: 3 attacks (with DEX 10)
+     * - High DEX adds bonus attacks
+     * Maximum capped at 5 attacks per round.
+     */
+    fun calculateAttacksPerRound(user: User): Int {
+        val levelBonus = user.level / 5
+        val dexBonus = attributeModifier(user.dexterity) / 2
+        return (1 + levelBonus + dexBonus).coerceIn(1, 5)
+    }
+
     // Legacy HP calculation for backward compat
     private fun calculateMaxHp(level: Int, classId: String?): Int {
         val hitDieAverage = 5
