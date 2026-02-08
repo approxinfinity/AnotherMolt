@@ -347,10 +347,12 @@ class AdventureViewModel {
 
                     // Navigate to correct location when server provides a different location
                     // This handles session restore where cached location was stale
-                    if (!isFirstEmission && locationChanged && currentLocationId != null) {
+                    // Check on EVERY emission (including first) since the repository may have
+                    // already initialized with a fallback location before we got server data
+                    if (currentLocationId != null) {
                         val currentRepoLocationId = AdventureRepository.currentLocationId.value
-                        if (currentRepoLocationId != currentLocationId) {
-                            println("[AdventureViewModel] Server location differs from cached (server=$currentLocationId, cached=$currentRepoLocationId), navigating to correct location")
+                        if (currentRepoLocationId != null && currentRepoLocationId != currentLocationId) {
+                            println("[AdventureViewModel] Server location differs from repository (server=$currentLocationId, repo=$currentRepoLocationId), navigating to correct location")
                             AdventureRepository.setCurrentLocation(currentLocationId)
                         }
                     }
