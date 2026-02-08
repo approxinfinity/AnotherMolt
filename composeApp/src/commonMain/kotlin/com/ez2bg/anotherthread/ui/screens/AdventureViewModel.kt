@@ -281,16 +281,19 @@ class AdventureViewModel {
 
     /**
      * Listen for changes to the current user and reload abilities when learnedAbilityIds or visibleAbilityIds changes.
+     * Also syncs gold to the local state when it changes.
      * This ensures abilities are reloaded after session validation refreshes user data.
      */
     private fun listenForUserUpdates() {
         scope.launch {
             var previousLearnedAbilityIds: List<String>? = null
             var previousVisibleAbilityIds: List<String>? = null
+            var previousGold: Int? = null
             UserStateHolder.currentUser.collect { user ->
                 if (user != null) {
                     val currentLearnedIds = user.learnedAbilityIds
                     val currentVisibleIds = user.visibleAbilityIds
+                    val currentGold = user.gold
                     // Reload abilities if learned abilities or visible abilities changed (and we had previous values)
                     val learnedChanged = previousLearnedAbilityIds != null && previousLearnedAbilityIds != currentLearnedIds
                     val visibleChanged = previousVisibleAbilityIds != null && previousVisibleAbilityIds != currentVisibleIds
@@ -298,8 +301,13 @@ class AdventureViewModel {
                         println("[AdventureViewModel] User abilities changed (learned=$learnedChanged, visible=$visibleChanged), reloading abilities")
                         loadPlayerAbilities()
                     }
+                    // Sync gold to local state whenever it changes
+                    if (previousGold != currentGold) {
+                        _localState.update { it.copy(playerGold = currentGold) }
+                    }
                     previousLearnedAbilityIds = currentLearnedIds
                     previousVisibleAbilityIds = currentVisibleIds
+                    previousGold = currentGold
                 }
             }
         }
