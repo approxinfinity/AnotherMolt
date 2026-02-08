@@ -8,8 +8,10 @@ A Kotlin Multiplatform MUD-style game engine with AI-powered content generation.
 |----------|---------|
 | **README.md** (this file) | Architecture, setup, and API reference |
 | [OVERVIEW.md](OVERVIEW.md) | Game mechanics, vision, and how systems work together |
+| [PLAYER_GUIDE.md](PLAYER_GUIDE.md) | Player-facing guide for gameplay |
 | [MUSINGS.md](MUSINGS.md) | Future ideas, known issues, and design decisions pending |
 | [STOCK.md](STOCK.md) | Stock character class balance analysis |
+| [FEATURE_SPELL_DESIGN.md](FEATURE_SPELL_DESIGN.md) | Technical design for the spell system |
 | [CLAUDE.md](CLAUDE.md) | AI assistant instructions (for Claude Code) |
 
 ## Features
@@ -87,9 +89,16 @@ Locations can be placed on a 3D grid (X, Y, Z coordinates) for spatial organizat
 
 ### Users
 - `GET /users/{id}` - Get user
+- `GET /users/{id}/stats` - Get full MajorMUD-style stat summary
 - `PUT /users/{id}` - Update user
 - `PUT /users/{id}/location` - Update user's current location
 - `GET /users/at-location/{locationId}` - Get active users at location
+
+### Stealth & Search
+- `POST /users/{id}/hide` - Attempt to hide
+- `POST /users/{id}/sneak` - Attempt to start sneaking
+- `POST /users/{id}/reveal` - Stop hiding/sneaking
+- `POST /users/{id}/search` - Search location for hidden items
 
 ### Content Generation
 - `GET /generate/status` - Check if Ollama is available
@@ -196,16 +205,16 @@ To access from other devices on your network (e.g., `192.168.1.239`):
 1. **Add your IP to CORS allowed hosts** in `server/src/main/resources/application.conf`:
    ```hocon
    cors {
-       allowedHosts = ["localhost:3000", "localhost:8080", "192.168.1.239:8080"]
+       allowedHosts = ["localhost:12080", "192.168.1.239:12080"]
    }
    ```
 
-2. **Ensure Platform files point to port 8081** (the backend), not 8080:
+2. **Ensure Platform files point to port 12081** (the backend), not 12080:
    ```kotlin
    // In Platform.js.kt and Platform.wasmJs.kt
    actual fun developmentBaseUrl(): String {
        val hostname = window.location.hostname
-       return "http://$hostname:8081"  // <-- MUST be 8081, not 8080
+       return "http://$hostname:12081"  // <-- MUST be 12081, not 12080
    }
    ```
 
@@ -295,11 +304,11 @@ To access the web app from external devices (phones, tablets, other computers):
 
 2. **Start tunnels for both frontend and backend:**
    ```shell
-   # Terminal 1 - Frontend tunnel (port 8080)
-   cloudflared tunnel --url http://localhost:8080
+   # Terminal 1 - Frontend tunnel (port 12080)
+   cloudflared tunnel --url http://localhost:12080
 
-   # Terminal 2 - Backend tunnel (port 8081)
-   cloudflared tunnel --url http://localhost:8081
+   # Terminal 2 - Backend tunnel (port 12081)
+   cloudflared tunnel --url http://localhost:12081
    ```
 
    Note the tunnel URLs displayed (e.g., `https://xxx-yyy-zzz.trycloudflare.com`).
@@ -334,7 +343,7 @@ To access the web app from external devices (phones, tablets, other computers):
 | Setting | Description | Default |
 |---------|-------------|---------|
 | `tunnelBackendUrl` | Backend API URL when accessed via tunnel | `null` (uses localhost) |
-| `localBackendPort` | Backend port for local development | `8081` |
+| `localBackendPort` | Backend port for local development | `12081` |
 
 ## Tech Stack
 

@@ -211,11 +211,135 @@ Each creature has:
 - `experienceValue` - Base XP before scaling
 - `level` - Used for combat hit/miss calculations
 
+### Level-Gated Abilities
+Characters unlock new abilities as they level up. Each ability has a minimum level requirement:
+- Level 1: Basic attacks and utility abilities
+- Level 3-5: Intermediate abilities
+- Level 7+: Advanced abilities
+
+The `learnedAbilityIds` field on users tracks which abilities they've unlocked.
+
 ### Future Progression (Not Yet Implemented)
 - Skill trees within classes
 - Equipment upgrades
 - Achievement system
 - Reputation with factions
+
+---
+
+## Stealth System
+
+MajorMUD-inspired stealth mechanics allow players to hide and sneak.
+
+### Hide
+- Attempt to become hidden from view
+- Success based on: `15% + (DEX mod * 5) + (DEX breakpoint * 8) + (level * 2) + classBonus`
+- Thief-type classes get +20% bonus
+- Cannot hide during combat
+- Other players may detect you based on their Perception
+
+### Sneak
+- Move silently between locations
+- Success based on similar formula to Hide
+- Checked when entering new locations
+- Failed sneak reveals you to observers
+
+### Detection
+When a hidden/sneaking player is nearby, observers roll Perception:
+- `20% + (WIS mod * 5) + (WIS breakpoint * 8) + (level * 2) + classBonus`
+- Rangers get +15% detection bonus
+- Successful detection reveals the hidden player
+
+---
+
+## Hidden Ground Items
+
+Items left on the ground become hidden over time, rewarding exploration and searching.
+
+### Mechanics
+1. **Fresh items (< 24 hours)**: Visible to everyone
+2. **Old items (>= 24 hours)**: Hidden, require Search action
+3. **Discovered items**: Once found by a player, remain visible to them
+
+### Search Action
+- `POST /users/{id}/search` - Search current location
+- Success: `30% + (INT mod * 6) + (INT breakpoint * 8) + (level * 2) + classBonus`
+- Thief-type classes get +25% search bonus
+- Each hidden item rolled separately
+
+### Integration
+- Combat drops are tracked with timestamps
+- Stat summaries include `searchChance` for UI display
+
+---
+
+## MajorMUD-Style Stat Modifiers
+
+Attributes use a breakpoint system inspired by MajorMUD:
+
+### Attribute Modifier
+| Score | Modifier |
+|-------|----------|
+| 3 | -4 |
+| 4-5 | -3 |
+| 6-7 | -2 |
+| 8-9 | -1 |
+| 10-11 | 0 |
+| 12-13 | +1 |
+| 14-15 | +2 |
+| 16-17 | +3 |
+| 18+ | +4 |
+
+### Breakpoint Bonuses
+Additional bonuses at key thresholds:
+- 14+: +1 breakpoint bonus
+- 16+: +2 breakpoint bonus
+- 18+: +3 breakpoint bonus
+
+### Derived Stats
+| Stat | Formula |
+|------|---------|
+| Melee Hit | +2% per STR mod |
+| Melee Damage | STR mod |
+| Ranged Hit | +2% per DEX mod |
+| AC Bonus | DEX mod |
+| HP Bonus | CON mod per level |
+| Spell Power | INT mod |
+| Search Chance | 30% + (INT mod * 6) + breakpoint |
+| Hide Chance | 15% + (DEX mod * 5) + breakpoint |
+| Sneak Chance | 15% + (DEX mod * 5) + breakpoint |
+
+---
+
+## Multi-Attack System
+
+High-level characters and creatures can make multiple attacks per round.
+
+### Calculation
+- Base: 1 attack
+- +1 attack at level 6
+- +1 attack at level 12
+- +1 attack at level 18
+- Maximum: 4 attacks per round
+
+### Combat Integration
+- Each attack rolls hit/miss independently
+- Damage calculated per successful hit
+- Status effects may apply on any hit
+
+---
+
+## Encumbrance
+
+Inventory capacity is limited by Constitution.
+
+### Formula
+- Max items = 5 + (CON / 2)
+- Example: CON 14 = 12 item capacity
+
+### Movement Restriction
+- Over-encumbered players cannot move
+- Must drop items before traveling
 
 ---
 

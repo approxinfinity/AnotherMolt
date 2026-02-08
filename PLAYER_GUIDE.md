@@ -198,6 +198,66 @@ Items can be found, looted, or purchased:
 
 ---
 
+## Stealth
+
+### Hiding
+Use the **Hide** ability to become invisible to other players and some creatures.
+
+- **Requirements**: Cannot hide during combat
+- **Success chance**: Based on Dexterity and level
+- **Detection**: Other players with high Perception may detect you hiding
+- **Benefits**: Avoid aggressive creatures, surprise attacks
+
+### Sneaking
+Use the **Sneak** ability to move silently between locations.
+
+- **Requirements**: Cannot sneak during combat
+- **Success chance**: Based on Dexterity and level
+- **Detection**: Checked when you enter a new location
+- **Benefits**: Move past aggressive creatures, scout ahead
+
+**Thief-type classes** (Rogue, Thief, Assassin, etc.) get significant bonuses to stealth.
+
+---
+
+## Searching for Hidden Items
+
+Items left on the ground for more than 24 hours become hidden. Use the **Search** action to find them.
+
+### How It Works
+1. Items dropped recently (< 24 hours) are visible to everyone
+2. Older items require searching to discover
+3. Once you find a hidden item, it stays visible to you until picked up
+
+### Search Success
+Your chance to find hidden items depends on:
+- **Intelligence** - Higher INT = better search chance
+- **Level** - Higher level = slightly better odds
+- **Class** - Thief-type classes get +25% bonus
+
+| Character Type | Approx. Search Chance |
+|----------------|----------------------|
+| INT 10, Level 1, Warrior | ~32% |
+| INT 10, Level 1, Rogue | ~57% |
+| INT 18, Level 1, Warrior | ~72% |
+| INT 18, Level 10, Rogue | ~95% |
+
+**Tip**: If searching reveals nothing, there may still be hidden items - try again!
+
+---
+
+## Encumbrance
+
+Your **Constitution** determines how many items you can carry.
+
+- Base capacity: 5 items
+- +1 item per 2 points of Constitution
+- Example: CON 14 = 12 item capacity
+
+If you're over-encumbered, you cannot move until you drop some items.
+
+---
+
 ## Getting Help
 
 - Check the in-game help commands
