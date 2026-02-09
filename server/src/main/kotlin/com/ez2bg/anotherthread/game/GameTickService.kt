@@ -91,6 +91,10 @@ object GameTickService {
         // Get all users who are online (have been active in last 5 minutes)
         val recentlyActiveUsers = UserRepository.findRecentlyActive(300_000) // 5 minutes
 
+        if (currentTickNumber % 10 == 0L) {
+            log.info("Regen tick $currentTickNumber: ${recentlyActiveUsers.size} active users")
+        }
+
         for (user in recentlyActiveUsers) {
             // Skip if user is in combat - their regen is handled by CombatService
             if (user.currentCombatSessionId != null) {
@@ -131,7 +135,10 @@ object GameTickService {
             }
 
             if (user.currentMana < user.maxMana) {
-                UserRepository.restoreMana(user.id, manaRegen)
+                val restored = UserRepository.restoreMana(user.id, manaRegen)
+                if (currentTickNumber % 10 == 0L) {
+                    log.info("Mana regen for ${user.name}: ${user.currentMana}/${user.maxMana} +$manaRegen (restored=$restored)")
+                }
             }
 
             if (user.currentStamina < user.maxStamina) {

@@ -150,6 +150,33 @@ fun Route.adminRoutes() {
         ))
     }
 
+    // Clear combat session for a user (admin only - fixes stuck combat)
+    post("/admin/clear-combat") {
+        @kotlinx.serialization.Serializable
+        data class ClearCombatRequest(val username: String)
+
+        @kotlinx.serialization.Serializable
+        data class ClearCombatResponse(val success: Boolean, val message: String)
+
+        val request = call.receive<ClearCombatRequest>()
+        val user = UserRepository.findByName(request.username)
+
+        if (user == null) {
+            call.respond(HttpStatusCode.NotFound, ClearCombatResponse(false, "User '${request.username}' not found"))
+            return@post
+        }
+
+        if (user.currentCombatSessionId == null) {
+            call.respond(ClearCombatResponse(true, "${request.username} is not in combat"))
+            return@post
+        }
+
+        UserRepository.updateCombatState(user.id, user.currentHp, null)
+        log.info("Cleared combat session for ${request.username}")
+
+        call.respond(ClearCombatResponse(true, "Cleared combat session for ${request.username}"))
+    }
+
     // Give item to user (admin only)
     post("/admin/give-item") {
         @kotlinx.serialization.Serializable
