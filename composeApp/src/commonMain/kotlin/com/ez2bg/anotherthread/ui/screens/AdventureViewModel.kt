@@ -402,6 +402,15 @@ class AdventureViewModel {
                         scope.launch {
                             // Wait for repository to initialize
                             AdventureRepository.isInitialized.first { it }
+
+                            // Skip sync if we recently navigated - client location is authoritative
+                            val timeSinceLastNav = currentTimeMillis() - lastNavigationTime
+                            if (timeSinceLastNav < NAVIGATION_SYNC_COOLDOWN_MS) {
+                                println("[AdventureViewModel] Initial location sync: skipping, navigated ${timeSinceLastNav}ms ago")
+                                _localState.update { it.copy(isLocationSynced = true) }
+                                return@launch
+                            }
+
                             val currentRepoLocationId = AdventureRepository.currentLocationId.value
                             println("[AdventureViewModel] Server location sync check: server=$serverLocationId, repo=$currentRepoLocationId")
                             if (currentRepoLocationId != null && currentRepoLocationId != serverLocationId) {
