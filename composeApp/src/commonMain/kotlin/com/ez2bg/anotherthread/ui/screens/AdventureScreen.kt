@@ -763,6 +763,10 @@ fun AdventureScreen(
                                     onSpellbookToggle = { showSpellbook = !showSpellbook },
                                     showSpellbook = showSpellbook,
                                     iconMappings = iconMappings,
+                                    hasThingsToInspect = uiState.creaturesHere.isNotEmpty() ||
+                                        uiState.itemsHere.isNotEmpty() ||
+                                        uiState.playersHere.isNotEmpty(),
+                                    onInspectClick = { showInspectionModal = true },
                                     modifier = Modifier.weight(1f)
                                 )
                             }
@@ -1177,34 +1181,6 @@ fun AdventureScreen(
                 .align(Alignment.TopStart)
                 .padding(8.dp)
         )
-
-        // Inspect/Look button - shows what you can look at in the room
-        if (currentUser != null && !ghostMode && uiState.currentLocation != null) {
-            val hasThingsToInspect = uiState.creaturesHere.isNotEmpty() ||
-                uiState.itemsHere.isNotEmpty() ||
-                uiState.playersHere.isNotEmpty()
-
-            if (hasThingsToInspect) {
-                Box(
-                    modifier = Modifier
-                        .align(Alignment.TopStart)
-                        .padding(start = 48.dp, top = 8.dp)  // Offset from connection indicator
-                        .size(32.dp)
-                        .clip(CircleShape)
-                        .background(Color(0xFF2196F3).copy(alpha = 0.8f))
-                        .border(1.dp, Color.White.copy(alpha = 0.4f), CircleShape)
-                        .clickable { showInspectionModal = true },
-                    contentAlignment = Alignment.Center
-                ) {
-                    Icon(
-                        Icons.Filled.Visibility,
-                        contentDescription = "Look around",
-                        tint = Color.White,
-                        modifier = Modifier.size(18.dp)
-                    )
-                }
-            }
-        }
 
         // Inspection Modal - shows creatures, items, and players you can look at
         if (showInspectionModal && uiState.currentLocation != null) {
@@ -2512,6 +2488,8 @@ private fun AbilityRow(
     onSpellbookToggle: () -> Unit = {},
     showSpellbook: Boolean = false,
     iconMappings: Map<String, String> = emptyMap(),
+    hasThingsToInspect: Boolean = false,
+    onInspectClick: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     val iconSize = 32.dp
@@ -2569,6 +2547,27 @@ private fun AbilityRow(
         }
 
         Spacer(Modifier.width(6.dp))
+
+        // Inspect/Look button - only show when there are things to inspect
+        if (hasThingsToInspect) {
+            Box(
+                modifier = Modifier
+                    .size(28.dp)
+                    .clip(RoundedCornerShape(6.dp))
+                    .background(Color(0xFF2196F3).copy(alpha = 0.8f))
+                    .clickable { onInspectClick() },
+                contentAlignment = Alignment.Center
+            ) {
+                Icon(
+                    imageVector = Icons.Filled.Visibility,
+                    contentDescription = "Look around",
+                    tint = Color.White,
+                    modifier = Modifier.size(16.dp)
+                )
+            }
+
+            Spacer(Modifier.width(6.dp))
+        }
 
         // Spellbook toggle button
         Box(
