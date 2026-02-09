@@ -903,14 +903,18 @@ fun AdventureScreen(
             if (uiState.showPlayerInteractionModal && selectedPlayer != null) {
                 // Check if this player has a pending party invite for us
                 val hasPendingInviteFromPlayer = pendingPartyInvite?.first == selectedPlayer.id
+                // Check if we're already in a party with this player
+                val currentUser = reactiveUser
+                val isInParty = currentUser?.partyLeaderId != null
+                val isFollowingThisPlayer = currentUser?.partyLeaderId == selectedPlayer.id
                 PlayerInteractionModal(
                     player = selectedPlayer,
-                    isInSameParty = false, // TODO: Implement party checking when party system is ready
-                    hasPendingPartyInvite = false, // TODO: Party invites
+                    isInSameParty = isFollowingThisPlayer,
+                    hasPendingPartyInvite = hasPendingInviteFromPlayer,
                     onAttack = { viewModel.attackPlayer(selectedPlayer) },
                     onRob = { viewModel.robPlayer(selectedPlayer) },
                     onInviteToParty = { viewModel.inviteToParty(selectedPlayer) },
-                    onAcceptParty = { viewModel.inviteToParty(selectedPlayer) }, // TODO: Implement party accept
+                    onAcceptParty = { viewModel.acceptPartyInvite(selectedPlayer) },
                     onHeal = { /* TODO: Implement party heal */ },
                     onGive = { viewModel.showGiveItemModal() },
                     onDismiss = { viewModel.dismissPlayerInteractionModal() }

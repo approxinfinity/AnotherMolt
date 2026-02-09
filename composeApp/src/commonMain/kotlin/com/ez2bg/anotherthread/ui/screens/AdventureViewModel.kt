@@ -1673,12 +1673,57 @@ class AdventureViewModel {
 
     /**
      * Invite the selected player to party.
-     * Note: Party system implementation may need additional work.
+     * Both players must be at the same location.
      */
     fun inviteToParty(player: UserDto) {
-        logMessage("Invited ${player.name} to party")
-        // TODO: Implement party system when ready
+        val userId = currentUser?.id ?: return
         dismissPlayerInteractionModal()
+
+        scope.launch {
+            ApiClient.inviteToParty(userId, player.id).onSuccess { response ->
+                logMessage(response.message)
+            }.onFailure { error ->
+                logMessage("Failed to invite to party: ${error.message}")
+            }
+        }
+    }
+
+    /**
+     * Accept a pending party invite from another player.
+     * Makes the inviter the party leader.
+     */
+    fun acceptPartyInvite(player: UserDto) {
+        val userId = currentUser?.id ?: return
+        dismissPlayerInteractionModal()
+
+        scope.launch {
+            ApiClient.acceptPartyInvite(userId, player.id).onSuccess { response ->
+                logMessage(response.message)
+                // Clear the pending invite from state
+                CombatStateHolder.clearPendingPartyInvite()
+                // Refresh user data to get the partyLeaderId
+                UserStateHolder.refreshUser()
+            }.onFailure { error ->
+                logMessage("Failed to accept party invite: ${error.message}")
+            }
+        }
+    }
+
+    /**
+     * Leave the current party.
+     */
+    fun leaveParty() {
+        val userId = currentUser?.id ?: return
+
+        scope.launch {
+            ApiClient.leaveParty(userId).onSuccess { response ->
+                logMessage(response.message)
+                // Refresh user data to clear partyLeaderId
+                UserStateHolder.refreshUser()
+            }.onFailure { error ->
+                logMessage("Failed to leave party: ${error.message}")
+            }
+        }
     }
 }
 
