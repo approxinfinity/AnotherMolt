@@ -28,6 +28,7 @@ import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.shape.CircleShape
@@ -1045,8 +1046,8 @@ private fun AbilityDisplayCard(ability: AbilityDto) {
 }
 
 /**
- * Inventory item card with swipe-to-drop functionality.
- * Swipe left to reveal crimson drop zone, release to drop item on ground.
+ * Inventory item card with drop button.
+ * Tap to expand and reveal drop button.
  */
 @Composable
 private fun InventoryItemCard(
@@ -1058,95 +1059,57 @@ private fun InventoryItemCard(
     onDrop: (() -> Unit)? = null
 ) {
     var isExpanded by remember { mutableStateOf(false) }
-    var offsetX by remember { mutableStateOf(0f) }
-    val dropThreshold = -120f  // Pixels to swipe left to trigger drop
+    var showDropConfirmation by remember { mutableStateOf(false) }
 
-    // Calculate if drop should trigger
-    val shouldDrop = offsetX < dropThreshold
+    val backgroundColor = if (isEquipped) {
+        MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.3f)
+    } else {
+        MaterialTheme.colorScheme.surfaceVariant
+    }
 
-    // Animate background color based on swipe progress
-    val backgroundColor by animateColorAsState(
-        targetValue = when {
-            isEquipped -> MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.3f)
-            shouldDrop -> Color(0xFFB71C1C)  // Dark crimson when ready to drop
-            offsetX < 0 -> Color(0xFFB71C1C).copy(alpha = (-offsetX / -dropThreshold).coerceIn(0f, 1f) * 0.7f)
-            else -> MaterialTheme.colorScheme.surfaceVariant
-        },
-        label = "backgroundColor"
-    )
-
-    // Animate offset for smooth return
-    val animatedOffsetX by animateFloatAsState(
-        targetValue = offsetX,
-        label = "offsetX"
-    )
-
-    Box(
-        modifier = Modifier.fillMaxWidth()
-    ) {
-        // Background drop indicator (revealed when swiping)
-        if (offsetX < 0 && onDrop != null && !isEquipped) {
-            Box(
-                modifier = Modifier
-                    .matchParentSize()
-                    .background(
-                        Color(0xFFB71C1C),
-                        RoundedCornerShape(12.dp)
-                    ),
-                contentAlignment = Alignment.CenterEnd
-            ) {
-                Row(
-                    modifier = Modifier.padding(end = 16.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+    // Drop confirmation dialog
+    if (showDropConfirmation && onDrop != null) {
+        AlertDialog(
+            onDismissRequest = { showDropConfirmation = false },
+            title = { Text("Drop Item") },
+            text = {
+                Text(
+                    if (count > 1) {
+                        "Drop all $count ${item.name}?"
+                    } else {
+                        "Drop ${item.name}?"
+                    }
+                )
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        showDropConfirmation = false
+                        onDrop()
+                    },
+                    colors = ButtonDefaults.textButtonColors(
+                        contentColor = MaterialTheme.colorScheme.error
+                    )
                 ) {
-                    Icon(
-                        imageVector = Icons.Filled.Delete,
-                        contentDescription = "Drop item",
-                        tint = Color.White,
-                        modifier = Modifier.size(24.dp)
-                    )
-                    Text(
-                        text = "Drop",
-                        color = Color.White,
-                        style = MaterialTheme.typography.labelLarge
-                    )
+                    Text("Drop")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showDropConfirmation = false }) {
+                    Text("Cancel")
                 }
             }
-        }
+        )
+    }
 
-        // Main card content
-        Card(
-            modifier = Modifier
-                .fillMaxWidth()
-                .offset { IntOffset(animatedOffsetX.roundToInt().coerceAtMost(0), 0) }
-                .then(
-                    if (onDrop != null && !isEquipped) {
-                        Modifier.pointerInput(item.id) {
-                            detectHorizontalDragGestures(
-                                onDragStart = { },
-                                onDragEnd = {
-                                    if (shouldDrop) {
-                                        onDrop()
-                                    }
-                                    offsetX = 0f
-                                },
-                                onDragCancel = {
-                                    offsetX = 0f
-                                },
-                                onHorizontalDrag = { _, dragAmount ->
-                                    // Only allow dragging left (negative)
-                                    offsetX = (offsetX + dragAmount).coerceAtMost(0f).coerceAtLeast(-200f)
-                                }
-                            )
-                        }
-                    } else Modifier
-                )
-                .clickable { isExpanded = !isExpanded },
-            colors = CardDefaults.cardColors(
-                containerColor = backgroundColor
-            )
-        ) {
+    Card(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable { isExpanded = !isExpanded },
+        colors = CardDefaults.cardColors(
+            containerColor = backgroundColor
+        )
+    ) {
             Column(modifier = Modifier.fillMaxWidth()) {
                 Row(
                     modifier = Modifier
@@ -1300,9 +1263,38 @@ private fun InventoryItemCard(
                         }
                     }
                 }
+
+                // Drop button (only for unequipped items when expanded)
+                if (isExpanded && onDrop != null && !isEquipped) {
+                    HorizontalDivider(
+                        modifier = Modifier.padding(horizontal = 12.dp),
+                        color = MaterialTheme.colorScheme.outlineVariant
+                    )
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(12.dp),
+                        horizontalArrangement = Arrangement.End
+                    ) {
+                        OutlinedButton(
+                            onClick = { showDropConfirmation = true },
+                            colors = ButtonDefaults.outlinedButtonColors(
+                                contentColor = MaterialTheme.colorScheme.error
+                            ),
+                            border = BorderStroke(1.dp, MaterialTheme.colorScheme.error)
+                        ) {
+                            Icon(
+                                imageVector = Icons.Filled.Delete,
+                                contentDescription = null,
+                                modifier = Modifier.size(16.dp)
+                            )
+                            Spacer(modifier = Modifier.width(4.dp))
+                            Text(if (count > 1) "Drop All ($count)" else "Drop")
+                        }
+                    }
+                }
             }
         }
-    }
 }
 
 @Composable
