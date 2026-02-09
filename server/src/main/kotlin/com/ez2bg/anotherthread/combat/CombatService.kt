@@ -323,8 +323,9 @@ object CombatService {
         val isNewSession = session == null
 
         if (session == null) {
-            // Create new session
+            // Create new session - returns null if no valid creatures found
             session = createSession(locationId, targetCreatureIds)
+                ?: return Result.failure(Exception("No creatures to fight at this location"))
         }
 
         // Add player to session
@@ -421,8 +422,9 @@ object CombatService {
     /**
      * Create a new combat session with creatures at a location.
      * Only includes creatures that are actually at this location (prevents stale data bugs).
+     * Returns null if no valid creatures are found at the location.
      */
-    private fun createSession(locationId: String, targetCreatureIds: List<String>): CombatSession {
+    private fun createSession(locationId: String, targetCreatureIds: List<String>): CombatSession? {
         // Get fresh location data to verify which creatures are actually here
         val location = LocationRepository.findById(locationId)
         val creaturesActuallyAtLocation = location?.creatureIds?.toSet() ?: emptySet()
@@ -443,11 +445,17 @@ object CombatService {
             CreatureRepository.findById(creatureId)?.toCombatant()
         }
 
+        // Don't create a session if there are no creatures to fight
+        if (creatureCombatants.isEmpty()) {
+            log.warn("Cannot create combat session at $locationId: no valid creatures found (requested: $targetCreatureIds, at location: $creaturesActuallyAtLocation)")
+            return null
+        }
+
         log.info("Creating combat session at $locationId with ${creatureCombatants.size} creature(s): ${creatureCombatants.map { it.name }}")
 
         return CombatSession(
             locationId = locationId,
-            state = if (creatureCombatants.isEmpty()) CombatState.WAITING else CombatState.WAITING,
+            state = CombatState.WAITING,
             combatants = creatureCombatants
         )
     }
