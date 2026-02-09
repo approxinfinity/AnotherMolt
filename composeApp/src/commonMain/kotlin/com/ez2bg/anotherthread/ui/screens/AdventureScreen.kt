@@ -905,13 +905,12 @@ fun AdventureScreen(
                 val hasPendingInviteFromPlayer = pendingPartyInvite?.first == selectedPlayer.id
                 PlayerInteractionModal(
                     player = selectedPlayer,
-                    isInSameParty = displayUser?.partyLeaderId == selectedPlayer.id ||
-                        selectedPlayer.partyLeaderId == displayUser?.id,
-                    hasPendingPartyInvite = hasPendingInviteFromPlayer,
+                    isInSameParty = false, // TODO: Implement party checking when party system is ready
+                    hasPendingPartyInvite = false, // TODO: Party invites
                     onAttack = { viewModel.attackPlayer(selectedPlayer) },
                     onRob = { viewModel.robPlayer(selectedPlayer) },
                     onInviteToParty = { viewModel.inviteToParty(selectedPlayer) },
-                    onAcceptParty = { viewModel.acceptPartyInvite(selectedPlayer.id) },
+                    onAcceptParty = { viewModel.inviteToParty(selectedPlayer) }, // TODO: Implement party accept
                     onHeal = { /* TODO: Implement party heal */ },
                     onGive = { viewModel.showGiveItemModal() },
                     onDismiss = { viewModel.dismissPlayerInteractionModal() }
@@ -2619,7 +2618,7 @@ private fun PlayerInteractionModal(
 
                     // Party action - shows "Accept Party" (green) if pending invite, otherwise "Party" (blue)
                     PlayerActionButton(
-                        icon = if (hasPendingPartyInvite) Icons.Filled.CheckCircle else Icons.Filled.Person,
+                        icon = if (hasPendingPartyInvite) Icons.Filled.Check else Icons.Filled.Person,
                         label = if (hasPendingPartyInvite) "Accept" else "Party",
                         color = if (hasPendingPartyInvite) Color(0xFF4CAF50) else Color(0xFF2196F3),
                         onClick = {

@@ -1642,9 +1642,9 @@ class AdventureViewModel {
      */
     private fun refreshCurrentUser() {
         val userId = UserStateHolder.currentUser.value?.id ?: return
-        viewModelScope.launch {
+        scope.launch {
             ApiClient.getUser(userId).onSuccess { user ->
-                UserStateHolder.updateUser(user)
+                user?.let { UserStateHolder.updateUser(it) }
             }
         }
     }

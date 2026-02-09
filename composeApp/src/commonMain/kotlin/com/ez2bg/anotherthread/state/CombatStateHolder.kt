@@ -557,7 +557,7 @@ object CombatStateHolder {
             is GlobalEvent.PartyFollowMove -> {
                 addEventLogEntry(event.message, EventLogType.NAVIGATION)
                 // Update user location (server already updated it, but we need to reflect locally)
-                UserStateHolder.updateCurrentLocationId(event.newLocationId)
+                UserStateHolder.updateLocationLocally(event.newLocationId)
                 // Refresh user data to get the new location
                 scope.launch {
                     UserStateHolder.refreshUser()
