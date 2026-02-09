@@ -8,6 +8,7 @@ import com.ez2bg.anotherthread.api.LocationEventType
 import com.ez2bg.anotherthread.combat.CombatClient
 import com.ez2bg.anotherthread.combat.CombatConnectionState
 import com.ez2bg.anotherthread.combat.GlobalEvent
+import com.ez2bg.anotherthread.data.AdventureRepository
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -556,8 +557,9 @@ object CombatStateHolder {
 
             is GlobalEvent.PartyFollowMove -> {
                 addEventLogEntry(event.message, EventLogType.NAVIGATION)
-                // Update user location (server already updated it, but we need to reflect locally)
+                // Update both location stores (server already updated it, but we need to reflect locally)
                 UserStateHolder.updateLocationLocally(event.newLocationId)
+                AdventureRepository.setCurrentLocation(event.newLocationId)
                 // Refresh user data to get the new location
                 scope.launch {
                     UserStateHolder.refreshUser()

@@ -846,7 +846,8 @@ fun AdventureScreen(
                         onBack = { showCharacterSheet = false },
                         onNavigateToAdmin = if (isAdmin) {
                             { showCharacterSheet = false; onSwitchToCreate() }
-                        } else null
+                        } else null,
+                        onLeaveParty = { viewModel.leaveParty() }
                     )
                 }
             }

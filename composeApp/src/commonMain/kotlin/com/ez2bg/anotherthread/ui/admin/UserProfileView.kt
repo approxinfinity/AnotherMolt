@@ -53,7 +53,8 @@ fun UserProfileView(
     onLogout: () -> Unit,
     onNavigateToItem: (String) -> Unit,
     onBack: (() -> Unit)?,  // null for own profile, non-null for viewing others
-    onNavigateToAdmin: (() -> Unit)? = null  // Only provided if isAdmin
+    onNavigateToAdmin: (() -> Unit)? = null,  // Only provided if isAdmin
+    onLeaveParty: (() -> Unit)? = null  // Called when user wants to leave their party
 ) {
     // Determine if this is our own profile or someone else's
     val isOwnProfile = currentUser?.id == user.id
@@ -380,6 +381,50 @@ fun UserProfileView(
             encumbrancePercent = encumbrancePercent,
             encumbranceTier = encumbranceTier
         )
+
+        // Party Status Section - only show for own profile when in a party
+        if (isOwnProfile && user.partyLeaderId != null && onLeaveParty != null) {
+            Spacer(modifier = Modifier.height(12.dp))
+            Card(
+                modifier = Modifier.fillMaxWidth(),
+                colors = CardDefaults.cardColors(
+                    containerColor = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.3f)
+                )
+            ) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(12.dp),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Filled.Person,
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.primary,
+                            modifier = Modifier.size(20.dp)
+                        )
+                        Text(
+                            text = "Following party leader",
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurface
+                        )
+                    }
+                    TextButton(
+                        onClick = onLeaveParty,
+                        colors = ButtonDefaults.textButtonColors(
+                            contentColor = MaterialTheme.colorScheme.error
+                        )
+                    ) {
+                        Text("Leave Party")
+                    }
+                }
+            }
+        }
 
         // Generation checkboxes and save button - only show for editable users WITHOUT a class assigned
         if (canEdit && characterClassId == null) {
