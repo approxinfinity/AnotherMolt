@@ -43,6 +43,8 @@ object UserTable : Table("user") {
     // Stealth status
     val isHidden = bool("is_hidden").default(false)      // Currently hiding in place
     val isSneaking = bool("is_sneaking").default(false)  // Moving stealthily
+    // Party system: if set, user is following this leader
+    val partyLeaderId = varchar("party_leader_id", 36).nullable()
 
     override val primaryKey = PrimaryKey(id)
 }

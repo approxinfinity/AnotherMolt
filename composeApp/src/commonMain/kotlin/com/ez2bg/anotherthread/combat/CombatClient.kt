@@ -47,6 +47,11 @@ sealed class GlobalEvent {
     data class LocationMutated(val event: LocationMutationEvent) : GlobalEvent()
     data class ItemReceived(val giverId: String, val giverName: String, val itemId: String, val itemName: String, val message: String) : GlobalEvent()
     data class SessionInvalidated(val userId: String, val reason: String, val message: String) : GlobalEvent()
+    // Party events
+    data class PartyInviteReceived(val inviterId: String, val inviterName: String, val message: String) : GlobalEvent()
+    data class PartyAccepted(val leaderId: String, val followerId: String, val followerName: String, val message: String) : GlobalEvent()
+    data class PartyFollowMove(val leaderId: String, val leaderName: String, val newLocationId: String, val newLocationName: String, val message: String) : GlobalEvent()
+    data class PartyLeft(val reason: String, val message: String) : GlobalEvent()
     data class Error(val message: String, val code: String?) : GlobalEvent()
 }
 
@@ -446,6 +451,44 @@ class CombatClient(
                     val event = json.decodeFromString<SessionInvalidatedEvent>(extractPayload(text))
                     _events.emit(GlobalEvent.SessionInvalidated(
                         userId = event.userId,
+                        reason = event.reason,
+                        message = event.message
+                    ))
+                }
+
+                text.contains("PARTY_INVITE") -> {
+                    val event = json.decodeFromString<PartyInviteEvent>(extractPayload(text))
+                    _events.emit(GlobalEvent.PartyInviteReceived(
+                        inviterId = event.inviterId,
+                        inviterName = event.inviterName,
+                        message = event.message
+                    ))
+                }
+
+                text.contains("PARTY_ACCEPTED") -> {
+                    val event = json.decodeFromString<PartyAcceptedEvent>(extractPayload(text))
+                    _events.emit(GlobalEvent.PartyAccepted(
+                        leaderId = event.leaderId,
+                        followerId = event.followerId,
+                        followerName = event.followerName,
+                        message = event.message
+                    ))
+                }
+
+                text.contains("PARTY_FOLLOW_MOVE") -> {
+                    val event = json.decodeFromString<PartyFollowMoveEvent>(extractPayload(text))
+                    _events.emit(GlobalEvent.PartyFollowMove(
+                        leaderId = event.leaderId,
+                        leaderName = event.leaderName,
+                        newLocationId = event.newLocationId,
+                        newLocationName = event.newLocationName,
+                        message = event.message
+                    ))
+                }
+
+                text.contains("PARTY_LEFT") -> {
+                    val event = json.decodeFromString<PartyLeftEvent>(extractPayload(text))
+                    _events.emit(GlobalEvent.PartyLeft(
                         reason = event.reason,
                         message = event.message
                     ))

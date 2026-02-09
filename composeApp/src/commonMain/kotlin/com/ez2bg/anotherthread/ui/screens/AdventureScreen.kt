@@ -152,6 +152,9 @@ fun AdventureScreen(
     val isPlayingDeathAnimation by CombatStateHolder.isPlayingDeathAnimation.collectAsState()
     val respawnLocationName by CombatStateHolder.respawnLocationName.collectAsState()
 
+    // Pending party invite state (inviterId, inviterName)
+    val pendingPartyInvite by CombatStateHolder.pendingPartyInvite.collectAsState()
+
     // Reactive user state for mana/stamina display (updates on phasewalk, etc.)
     val reactiveUser by UserStateHolder.currentUser.collectAsState()
     // Use reactiveUser for live updates, fall back to passed-in currentUser
@@ -898,12 +901,17 @@ fun AdventureScreen(
             // === PLAYER INTERACTION MODAL ===
             val selectedPlayer = uiState.selectedPlayer
             if (uiState.showPlayerInteractionModal && selectedPlayer != null) {
+                // Check if this player has a pending party invite for us
+                val hasPendingInviteFromPlayer = pendingPartyInvite?.first == selectedPlayer.id
                 PlayerInteractionModal(
                     player = selectedPlayer,
-                    isInSameParty = false, // TODO: Implement party checking when party system is ready
+                    isInSameParty = displayUser?.partyLeaderId == selectedPlayer.id ||
+                        selectedPlayer.partyLeaderId == displayUser?.id,
+                    hasPendingPartyInvite = hasPendingInviteFromPlayer,
                     onAttack = { viewModel.attackPlayer(selectedPlayer) },
                     onRob = { viewModel.robPlayer(selectedPlayer) },
                     onInviteToParty = { viewModel.inviteToParty(selectedPlayer) },
+                    onAcceptParty = { viewModel.acceptPartyInvite(selectedPlayer.id) },
                     onHeal = { /* TODO: Implement party heal */ },
                     onGive = { viewModel.showGiveItemModal() },
                     onDismiss = { viewModel.dismissPlayerInteractionModal() }
@@ -2542,9 +2550,11 @@ private fun GiveUpConfirmationModal(
 private fun PlayerInteractionModal(
     player: UserDto,
     isInSameParty: Boolean,
+    hasPendingPartyInvite: Boolean = false,
     onAttack: () -> Unit,
     onRob: () -> Unit,
     onInviteToParty: () -> Unit,
+    onAcceptParty: () -> Unit,
     onHeal: () -> Unit,
     onGive: () -> Unit,
     onDismiss: () -> Unit
@@ -2607,13 +2617,17 @@ private fun PlayerInteractionModal(
                         }
                     )
 
-                    // Party action
+                    // Party action - shows "Accept Party" (green) if pending invite, otherwise "Party" (blue)
                     PlayerActionButton(
-                        icon = Icons.Filled.Person,
-                        label = "Party",
-                        color = Color(0xFF2196F3), // Blue
+                        icon = if (hasPendingPartyInvite) Icons.Filled.CheckCircle else Icons.Filled.Person,
+                        label = if (hasPendingPartyInvite) "Accept" else "Party",
+                        color = if (hasPendingPartyInvite) Color(0xFF4CAF50) else Color(0xFF2196F3),
                         onClick = {
-                            onInviteToParty()
+                            if (hasPendingPartyInvite) {
+                                onAcceptParty()
+                            } else {
+                                onInviteToParty()
+                            }
                             onDismiss()
                         }
                     )

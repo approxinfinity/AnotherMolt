@@ -194,6 +194,8 @@ data class UserDto(
     // Stealth status
     val isHidden: Boolean = false,    // Currently hiding in place
     val isSneaking: Boolean = false,  // Moving stealthily
+    // Party system: if set, user is following this leader
+    val partyLeaderId: String? = null,
     // Generated appearance based on equipment
     val appearanceDescription: String = ""
 )
@@ -302,6 +304,15 @@ data class StealthResultDto(
 data class SearchResultItemDto(
     val id: String,
     val name: String
+)
+
+@Serializable
+data class RobResultDto(
+    val success: Boolean,
+    val message: String,
+    val goldStolen: Int = 0,
+    val caughtByTarget: Boolean = false,
+    val itemsStolen: List<String> = emptyList()
 )
 
 @Serializable
@@ -456,6 +467,58 @@ data class SessionInvalidatedEvent(
     val userId: String,
     val reason: String,
     val message: String
+)
+
+@Serializable
+data class PartyInviteEvent(
+    val type: String = "PARTY_INVITE",
+    val inviteeId: String,
+    val inviterId: String,
+    val inviterName: String,
+    val message: String
+)
+
+@Serializable
+data class PartyAcceptedEvent(
+    val type: String = "PARTY_ACCEPTED",
+    val leaderId: String,
+    val followerId: String,
+    val followerName: String,
+    val message: String
+)
+
+@Serializable
+data class PartyFollowMoveEvent(
+    val type: String = "PARTY_FOLLOW_MOVE",
+    val followerId: String,
+    val leaderId: String,
+    val leaderName: String,
+    val newLocationId: String,
+    val newLocationName: String,
+    val message: String
+)
+
+@Serializable
+data class PartyLeftEvent(
+    val type: String = "PARTY_LEFT",
+    val userId: String,
+    val reason: String,
+    val message: String
+)
+
+@Serializable
+data class PendingPartyInviteDto(
+    val hasPendingInvite: Boolean,
+    val inviterId: String? = null,
+    val inviterName: String? = null,
+    val createdAt: Long? = null
+)
+
+@Serializable
+data class PartyActionResponse(
+    val success: Boolean,
+    val message: String,
+    val user: UserDto? = null
 )
 
 @Serializable
@@ -1263,6 +1326,15 @@ object ApiClient {
     }
 
     /**
+     * Attempt to rob another player.
+     * Uses DEX-based pickpocket chance. On success steals gold.
+     * On failure, target is alerted.
+     */
+    suspend fun robPlayer(userId: String, targetId: String): Result<RobResultDto> = apiCall {
+        client.post("$baseUrl/users/$userId/rob/$targetId").body()
+    }
+
+    /**
      * Search the current location for hidden items.
      * Intelligence and thief-type classes have bonuses.
      */
@@ -1415,6 +1487,73 @@ object ApiClient {
             }
             throw Exception(errorMessage)
         }
+    }
+
+    // =========================================================================
+    // PARTY SYSTEM
+    // =========================================================================
+
+    /**
+     * Invite another player to your party.
+     * Both players must be at the same location.
+     */
+    suspend fun inviteToParty(userId: String, targetId: String): Result<PartyActionResponse> = apiCall {
+        val response = client.post("$baseUrl/users/$userId/party/invite/$targetId")
+        if (response.status.isSuccess()) {
+            response.body()
+        } else {
+            val errorBody = response.bodyAsText()
+            val errorMessage = try {
+                Json.decodeFromString<Map<String, String>>(errorBody)["error"] ?: errorBody
+            } catch (e: Exception) {
+                errorBody
+            }
+            throw Exception(errorMessage)
+        }
+    }
+
+    /**
+     * Accept a pending party invite.
+     * Makes the inviter the party leader.
+     */
+    suspend fun acceptPartyInvite(userId: String, inviterId: String): Result<PartyActionResponse> = apiCall {
+        val response = client.post("$baseUrl/users/$userId/party/accept/$inviterId")
+        if (response.status.isSuccess()) {
+            response.body()
+        } else {
+            val errorBody = response.bodyAsText()
+            val errorMessage = try {
+                Json.decodeFromString<Map<String, String>>(errorBody)["error"] ?: errorBody
+            } catch (e: Exception) {
+                errorBody
+            }
+            throw Exception(errorMessage)
+        }
+    }
+
+    /**
+     * Leave the current party.
+     */
+    suspend fun leaveParty(userId: String): Result<PartyActionResponse> = apiCall {
+        val response = client.post("$baseUrl/users/$userId/party/leave")
+        if (response.status.isSuccess()) {
+            response.body()
+        } else {
+            val errorBody = response.bodyAsText()
+            val errorMessage = try {
+                Json.decodeFromString<Map<String, String>>(errorBody)["error"] ?: errorBody
+            } catch (e: Exception) {
+                errorBody
+            }
+            throw Exception(errorMessage)
+        }
+    }
+
+    /**
+     * Get pending party invite for a user.
+     */
+    suspend fun getPendingPartyInvite(userId: String): Result<PendingPartyInviteDto> = apiCall {
+        client.get("$baseUrl/users/$userId/party/pending-invite").body()
     }
 
     // =========================================================================

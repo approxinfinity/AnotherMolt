@@ -1638,13 +1638,37 @@ class AdventureViewModel {
     }
 
     /**
+     * Refresh the current user's data from the server and update UserStateHolder.
+     */
+    private fun refreshCurrentUser() {
+        val userId = UserStateHolder.currentUser.value?.id ?: return
+        viewModelScope.launch {
+            ApiClient.getUser(userId).onSuccess { user ->
+                UserStateHolder.updateUser(user)
+            }
+        }
+    }
+
+    /**
      * Attempt to rob the selected player.
-     * Note: Rob mechanics implementation may need additional work.
+     * Uses DEX-based pickpocket mechanics. Success steals gold, failure alerts target.
      */
     fun robPlayer(player: UserDto) {
+        val userId = UserStateHolder.currentUser.value?.id ?: return
         logMessage("Attempting to rob ${player.name}...")
-        // TODO: Implement rob mechanics when ready
         dismissPlayerInteractionModal()
+
+        scope.launch {
+            ApiClient.robPlayer(userId, player.id).onSuccess { result ->
+                logMessage(result.message)
+                if (result.success && result.goldStolen > 0) {
+                    // Refresh our user data to show updated gold
+                    refreshCurrentUser()
+                }
+            }.onFailure { error ->
+                logMessage("Rob attempt failed: ${error.message}")
+            }
+        }
     }
 
     /**

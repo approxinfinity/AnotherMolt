@@ -63,6 +63,15 @@ data class ErrorResponse(
     val error: String
 )
 
+@Serializable
+data class RobResultResponse(
+    val success: Boolean,
+    val message: String,
+    val goldStolen: Int = 0,
+    val caughtByTarget: Boolean = false,
+    val itemsStolen: List<String> = emptyList()
+)
+
 /**
  * Auth routes for user registration and login.
  * Base path: /auth
@@ -476,6 +485,121 @@ fun Route.userRoutes() {
             ))
         }
 
+        /**
+         * Attempt to rob another player.
+         * Requires being at the same location as the target.
+         * Uses DEX-based pickpocket chance from StatModifierService.
+         * On success, steals a portion of the target's gold.
+         * On failure, the target is alerted.
+         */
+        post("/{id}/rob/{targetId}") {
+            val id = call.parameters["id"] ?: return@post call.respond(HttpStatusCode.BadRequest)
+            val targetId = call.parameters["targetId"] ?: return@post call.respond(HttpStatusCode.BadRequest)
+
+            val thief = UserRepository.findById(id)
+            if (thief == null) {
+                call.respond(HttpStatusCode.NotFound, RobResultResponse(
+                    success = false,
+                    message = "User not found"
+                ))
+                return@post
+            }
+
+            val target = UserRepository.findById(targetId)
+            if (target == null) {
+                call.respond(HttpStatusCode.NotFound, RobResultResponse(
+                    success = false,
+                    message = "Target not found"
+                ))
+                return@post
+            }
+
+            // Must be at same location
+            if (thief.currentLocationId != target.currentLocationId) {
+                call.respond(HttpStatusCode.BadRequest, RobResultResponse(
+                    success = false,
+                    message = "Target is not at your location"
+                ))
+                return@post
+            }
+
+            // Cannot rob yourself
+            if (id == targetId) {
+                call.respond(HttpStatusCode.BadRequest, RobResultResponse(
+                    success = false,
+                    message = "You cannot rob yourself"
+                ))
+                return@post
+            }
+
+            // Cannot rob while in combat
+            if (thief.currentCombatSessionId != null) {
+                call.respond(HttpStatusCode.BadRequest, RobResultResponse(
+                    success = false,
+                    message = "You cannot rob while in combat"
+                ))
+                return@post
+            }
+
+            // Calculate pickpocket chance
+            val chance = com.ez2bg.anotherthread.game.StatModifierService.pickpocketChance(
+                thief.dexterity, thief.level, target.level
+            )
+
+            val roll = kotlin.random.Random.nextInt(100)
+            val success = roll < chance
+
+            if (success) {
+                // Steal 10-30% of target's gold
+                val stealPercent = kotlin.random.Random.nextInt(10, 31)
+                val goldStolen = (target.gold * stealPercent / 100).coerceAtLeast(1).coerceAtMost(target.gold)
+
+                if (goldStolen > 0) {
+                    UserRepository.addGold(id, goldStolen)
+                    UserRepository.spendGold(targetId, goldStolen)
+                }
+
+                // Break stealth on success
+                com.ez2bg.anotherthread.game.StealthService.breakStealth(id, "robbery")
+
+                // Notify target via WebSocket
+                LocationEventService.sendRobNotification(
+                    targetId = targetId,
+                    thiefName = thief.name,
+                    goldStolen = goldStolen,
+                    wasSuccessful = true,
+                    wasCaught = false
+                )
+
+                call.respond(RobResultResponse(
+                    success = true,
+                    message = "You successfully pickpocket ${target.name} and steal $goldStolen gold!",
+                    goldStolen = goldStolen,
+                    caughtByTarget = false
+                ))
+            } else {
+                // Failed - target is alerted
+                // Break stealth on failure too
+                com.ez2bg.anotherthread.game.StealthService.breakStealth(id, "failed robbery")
+
+                // Notify target that someone tried to rob them
+                LocationEventService.sendRobNotification(
+                    targetId = targetId,
+                    thiefName = thief.name,
+                    goldStolen = 0,
+                    wasSuccessful = false,
+                    wasCaught = true
+                )
+
+                call.respond(RobResultResponse(
+                    success = false,
+                    message = "You fumble the attempt and ${target.name} notices you!",
+                    goldStolen = 0,
+                    caughtByTarget = true
+                ))
+            }
+        }
+
         put("/{id}") {
             val id = call.parameters["id"] ?: return@put call.respond(HttpStatusCode.BadRequest)
             val request = call.receive<UpdateUserRequest>()
@@ -575,6 +699,41 @@ fun Route.userRoutes() {
                     LocationEventService.broadcastPlayerEntered(newLocation, id, userName)
                 } else {
                     log.info("Location update: Skipping PLAYER_ENTERED (newLocation null or same location)")
+                }
+
+                // Move followers along with the leader
+                if (newLocation != null && request.locationId != oldLocationId) {
+                    val followers = UserRepository.findFollowers(id)
+                    log.info("Location update: Found ${followers.size} followers for leader $id")
+                    for (follower in followers) {
+                        // Update follower location
+                        UserRepository.updateCurrentLocation(follower.id, request.locationId)
+                        UserRepository.updateLastActiveAt(follower.id)
+
+                        // Update location tracking for WebSocket events
+                        request.locationId?.let { locationId ->
+                            LocationEventService.updatePlayerLocation(follower.id, locationId)
+                        }
+
+                        // Broadcast follower left old location
+                        if (oldLocation != null) {
+                            LocationEventService.broadcastPlayerLeft(oldLocation, follower.id, follower.name)
+                        }
+
+                        // Broadcast follower entered new location
+                        LocationEventService.broadcastPlayerEntered(newLocation, follower.id, follower.name)
+
+                        // Notify follower that they followed
+                        LocationEventService.sendPartyFollowMove(
+                            followerId = follower.id,
+                            leaderId = id,
+                            leaderName = userName,
+                            newLocationId = request.locationId!!,
+                            newLocationName = newLocation.name
+                        )
+
+                        log.info("Location update: Moved follower ${follower.name} to ${newLocation.name}")
+                    }
                 }
 
                 // Record encounters with other players at this location
@@ -1129,6 +1288,157 @@ fun Route.userRoutes() {
                 call.respond(HttpStatusCode.InternalServerError, mapOf(
                     "success" to false,
                     "message" to "Failed to process death"
+                ))
+            }
+        }
+
+        // Invite another player to your party
+        post("/{id}/party/invite/{targetId}") {
+            val inviterId = call.parameters["id"] ?: return@post call.respond(HttpStatusCode.BadRequest)
+            val targetId = call.parameters["targetId"] ?: return@post call.respond(HttpStatusCode.BadRequest)
+
+            val inviter = UserRepository.findById(inviterId)
+            if (inviter == null) {
+                call.respond(HttpStatusCode.NotFound, ErrorResponse("User not found"))
+                return@post
+            }
+
+            val target = UserRepository.findById(targetId)
+            if (target == null) {
+                call.respond(HttpStatusCode.NotFound, ErrorResponse("Target user not found"))
+                return@post
+            }
+
+            // Verify both players are at the same location
+            if (inviter.currentLocationId == null || inviter.currentLocationId != target.currentLocationId) {
+                call.respond(HttpStatusCode.BadRequest, ErrorResponse("You must be at the same location to invite to party"))
+                return@post
+            }
+
+            // Can't invite yourself
+            if (inviterId == targetId) {
+                call.respond(HttpStatusCode.BadRequest, ErrorResponse("You cannot invite yourself to a party"))
+                return@post
+            }
+
+            // Can't invite if you're already following someone else
+            if (inviter.partyLeaderId != null) {
+                call.respond(HttpStatusCode.BadRequest, ErrorResponse("You must leave your current party before inviting others"))
+                return@post
+            }
+
+            // Can't invite someone who is already in a party
+            if (target.partyLeaderId != null) {
+                call.respond(HttpStatusCode.BadRequest, ErrorResponse("${target.name} is already in a party"))
+                return@post
+            }
+
+            // Store the pending invite and notify the target
+            com.ez2bg.anotherthread.game.PartyInviteTracker.invite(inviterId, inviter.name, targetId)
+            LocationEventService.sendPartyInvite(targetId, inviterId, inviter.name)
+
+            call.respond(HttpStatusCode.OK, SimpleSuccessResponse(
+                success = true,
+                message = "Invited ${target.name} to your party"
+            ))
+        }
+
+        // Accept a pending party invite
+        post("/{id}/party/accept/{inviterId}") {
+            val followerId = call.parameters["id"] ?: return@post call.respond(HttpStatusCode.BadRequest)
+            val inviterId = call.parameters["inviterId"] ?: return@post call.respond(HttpStatusCode.BadRequest)
+
+            val follower = UserRepository.findById(followerId)
+            if (follower == null) {
+                call.respond(HttpStatusCode.NotFound, ErrorResponse("User not found"))
+                return@post
+            }
+
+            val inviter = UserRepository.findById(inviterId)
+            if (inviter == null) {
+                call.respond(HttpStatusCode.NotFound, ErrorResponse("Inviter not found"))
+                return@post
+            }
+
+            // Check for pending invite
+            if (!com.ez2bg.anotherthread.game.PartyInviteTracker.hasPendingInviteFrom(followerId, inviterId)) {
+                call.respond(HttpStatusCode.BadRequest, ErrorResponse("No pending party invite from ${inviter.name}"))
+                return@post
+            }
+
+            // Verify both players are still at the same location
+            if (follower.currentLocationId == null || follower.currentLocationId != inviter.currentLocationId) {
+                com.ez2bg.anotherthread.game.PartyInviteTracker.clearInvite(followerId)
+                call.respond(HttpStatusCode.BadRequest, ErrorResponse("You must be at the same location to accept party invite"))
+                return@post
+            }
+
+            // Check follower isn't already in a party
+            if (follower.partyLeaderId != null) {
+                com.ez2bg.anotherthread.game.PartyInviteTracker.clearInvite(followerId)
+                call.respond(HttpStatusCode.BadRequest, ErrorResponse("You are already in a party"))
+                return@post
+            }
+
+            // Set the party leader for follower
+            UserRepository.setPartyLeader(followerId, inviterId)
+
+            // Clear the pending invite
+            com.ez2bg.anotherthread.game.PartyInviteTracker.clearInvite(followerId)
+
+            // Notify the leader
+            LocationEventService.sendPartyAccepted(inviterId, followerId, follower.name)
+
+            val updatedFollower = UserRepository.findById(followerId)!!
+            call.respond(HttpStatusCode.OK, mapOf(
+                "success" to true,
+                "message" to "You joined ${inviter.name}'s party",
+                "user" to updatedFollower.toResponse()
+            ))
+        }
+
+        // Leave your current party
+        post("/{id}/party/leave") {
+            val userId = call.parameters["id"] ?: return@post call.respond(HttpStatusCode.BadRequest)
+
+            val user = UserRepository.findById(userId)
+            if (user == null) {
+                call.respond(HttpStatusCode.NotFound, ErrorResponse("User not found"))
+                return@post
+            }
+
+            if (user.partyLeaderId == null) {
+                call.respond(HttpStatusCode.BadRequest, ErrorResponse("You are not in a party"))
+                return@post
+            }
+
+            val leaderId = user.partyLeaderId
+            UserRepository.leaveParty(userId)
+
+            // Notify the user
+            LocationEventService.sendPartyLeft(userId, "left")
+
+            call.respond(HttpStatusCode.OK, SimpleSuccessResponse(
+                success = true,
+                message = "You left the party"
+            ))
+        }
+
+        // Get pending party invite info for a user
+        get("/{id}/party/pending-invite") {
+            val userId = call.parameters["id"] ?: return@get call.respond(HttpStatusCode.BadRequest)
+
+            val pendingInvite = com.ez2bg.anotherthread.game.PartyInviteTracker.getPendingInvite(userId)
+            if (pendingInvite != null) {
+                call.respond(HttpStatusCode.OK, mapOf(
+                    "hasPendingInvite" to true,
+                    "inviterId" to pendingInvite.inviterId,
+                    "inviterName" to pendingInvite.inviterName,
+                    "createdAt" to pendingInvite.createdAt
+                ))
+            } else {
+                call.respond(HttpStatusCode.OK, mapOf(
+                    "hasPendingInvite" to false
                 ))
             }
         }

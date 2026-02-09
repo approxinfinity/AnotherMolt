@@ -87,6 +87,10 @@ object CombatStateHolder {
     private val _respawnLocationName = MutableStateFlow<String?>(null)
     val respawnLocationName: StateFlow<String?> = _respawnLocationName.asStateFlow()
 
+    // Pending party invite (inviterId, inviterName)
+    private val _pendingPartyInvite = MutableStateFlow<Pair<String, String>?>(null)
+    val pendingPartyInvite: StateFlow<Pair<String, String>?> = _pendingPartyInvite.asStateFlow()
+
     // Track connected user
     private var connectedUserId: String? = null
 
@@ -538,6 +542,35 @@ object CombatStateHolder {
                     } else combatant
                 }
             }
+
+            // Party events
+            is GlobalEvent.PartyInviteReceived -> {
+                addEventLogEntry(event.message, EventLogType.INFO)
+                // Store pending invite for UI to show "Accept Party" button
+                _pendingPartyInvite.value = Pair(event.inviterId, event.inviterName)
+            }
+
+            is GlobalEvent.PartyAccepted -> {
+                addEventLogEntry(event.message, EventLogType.INFO)
+            }
+
+            is GlobalEvent.PartyFollowMove -> {
+                addEventLogEntry(event.message, EventLogType.NAVIGATION)
+                // Update user location (server already updated it, but we need to reflect locally)
+                UserStateHolder.updateCurrentLocationId(event.newLocationId)
+                // Refresh user data to get the new location
+                scope.launch {
+                    UserStateHolder.refreshUser()
+                }
+            }
+
+            is GlobalEvent.PartyLeft -> {
+                addEventLogEntry(event.message, EventLogType.INFO)
+                // Refresh user data to clear partyLeaderId
+                scope.launch {
+                    UserStateHolder.refreshUser()
+                }
+            }
         }
     }
 
@@ -575,6 +608,13 @@ object CombatStateHolder {
         scope.launch {
             UserStateHolder.refreshUser()
         }
+    }
+
+    /**
+     * Clear pending party invite (after accepting/declining).
+     */
+    fun clearPendingPartyInvite() {
+        _pendingPartyInvite.value = null
     }
 
     /**

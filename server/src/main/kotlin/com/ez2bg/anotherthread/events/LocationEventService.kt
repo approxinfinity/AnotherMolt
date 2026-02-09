@@ -65,6 +65,69 @@ data class SessionInvalidatedEvent(
 )
 
 /**
+ * Party invite received event sent to a specific player.
+ */
+@Serializable
+data class PartyInviteEvent(
+    val type: String = "PARTY_INVITE",
+    val inviteeId: String,
+    val inviterId: String,
+    val inviterName: String,
+    val message: String
+)
+
+/**
+ * Party invite accepted event sent to the leader.
+ */
+@Serializable
+data class PartyAcceptedEvent(
+    val type: String = "PARTY_ACCEPTED",
+    val leaderId: String,
+    val followerId: String,
+    val followerName: String,
+    val message: String
+)
+
+/**
+ * Party follow move event sent to a follower when their leader moves.
+ */
+@Serializable
+data class PartyFollowMoveEvent(
+    val type: String = "PARTY_FOLLOW_MOVE",
+    val followerId: String,
+    val leaderId: String,
+    val leaderName: String,
+    val newLocationId: String,
+    val newLocationName: String,
+    val message: String
+)
+
+/**
+ * Party left event sent when someone leaves or is removed from party.
+ */
+@Serializable
+data class PartyLeftEvent(
+    val type: String = "PARTY_LEFT",
+    val userId: String,
+    val reason: String,  // "left" or "disbanded"
+    val message: String
+)
+
+/**
+ * Rob notification event sent to a player when someone attempts to rob them.
+ */
+@Serializable
+data class RobNotificationEvent(
+    val type: String = "ROB_NOTIFICATION",
+    val targetId: String,
+    val thiefName: String,
+    val goldStolen: Int,
+    val wasSuccessful: Boolean,
+    val wasCaught: Boolean,
+    val message: String
+)
+
+/**
  * Location mutation event sent to clients.
  */
 @Serializable
@@ -405,6 +468,136 @@ object LocationEventService {
                 log.info("Sent session invalidation to $userId: signed in elsewhere")
             } catch (e: Exception) {
                 log.debug("Failed to send session invalidation to $userId: ${e.message}")
+            }
+        }
+    }
+
+    /**
+     * Send party invite notification to a specific player.
+     */
+    fun sendPartyInvite(inviteeId: String, inviterId: String, inviterName: String) {
+        kotlinx.coroutines.runBlocking {
+            val connection = playerConnections[inviteeId] ?: return@runBlocking
+
+            val event = PartyInviteEvent(
+                inviteeId = inviteeId,
+                inviterId = inviterId,
+                inviterName = inviterName,
+                message = "$inviterName invited you to join their party"
+            )
+
+            try {
+                connection.send(Frame.Text(json.encodeToString(event)))
+                log.debug("Sent party invite to $inviteeId from $inviterName")
+            } catch (e: Exception) {
+                log.debug("Failed to send party invite to $inviteeId: ${e.message}")
+            }
+        }
+    }
+
+    /**
+     * Send party accepted notification to the leader.
+     */
+    fun sendPartyAccepted(leaderId: String, followerId: String, followerName: String) {
+        kotlinx.coroutines.runBlocking {
+            val connection = playerConnections[leaderId] ?: return@runBlocking
+
+            val event = PartyAcceptedEvent(
+                leaderId = leaderId,
+                followerId = followerId,
+                followerName = followerName,
+                message = "$followerName joined your party"
+            )
+
+            try {
+                connection.send(Frame.Text(json.encodeToString(event)))
+                log.debug("Sent party accepted to $leaderId: $followerName joined")
+            } catch (e: Exception) {
+                log.debug("Failed to send party accepted to $leaderId: ${e.message}")
+            }
+        }
+    }
+
+    /**
+     * Send party follow move notification to a follower.
+     */
+    fun sendPartyFollowMove(followerId: String, leaderId: String, leaderName: String, newLocationId: String, newLocationName: String) {
+        kotlinx.coroutines.runBlocking {
+            val connection = playerConnections[followerId] ?: return@runBlocking
+
+            val event = PartyFollowMoveEvent(
+                followerId = followerId,
+                leaderId = leaderId,
+                leaderName = leaderName,
+                newLocationId = newLocationId,
+                newLocationName = newLocationName,
+                message = "You follow $leaderName"
+            )
+
+            try {
+                connection.send(Frame.Text(json.encodeToString(event)))
+                log.debug("Sent party follow move to $followerId: following $leaderName to $newLocationName")
+            } catch (e: Exception) {
+                log.debug("Failed to send party follow move to $followerId: ${e.message}")
+            }
+        }
+    }
+
+    /**
+     * Send party left notification to a player.
+     */
+    fun sendPartyLeft(userId: String, reason: String) {
+        kotlinx.coroutines.runBlocking {
+            val connection = playerConnections[userId] ?: return@runBlocking
+
+            val message = when (reason) {
+                "left" -> "You left the party"
+                "disbanded" -> "Your party has been disbanded"
+                else -> "You are no longer in a party"
+            }
+
+            val event = PartyLeftEvent(
+                userId = userId,
+                reason = reason,
+                message = message
+            )
+
+            try {
+                connection.send(Frame.Text(json.encodeToString(event)))
+                log.debug("Sent party left to $userId: $reason")
+            } catch (e: Exception) {
+                log.debug("Failed to send party left to $userId: ${e.message}")
+            }
+        }
+    }
+
+    /**
+     * Send rob notification to a player when someone attempts to rob them.
+     */
+    fun sendRobNotification(targetId: String, thiefName: String, goldStolen: Int, wasSuccessful: Boolean, wasCaught: Boolean) {
+        kotlinx.coroutines.runBlocking {
+            val connection = playerConnections[targetId] ?: return@runBlocking
+
+            val message = when {
+                wasSuccessful -> "$thiefName stole $goldStolen gold from you!"
+                wasCaught -> "You caught $thiefName trying to pickpocket you!"
+                else -> "$thiefName attempted to rob you"
+            }
+
+            val event = RobNotificationEvent(
+                targetId = targetId,
+                thiefName = thiefName,
+                goldStolen = goldStolen,
+                wasSuccessful = wasSuccessful,
+                wasCaught = wasCaught,
+                message = message
+            )
+
+            try {
+                connection.send(Frame.Text(json.encodeToString(event)))
+                log.debug("Sent rob notification to $targetId: $message")
+            } catch (e: Exception) {
+                log.debug("Failed to send rob notification to $targetId: ${e.message}")
             }
         }
     }

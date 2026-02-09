@@ -52,7 +52,9 @@ data class User(
     val visibleAbilityIds: List<String> = emptyList(),
     // Stealth status
     val isHidden: Boolean = false,    // Currently hiding in place
-    val isSneaking: Boolean = false   // Moving stealthily
+    val isSneaking: Boolean = false,  // Moving stealthily
+    // Party system: if set, user is following this leader
+    val partyLeaderId: String? = null
 )
 
 /**
@@ -99,6 +101,8 @@ data class UserResponse(
     // Stealth status
     val isHidden: Boolean,
     val isSneaking: Boolean,
+    // Party system: if set, user is following this leader
+    val partyLeaderId: String?,
     // Generated appearance description based on equipment
     val appearanceDescription: String
 )
@@ -142,6 +146,7 @@ fun User.toResponse(): UserResponse {
         visibleAbilityIds = visibleAbilityIds,
         isHidden = isHidden,
         isSneaking = isSneaking,
+        partyLeaderId = partyLeaderId,
         appearanceDescription = UserRepository.generateAppearanceDescription(this)
     )
 }
@@ -195,7 +200,8 @@ object UserRepository {
         learnedAbilityIds = jsonToList(this[UserTable.learnedAbilityIds]),
         visibleAbilityIds = jsonToList(this[UserTable.visibleAbilityIds]),
         isHidden = this[UserTable.isHidden],
-        isSneaking = this[UserTable.isSneaking]
+        isSneaking = this[UserTable.isSneaking],
+        partyLeaderId = this[UserTable.partyLeaderId]
     )
 
     fun create(user: User): User = transaction {
@@ -234,6 +240,7 @@ object UserRepository {
             it[visibleAbilityIds] = listToJson(user.visibleAbilityIds)
             it[isHidden] = user.isHidden
             it[isSneaking] = user.isSneaking
+            it[partyLeaderId] = user.partyLeaderId
         }
         user
     }
@@ -288,6 +295,7 @@ object UserRepository {
             it[visibleAbilityIds] = listToJson(user.visibleAbilityIds)
             it[isHidden] = user.isHidden
             it[isSneaking] = user.isSneaking
+            it[partyLeaderId] = user.partyLeaderId
         } > 0
     }
 
@@ -314,6 +322,30 @@ object UserRepository {
             it[lastActiveAt] = System.currentTimeMillis()
         } > 0
     }
+
+    /**
+     * Find all users who are following a specific leader
+     */
+    fun findFollowers(leaderId: String): List<User> = transaction {
+        UserTable.selectAll()
+            .where { UserTable.partyLeaderId eq leaderId }
+            .map { it.toUser() }
+    }
+
+    /**
+     * Set the party leader for a user (joining a party)
+     */
+    fun setPartyLeader(id: String, leaderId: String?): Boolean = transaction {
+        UserTable.update({ UserTable.id eq id }) {
+            it[partyLeaderId] = leaderId
+            it[lastActiveAt] = System.currentTimeMillis()
+        } > 0
+    }
+
+    /**
+     * Leave party (clear partyLeaderId)
+     */
+    fun leaveParty(id: String): Boolean = setPartyLeader(id, null)
 
     fun updateImageUrl(id: String, imageUrl: String): Boolean = transaction {
         UserTable.update({ UserTable.id eq id }) {

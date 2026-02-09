@@ -50,7 +50,8 @@ object MigrationRunner {
         V006_AddStealthStatus(),
         V007_AddLocationItems(),
         V008_DropClassGenerationStartedAt(),
-        V009_AddVisibleAbilityIds()
+        V009_AddVisibleAbilityIds(),
+        V010_AddPartyFields()
     )
 
     /**
