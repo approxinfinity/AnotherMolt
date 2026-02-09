@@ -20,6 +20,7 @@ import com.ez2bg.anotherthread.state.CombatStateHolder
 import com.ez2bg.anotherthread.state.EventLogType
 import com.ez2bg.anotherthread.state.PlayerPresenceEvent
 import com.ez2bg.anotherthread.state.UserStateHolder
+import com.ez2bg.anotherthread.combat.CombatConnectionState
 import com.ez2bg.anotherthread.ui.components.EventLogEntry
 import com.ez2bg.anotherthread.ui.components.EventType
 import kotlinx.coroutines.CoroutineScope
@@ -315,6 +316,8 @@ class AdventureViewModel {
         listenForUserUpdates()
         // Listen for real-time player presence events (enter/leave)
         listenForPlayerPresenceEvents()
+        // Listen for WebSocket reconnection to resync location
+        listenForConnectionStateChanges()
     }
 
     /**
@@ -522,6 +525,61 @@ class AdventureViewModel {
         }
     }
 
+    /**
+     * Listen for WebSocket connection state changes.
+     * On reconnection, re-sync location with server to ensure client/server are in sync.
+     * This handles cases where the user's location drifted during a disconnect.
+     */
+    private fun listenForConnectionStateChanges() {
+        var wasDisconnected = false
+        scope.launch {
+            CombatStateHolder.connectionState.collect { state ->
+                when (state) {
+                    CombatConnectionState.DISCONNECTED,
+                    CombatConnectionState.RECONNECTING -> {
+                        wasDisconnected = true
+                    }
+                    CombatConnectionState.CONNECTED -> {
+                        if (wasDisconnected) {
+                            wasDisconnected = false
+                            println("[AdventureViewModel] WebSocket reconnected - syncing location with server")
+                            syncLocationWithServer()
+                        }
+                    }
+                    else -> { /* CONNECTING - do nothing */ }
+                }
+            }
+        }
+    }
+
+    /**
+     * Fetch the user's authoritative location from server and update client if different.
+     * This ensures the client never drifts from server state.
+     */
+    private fun syncLocationWithServer() {
+        val userId = UserStateHolder.userId ?: return
+        scope.launch {
+            ApiClient.getUser(userId).onSuccess { user ->
+                if (user != null) {
+                    val serverLocationId = user.currentLocationId
+                    val clientLocationId = AdventureRepository.currentLocationId.value
+                    if (serverLocationId != null && serverLocationId != clientLocationId) {
+                        println("[AdventureViewModel] Location mismatch detected! Server=$serverLocationId, Client=$clientLocationId - correcting")
+                        AdventureRepository.setCurrentLocation(serverLocationId)
+                        UserStateHolder.updateLocationLocally(serverLocationId)
+                        // Update shop/inn state
+                        _localState.update {
+                            it.copy(
+                                isShopLocation = serverLocationId in shopLocationIds,
+                                isInnLocation = serverLocationId == innLocationId
+                            )
+                        }
+                    }
+                }
+            }
+        }
+    }
+
     private fun connectCombatWebSocket() {
         val userId = UserStateHolder.userId ?: return
         CombatStateHolder.connect(userId)
@@ -676,7 +734,16 @@ class AdventureViewModel {
         }
 
         scope.launch {
-            // Update repository's current location
+            val userId = UserStateHolder.userId
+            if (userId == null) {
+                println("[Navigation] WARNING: userId is null, cannot navigate")
+                return@launch
+            }
+
+            // Capture previous location for rollback on failure
+            val previousLocationId = AdventureRepository.currentLocationId.value
+
+            // Optimistically update client state for instant feedback
             AdventureRepository.setCurrentLocation(exit.locationId)
 
             // Clear selection and update shop state
@@ -706,17 +773,28 @@ class AdventureViewModel {
                 loadShopItems(exit.locationId)
             }
 
-            // Update user presence on server and persist locally
-            UserStateHolder.userId?.let { userId ->
-                println("[Navigation] Updating server location: userId=$userId, locationId=${exit.locationId}")
-                ApiClient.updateUserLocation(userId, exit.locationId)
-                    .onSuccess {
-                        println("[Navigation] Location update succeeded")
-                        // Persist location locally so it survives page refresh
-                        UserStateHolder.updateLocationLocally(exit.locationId)
+            // Update server - CRITICAL: rollback client state if this fails
+            println("[Navigation] Updating server location: userId=$userId, locationId=${exit.locationId}")
+            ApiClient.updateUserLocation(userId, exit.locationId)
+                .onSuccess {
+                    println("[Navigation] Location update succeeded")
+                    // Persist location locally so it survives page refresh
+                    UserStateHolder.updateLocationLocally(exit.locationId)
+                }
+                .onFailure { error ->
+                    println("[Navigation] Location update FAILED: ${error.message} - rolling back to $previousLocationId")
+                    // Rollback client state to match server
+                    if (previousLocationId != null) {
+                        AdventureRepository.setCurrentLocation(previousLocationId)
+                        _localState.update {
+                            it.copy(
+                                isShopLocation = previousLocationId in shopLocationIds,
+                                isInnLocation = previousLocationId == innLocationId
+                            )
+                        }
                     }
-                    .onFailure { println("[Navigation] Location update failed: ${it.message}") }
-            } ?: println("[Navigation] WARNING: userId is null, cannot update server location")
+                    logError("Failed to move: ${error.message}")
+                }
 
             // Load phasewalk destinations for the new location
             loadPhasewalkDestinations()
