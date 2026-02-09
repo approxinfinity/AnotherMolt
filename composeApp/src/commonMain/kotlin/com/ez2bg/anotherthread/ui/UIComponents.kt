@@ -506,8 +506,9 @@ fun EntityImage(
                 contentDescription = contentDescription,
                 modifier = Modifier
                     .fillMaxWidth()
+                    .heightIn(max = 300.dp)
                     .clip(RoundedCornerShape(12.dp)),
-                contentScale = ContentScale.FillWidth,
+                contentScale = ContentScale.Crop,
                 onState = { imageState = it }
             )
 
