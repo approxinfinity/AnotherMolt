@@ -836,10 +836,18 @@ class AdventureViewModel {
 
         // Then fetch from server to ensure accuracy (and to catch edge cases)
         val userId = UserStateHolder.userId ?: return
+        // Capture the current location ID to detect stale responses
+        val requestLocationId = AdventureRepository.currentLocationId.value
         scope.launch {
             ApiClient.getPhasewalkDestinations(userId).onSuccess { destinations ->
-                println("[Phasewalk] Loaded ${destinations.size} destinations from server")
-                _localState.update { it.copy(phasewalkDestinations = destinations) }
+                // Only apply results if we're still at the same location
+                val currentLocationId = AdventureRepository.currentLocationId.value
+                if (currentLocationId == requestLocationId) {
+                    println("[Phasewalk] Loaded ${destinations.size} destinations from server for $requestLocationId")
+                    _localState.update { it.copy(phasewalkDestinations = destinations) }
+                } else {
+                    println("[Phasewalk] Discarding stale response for $requestLocationId (now at $currentLocationId)")
+                }
             }.onFailure { error ->
                 // On failure, keep local computation (don't clear)
                 println("[Phasewalk] Server fetch failed, keeping local: ${error.message}")
