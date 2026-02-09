@@ -150,6 +150,40 @@ fun Route.adminRoutes() {
         ))
     }
 
+    // Give item to user (admin only)
+    post("/admin/give-item") {
+        @kotlinx.serialization.Serializable
+        data class GiveItemRequest(
+            val username: String,
+            val itemId: String
+        )
+
+        @kotlinx.serialization.Serializable
+        data class GiveItemResponse(
+            val success: Boolean,
+            val message: String
+        )
+
+        val request = call.receive<GiveItemRequest>()
+        val user = UserRepository.findByName(request.username)
+
+        if (user == null) {
+            call.respond(HttpStatusCode.NotFound, GiveItemResponse(false, "User '${request.username}' not found"))
+            return@post
+        }
+
+        val item = ItemRepository.findById(request.itemId)
+        if (item == null) {
+            call.respond(HttpStatusCode.NotFound, GiveItemResponse(false, "Item '${request.itemId}' not found"))
+            return@post
+        }
+
+        UserRepository.addItems(user.id, listOf(request.itemId))
+        log.info("Gave ${item.name} to ${request.username}")
+
+        call.respond(GiveItemResponse(true, "Gave ${item.name} to ${request.username}"))
+    }
+
     // Repopulate Tun du Lac shop inventories
     post("/admin/repopulate-tun-du-lac-shops") {
         val results = mutableListOf<String>()
