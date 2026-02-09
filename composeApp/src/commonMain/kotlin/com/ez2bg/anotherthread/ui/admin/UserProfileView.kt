@@ -1556,8 +1556,9 @@ private fun EncumbranceBar(
 }
 
 /**
- * Unified Abilities section - consolidates ability listing, action bar selection, and icon customization.
- * Shows all abilities with their descriptions, checkboxes for action bar visibility, and icon picker.
+ * Unified Abilities section - shows all abilities organized by category.
+ * Categories: Active (self/ally targeting), Attacks (enemy targeting), Passives.
+ * Attack abilities appear in creature/player action modals instead of action bar.
  */
 @Composable
 private fun UnifiedAbilitiesSection(
@@ -1573,7 +1574,6 @@ private fun UnifiedAbilitiesSection(
     onIconMappingReset: (abilityId: String) -> Unit
 ) {
     var expanded by remember { mutableStateOf(false) }
-    var localVisibleIds by remember(visibleAbilityIds) { mutableStateOf(visibleAbilityIds.toMutableList()) }
     var allAbilities by remember { mutableStateOf<List<AbilityDto>>(emptyList()) }
     var isLoading by remember { mutableStateOf(false) }
     var iconPickerAbilityId by remember { mutableStateOf<String?>(null) }
@@ -1592,11 +1592,18 @@ private fun UnifiedAbilitiesSection(
         isLoading = false
     }
 
-    val maxAbilities = 10
-    val selectedCount = localVisibleIds.size
-    val activeAbilities = allAbilities.filter { it.abilityType != "passive" }
+    // Split abilities into categories:
+    // - Active: self, single_ally, all_allies targeting (show on action bar)
+    // - Attacks: single_enemy, all_enemies, area targeting (show in creature/player modal)
+    // - Passives: passive ability type
+    val attackTargetTypes = setOf("single_enemy", "all_enemies", "area")
+    val activeAbilities = allAbilities.filter {
+        it.abilityType != "passive" && it.targetType !in attackTargetTypes
+    }
+    val attackAbilities = allAbilities.filter {
+        it.abilityType != "passive" && it.targetType in attackTargetTypes
+    }
     val passiveAbilities = allAbilities.filter { it.abilityType == "passive" }
-    val hasUnsavedChanges = localVisibleIds.toSet() != visibleAbilityIds.toSet()
 
     Card(modifier = Modifier.fillMaxWidth()) {
         Column(modifier = Modifier.padding(16.dp)) {
@@ -1622,7 +1629,7 @@ private fun UnifiedAbilitiesSection(
                             style = MaterialTheme.typography.titleMedium
                         )
                         Text(
-                            text = "${allAbilities.size} abilities • ${if (selectedCount == 0) "all on action bar" else "$selectedCount/$maxAbilities on action bar"}",
+                            text = "${allAbilities.size} abilities",
                             style = MaterialTheme.typography.labelSmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
@@ -1645,17 +1652,7 @@ private fun UnifiedAbilitiesSection(
                         CircularProgressIndicator(modifier = Modifier.size(24.dp))
                     }
                 } else {
-                    // Help text for action bar selection (only for own profile)
-                    if (isOwnProfile && activeAbilities.isNotEmpty()) {
-                        Text(
-                            text = "Check abilities to show on action bar (max 10). Unchecked = show all.",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            modifier = Modifier.padding(bottom = 8.dp)
-                        )
-                    }
-
-                    // Active abilities section
+                    // Active abilities section (self/ally targeting - shown on action bar)
                     if (activeAbilities.isNotEmpty()) {
                         Text(
                             text = "Active Abilities",
@@ -1666,23 +1663,34 @@ private fun UnifiedAbilitiesSection(
 
                         Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                             activeAbilities.forEach { ability ->
-                                UnifiedAbilityCard(
+                                SimpleAbilityCard(
                                     ability = ability,
-                                    isSelected = ability.id in localVisibleIds,
-                                    canSelect = selectedCount < maxAbilities || ability.id in localVisibleIds,
                                     customIcon = iconMappings[ability.id],
                                     isOwnProfile = isOwnProfile,
-                                    onToggleSelection = { selected ->
-                                        localVisibleIds = if (selected) {
-                                            if (selectedCount < maxAbilities) {
-                                                localVisibleIds.toMutableList().apply { add(ability.id) }
-                                            } else {
-                                                localVisibleIds
-                                            }
-                                        } else {
-                                            localVisibleIds.toMutableList().apply { remove(ability.id) }
-                                        }
-                                    },
+                                    onEditIcon = { iconPickerAbilityId = ability.id }
+                                )
+                            }
+                        }
+                    }
+
+                    // Attack abilities section (enemy targeting - shown in creature/player modal)
+                    if (attackAbilities.isNotEmpty()) {
+                        if (activeAbilities.isNotEmpty()) {
+                            Spacer(modifier = Modifier.height(16.dp))
+                        }
+                        Text(
+                            text = "Attacks",
+                            style = MaterialTheme.typography.labelMedium,
+                            color = Color(0xFFE53935),  // Red for attack abilities
+                            modifier = Modifier.padding(bottom = 8.dp)
+                        )
+
+                        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                            attackAbilities.forEach { ability ->
+                                SimpleAbilityCard(
+                                    ability = ability,
+                                    customIcon = iconMappings[ability.id],
+                                    isOwnProfile = isOwnProfile,
                                     onEditIcon = { iconPickerAbilityId = ability.id }
                                 )
                             }
@@ -1691,7 +1699,7 @@ private fun UnifiedAbilitiesSection(
 
                     // Passive abilities section
                     if (passiveAbilities.isNotEmpty()) {
-                        if (activeAbilities.isNotEmpty()) {
+                        if (activeAbilities.isNotEmpty() || attackAbilities.isNotEmpty()) {
                             Spacer(modifier = Modifier.height(16.dp))
                         }
                         Text(
@@ -1743,31 +1751,6 @@ private fun UnifiedAbilitiesSection(
                         }
                     }
 
-                    // Save/Clear buttons for action bar changes (only for own profile)
-                    if (isOwnProfile && activeAbilities.isNotEmpty()) {
-                        Spacer(modifier = Modifier.height(12.dp))
-
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.spacedBy(8.dp)
-                        ) {
-                            OutlinedButton(
-                                onClick = { localVisibleIds = mutableListOf() },
-                                modifier = Modifier.weight(1f),
-                                enabled = localVisibleIds.isNotEmpty()
-                            ) {
-                                Text("Show All")
-                            }
-
-                            Button(
-                                onClick = { onVisibleAbilitiesChanged(localVisibleIds) },
-                                modifier = Modifier.weight(1f),
-                                enabled = hasUnsavedChanges
-                            ) {
-                                Text("Save Action Bar")
-                            }
-                        }
-                    }
                 }
             }
         }
@@ -1795,25 +1778,19 @@ private fun UnifiedAbilitiesSection(
 }
 
 /**
- * Individual ability card with action bar checkbox and icon customization.
+ * Simple ability card with icon and description (no checkbox).
  */
 @Composable
-private fun UnifiedAbilityCard(
+private fun SimpleAbilityCard(
     ability: AbilityDto,
-    isSelected: Boolean,
-    canSelect: Boolean,
     customIcon: String?,
     isOwnProfile: Boolean,
-    onToggleSelection: (Boolean) -> Unit,
     onEditIcon: () -> Unit
 ) {
     Card(
         modifier = Modifier.fillMaxWidth(),
         colors = CardDefaults.cardColors(
-            containerColor = if (isSelected)
-                MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.3f)
-            else
-                MaterialTheme.colorScheme.surfaceVariant
+            containerColor = MaterialTheme.colorScheme.surfaceVariant
         )
     ) {
         Column(modifier = Modifier.padding(12.dp)) {
@@ -1822,15 +1799,6 @@ private fun UnifiedAbilityCard(
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(8.dp)
             ) {
-                // Action bar checkbox (only for own profile)
-                if (isOwnProfile) {
-                    Checkbox(
-                        checked = isSelected,
-                        onCheckedChange = onToggleSelection,
-                        enabled = canSelect
-                    )
-                }
-
                 // Icon preview with edit button
                 Box(
                     modifier = Modifier
@@ -1881,15 +1849,33 @@ private fun UnifiedAbilityCard(
                             style = MaterialTheme.typography.titleSmall
                         )
                         // Cost badge
-                        Surface(
-                            shape = RoundedCornerShape(4.dp),
-                            color = MaterialTheme.colorScheme.primaryContainer
-                        ) {
-                            Text(
-                                text = "Cost: ${ability.powerCost}",
-                                style = MaterialTheme.typography.labelSmall,
-                                modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
-                            )
+                        Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                            if (ability.manaCost > 0) {
+                                Surface(
+                                    shape = RoundedCornerShape(4.dp),
+                                    color = Color(0xFF2196F3).copy(alpha = 0.2f)
+                                ) {
+                                    Text(
+                                        text = "${ability.manaCost} MP",
+                                        style = MaterialTheme.typography.labelSmall,
+                                        color = Color(0xFF2196F3),
+                                        modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                                    )
+                                }
+                            }
+                            if (ability.staminaCost > 0) {
+                                Surface(
+                                    shape = RoundedCornerShape(4.dp),
+                                    color = Color(0xFF4CAF50).copy(alpha = 0.2f)
+                                ) {
+                                    Text(
+                                        text = "${ability.staminaCost} SP",
+                                        style = MaterialTheme.typography.labelSmall,
+                                        color = Color(0xFF4CAF50),
+                                        modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                                    )
+                                }
+                            }
                         }
                     }
                     // Type indicator
