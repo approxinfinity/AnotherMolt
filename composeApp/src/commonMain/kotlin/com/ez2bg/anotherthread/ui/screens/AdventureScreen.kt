@@ -71,7 +71,6 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import coil3.compose.AsyncImage
-import com.ez2bg.anotherthread.copyToClipboard
 import com.ez2bg.anotherthread.AppConfig
 import com.ez2bg.anotherthread.api.AbilityDto
 import com.ez2bg.anotherthread.api.CreatureDto
@@ -775,48 +774,15 @@ fun AdventureScreen(
                             isAdmin = false  // Copy button moved to floating panel
                         )
 
-                        // Floating admin controls in top-right corner
+                        // Mode toggle in top-right corner (admin only)
                         if (!ghostMode && isAdmin) {
-                            Column(
+                            ModeToggle(
+                                isCreateMode = false,
+                                onToggle = onSwitchToCreate,
                                 modifier = Modifier
                                     .align(Alignment.TopEnd)
                                     .padding(end = 4.dp, top = 4.dp)
-                                    .background(Color.Black.copy(alpha = 0.7f), RoundedCornerShape(4.dp))
-                                    .padding(4.dp),
-                                horizontalAlignment = Alignment.End,
-                                verticalArrangement = Arrangement.spacedBy(4.dp)
-                            ) {
-                                // Copy All button
-                                var copyFeedback by remember { mutableStateOf<String?>(null) }
-                                LaunchedEffect(copyFeedback) {
-                                    if (copyFeedback != null) {
-                                        kotlinx.coroutines.delay(2000)
-                                        copyFeedback = null
-                                    }
-                                }
-                                Text(
-                                    text = copyFeedback ?: "Copy",
-                                    color = if (copyFeedback != null) Color(0xFF69F0AE) else Color(0xFF888888),
-                                    fontSize = 9.sp,
-                                    modifier = Modifier
-                                        .clip(RoundedCornerShape(4.dp))
-                                        .background(Color.Black.copy(alpha = 0.5f))
-                                        .clickable {
-                                            // Get entries directly from the StateFlow to avoid stale captures
-                                            val currentEntries = viewModel.eventLog.value
-                                            val allText = currentEntries.joinToString("\n") { it.message }
-                                            val success = copyToClipboard(allText)
-                                            copyFeedback = if (success) "Copied ${currentEntries.size}!" else "Failed"
-                                        }
-                                        .padding(horizontal = 6.dp, vertical = 2.dp)
-                                )
-                                // Mode toggle
-                                ModeToggle(
-                                    isCreateMode = false,
-                                    onToggle = onSwitchToCreate,
-                                    modifier = Modifier
-                                )
-                            }
+                            )
                         }
                     }
                 }
@@ -3920,23 +3886,18 @@ private fun ModeToggle(
     onToggle: () -> Unit,
     modifier: Modifier = Modifier
 ) {
-    Row(
+    val trackColor = if (isCreateMode) Color(0xFF2E7D32).copy(alpha = 0.6f) else Color(0xFF9C27B0).copy(alpha = 0.6f)
+    val thumbColor = if (isCreateMode) Color(0xFF4CAF50) else Color(0xFFBA68C8)
+
+    Box(
         modifier = modifier
             .background(Color.Black.copy(alpha = 0.7f), RoundedCornerShape(8.dp))
-            .padding(horizontal = 12.dp, vertical = 6.dp)
-            .clickable(onClick = onToggle),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(8.dp)
+            .padding(horizontal = 8.dp, vertical = 6.dp)
+            .clickable(onClick = onToggle)
+            .width(40.dp)
+            .height(20.dp),
+        contentAlignment = Alignment.Center
     ) {
-        Text(
-            text = if (isCreateMode) "create" else "adventure",
-            color = Color.White,
-            fontSize = 14.sp
-        )
-
-        val trackColor = if (isCreateMode) Color(0xFF2E7D32).copy(alpha = 0.6f) else Color(0xFF9C27B0).copy(alpha = 0.6f)
-        val thumbColor = if (isCreateMode) Color(0xFF4CAF50) else Color(0xFFBA68C8)
-
         Box(
             modifier = Modifier
                 .width(32.dp)

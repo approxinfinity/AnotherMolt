@@ -21,6 +21,7 @@ import com.ez2bg.anotherthread.state.EventLogType
 import com.ez2bg.anotherthread.state.PlayerPresenceEvent
 import com.ez2bg.anotherthread.state.UserStateHolder
 import com.ez2bg.anotherthread.combat.CombatConnectionState
+import com.ez2bg.anotherthread.platform.currentTimeMillis
 import com.ez2bg.anotherthread.ui.components.EventLogEntry
 import com.ez2bg.anotherthread.ui.components.EventType
 import kotlinx.coroutines.CoroutineScope
@@ -203,6 +204,10 @@ data class AdventureUiState(
  */
 class AdventureViewModel {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
+
+    // Track last navigation time to prevent sync from overwriting recent navigations
+    private var lastNavigationTime: Long = 0L
+    private val NAVIGATION_SYNC_COOLDOWN_MS = 5000L  // Don't sync location within 5s of navigation
 
     // Known shop location IDs (defined before uiState so they can be used in initialValue)
     private val shopLocationIds = setOf(
@@ -555,8 +560,18 @@ class AdventureViewModel {
     /**
      * Fetch the user's authoritative location from server and update client if different.
      * This ensures the client never drifts from server state.
+     *
+     * IMPORTANT: Skips sync if we recently navigated, to prevent overwriting the
+     * optimistic update before the server has processed our location change.
      */
     private fun syncLocationWithServer() {
+        // Skip sync if we recently navigated - server may not have processed it yet
+        val timeSinceLastNav = currentTimeMillis() - lastNavigationTime
+        if (timeSinceLastNav < NAVIGATION_SYNC_COOLDOWN_MS) {
+            println("[AdventureViewModel] Skipping location sync - navigated ${timeSinceLastNav}ms ago (cooldown: ${NAVIGATION_SYNC_COOLDOWN_MS}ms)")
+            return
+        }
+
         val userId = UserStateHolder.userId ?: return
         scope.launch {
             ApiClient.getUser(userId).onSuccess { user ->
@@ -742,6 +757,9 @@ class AdventureViewModel {
 
             // Capture previous location for rollback on failure
             val previousLocationId = AdventureRepository.currentLocationId.value
+
+            // Mark navigation time to prevent sync from overwriting
+            lastNavigationTime = currentTimeMillis()
 
             // Optimistically update client state for instant feedback
             AdventureRepository.setCurrentLocation(exit.locationId)
