@@ -75,7 +75,9 @@ data class AdventureLocalState(
     // Player interaction state
     val selectedPlayer: UserDto? = null,
     val showPlayerInteractionModal: Boolean = false,
-    val showGiveItemModal: Boolean = false
+    val showGiveItemModal: Boolean = false,
+    // Creature interaction state
+    val showCreatureInteractionModal: Boolean = false
 )
 
 /**
@@ -136,7 +138,9 @@ data class AdventureUiState(
     // Player interaction state
     val selectedPlayer: UserDto? = null,
     val showPlayerInteractionModal: Boolean = false,
-    val showGiveItemModal: Boolean = false
+    val showGiveItemModal: Boolean = false,
+    // Creature interaction state
+    val showCreatureInteractionModal: Boolean = false
 ) {
     // Derived properties
     val currentLocation: LocationDto?
@@ -146,7 +150,7 @@ data class AdventureUiState(
         get() = playerCharacterClass?.name == "Ranger"
 
     val isDetailViewVisible: Boolean
-        get() = selectedCreature != null || selectedItem != null
+        get() = selectedItem != null  // Only items use the detail view; creatures use the interaction modal
 
     /**
      * Creatures at the current location.
@@ -280,7 +284,8 @@ class AdventureViewModel {
             playersHere = local.playersHere,
             selectedPlayer = local.selectedPlayer,
             showPlayerInteractionModal = local.showPlayerInteractionModal,
-            showGiveItemModal = local.showGiveItemModal
+            showGiveItemModal = local.showGiveItemModal,
+            showCreatureInteractionModal = local.showCreatureInteractionModal
         )
     }.stateIn(
         scope = scope,
@@ -911,7 +916,22 @@ class AdventureViewModel {
     // =========================================================================
 
     fun selectCreature(creature: CreatureDto) {
-        _localState.update { it.copy(selectedCreature = creature, selectedItem = null) }
+        _localState.update {
+            it.copy(
+                selectedCreature = creature,
+                selectedItem = null,
+                showCreatureInteractionModal = true
+            )
+        }
+    }
+
+    fun dismissCreatureInteractionModal() {
+        _localState.update {
+            it.copy(
+                showCreatureInteractionModal = false,
+                selectedCreature = null
+            )
+        }
     }
 
     fun selectItem(item: ItemDto) {

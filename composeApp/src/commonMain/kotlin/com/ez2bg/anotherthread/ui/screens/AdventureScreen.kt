@@ -31,6 +31,9 @@ import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Dangerous
 import androidx.compose.material.icons.filled.School
+import androidx.compose.material.icons.filled.Search
+import androidx.compose.material.icons.filled.Star
+import androidx.compose.material.icons.filled.Visibility
 import androidx.compose.material.icons.filled.Gavel
 import androidx.compose.material.icons.filled.MeetingRoom
 import androidx.compose.material.icons.filled.SportsMartialArts
@@ -198,6 +201,9 @@ fun AdventureScreen(
 
     // Party abilities dropdown state
     var showPartyAbilitiesDropdown by remember { mutableStateOf(false) }
+
+    // Inspection modal state
+    var showInspectionModal by remember { mutableStateOf(false) }
 
     // Custom icon mappings
     var iconMappings by remember { mutableStateOf<Map<String, String>>(emptyMap()) }
@@ -1047,6 +1053,28 @@ fun AdventureScreen(
                 )
             }
 
+            // === CREATURE INTERACTION MODAL ===
+            val selectedCreature = uiState.selectedCreature
+            if (uiState.showCreatureInteractionModal && selectedCreature != null) {
+                CreatureInteractionModal(
+                    creature = selectedCreature,
+                    abilities = uiState.playerAbilities,
+                    cooldowns = cooldowns,
+                    currentMana = playerCombatant?.currentMana ?: displayUser?.currentMana ?: 0,
+                    currentStamina = playerCombatant?.currentStamina ?: displayUser?.currentStamina ?: 0,
+                    onBasicAttack = { viewModel.initiateBasicAttack(selectedCreature.id) },
+                    onAbilityClick = { ability -> viewModel.useAbilityOnCreature(ability, selectedCreature) },
+                    onTrain = if (!selectedCreature.isAggressive) {
+                        { viewModel.openTrainerModal(selectedCreature) }
+                    } else null,
+                    onLook = {
+                        // Show description popup
+                        viewModel.showDescriptionPopup()
+                    },
+                    onDismiss = { viewModel.dismissCreatureInteractionModal() }
+                )
+            }
+
             // === SNACKBAR HOST ===
             SnackbarHost(
                 hostState = snackbarHostState,
@@ -1145,6 +1173,63 @@ fun AdventureScreen(
                 .align(Alignment.TopStart)
                 .padding(8.dp)
         )
+
+        // Inspect/Look button - shows what you can look at in the room
+        if (currentUser != null && !ghostMode && uiState.currentLocation != null) {
+            val hasThingsToInspect = uiState.creaturesHere.isNotEmpty() ||
+                uiState.itemsHere.isNotEmpty() ||
+                uiState.playersHere.isNotEmpty()
+
+            if (hasThingsToInspect) {
+                Box(
+                    modifier = Modifier
+                        .align(Alignment.TopStart)
+                        .padding(start = 48.dp, top = 8.dp)  // Offset from connection indicator
+                        .size(32.dp)
+                        .clip(CircleShape)
+                        .background(Color(0xFF2196F3).copy(alpha = 0.8f))
+                        .border(1.dp, Color.White.copy(alpha = 0.4f), CircleShape)
+                        .clickable { showInspectionModal = true },
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(
+                        Icons.Filled.Visibility,
+                        contentDescription = "Look around",
+                        tint = Color.White,
+                        modifier = Modifier.size(18.dp)
+                    )
+                }
+            }
+        }
+
+        // Inspection Modal - shows creatures, items, and players you can look at
+        if (showInspectionModal && uiState.currentLocation != null) {
+            InspectionModal(
+                creatures = uiState.creaturesHere,
+                items = uiState.itemsHere,
+                players = uiState.playersHere,
+                location = uiState.currentLocation!!,
+                onInspectCreature = { creature ->
+                    showInspectionModal = false
+                    viewModel.selectCreature(creature)
+                    viewModel.showDescriptionPopup()
+                },
+                onInspectItem = { item ->
+                    showInspectionModal = false
+                    viewModel.selectItem(item)
+                    viewModel.showDescriptionPopup()
+                },
+                onInspectPlayer = { player ->
+                    showInspectionModal = false
+                    viewModel.selectPlayer(player)
+                },
+                onInspectLocation = {
+                    showInspectionModal = false
+                    showLocationDetailPopup = true
+                },
+                onDismiss = { showInspectionModal = false }
+            )
+        }
 
         // Death transition overlay - covers everything when player dies
         if (isPlayingDeathAnimation && respawnLocationName != null) {
@@ -2926,6 +3011,288 @@ private fun PlayerInteractionModal(
     }
 }
 
+// =============================================================================
+// CREATURE INTERACTION MODAL
+// =============================================================================
+
+/**
+ * Modal for interacting with a creature - shows available actions.
+ * Replaces the old detail view with ability ring.
+ */
+@Composable
+private fun CreatureInteractionModal(
+    creature: CreatureDto,
+    abilities: List<AbilityDto>,
+    cooldowns: Map<String, Int>,
+    currentMana: Int,
+    currentStamina: Int,
+    onBasicAttack: () -> Unit,
+    onAbilityClick: (AbilityDto) -> Unit,
+    onTrain: (() -> Unit)?,  // Only for trainers
+    onLook: () -> Unit,
+    onDismiss: () -> Unit
+) {
+    val scrollState = rememberScrollState()
+
+    // Filter abilities to those that can target enemies
+    val combatAbilities = abilities.filter { ability ->
+        ability.abilityType != "passive" &&
+        ability.abilityType != "navigation" &&
+        (ability.targetType == "single_enemy" || ability.targetType == "all_enemies" || ability.targetType == "area")
+    }
+
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(Color.Black.copy(alpha = 0.7f))
+            .clickable(onClick = onDismiss),
+        contentAlignment = Alignment.Center
+    ) {
+        Card(
+            modifier = Modifier
+                .widthIn(max = 340.dp)
+                .heightIn(max = 500.dp)
+                .clickable(enabled = false) { /* Prevent click-through */ },
+            shape = RoundedCornerShape(16.dp),
+            colors = CardDefaults.cardColors(
+                containerColor = Color(0xFF2A2A3E)
+            )
+        ) {
+            Column(
+                modifier = Modifier
+                    .padding(20.dp)
+                    .verticalScroll(scrollState),
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.spacedBy(16.dp)
+            ) {
+                // Creature name header with aggressive indicator
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.Center
+                ) {
+                    Text(
+                        text = creature.name,
+                        style = MaterialTheme.typography.titleLarge,
+                        color = if (creature.isAggressive) Color(0xFFE53935) else Color(0xFFFF9800),
+                        fontWeight = FontWeight.Bold
+                    )
+                    if (creature.isAggressive) {
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Icon(
+                            Icons.Filled.Dangerous,
+                            contentDescription = "Aggressive",
+                            tint = Color(0xFFE53935),
+                            modifier = Modifier.size(20.dp)
+                        )
+                    }
+                }
+
+                // Level indicator
+                Text(
+                    text = "Level ${creature.level}",
+                    style = MaterialTheme.typography.labelMedium,
+                    color = Color.White.copy(alpha = 0.6f)
+                )
+
+                // Main action row - Basic Attack + Look
+                Row(
+                    horizontalArrangement = Arrangement.spacedBy(24.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    // Basic Attack
+                    ActionButton(
+                        icon = Icons.Filled.SportsMartialArts,
+                        label = "Attack",
+                        color = Color(0xFFE53935),
+                        onClick = {
+                            onBasicAttack()
+                            onDismiss()
+                        }
+                    )
+
+                    // Look/Inspect
+                    ActionButton(
+                        icon = Icons.Filled.Search,
+                        label = "Look",
+                        color = Color(0xFF2196F3),
+                        onClick = onLook
+                    )
+
+                    // Train (only for non-aggressive creatures)
+                    if (onTrain != null && !creature.isAggressive) {
+                        ActionButton(
+                            icon = Icons.Filled.School,
+                            label = "Train",
+                            color = Color(0xFF4CAF50),
+                            onClick = {
+                                onTrain()
+                                onDismiss()
+                            }
+                        )
+                    }
+                }
+
+                // Combat abilities section
+                if (combatAbilities.isNotEmpty()) {
+                    HorizontalDivider(
+                        modifier = Modifier.padding(vertical = 4.dp),
+                        color = Color.White.copy(alpha = 0.2f)
+                    )
+
+                    Text(
+                        text = "Combat Abilities",
+                        style = MaterialTheme.typography.labelMedium,
+                        color = Color.White.copy(alpha = 0.6f)
+                    )
+
+                    // Abilities in a flow layout
+                    FlowRow(
+                        horizontalArrangement = Arrangement.spacedBy(12.dp, Alignment.CenterHorizontally),
+                        verticalArrangement = Arrangement.spacedBy(12.dp),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        combatAbilities.forEach { ability ->
+                            val canAfford = (ability.manaCost <= currentMana) && (ability.staminaCost <= currentStamina)
+                            val cooldown = cooldowns[ability.id] ?: 0
+
+                            AbilityActionButton(
+                                ability = ability,
+                                cooldown = cooldown,
+                                canAfford = canAfford,
+                                onClick = {
+                                    onAbilityClick(ability)
+                                    onDismiss()
+                                }
+                            )
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+/**
+ * Ability button for creature interaction modal.
+ * Shows ability icon, name, cooldown, and cost.
+ */
+@Composable
+private fun AbilityActionButton(
+    ability: AbilityDto,
+    cooldown: Int,
+    canAfford: Boolean,
+    onClick: () -> Unit
+) {
+    val isDisabled = cooldown > 0 || !canAfford
+    val alpha = if (isDisabled) 0.5f else 1f
+
+    Column(
+        horizontalAlignment = Alignment.CenterHorizontally,
+        modifier = Modifier
+            .width(60.dp)
+            .clickable(enabled = !isDisabled, onClick = onClick)
+            .graphicsLayer { this.alpha = alpha }
+    ) {
+        Box(
+            modifier = Modifier
+                .size(48.dp)
+                .clip(CircleShape)
+                .background(AbilityIconMapper.getAbilityTypeColor(ability.abilityType).copy(alpha = 0.3f))
+                .border(2.dp, AbilityIconMapper.getAbilityTypeColor(ability.abilityType), CircleShape),
+            contentAlignment = Alignment.Center
+        ) {
+            Icon(
+                imageVector = AbilityIconMapper.getIcon(ability),
+                contentDescription = ability.name,
+                tint = AbilityIconMapper.getAbilityTypeColor(ability.abilityType),
+                modifier = Modifier.size(24.dp)
+            )
+
+            // Cooldown overlay
+            if (cooldown > 0) {
+                Box(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .background(Color.Black.copy(alpha = 0.6f)),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Text(
+                        text = "$cooldown",
+                        color = Color.White,
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 16.sp
+                    )
+                }
+            }
+        }
+
+        Spacer(modifier = Modifier.height(4.dp))
+
+        Text(
+            text = ability.name,
+            style = MaterialTheme.typography.labelSmall,
+            color = Color.White.copy(alpha = 0.8f),
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+            textAlign = TextAlign.Center
+        )
+
+        // Cost indicator
+        val costText = when {
+            ability.manaCost > 0 && ability.staminaCost > 0 -> "${ability.manaCost}M ${ability.staminaCost}S"
+            ability.manaCost > 0 -> "${ability.manaCost}M"
+            ability.staminaCost > 0 -> "${ability.staminaCost}S"
+            else -> ""
+        }
+        if (costText.isNotEmpty()) {
+            Text(
+                text = costText,
+                style = MaterialTheme.typography.labelSmall,
+                color = if (canAfford) Color.White.copy(alpha = 0.5f) else Color(0xFFE53935),
+                fontSize = 9.sp
+            )
+        }
+    }
+}
+
+/**
+ * Generic action button used in interaction modals.
+ */
+@Composable
+private fun ActionButton(
+    icon: ImageVector,
+    label: String,
+    color: Color,
+    onClick: () -> Unit
+) {
+    Column(
+        horizontalAlignment = Alignment.CenterHorizontally,
+        modifier = Modifier.clickable(onClick = onClick)
+    ) {
+        Box(
+            modifier = Modifier
+                .size(56.dp)
+                .clip(CircleShape)
+                .background(color.copy(alpha = 0.2f))
+                .border(2.dp, color, CircleShape),
+            contentAlignment = Alignment.Center
+        ) {
+            Icon(
+                imageVector = icon,
+                contentDescription = label,
+                tint = color,
+                modifier = Modifier.size(28.dp)
+            )
+        }
+        Spacer(modifier = Modifier.height(4.dp))
+        Text(
+            text = label,
+            style = MaterialTheme.typography.labelSmall,
+            color = color
+        )
+    }
+}
+
 /**
  * Individual action button for player interaction modal.
  */
@@ -2960,6 +3327,208 @@ private fun PlayerActionButton(
             text = label,
             style = MaterialTheme.typography.labelSmall,
             color = color
+        )
+    }
+}
+
+// =============================================================================
+// INSPECTION MODAL
+// =============================================================================
+
+/**
+ * Modal for inspecting/looking at things in the room.
+ * Shows a scrollable list of creatures, items, players, and the location itself.
+ */
+@Composable
+private fun InspectionModal(
+    creatures: List<CreatureDto>,
+    items: List<ItemDto>,
+    players: List<UserDto>,
+    location: LocationDto,
+    onInspectCreature: (CreatureDto) -> Unit,
+    onInspectItem: (ItemDto) -> Unit,
+    onInspectPlayer: (UserDto) -> Unit,
+    onInspectLocation: () -> Unit,
+    onDismiss: () -> Unit
+) {
+    val scrollState = rememberScrollState()
+
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(Color.Black.copy(alpha = 0.7f))
+            .clickable(onClick = onDismiss),
+        contentAlignment = Alignment.Center
+    ) {
+        Card(
+            modifier = Modifier
+                .widthIn(max = 340.dp)
+                .heightIn(max = 450.dp)
+                .clickable(enabled = false) { /* Prevent click-through */ },
+            shape = RoundedCornerShape(16.dp),
+            colors = CardDefaults.cardColors(
+                containerColor = Color(0xFF2A2A3E)
+            )
+        ) {
+            Column(
+                modifier = Modifier
+                    .padding(20.dp)
+                    .verticalScroll(scrollState),
+                verticalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
+                // Header
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.Center,
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Icon(
+                        Icons.Filled.Visibility,
+                        contentDescription = null,
+                        tint = Color(0xFF2196F3),
+                        modifier = Modifier.size(24.dp)
+                    )
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text(
+                        text = "Look Around",
+                        style = MaterialTheme.typography.titleLarge,
+                        color = Color.White,
+                        fontWeight = FontWeight.Bold
+                    )
+                }
+
+                // Location section
+                InspectionItem(
+                    icon = Icons.Filled.Person, // Location icon
+                    name = location.name,
+                    subtitle = "This place",
+                    color = Color(0xFF9C27B0),
+                    onClick = onInspectLocation
+                )
+
+                // Creatures section
+                if (creatures.isNotEmpty()) {
+                    HorizontalDivider(color = Color.White.copy(alpha = 0.2f))
+                    Text(
+                        text = "Creatures",
+                        style = MaterialTheme.typography.labelMedium,
+                        color = Color.White.copy(alpha = 0.6f)
+                    )
+                    creatures.forEach { creature ->
+                        InspectionItem(
+                            icon = if (creature.isAggressive) Icons.Filled.Dangerous else Icons.Filled.Person,
+                            name = creature.name,
+                            subtitle = "Level ${creature.level}" + if (creature.isAggressive) " - Hostile" else "",
+                            color = if (creature.isAggressive) Color(0xFFE53935) else Color(0xFFFF9800),
+                            onClick = { onInspectCreature(creature) }
+                        )
+                    }
+                }
+
+                // Items section
+                if (items.isNotEmpty()) {
+                    HorizontalDivider(color = Color.White.copy(alpha = 0.2f))
+                    Text(
+                        text = "Items",
+                        style = MaterialTheme.typography.labelMedium,
+                        color = Color.White.copy(alpha = 0.6f)
+                    )
+                    items.forEach { item ->
+                        InspectionItem(
+                            icon = Icons.Filled.Star,
+                            name = item.name,
+                            subtitle = item.desc.take(40) + if (item.desc.length > 40) "..." else "",
+                            color = Color(0xFF4CAF50),
+                            onClick = { onInspectItem(item) }
+                        )
+                    }
+                }
+
+                // Players section
+                if (players.isNotEmpty()) {
+                    HorizontalDivider(color = Color.White.copy(alpha = 0.2f))
+                    Text(
+                        text = "Other Players",
+                        style = MaterialTheme.typography.labelMedium,
+                        color = Color.White.copy(alpha = 0.6f)
+                    )
+                    players.forEach { player ->
+                        InspectionItem(
+                            icon = Icons.Filled.Person,
+                            name = player.name,
+                            subtitle = "Level ${player.level}",
+                            color = Color(0xFF2196F3),
+                            onClick = { onInspectPlayer(player) }
+                        )
+                    }
+                }
+            }
+        }
+    }
+}
+
+/**
+ * Individual item in the inspection modal.
+ */
+@Composable
+private fun InspectionItem(
+    icon: ImageVector,
+    name: String,
+    subtitle: String,
+    color: Color,
+    onClick: () -> Unit
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(8.dp))
+            .background(color.copy(alpha = 0.1f))
+            .clickable(onClick = onClick)
+            .padding(12.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Box(
+            modifier = Modifier
+                .size(40.dp)
+                .clip(CircleShape)
+                .background(color.copy(alpha = 0.2f)),
+            contentAlignment = Alignment.Center
+        ) {
+            Icon(
+                imageVector = icon,
+                contentDescription = null,
+                tint = color,
+                modifier = Modifier.size(24.dp)
+            )
+        }
+
+        Spacer(modifier = Modifier.width(12.dp))
+
+        Column {
+            Text(
+                text = name,
+                style = MaterialTheme.typography.bodyLarge,
+                color = Color.White,
+                fontWeight = FontWeight.Medium
+            )
+            if (subtitle.isNotEmpty()) {
+                Text(
+                    text = subtitle,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = Color.White.copy(alpha = 0.6f),
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+            }
+        }
+
+        Spacer(modifier = Modifier.weight(1f))
+
+        Icon(
+            Icons.Filled.Search,
+            contentDescription = "Look",
+            tint = Color.White.copy(alpha = 0.5f),
+            modifier = Modifier.size(20.dp)
         )
     }
 }
