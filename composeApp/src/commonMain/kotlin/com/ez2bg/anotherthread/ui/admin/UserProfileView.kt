@@ -699,10 +699,32 @@ fun UserProfileView(
                         val equippedItems = inventoryItems.filter { it.id in equippedItemIds }
                         val unequippedItems = inventoryItems.filter { it.id !in equippedItemIds }
 
-                        // Equipped items section
+                        // Equipment Paperdoll - visual representation of worn gear
+                        if (equippedItems.isNotEmpty()) {
+                            EquipmentPaperdoll(
+                                equippedItems = equippedItems,
+                                onSlotClick = { item ->
+                                    // Could show item details or allow unequip
+                                    item?.let {
+                                        scope.launch {
+                                            ApiClient.unequipItem(user.id, it.id).onSuccess { updatedUser ->
+                                                equippedItemIds = updatedUser.equippedItemIds
+                                                UserStateHolder.updateUser(updatedUser)
+                                                onUserUpdated(updatedUser)
+                                            }.onFailure { error ->
+                                                message = "Failed to unequip: ${error.message}"
+                                            }
+                                        }
+                                    }
+                                },
+                                modifier = Modifier.padding(bottom = 16.dp)
+                            )
+                        }
+
+                        // Equipped items section (detailed list)
                         if (equippedItems.isNotEmpty()) {
                             Text(
-                                text = "Equipped",
+                                text = "Equipped Items",
                                 style = MaterialTheme.typography.labelMedium,
                                 color = MaterialTheme.colorScheme.primary,
                                 modifier = Modifier.padding(bottom = 8.dp)
@@ -2005,5 +2027,288 @@ private fun getEncumbranceTier(percent: Int): EncumbranceTier {
         percent <= 90 -> EncumbranceTier.MEDIUM
         percent <= 100 -> EncumbranceTier.HEAVY
         else -> EncumbranceTier.OVER_ENCUMBERED
+    }
+}
+
+/**
+ * Equipment slot configuration for the paperdoll display.
+ */
+private data class EquipmentSlotConfig(
+    val slot: String,
+    val displayName: String,
+    val icon: @Composable () -> Unit
+)
+
+/**
+ * Visual paperdoll display showing equipped items in a body-shaped arrangement.
+ * Slots are arranged to represent where items are worn on a character.
+ */
+@Composable
+fun EquipmentPaperdoll(
+    equippedItems: List<ItemDto>,
+    onSlotClick: (ItemDto?) -> Unit,
+    modifier: Modifier = Modifier
+) {
+    // Map equipped items by slot
+    val itemsBySlot = equippedItems.associateBy { it.equipmentSlot }
+
+    // Ring slots need special handling (up to 2)
+    val ringItems = equippedItems.filter { it.equipmentSlot == "finger" }
+
+    val slotSize = 48.dp
+    val smallSlotSize = 40.dp
+
+    Column(
+        modifier = modifier
+            .fillMaxWidth()
+            .background(
+                color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f),
+                shape = RoundedCornerShape(12.dp)
+            )
+            .border(
+                width = 1.dp,
+                color = MaterialTheme.colorScheme.outline.copy(alpha = 0.3f),
+                shape = RoundedCornerShape(12.dp)
+            )
+            .padding(16.dp),
+        horizontalAlignment = Alignment.CenterHorizontally
+    ) {
+        // Row 1: Head
+        EquipmentSlot(
+            slot = "head",
+            displayName = "Head",
+            item = itemsBySlot["head"],
+            size = slotSize,
+            onClick = { onSlotClick(itemsBySlot["head"]) }
+        )
+
+        Spacer(modifier = Modifier.height(4.dp))
+
+        // Row 2: Amulet
+        EquipmentSlot(
+            slot = "amulet",
+            displayName = "Neck",
+            item = itemsBySlot["amulet"],
+            size = smallSlotSize,
+            onClick = { onSlotClick(itemsBySlot["amulet"]) }
+        )
+
+        Spacer(modifier = Modifier.height(4.dp))
+
+        // Row 3: Back, Chest (larger), nothing on right for symmetry
+        Row(
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            EquipmentSlot(
+                slot = "back",
+                displayName = "Back",
+                item = itemsBySlot["back"],
+                size = smallSlotSize,
+                onClick = { onSlotClick(itemsBySlot["back"]) }
+            )
+
+            EquipmentSlot(
+                slot = "chest",
+                displayName = "Chest",
+                item = itemsBySlot["chest"],
+                size = 56.dp, // Larger for main body
+                onClick = { onSlotClick(itemsBySlot["chest"]) }
+            )
+
+            // Placeholder for symmetry
+            Spacer(modifier = Modifier.size(smallSlotSize))
+        }
+
+        Spacer(modifier = Modifier.height(4.dp))
+
+        // Row 4: Off-hand, Wrists, Main-hand
+        Row(
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            EquipmentSlot(
+                slot = "off_hand",
+                displayName = "Off",
+                item = itemsBySlot["off_hand"],
+                size = slotSize,
+                onClick = { onSlotClick(itemsBySlot["off_hand"]) }
+            )
+
+            EquipmentSlot(
+                slot = "wrists",
+                displayName = "Wrists",
+                item = itemsBySlot["wrists"],
+                size = smallSlotSize,
+                onClick = { onSlotClick(itemsBySlot["wrists"]) }
+            )
+
+            EquipmentSlot(
+                slot = "main_hand",
+                displayName = "Main",
+                item = itemsBySlot["main_hand"],
+                size = slotSize,
+                onClick = { onSlotClick(itemsBySlot["main_hand"]) }
+            )
+        }
+
+        Spacer(modifier = Modifier.height(4.dp))
+
+        // Row 5: Hands
+        EquipmentSlot(
+            slot = "hands",
+            displayName = "Hands",
+            item = itemsBySlot["hands"],
+            size = smallSlotSize,
+            onClick = { onSlotClick(itemsBySlot["hands"]) }
+        )
+
+        Spacer(modifier = Modifier.height(4.dp))
+
+        // Row 6: Legs (centered, larger)
+        EquipmentSlot(
+            slot = "legs",
+            displayName = "Legs",
+            item = itemsBySlot["legs"],
+            size = slotSize,
+            onClick = { onSlotClick(itemsBySlot["legs"]) }
+        )
+
+        Spacer(modifier = Modifier.height(4.dp))
+
+        // Row 7: Feet
+        EquipmentSlot(
+            slot = "feet",
+            displayName = "Feet",
+            item = itemsBySlot["feet"],
+            size = slotSize,
+            onClick = { onSlotClick(itemsBySlot["feet"]) }
+        )
+
+        Spacer(modifier = Modifier.height(8.dp))
+
+        // Row 8: Rings (special - can have 2)
+        Row(
+            horizontalArrangement = Arrangement.spacedBy(12.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            EquipmentSlot(
+                slot = "finger",
+                displayName = "Ring",
+                item = ringItems.getOrNull(0),
+                size = 36.dp,
+                onClick = { onSlotClick(ringItems.getOrNull(0)) }
+            )
+
+            EquipmentSlot(
+                slot = "finger",
+                displayName = "Ring",
+                item = ringItems.getOrNull(1),
+                size = 36.dp,
+                onClick = { onSlotClick(ringItems.getOrNull(1)) }
+            )
+        }
+    }
+}
+
+/**
+ * Individual equipment slot in the paperdoll.
+ * Shows item image if equipped, or an empty slot indicator.
+ */
+@Composable
+private fun EquipmentSlot(
+    slot: String,
+    displayName: String,
+    item: ItemDto?,
+    size: androidx.compose.ui.unit.Dp,
+    onClick: () -> Unit
+) {
+    val backgroundColor = if (item != null) {
+        MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.7f)
+    } else {
+        MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
+    }
+
+    val borderColor = if (item != null) {
+        MaterialTheme.colorScheme.primary.copy(alpha = 0.8f)
+    } else {
+        MaterialTheme.colorScheme.outline.copy(alpha = 0.3f)
+    }
+
+    Column(
+        horizontalAlignment = Alignment.CenterHorizontally
+    ) {
+        Box(
+            modifier = Modifier
+                .size(size)
+                .background(backgroundColor, RoundedCornerShape(8.dp))
+                .border(1.5.dp, borderColor, RoundedCornerShape(8.dp))
+                .clickable(onClick = onClick),
+            contentAlignment = Alignment.Center
+        ) {
+            if (item != null) {
+                // Show item image or fallback icon
+                if (item.imageUrl != null) {
+                    EntityImage(
+                        imageUrl = item.imageUrl,
+                        contentDescription = item.name,
+                        modifier = Modifier.size((size.value * 0.75f).dp)
+                    )
+                } else {
+                    Icon(
+                        getSlotIcon(slot),
+                        contentDescription = item.name,
+                        tint = MaterialTheme.colorScheme.primary,
+                        modifier = Modifier.size((size.value * 0.6f).dp)
+                    )
+                }
+            } else {
+                // Empty slot indicator
+                Icon(
+                    getSlotIcon(slot),
+                    contentDescription = "$displayName slot",
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.4f),
+                    modifier = Modifier.size((size.value * 0.5f).dp)
+                )
+            }
+        }
+
+        // Slot label (only show when empty or on hover/interaction)
+        if (item == null) {
+            Text(
+                text = displayName,
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f)
+            )
+        } else {
+            // Show abbreviated item name
+            Text(
+                text = item.name.take(8) + if (item.name.length > 8) "…" else "",
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.primary.copy(alpha = 0.9f),
+                maxLines = 1
+            )
+        }
+    }
+}
+
+/**
+ * Get an appropriate icon for each equipment slot.
+ */
+@Composable
+private fun getSlotIcon(slot: String): androidx.compose.ui.graphics.vector.ImageVector {
+    return when (slot) {
+        "head" -> Icons.Filled.Person // Could use a helmet icon if available
+        "chest" -> Icons.Filled.Person
+        "legs" -> Icons.Filled.Person
+        "feet" -> Icons.Filled.Person
+        "hands" -> Icons.Filled.Person
+        "main_hand" -> Icons.Filled.Star // Weapon
+        "off_hand" -> Icons.Filled.Star // Shield/off-hand
+        "amulet" -> Icons.Filled.Star
+        "finger" -> Icons.Filled.Star // Ring
+        "back" -> Icons.Filled.Person // Cloak
+        "wrists" -> Icons.Filled.Person // Bracers
+        else -> Icons.Filled.Backpack
     }
 }
