@@ -678,6 +678,16 @@ object UserRepository {
     }
 
     /**
+     * Set the list of learned abilities directly (admin function for fixing corrupted data)
+     */
+    fun setLearnedAbilities(id: String, abilityIds: List<String>): Boolean = transaction {
+        UserTable.update({ UserTable.id eq id }) {
+            it[learnedAbilityIds] = listToJson(abilityIds)
+            it[lastActiveAt] = System.currentTimeMillis()
+        } > 0
+    }
+
+    /**
      * Check if a user has learned a specific ability
      */
     fun hasLearnedAbility(id: String, abilityId: String): Boolean = transaction {

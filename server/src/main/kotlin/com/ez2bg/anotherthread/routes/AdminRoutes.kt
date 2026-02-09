@@ -177,6 +177,89 @@ fun Route.adminRoutes() {
         call.respond(ClearCombatResponse(true, "Cleared combat session for ${request.username}"))
     }
 
+    // Reset learned abilities (admin only - fixes corrupted ability lists)
+    post("/admin/reset-abilities") {
+        @kotlinx.serialization.Serializable
+        data class ResetAbilitiesRequest(val username: String)
+
+        @kotlinx.serialization.Serializable
+        data class ResetAbilitiesResponse(
+            val success: Boolean,
+            val message: String,
+            val removedAbilities: List<String> = emptyList(),
+            val keptAbilities: List<String> = emptyList()
+        )
+
+        val request = call.receive<ResetAbilitiesRequest>()
+        val user = UserRepository.findByName(request.username)
+
+        if (user == null) {
+            call.respond(HttpStatusCode.NotFound, ResetAbilitiesResponse(false, "User '${request.username}' not found"))
+            return@post
+        }
+
+        // Creature abilities that should NOT be on players
+        // These are abilities that creatures use, not player-learnable abilities
+        val creatureAbilityPrefixes = listOf(
+            // ClassicFantasySeed
+            "ability-poison-bite", "ability-rend", "ability-paralyzing-touch",
+            "ability-troll-regeneration", "ability-life-drain", "ability-petrifying-gaze",
+            "ability-fire-breath", "ability-gore", "ability-split", "ability-trap-setter",
+            // FungusForestSeed
+            "ability-toxic-spores", "ability-fungal-slam", "ability-shriek",
+            "ability-tendril-lash", "ability-mind-rot", "ability-spore-cloud",
+            "ability-regenerate",
+            // ElementalChaosSeed
+            "ability-fire-form", "ability-water-form",
+            "ability-earth-form", "ability-air-form", "ability-fire-blast",
+            "ability-frost-breath", "ability-earthquake", "ability-whirlwind",
+            "ability-magma-burst", "ability-flash-freeze", "ability-engulf",
+            "ability-chain-lightning", "ability-elemental-fury",
+            // UndeadCryptSeed
+            "ability-fear-aura", "ability-necrotic-touch", "ability-mummy-rot",
+            "ability-raise-dead", "ability-unholy-smite", "ability-shadowbolt",
+            "ability-bone-shatter", "ability-dominate", "ability-charm-gaze",
+            // ClassicDungeonSeed
+            "ability-tentacle-paralysis", "ability-rust-touch",
+            "ability-blood-drain", "ability-displacement", "ability-confusing-gaze",
+            "ability-mind-blast", "ability-extract-brain", "ability-antimagic-cone",
+            "ability-eye-rays", "ability-disintegration-ray", "ability-web-spray",
+            "ability-hook-attack"
+        )
+
+        val originalAbilities = user.learnedAbilityIds
+        val removed = mutableListOf<String>()
+        val kept = mutableListOf<String>()
+
+        for (abilityId in originalAbilities) {
+            if (creatureAbilityPrefixes.any { abilityId.startsWith(it) || abilityId == it }) {
+                removed.add(abilityId)
+            } else {
+                kept.add(abilityId)
+            }
+        }
+
+        if (removed.isEmpty()) {
+            call.respond(ResetAbilitiesResponse(
+                success = true,
+                message = "No creature abilities found for ${request.username}",
+                removedAbilities = removed,
+                keptAbilities = kept
+            ))
+            return@post
+        }
+
+        UserRepository.setLearnedAbilities(user.id, kept)
+        log.info("Reset abilities for ${request.username}: removed ${removed.size}, kept ${kept.size}")
+
+        call.respond(ResetAbilitiesResponse(
+            success = true,
+            message = "Removed ${removed.size} creature abilities from ${request.username}",
+            removedAbilities = removed,
+            keptAbilities = kept
+        ))
+    }
+
     // Give item to user (admin only)
     post("/admin/give-item") {
         @kotlinx.serialization.Serializable
