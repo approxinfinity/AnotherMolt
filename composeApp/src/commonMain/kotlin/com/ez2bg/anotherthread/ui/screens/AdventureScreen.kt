@@ -288,12 +288,15 @@ fun AdventureScreen(
                             swipeTotalY += dragAmount.y
                         },
                         onDragEnd = {
-                            val direction = getSwipeDirection(swipeTotalX, swipeTotalY)
-                            if (direction != null) {
-                                // Find exit in that direction
-                                val exit = uiState.currentLocation?.exits?.find { it.direction == direction }
-                                if (exit != null) {
-                                    viewModel.navigateToExit(exit)
+                            // Block swipe navigation when over-encumbered
+                            if (!uiState.isOverEncumbered) {
+                                val direction = getSwipeDirection(swipeTotalX, swipeTotalY)
+                                if (direction != null) {
+                                    // Find exit in that direction
+                                    val exit = uiState.currentLocation?.exits?.find { it.direction == direction }
+                                    if (exit != null) {
+                                        viewModel.navigateToExit(exit)
+                                    }
                                 }
                             }
                             swipeTotalX = 0f
@@ -498,7 +501,8 @@ fun AdventureScreen(
                                 exits = currentLocation.exits,
                                 locations = uiState.locations,
                                 phasewalkDestinations = uiState.phasewalkDestinations,
-                                phasewalkEnabled = canPhasewalk,
+                                phasewalkEnabled = canPhasewalk && !uiState.isOverEncumbered,
+                                navigationDisabled = uiState.isOverEncumbered,
                                 onNavigate = { viewModel.navigateToExit(it) },
                                 onPhasewalk = { direction -> viewModel.phasewalk(direction) }
                             )
@@ -1904,6 +1908,7 @@ private fun DirectionalRing(
     locations: List<LocationDto>,
     phasewalkDestinations: List<PhasewalkDestinationDto>,
     phasewalkEnabled: Boolean = true,
+    navigationDisabled: Boolean = false,  // When true (over-encumbered), grey out exits
     onNavigate: (ExitDto) -> Unit,
     onPhasewalk: (String) -> Unit
 ) {
@@ -1996,6 +2001,7 @@ private fun DirectionalRing(
                     offsetX = offsetX,
                     offsetY = offsetY,
                     buttonSize = buttonSize,
+                    enabled = !navigationDisabled,
                     onNavigate = onNavigate
                 )
             }
@@ -2027,14 +2033,18 @@ private fun DirectionalButton(
     offsetX: Dp,
     offsetY: Dp,
     buttonSize: Dp,
+    enabled: Boolean = true,
     onNavigate: (ExitDto) -> Unit
 ) {
     var isPressed by remember { mutableStateOf(false) }
     val navScale by animateFloatAsState(
-        targetValue = if (isPressed) 1.2f else 1f,
+        targetValue = if (isPressed && enabled) 1.2f else 1f,
         animationSpec = tween(durationMillis = 100),
         label = "dirScale"
     )
+
+    // Grey out when disabled (over-encumbered)
+    val buttonColor = if (enabled) color else Color.Gray
 
     Box(
         modifier = Modifier
@@ -2042,17 +2052,23 @@ private fun DirectionalButton(
             .size(buttonSize)
             .scale(navScale)
             .clip(CircleShape)
-            .background(color, CircleShape)
-            .pointerInput(exit.locationId) {
-                detectTapGestures(
-                    onPress = {
-                        isPressed = true
-                        tryAwaitRelease()
-                        isPressed = false
-                        onNavigate(exit)
+            .background(buttonColor, CircleShape)
+            .then(
+                if (enabled) {
+                    Modifier.pointerInput(exit.locationId) {
+                        detectTapGestures(
+                            onPress = {
+                                isPressed = true
+                                tryAwaitRelease()
+                                isPressed = false
+                                onNavigate(exit)
+                            }
+                        )
                     }
-                )
-            },
+                } else {
+                    Modifier  // No tap handling when disabled
+                }
+            ),
         contentAlignment = Alignment.Center
     ) {
         Icon(

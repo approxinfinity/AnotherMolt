@@ -167,6 +167,19 @@ data class AdventureUiState(
         get() = currentLocation?.itemIds?.let { itemIds ->
             allItems.filter { it.id in itemIds }
         } ?: emptyList()
+
+    /**
+     * Whether the player is over-encumbered (>100% carry capacity).
+     * When true, navigation should be blocked and exits greyed out.
+     */
+    val isOverEncumbered: Boolean
+        get() {
+            val user = UserStateHolder.currentUser.value ?: return false
+            val maxCapacity = user.strength * 5  // Max capacity in stone
+            val itemsMap = allItems.associateBy { it.id }
+            val totalWeight = user.itemIds.sumOf { itemId -> itemsMap[itemId]?.weight ?: 0 }
+            return totalWeight > maxCapacity
+        }
 }
 
 /**
