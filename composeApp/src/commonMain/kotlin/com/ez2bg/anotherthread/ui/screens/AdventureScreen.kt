@@ -697,37 +697,65 @@ fun AdventureScreen(
                                 )
                             }
 
-                            // Filter out party abilities when in a party (they're in the dropdown)
-                            val isInPartyForAbilityBar = displayUser?.partyLeaderId != null
-                            val abilitiesForBar = if (isInPartyForAbilityBar) {
-                                uiState.playerAbilities.filter { ability ->
-                                    ability.targetType != "all_allies" && ability.targetType != "single_ally"
+                            // Show loading indicator while abilities are being loaded
+                            if (uiState.abilitiesLoading) {
+                                Box(
+                                    modifier = Modifier
+                                        .weight(1f)
+                                        .background(Color.Black.copy(alpha = 0.7f), RoundedCornerShape(8.dp))
+                                        .padding(horizontal = 16.dp, vertical = 8.dp),
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    Row(
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        horizontalArrangement = Arrangement.Center
+                                    ) {
+                                        CircularProgressIndicator(
+                                            modifier = Modifier.size(20.dp),
+                                            color = Color.White.copy(alpha = 0.7f),
+                                            strokeWidth = 2.dp
+                                        )
+                                        Spacer(modifier = Modifier.width(8.dp))
+                                        Text(
+                                            text = "Loading abilities...",
+                                            color = Color.White.copy(alpha = 0.7f),
+                                            fontSize = 12.sp
+                                        )
+                                    }
                                 }
                             } else {
-                                uiState.playerAbilities
-                            }
-
-                            AbilityRow(
-                                abilities = abilitiesForBar,
-                                cooldowns = cooldowns,
-                                queuedAbilityId = queuedAbilityId,
-                                currentMana = playerCombatant?.currentMana ?: displayUser?.currentMana ?: 0,
-                                currentStamina = playerCombatant?.currentStamina ?: displayUser?.currentStamina ?: 0,
-                                hasWeaponEquipped = hasWeaponEquipped,
-                                onBasicAttackClick = {
-                                    // If only one creature, attack immediately. Otherwise show target modal.
-                                    if (uiState.creaturesHere.size == 1) {
-                                        viewModel.initiateBasicAttack(uiState.creaturesHere.first().id)
-                                    } else if (uiState.creaturesHere.isNotEmpty()) {
-                                        showBasicAttackTargetModal = true
+                                // Filter out party abilities when in a party (they're in the dropdown)
+                                val isInPartyForAbilityBar = displayUser?.partyLeaderId != null
+                                val abilitiesForBar = if (isInPartyForAbilityBar) {
+                                    uiState.playerAbilities.filter { ability ->
+                                        ability.targetType != "all_allies" && ability.targetType != "single_ally"
                                     }
-                                },
-                                onAbilityClick = { viewModel.handleAbilityClick(it) },
-                                onSpellbookToggle = { showSpellbook = !showSpellbook },
-                                showSpellbook = showSpellbook,
-                                iconMappings = iconMappings,
-                                modifier = Modifier.weight(1f)
-                            )
+                                } else {
+                                    uiState.playerAbilities
+                                }
+
+                                AbilityRow(
+                                    abilities = abilitiesForBar,
+                                    cooldowns = cooldowns,
+                                    queuedAbilityId = queuedAbilityId,
+                                    currentMana = playerCombatant?.currentMana ?: displayUser?.currentMana ?: 0,
+                                    currentStamina = playerCombatant?.currentStamina ?: displayUser?.currentStamina ?: 0,
+                                    hasWeaponEquipped = hasWeaponEquipped,
+                                    onBasicAttackClick = {
+                                        // If only one creature, attack immediately. Otherwise show target modal.
+                                        if (uiState.creaturesHere.size == 1) {
+                                            viewModel.initiateBasicAttack(uiState.creaturesHere.first().id)
+                                        } else if (uiState.creaturesHere.isNotEmpty()) {
+                                            showBasicAttackTargetModal = true
+                                        }
+                                    },
+                                    onAbilityClick = { viewModel.handleAbilityClick(it) },
+                                    onSpellbookToggle = { showSpellbook = !showSpellbook },
+                                    showSpellbook = showSpellbook,
+                                    iconMappings = iconMappings,
+                                    modifier = Modifier.weight(1f)
+                                )
+                            }
                         }
                     }
 

@@ -46,6 +46,7 @@ data class AdventureLocalState(
     val pendingAbility: AbilityDto? = null,
     val snackbarMessage: String? = null,
     val playerAbilities: List<AbilityDto> = emptyList(),
+    val abilitiesLoading: Boolean = true,  // Start as loading until first load completes
     val playerCharacterClass: CharacterClassDto? = null,
     val allAbilitiesMap: Map<String, AbilityDto> = emptyMap(),
     // Shop state
@@ -100,6 +101,7 @@ data class AdventureUiState(
     // Player abilities (loaded separately)
     val allAbilitiesMap: Map<String, AbilityDto> = emptyMap(),
     val playerAbilities: List<AbilityDto> = emptyList(),
+    val abilitiesLoading: Boolean = true,  // True until abilities are first loaded
     val playerCharacterClass: CharacterClassDto? = null,
 
     // Local UI state
@@ -252,6 +254,7 @@ class AdventureViewModel {
             allItems = items,
             allAbilitiesMap = local.allAbilitiesMap,
             playerAbilities = local.playerAbilities,
+            abilitiesLoading = local.abilitiesLoading,
             playerCharacterClass = local.playerCharacterClass,
             selectedCreature = local.selectedCreature,
             selectedItem = local.selectedItem,
@@ -516,7 +519,10 @@ class AdventureViewModel {
     fun loadPlayerAbilities() {
         scope.launch {
             // Use latest user state, not stale constructor param
-            val user = UserStateHolder.currentUser.value ?: currentUser ?: return@launch
+            val user = UserStateHolder.currentUser.value ?: currentUser ?: run {
+                _localState.update { it.copy(abilitiesLoading = false) }
+                return@launch
+            }
 
             val classAbilities = mutableListOf<AbilityDto>()
             val itemAbilities = mutableListOf<AbilityDto>()
@@ -585,6 +591,7 @@ class AdventureViewModel {
             _localState.update {
                 it.copy(
                     playerAbilities = displayedAbilities,
+                    abilitiesLoading = false,
                     hasPhasewalkAbility = hasPhasewalk
                 )
             }
