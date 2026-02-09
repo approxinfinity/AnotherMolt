@@ -2107,24 +2107,33 @@ fun EquipmentPaperdoll(
     // Ring slots need special handling (up to 2)
     val ringItems = equippedItems.filter { it.equipmentSlot == "finger" }
 
+    // Calculate total stat bonuses from all equipped items
+    val totalAttack = equippedItems.sumOf { it.statBonuses?.attack ?: 0 }
+    val totalDefense = equippedItems.sumOf { it.statBonuses?.defense ?: 0 }
+    val totalMaxHp = equippedItems.sumOf { it.statBonuses?.maxHp ?: 0 }
+
     val slotSize = 48.dp
     val smallSlotSize = 40.dp
 
-    Column(
-        modifier = modifier
-            .fillMaxWidth()
-            .background(
-                color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f),
-                shape = RoundedCornerShape(12.dp)
-            )
-            .border(
-                width = 1.dp,
-                color = MaterialTheme.colorScheme.outline.copy(alpha = 0.3f),
-                shape = RoundedCornerShape(12.dp)
-            )
-            .padding(16.dp),
-        horizontalAlignment = Alignment.CenterHorizontally
+    Row(
+        modifier = modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.spacedBy(12.dp)
     ) {
+        // Paperdoll column
+        Column(
+            modifier = Modifier
+                .background(
+                    color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f),
+                    shape = RoundedCornerShape(12.dp)
+                )
+                .border(
+                    width = 1.dp,
+                    color = MaterialTheme.colorScheme.outline.copy(alpha = 0.3f),
+                    shape = RoundedCornerShape(12.dp)
+                )
+                .padding(16.dp),
+            horizontalAlignment = Alignment.CenterHorizontally
+        ) {
         // Row 1: Head
         EquipmentSlot(
             slot = "head",
@@ -2260,7 +2269,78 @@ fun EquipmentPaperdoll(
                 onClick = { onSlotClick(ringItems.getOrNull(1)) }
             )
         }
-    }
+        } // End paperdoll column
+
+        // Stats summary column (next to mannequin)
+        if (totalAttack != 0 || totalDefense != 0 || totalMaxHp != 0) {
+            Column(
+                modifier = Modifier
+                    .background(
+                        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f),
+                        shape = RoundedCornerShape(8.dp)
+                    )
+                    .padding(12.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                Text(
+                    text = "Equipment",
+                    style = MaterialTheme.typography.labelMedium,
+                    color = MaterialTheme.colorScheme.primary
+                )
+                if (totalAttack != 0) {
+                    Row(
+                        horizontalArrangement = Arrangement.spacedBy(4.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(
+                            text = if (totalAttack > 0) "+$totalAttack" else "$totalAttack",
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = if (totalAttack > 0) Color(0xFFE53935) else Color(0xFF9E9E9E)
+                        )
+                        Text(
+                            text = "ATK",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                }
+                if (totalDefense != 0) {
+                    Row(
+                        horizontalArrangement = Arrangement.spacedBy(4.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(
+                            text = if (totalDefense > 0) "+$totalDefense" else "$totalDefense",
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = if (totalDefense > 0) Color(0xFF2196F3) else Color(0xFF9E9E9E)
+                        )
+                        Text(
+                            text = "DEF",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                }
+                if (totalMaxHp != 0) {
+                    Row(
+                        horizontalArrangement = Arrangement.spacedBy(4.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(
+                            text = if (totalMaxHp > 0) "+$totalMaxHp" else "$totalMaxHp",
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = if (totalMaxHp > 0) Color(0xFF4CAF50) else Color(0xFF9E9E9E)
+                        )
+                        Text(
+                            text = "HP",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                }
+            }
+        }
+    } // End Row wrapper
 }
 
 /**
