@@ -96,11 +96,6 @@ object GameTickService {
         }
 
         for (user in recentlyActiveUsers) {
-            // Skip if user is in combat - their regen is handled by CombatService
-            if (user.currentCombatSessionId != null) {
-                continue
-            }
-
             // Skip if we already processed regen for this user this tick
             if (lastRegenTick[user.id] == currentTickNumber) {
                 continue
