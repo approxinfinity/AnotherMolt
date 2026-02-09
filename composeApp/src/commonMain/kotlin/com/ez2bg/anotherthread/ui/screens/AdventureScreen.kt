@@ -730,14 +730,18 @@ fun AdventureScreen(
                                     }
                                 }
                             } else {
-                                // Filter out party abilities when in a party (they're in the dropdown)
+                                // Filter abilities for the action bar:
+                                // - Enemy-targeting abilities (single_enemy, all_enemies, area) go to creature modal
+                                // - Party abilities (all_allies, single_ally) go to party dropdown when in party
+                                // - Action bar shows: self + single_ally (when not in party) + all_allies (when not in party)
                                 val isInPartyForAbilityBar = displayUser?.partyLeaderId != null
-                                val abilitiesForBar = if (isInPartyForAbilityBar) {
-                                    uiState.playerAbilities.filter { ability ->
-                                        ability.targetType != "all_allies" && ability.targetType != "single_ally"
-                                    }
-                                } else {
-                                    uiState.playerAbilities
+                                val abilitiesForBar = uiState.playerAbilities.filter { ability ->
+                                    // Always exclude enemy-targeting abilities from action bar
+                                    ability.targetType != "single_enemy" &&
+                                    ability.targetType != "all_enemies" &&
+                                    ability.targetType != "area" &&
+                                    // Exclude party abilities when in a party (they're in the dropdown)
+                                    !(isInPartyForAbilityBar && (ability.targetType == "all_allies" || ability.targetType == "single_ally"))
                                 }
 
                                 AbilityRow(
