@@ -4,6 +4,7 @@ import com.ez2bg.anotherthread.*
 import com.ez2bg.anotherthread.combat.CombatService
 import com.ez2bg.anotherthread.database.*
 import com.ez2bg.anotherthread.events.LocationEventService
+import com.ez2bg.anotherthread.game.EncumbranceService
 import io.ktor.http.*
 import io.ktor.server.application.*
 import io.ktor.server.request.*
@@ -894,12 +895,17 @@ fun Route.userRoutes() {
                 return@post
             }
 
-            // Check encumbrance (based on Constitution)
-            // Each point of CON allows 2 items, base of 5 items
-            val maxItems = 5 + (user.constitution / 2)
-            if (user.itemIds.size >= maxItems) {
+            // Check encumbrance (weight-based system using Strength)
+            val encumbranceInfo = EncumbranceService.getEncumbranceInfo(user)
+            val newWeight = encumbranceInfo.currentWeight + item.weight
+            val newPercent = if (encumbranceInfo.maxCapacity > 0) {
+                (newWeight * 100) / encumbranceInfo.maxCapacity
+            } else 100
+
+            // Block pickup if it would exceed 150% capacity (hard cap)
+            if (newPercent > 150) {
                 call.respond(HttpStatusCode.BadRequest, mapOf(
-                    "error" to "Inventory full (max $maxItems items based on Constitution)"
+                    "error" to "Too heavy! Would exceed 150% carry capacity (${newWeight}/${encumbranceInfo.maxCapacity} stone)"
                 ))
                 return@post
             }
