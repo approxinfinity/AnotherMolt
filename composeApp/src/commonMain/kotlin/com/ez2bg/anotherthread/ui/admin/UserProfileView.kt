@@ -610,6 +610,9 @@ fun UserProfileView(
                 visibleAbilityIds = user.visibleAbilityIds,
                 iconMappings = iconMappings,
                 isOwnProfile = isOwnProfile,
+                inventoryItems = inventoryItems,
+                equippedItemIds = equippedItemIds,
+                itemAbilitiesMap = itemAbilitiesMap,
                 onVisibleAbilitiesChanged = { newIds ->
                     scope.launch {
                         ApiClient.updateVisibleAbilities(user.id, newIds).onSuccess { updatedUser ->
@@ -1569,6 +1572,9 @@ private fun UnifiedAbilitiesSection(
     visibleAbilityIds: List<String>,
     iconMappings: Map<String, String>,
     isOwnProfile: Boolean,
+    inventoryItems: List<ItemDto>,
+    equippedItemIds: List<String>,
+    itemAbilitiesMap: Map<String, AbilityDto>,
     onVisibleAbilitiesChanged: (List<String>) -> Unit,
     onIconMappingChanged: (abilityId: String, iconName: String) -> Unit,
     onIconMappingReset: (abilityId: String) -> Unit
@@ -1578,15 +1584,29 @@ private fun UnifiedAbilitiesSection(
     var isLoading by remember { mutableStateOf(false) }
     var iconPickerAbilityId by remember { mutableStateOf<String?>(null) }
 
-    // Load all abilities (class + learned)
-    LaunchedEffect(classAbilities, learnedAbilityIds) {
+    // Build a map from ability ID to the item(s) that grant it
+    val abilityToItemMap: Map<String, ItemDto> = remember(inventoryItems) {
+        val map = mutableMapOf<String, ItemDto>()
+        for (item in inventoryItems) {
+            for (abilityId in item.abilityIds) {
+                // If multiple items grant same ability, show first one found
+                if (abilityId !in map) {
+                    map[abilityId] = item
+                }
+            }
+        }
+        map
+    }
+
+    // Load all abilities (class + learned + item-granted)
+    LaunchedEffect(classAbilities, learnedAbilityIds, itemAbilitiesMap) {
         isLoading = true
         val learnedAbilities = mutableListOf<AbilityDto>()
         for (abilityId in learnedAbilityIds) {
             ApiClient.getAbility(abilityId).getOrNull()?.let { learnedAbilities.add(it) }
         }
-        // Combine and deduplicate
-        allAbilities = (classAbilities + learnedAbilities)
+        // Combine and deduplicate (class + learned + item abilities)
+        allAbilities = (classAbilities + learnedAbilities + itemAbilitiesMap.values)
             .distinctBy { it.id }
             .sortedBy { it.name.lowercase() }
         isLoading = false
@@ -1663,10 +1683,13 @@ private fun UnifiedAbilitiesSection(
 
                         Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                             activeAbilities.forEach { ability ->
+                                val sourceItem = abilityToItemMap[ability.id]
                                 SimpleAbilityCard(
                                     ability = ability,
                                     customIcon = iconMappings[ability.id],
                                     isOwnProfile = isOwnProfile,
+                                    sourceItem = sourceItem,
+                                    isSourceItemEquipped = sourceItem?.id in equippedItemIds,
                                     onEditIcon = { iconPickerAbilityId = ability.id }
                                 )
                             }
@@ -1687,10 +1710,13 @@ private fun UnifiedAbilitiesSection(
 
                         Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                             attackAbilities.forEach { ability ->
+                                val sourceItem = abilityToItemMap[ability.id]
                                 SimpleAbilityCard(
                                     ability = ability,
                                     customIcon = iconMappings[ability.id],
                                     isOwnProfile = isOwnProfile,
+                                    sourceItem = sourceItem,
+                                    isSourceItemEquipped = sourceItem?.id in equippedItemIds,
                                     onEditIcon = { iconPickerAbilityId = ability.id }
                                 )
                             }
@@ -1711,6 +1737,8 @@ private fun UnifiedAbilitiesSection(
 
                         Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                             passiveAbilities.forEach { ability ->
+                                val sourceItem = abilityToItemMap[ability.id]
+                                val isEquipped = sourceItem?.id in equippedItemIds
                                 // Passive abilities don't have action bar selection or icon customization
                                 Card(
                                     modifier = Modifier.fillMaxWidth(),
@@ -1728,15 +1756,34 @@ private fun UnifiedAbilitiesSection(
                                                 text = ability.name,
                                                 style = MaterialTheme.typography.titleSmall
                                             )
-                                            Surface(
-                                                shape = RoundedCornerShape(4.dp),
-                                                color = MaterialTheme.colorScheme.secondaryContainer
-                                            ) {
-                                                Text(
-                                                    text = "Passive",
-                                                    style = MaterialTheme.typography.labelSmall,
-                                                    modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
-                                                )
+                                            Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                                                // Show item source if ability comes from an item
+                                                if (sourceItem != null) {
+                                                    Surface(
+                                                        shape = RoundedCornerShape(4.dp),
+                                                        color = if (isEquipped)
+                                                            Color(0xFF4CAF50).copy(alpha = 0.2f)
+                                                        else
+                                                            Color(0xFF9E9E9E).copy(alpha = 0.2f)
+                                                    ) {
+                                                        Text(
+                                                            text = if (isEquipped) "${sourceItem.name} (equipped)" else sourceItem.name,
+                                                            style = MaterialTheme.typography.labelSmall,
+                                                            color = if (isEquipped) Color(0xFF4CAF50) else Color(0xFF757575),
+                                                            modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                                                        )
+                                                    }
+                                                }
+                                                Surface(
+                                                    shape = RoundedCornerShape(4.dp),
+                                                    color = MaterialTheme.colorScheme.secondaryContainer
+                                                ) {
+                                                    Text(
+                                                        text = "Passive",
+                                                        style = MaterialTheme.typography.labelSmall,
+                                                        modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                                                    )
+                                                }
                                             }
                                         }
                                         Spacer(modifier = Modifier.height(4.dp))
@@ -1785,6 +1832,8 @@ private fun SimpleAbilityCard(
     ability: AbilityDto,
     customIcon: String?,
     isOwnProfile: Boolean,
+    sourceItem: ItemDto? = null,
+    isSourceItemEquipped: Boolean = false,
     onEditIcon: () -> Unit
 ) {
     Card(
@@ -1848,8 +1897,25 @@ private fun SimpleAbilityCard(
                             text = ability.name,
                             style = MaterialTheme.typography.titleSmall
                         )
-                        // Cost badge
+                        // Cost badge and item source
                         Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                            // Show item source if ability comes from an item
+                            if (sourceItem != null) {
+                                Surface(
+                                    shape = RoundedCornerShape(4.dp),
+                                    color = if (isSourceItemEquipped)
+                                        Color(0xFF4CAF50).copy(alpha = 0.2f)
+                                    else
+                                        Color(0xFF9E9E9E).copy(alpha = 0.2f)
+                                ) {
+                                    Text(
+                                        text = if (isSourceItemEquipped) "${sourceItem.name} (equipped)" else sourceItem.name,
+                                        style = MaterialTheme.typography.labelSmall,
+                                        color = if (isSourceItemEquipped) Color(0xFF4CAF50) else Color(0xFF757575),
+                                        modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                                    )
+                                }
+                            }
                             if (ability.manaCost > 0) {
                                 Surface(
                                     shape = RoundedCornerShape(4.dp),

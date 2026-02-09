@@ -1288,7 +1288,8 @@ private fun LocationInfoPanel(
                                 .clickable { onCreatureClick(creature) }
                                 .padding(vertical = 2.dp)
                         ) {
-                            if (!isBlinded) {
+                            // Only show icon and spacer for states that have visible icons
+                            if (!isBlinded && state in listOf("wandering", "in_combat")) {
                                 CreatureStateIcon(
                                     state = state,
                                     modifier = Modifier.size(14.dp)
