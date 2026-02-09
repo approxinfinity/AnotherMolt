@@ -258,13 +258,23 @@ object UserStateHolder {
 
     /**
      * Refresh user data from server.
+     * Preserves the local location to avoid overwriting optimistic navigation updates.
      */
     suspend fun refreshUser() {
         val userId = _currentUser.value?.id ?: return
+        val localLocationId = _currentUser.value?.currentLocationId
         ApiClient.getUser(userId).onSuccess { freshUser ->
             if (freshUser != null) {
-                _currentUser.value = freshUser
-                AuthStorage.saveUser(freshUser)
+                // Preserve local location - the server may have stale location data
+                // if we recently navigated and the update hasn't been processed yet.
+                // AdventureRepository.currentLocationId is the authoritative source for UI.
+                val userWithLocalLocation = if (localLocationId != null) {
+                    freshUser.copy(currentLocationId = localLocationId)
+                } else {
+                    freshUser
+                }
+                _currentUser.value = userWithLocalLocation
+                AuthStorage.saveUser(userWithLocalLocation)
             }
         }
     }
