@@ -316,6 +316,8 @@ object CombatService {
             sessions[existingSessionId]?.let {
                 return Result.failure(Exception("Already in combat session ${it.id}"))
             }
+            // Clean up stale reference (session was removed but player reference wasn't)
+            playerSessions.remove(userId)
         }
 
         // Get or create session at location
@@ -326,6 +328,13 @@ object CombatService {
             // Create new session - returns null if no valid creatures found
             session = createSession(locationId, targetCreatureIds)
                 ?: return Result.failure(Exception("No creatures to fight at this location"))
+        }
+
+        // Check if player is already a combatant in this session (e.g., from a previous reconnect)
+        if (session.combatants.any { it.id == userId }) {
+            log.info("Player $userId is already in session ${session.id}, returning existing session")
+            playerSessions[userId] = session.id
+            return Result.success(session)
         }
 
         // Add player to session
