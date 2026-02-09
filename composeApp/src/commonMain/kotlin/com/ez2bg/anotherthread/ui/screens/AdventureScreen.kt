@@ -750,15 +750,6 @@ fun AdventureScreen(
                                     queuedAbilityId = queuedAbilityId,
                                     currentMana = playerCombatant?.currentMana ?: displayUser?.currentMana ?: 0,
                                     currentStamina = playerCombatant?.currentStamina ?: displayUser?.currentStamina ?: 0,
-                                    hasWeaponEquipped = hasWeaponEquipped,
-                                    onBasicAttackClick = {
-                                        // If only one creature, attack immediately. Otherwise show target modal.
-                                        if (uiState.creaturesHere.size == 1) {
-                                            viewModel.initiateBasicAttack(uiState.creaturesHere.first().id)
-                                        } else if (uiState.creaturesHere.isNotEmpty()) {
-                                            showBasicAttackTargetModal = true
-                                        }
-                                    },
                                     onAbilityClick = { viewModel.handleAbilityClick(it) },
                                     onSpellbookToggle = { showSpellbook = !showSpellbook },
                                     showSpellbook = showSpellbook,
@@ -2482,8 +2473,6 @@ private fun AbilityRow(
     queuedAbilityId: String?,
     currentMana: Int = 0,
     currentStamina: Int = 0,
-    hasWeaponEquipped: Boolean = false,
-    onBasicAttackClick: () -> Unit = {},
     onAbilityClick: (AbilityDto) -> Unit,
     onSpellbookToggle: () -> Unit = {},
     showSpellbook: Boolean = false,
@@ -2520,18 +2509,12 @@ private fun AbilityRow(
         verticalAlignment = Alignment.CenterVertically
     ) {
         // FlowRow wraps ability buttons to multiple lines if needed
+        // Note: Basic attack is now only in creature action modal, not here
         FlowRow(
             modifier = Modifier.weight(1f),
             horizontalArrangement = Arrangement.spacedBy(6.dp),
             verticalArrangement = Arrangement.spacedBy(4.dp)
         ) {
-            // Basic Attack button - first in the row
-            BasicAttackButton(
-                hasWeapon = hasWeaponEquipped,
-                onClick = onBasicAttackClick,
-                size = iconSize
-            )
-
             displayAbilities.forEach { ability ->
                 val canAfford = (ability.manaCost <= currentMana) && (ability.staminaCost <= currentStamina)
                 AbilityIconButton(
