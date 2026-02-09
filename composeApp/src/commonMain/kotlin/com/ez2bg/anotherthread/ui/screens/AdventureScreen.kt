@@ -325,7 +325,9 @@ fun AdventureScreen(
                 }
             }
     ) {
-        if (uiState.isLoading) {
+        // Show loading spinner until data is loaded AND server location is synced
+        // This prevents flashing the fallback location before the user's actual location is confirmed
+        if (uiState.isLoading || !uiState.isLocationSynced) {
             CircularProgressIndicator(
                 modifier = Modifier.align(Alignment.Center),
                 color = Color.White

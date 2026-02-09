@@ -49,6 +49,7 @@ data class AdventureLocalState(
     val abilitiesLoading: Boolean = true,  // Start as loading until first load completes
     val playerCharacterClass: CharacterClassDto? = null,
     val allAbilitiesMap: Map<String, AbilityDto> = emptyMap(),
+    val isLocationSynced: Boolean = false,  // Whether server location has been confirmed
     // Shop state
     val playerGold: Int = 0,
     val shopItems: List<ItemDto> = emptyList(),
@@ -87,6 +88,8 @@ data class AdventureLocalState(
 data class AdventureUiState(
     // Loading state (from repository)
     val isLoading: Boolean = true,
+    // Whether we've synced the player's location from the server
+    val isLocationSynced: Boolean = false,
 
     // Location data (from repository, reactive)
     val locations: List<LocationDto> = emptyList(),
@@ -250,6 +253,7 @@ class AdventureViewModel {
 
         AdventureUiState(
             isLoading = isLoading,
+            isLocationSynced = local.isLocationSynced,
             locations = locations,
             currentLocationId = currentLocationId,
             allCreatures = creatures,
@@ -398,6 +402,8 @@ class AdventureViewModel {
                             } else {
                                 println("[AdventureViewModel] Server location sync: no correction needed")
                             }
+                            // Mark location as synced - UI can now show the location
+                            _localState.update { it.copy(isLocationSynced = true) }
                         }
                     }
 
