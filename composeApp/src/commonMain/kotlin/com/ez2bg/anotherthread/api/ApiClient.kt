@@ -1361,6 +1361,25 @@ object ApiClient {
     }
 
     /**
+     * Drop ALL of a specific item type (for item stacks).
+     * Returns updated user with reduced inventory.
+     */
+    suspend fun dropAllItems(userId: String, itemId: String): Result<UserDto> = apiCall {
+        val response = client.post("$baseUrl/users/$userId/drop-all/$itemId")
+        if (response.status.isSuccess()) {
+            response.body()
+        } else {
+            val errorBody = response.bodyAsText()
+            val errorMessage = try {
+                Json.decodeFromString<Map<String, String>>(errorBody)["error"] ?: errorBody
+            } catch (e: Exception) {
+                errorBody
+            }
+            throw Exception(errorMessage)
+        }
+    }
+
+    /**
      * Give an item to another player at the same location.
      * Returns updated giver user and item info.
      */

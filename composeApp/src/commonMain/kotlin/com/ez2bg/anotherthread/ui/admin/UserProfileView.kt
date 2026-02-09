@@ -762,11 +762,17 @@ fun UserProfileView(
                                         } else null,
                                         onDrop = if (isOwnProfile) {
                                             {
+                                                val count = itemCounts[item.id] ?: 1
                                                 scope.launch {
-                                                    ApiClient.dropItem(user.id, item.id).onSuccess { updatedUser ->
+                                                    // Drop all items in the stack at once
+                                                    ApiClient.dropAllItems(user.id, item.id).onSuccess { updatedUser ->
                                                         UserStateHolder.updateUser(updatedUser)
                                                         onUserUpdated(updatedUser)
-                                                        message = "Dropped ${item.name}"
+                                                        message = if (count > 1) {
+                                                            "Dropped $count ${item.name}"
+                                                        } else {
+                                                            "Dropped ${item.name}"
+                                                        }
                                                     }.onFailure { error ->
                                                         message = "Failed to drop: ${error.message}"
                                                     }

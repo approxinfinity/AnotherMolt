@@ -812,6 +812,65 @@ fun Route.userRoutes() {
             call.respond(HttpStatusCode.OK, updatedUser.toResponse())
         }
 
+        // Drop ALL of a specific item type (for item stacks)
+        post("/{id}/drop-all/{itemId}") {
+            val userId = call.parameters["id"] ?: return@post call.respond(HttpStatusCode.BadRequest)
+            val itemId = call.parameters["itemId"] ?: return@post call.respond(HttpStatusCode.BadRequest)
+
+            val user = UserRepository.findById(userId)
+            if (user == null) {
+                call.respond(HttpStatusCode.NotFound, mapOf("error" to "User not found"))
+                return@post
+            }
+
+            // Count how many of this item the user has
+            val itemCount = user.itemIds.count { it == itemId }
+            if (itemCount == 0) {
+                call.respond(HttpStatusCode.BadRequest, mapOf("error" to "You don't have that item"))
+                return@post
+            }
+
+            // Get user's current location
+            val locationId = user.currentLocationId
+            if (locationId == null) {
+                call.respond(HttpStatusCode.BadRequest, mapOf("error" to "You must be at a location to drop items"))
+                return@post
+            }
+
+            val location = LocationRepository.findById(locationId)
+            if (location == null) {
+                call.respond(HttpStatusCode.BadRequest, mapOf("error" to "Location not found"))
+                return@post
+            }
+
+            // Check if item is equipped - must unequip first
+            if (itemId in user.equippedItemIds) {
+                call.respond(HttpStatusCode.BadRequest, mapOf("error" to "You must unequip this item before dropping it"))
+                return@post
+            }
+
+            // Remove ALL instances of this item from user inventory
+            val updatedItemIds = user.itemIds.filter { it != itemId }
+            UserRepository.update(user.copy(itemIds = updatedItemIds))
+
+            // Add all items to location
+            val itemsToAdd = List(itemCount) { itemId }
+            val updatedLocationItemIds = location.itemIds + itemsToAdd
+            val updatedLocation = location.copy(itemIds = updatedLocationItemIds)
+            LocationRepository.update(updatedLocation)
+
+            // Add each to LocationItem table
+            repeat(itemCount) {
+                LocationItemRepository.addItem(locationId, itemId, userId)
+            }
+
+            // Broadcast item added to location observers (once is enough - client will refresh)
+            LocationEventService.broadcastItemAdded(location, itemId)
+
+            val updatedUser = UserRepository.findById(userId)!!
+            call.respond(HttpStatusCode.OK, updatedUser.toResponse())
+        }
+
         // Give an item to another player at the same location
         post("/{id}/give/{receiverId}/{itemId}") {
             val giverId = call.parameters["id"] ?: return@post call.respond(HttpStatusCode.BadRequest)
