@@ -1,7 +1,12 @@
 package com.ez2bg.anotherthread.ui.screens
 
+import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
+import androidx.compose.animation.expandVertically
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -32,6 +37,7 @@ import androidx.compose.material.icons.filled.SportsMartialArts
 import androidx.compose.material.icons.filled.NorthEast
 import androidx.compose.material.icons.filled.NorthWest
 import androidx.compose.material.icons.filled.Person
+import androidx.compose.material.icons.filled.Groups
 import androidx.compose.material.icons.filled.SouthEast
 import androidx.compose.material.icons.filled.SouthWest
 import androidx.compose.material.icons.automirrored.filled.DirectionsWalk
@@ -189,6 +195,9 @@ fun AdventureScreen(
 
     // Give up confirmation modal state (voluntary death when downed)
     var showGiveUpConfirmation by remember { mutableStateOf(false) }
+
+    // Party abilities dropdown state
+    var showPartyAbilitiesDropdown by remember { mutableStateOf(false) }
 
     // Custom icon mappings
     var iconMappings by remember { mutableStateOf<Map<String, String>>(emptyMap()) }
@@ -403,15 +412,18 @@ fun AdventureScreen(
                             )
                         }
 
-                        // Player avatar and tick indicator in top-right corner (overlaid on top section)
+                        // Player avatar, tick indicator, and party abilities dropdown in top-right corner
                         if (currentUser != null && !ghostMode) {
-                            Row(
+                            Column(
                                 modifier = Modifier
                                     .align(Alignment.TopEnd)
                                     .padding(top = 8.dp, end = 8.dp),
-                                horizontalArrangement = Arrangement.spacedBy(6.dp),
-                                verticalAlignment = Alignment.CenterVertically
+                                horizontalAlignment = Alignment.End
                             ) {
+                                Row(
+                                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
                                 // Tick indicator (pizza timer) - ghostly/subtle appearance
                                 TickIndicator(
                                     tickDurationMs = 3000,
@@ -420,6 +432,39 @@ fun AdventureScreen(
                                     backgroundColor = Color.Black.copy(alpha = 0.3f),
                                     borderColor = Color.White.copy(alpha = 0.15f)
                                 )
+
+                                // Party abilities icon - only show when in a party and has party abilities
+                                val partyAbilities = uiState.playerAbilities.filter {
+                                    it.abilityType != "passive" && it.abilityType != "navigation" &&
+                                    (it.targetType == "all_allies" || it.targetType == "single_ally")
+                                }
+                                val isInParty = displayUser?.partyLeaderId != null
+                                if (isInParty && partyAbilities.isNotEmpty()) {
+                                    Box(
+                                        modifier = Modifier
+                                            .size(32.dp)
+                                            .clip(CircleShape)
+                                            .background(
+                                                if (showPartyAbilitiesDropdown) Color(0xFF4CAF50).copy(alpha = 0.9f)
+                                                else Color(0xFF2196F3).copy(alpha = 0.7f)
+                                            )
+                                            .border(
+                                                1.dp,
+                                                if (showPartyAbilitiesDropdown) Color(0xFF81C784)
+                                                else Color.White.copy(alpha = 0.4f),
+                                                CircleShape
+                                            )
+                                            .clickable { showPartyAbilitiesDropdown = !showPartyAbilitiesDropdown },
+                                        contentAlignment = Alignment.Center
+                                    ) {
+                                        Icon(
+                                            Icons.Filled.Groups,
+                                            contentDescription = "Party abilities",
+                                            tint = Color.White,
+                                            modifier = Modifier.size(18.dp)
+                                        )
+                                    }
+                                }
 
                                 // Player avatar
                                 Box(
@@ -446,6 +491,38 @@ fun AdventureScreen(
                                             modifier = Modifier.size(24.dp)
                                         )
                                     }
+                                }
+                                }
+
+                                // Party abilities dropdown - animated
+                                val partyAbilitiesForDropdown = uiState.playerAbilities.filter {
+                                    it.abilityType != "passive" && it.abilityType != "navigation" &&
+                                    (it.targetType == "all_allies" || it.targetType == "single_ally")
+                                }
+                                AnimatedVisibility(
+                                    visible = showPartyAbilitiesDropdown && partyAbilitiesForDropdown.isNotEmpty(),
+                                    enter = expandVertically(
+                                        animationSpec = tween(200),
+                                        expandFrom = Alignment.Top
+                                    ) + fadeIn(animationSpec = tween(200)),
+                                    exit = shrinkVertically(
+                                        animationSpec = tween(150),
+                                        shrinkTowards = Alignment.Top
+                                    ) + fadeOut(animationSpec = tween(150))
+                                ) {
+                                    PartyAbilitiesDropdown(
+                                        abilities = partyAbilitiesForDropdown,
+                                        cooldowns = cooldowns,
+                                        queuedAbilityId = queuedAbilityId,
+                                        currentMana = playerCombatant?.currentMana ?: displayUser?.currentMana ?: 0,
+                                        currentStamina = playerCombatant?.currentStamina ?: displayUser?.currentStamina ?: 0,
+                                        onAbilityClick = { ability ->
+                                            viewModel.handleAbilityClick(ability)
+                                            showPartyAbilitiesDropdown = false
+                                        },
+                                        iconMappings = iconMappings,
+                                        modifier = Modifier.padding(top = 8.dp)
+                                    )
                                 }
                             }
                         }
@@ -620,8 +697,18 @@ fun AdventureScreen(
                                 )
                             }
 
+                            // Filter out party abilities when in a party (they're in the dropdown)
+                            val isInPartyForAbilityBar = displayUser?.partyLeaderId != null
+                            val abilitiesForBar = if (isInPartyForAbilityBar) {
+                                uiState.playerAbilities.filter { ability ->
+                                    ability.targetType != "all_allies" && ability.targetType != "single_ally"
+                                }
+                            } else {
+                                uiState.playerAbilities
+                            }
+
                             AbilityRow(
-                                abilities = uiState.playerAbilities,
+                                abilities = abilitiesForBar,
                                 cooldowns = cooldowns,
                                 queuedAbilityId = queuedAbilityId,
                                 currentMana = playerCombatant?.currentMana ?: displayUser?.currentMana ?: 0,
@@ -2221,6 +2308,75 @@ private fun PurpleActionButton(
 // =============================================================================
 // ABILITY ROW (flat row above scroll section)
 // =============================================================================
+
+/**
+ * Dropdown panel for party-specific abilities (all_allies, single_ally).
+ * Appears when tapping the party icon next to the character button.
+ */
+@Composable
+private fun PartyAbilitiesDropdown(
+    abilities: List<AbilityDto>,
+    cooldowns: Map<String, Int>,
+    queuedAbilityId: String?,
+    currentMana: Int = 0,
+    currentStamina: Int = 0,
+    onAbilityClick: (AbilityDto) -> Unit,
+    iconMappings: Map<String, String> = emptyMap(),
+    modifier: Modifier = Modifier
+) {
+    val iconSize = 36.dp
+
+    Column(
+        modifier = modifier
+            .background(Color.Black.copy(alpha = 0.85f), RoundedCornerShape(12.dp))
+            .border(1.dp, Color(0xFF4CAF50).copy(alpha = 0.5f), RoundedCornerShape(12.dp))
+            .padding(12.dp),
+        horizontalAlignment = Alignment.End,
+        verticalArrangement = Arrangement.spacedBy(8.dp)
+    ) {
+        // Header
+        Text(
+            text = "Party Abilities",
+            color = Color(0xFF81C784),
+            fontSize = 11.sp,
+            fontWeight = FontWeight.Medium,
+            modifier = Modifier.padding(bottom = 4.dp)
+        )
+
+        // Abilities in a flow layout
+        FlowRow(
+            horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.End),
+            verticalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            abilities.forEach { ability ->
+                val canAfford = (ability.manaCost <= currentMana) && (ability.staminaCost <= currentStamina)
+                Column(
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    modifier = Modifier.width(50.dp)
+                ) {
+                    AbilityIconButton(
+                        ability = ability,
+                        cooldownRounds = cooldowns[ability.id] ?: 0,
+                        isQueued = ability.id == queuedAbilityId,
+                        enabled = canAfford,
+                        onClick = { onAbilityClick(ability) },
+                        size = iconSize,
+                        customIconName = iconMappings[ability.id]
+                    )
+                    Text(
+                        text = ability.name,
+                        color = Color.White.copy(alpha = 0.8f),
+                        fontSize = 9.sp,
+                        maxLines = 2,
+                        textAlign = TextAlign.Center,
+                        overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier.padding(top = 2.dp)
+                    )
+                }
+            }
+        }
+    }
+}
 
 /**
  * Horizontal row of ability buttons displayed above the event log.
