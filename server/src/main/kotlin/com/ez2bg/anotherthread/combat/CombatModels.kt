@@ -85,7 +85,8 @@ data class Combatant(
     val staminaRegen: Int = 2,                // Stamina restored per round (CON-based)
     val constitution: Int = 10,               // CON stat for death threshold calculation
     val dexterity: Int = 10,                  // DEX stat for extra attacks calculation
-    val attacksPerRound: Int = 1              // Number of attacks per combat round (MajorMUD-style)
+    val attacksPerRound: Int = 1,             // Number of attacks per combat round (MajorMUD-style)
+    val partyLeaderId: String? = null         // Party leader ID for party-aware abilities (null = solo or is leader)
 )
 
 /**

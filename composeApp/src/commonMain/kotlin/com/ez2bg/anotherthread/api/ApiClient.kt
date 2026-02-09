@@ -2282,7 +2282,8 @@ data class CombatantDto(
     val statusEffects: List<StatusEffectDto> = emptyList(),
     val cooldowns: Map<String, Int> = emptyMap(),
     val dexterity: Int = 10,                 // DEX stat for extra attacks calculation
-    val attacksPerRound: Int = 1             // Number of attacks per combat round (MajorMUD-style)
+    val attacksPerRound: Int = 1,            // Number of attacks per combat round (MajorMUD-style)
+    val partyLeaderId: String? = null        // Party leader ID for party-aware abilities
 )
 
 @Serializable

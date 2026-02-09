@@ -759,7 +759,14 @@ object CombatService {
                     }
                 }
                 "all_allies" -> {
-                    currentCombatants.filter { it.type == actor.type && it.isAlive }
+                    // Party-aware targeting: only affects actual party members
+                    // A party consists of:
+                    // - The leader (partyLeaderId = null but has followers)
+                    // - Followers (partyLeaderId = leader's id)
+                    // Solo players (no partyLeaderId and no followers) only target themselves
+                    currentCombatants.filter { ally ->
+                        ally.type == actor.type && ally.isAlive && isInSameParty(actor, ally)
+                    }
                 }
                 "single_ally_downed" -> {
                     // Aid/Drag: target must be a downed player ally
@@ -2361,7 +2368,8 @@ object CombatService {
             deathThreshold = playerDeathThreshold,
             constitution = constitution,
             dexterity = dexterity,
-            attacksPerRound = playerAttacksPerRound
+            attacksPerRound = playerAttacksPerRound,
+            partyLeaderId = partyLeaderId  // For party-aware abilities
         )
     }
 
@@ -2427,6 +2435,35 @@ object CombatService {
             // Creatures die at 0 HP, no downed state
             Pair(newHp > 0, false)
         }
+    }
+
+    /**
+     * Check if two combatants are in the same party.
+     * Party membership is determined by:
+     * - Same person (always in your own party)
+     * - One is the leader of the other (B.partyLeaderId == A.id)
+     * - Both follow the same leader (A.partyLeaderId == B.partyLeaderId && both non-null)
+     * - Creatures are always "in party" with other creatures (for symmetry)
+     */
+    private fun isInSameParty(a: Combatant, b: Combatant): Boolean {
+        // Same person is always in same party
+        if (a.id == b.id) return true
+
+        // Creatures don't have parties, so they all count as one group
+        if (a.type == CombatantType.CREATURE && b.type == CombatantType.CREATURE) return true
+
+        // For players, check party membership
+        // Case 1: A is following B (B is leader)
+        if (a.partyLeaderId == b.id) return true
+
+        // Case 2: B is following A (A is leader)
+        if (b.partyLeaderId == a.id) return true
+
+        // Case 3: Both following the same leader
+        if (a.partyLeaderId != null && a.partyLeaderId == b.partyLeaderId) return true
+
+        // Not in same party
+        return false
     }
 
     /**
