@@ -820,9 +820,13 @@ class AdventureViewModel {
     }
 
     /**
-     * Reload phasewalk destinations from server.
+     * Reload phasewalk destinations.
      * Called on init, location change, and after equipment changes.
      * Public so it can be triggered when user equips/unequips items.
+     *
+     * NOTE: Uses local computation only. The server endpoint is not used because
+     * it reads from the database which may have stale location data during navigation.
+     * Local computation uses the client's authoritative location state.
      */
     fun loadPhasewalkDestinations() {
         // Only compute/load if player has phasewalk ability
@@ -831,28 +835,8 @@ class AdventureViewModel {
             return
         }
 
-        // First, try to compute locally for instant display
+        // Compute locally - this is authoritative since client tracks location state
         computePhasewalkDestinationsLocally()
-
-        // Then fetch from server to ensure accuracy (and to catch edge cases)
-        val userId = UserStateHolder.userId ?: return
-        // Capture the current location ID to detect stale responses
-        val requestLocationId = AdventureRepository.currentLocationId.value
-        scope.launch {
-            ApiClient.getPhasewalkDestinations(userId).onSuccess { destinations ->
-                // Only apply results if we're still at the same location
-                val currentLocationId = AdventureRepository.currentLocationId.value
-                if (currentLocationId == requestLocationId) {
-                    println("[Phasewalk] Loaded ${destinations.size} destinations from server for $requestLocationId")
-                    _localState.update { it.copy(phasewalkDestinations = destinations) }
-                } else {
-                    println("[Phasewalk] Discarding stale response for $requestLocationId (now at $currentLocationId)")
-                }
-            }.onFailure { error ->
-                // On failure, keep local computation (don't clear)
-                println("[Phasewalk] Server fetch failed, keeping local: ${error.message}")
-            }
-        }
     }
 
     /**
