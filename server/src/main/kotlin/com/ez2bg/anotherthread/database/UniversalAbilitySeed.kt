@@ -11,6 +11,7 @@ object UniversalAbilitySeed {
     const val TRACK_ABILITY_ID = "universal-track"
     const val HIDE_ABILITY_ID = "universal-hide"
     const val SNEAK_ABILITY_ID = "universal-sneak"
+    const val CHARM_ABILITY_ID = "universal-charm"
 
     /**
      * Seeds universal abilities if they don't exist.
@@ -22,6 +23,7 @@ object UniversalAbilitySeed {
         seedTrackAbility()
         seedHideAbility()
         seedSneakAbility()
+        seedCharmAbility()
     }
 
     private fun seedBasicAttack() {
@@ -179,5 +181,32 @@ object UniversalAbilitySeed {
             )
         )
         println("Seeded sneak ability")
+    }
+
+    private fun seedCharmAbility() {
+        if (AbilityRepository.findById(CHARM_ABILITY_ID) != null) {
+            return
+        }
+
+        // Charm - befriend a creature to fight alongside you
+        AbilityRepository.create(
+            Ability(
+                id = CHARM_ABILITY_ID,
+                name = "Charm",
+                description = "Attempt to befriend a creature using your charisma and persuasion. Charmed creatures will follow and fight alongside you. Charisma and bard-type classes improve success. Some creatures are immune to charm. Cannot be used in combat.",
+                classId = null,  // Universal - available to all classes
+                abilityType = "utility",
+                targetType = "single_enemy",  // Target a creature
+                range = 30,  // Short range, needs to be close
+                cooldownType = "long",  // Significant cooldown
+                cooldownRounds = 0,
+                baseDamage = 0,
+                effects = """[{"type":"charm"}]""",
+                powerCost = 0,
+                staminaCost = 5,  // Mental effort is taxing
+                manaCost = 5     // Also costs some mana
+            )
+        )
+        println("Seeded charm ability")
     }
 }

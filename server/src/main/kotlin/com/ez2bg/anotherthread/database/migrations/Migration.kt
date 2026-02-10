@@ -56,7 +56,8 @@ object MigrationRunner {
         V012_WidenAllLocationIdColumns(),
         V013_AddItemIsStackable(),
         V014_AddPuzzleTable(),
-        V015_AddMovementTrailTable()
+        V015_AddMovementTrailTable(),
+        V016_AddCharmedCreatureTable()
     )
 
     /**

@@ -343,6 +343,27 @@ data class TrailInfoDto(
 )
 
 @Serializable
+data class CharmResultDto(
+    val success: Boolean,
+    val message: String,
+    val charmedCreature: CharmedCreatureDto? = null
+)
+
+@Serializable
+data class CharmedCreatureDto(
+    val id: String,
+    val creatureId: String,
+    val creatureName: String,
+    val locationId: String,
+    val currentHp: Int,
+    val maxHp: Int,
+    val charmedAt: Long,
+    val expiresAt: Long,
+    val charmStrength: Int,
+    val minutesRemaining: Int
+)
+
+@Serializable
 data class IconMappingDto(
     val abilityId: String,
     val iconName: String
@@ -1383,6 +1404,29 @@ object ApiClient {
      */
     suspend fun trackLocation(userId: String): Result<TrackResultDto> = apiCall {
         client.post("$baseUrl/users/$userId/track").body()
+    }
+
+    /**
+     * Attempt to charm a creature at the current location.
+     * Charisma and bard-type classes have bonuses.
+     * Cannot be used in combat. Some creatures are immune.
+     */
+    suspend fun charmCreature(userId: String, creatureId: String): Result<CharmResultDto> = apiCall {
+        client.post("$baseUrl/users/$userId/charm/$creatureId").body()
+    }
+
+    /**
+     * Get the player's currently charmed creature, if any.
+     */
+    suspend fun getCharmedCreature(userId: String): Result<CharmResultDto> = apiCall {
+        client.get("$baseUrl/users/$userId/charmed-creature").body()
+    }
+
+    /**
+     * Release the currently charmed creature.
+     */
+    suspend fun releaseCharmedCreature(userId: String): Result<CharmResultDto> = apiCall {
+        client.post("$baseUrl/users/$userId/release-charm").body()
     }
 
     suspend fun updateUserClass(id: String, classId: String?): Result<UserDto> = apiCall {

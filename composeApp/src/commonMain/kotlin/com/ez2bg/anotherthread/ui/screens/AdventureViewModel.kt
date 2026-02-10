@@ -88,7 +88,10 @@ data class AdventureLocalState(
     val currentPuzzle: PuzzleDto? = null,
     val puzzleProgress: PuzzleProgressResponse? = null,
     val isLoadingPuzzle: Boolean = false,
-    val puzzlesAtLocation: List<PuzzleDto> = emptyList()
+    val puzzlesAtLocation: List<PuzzleDto> = emptyList(),
+    // Charm state
+    val showCharmTargetSelection: Boolean = false,
+    val charmableCreatures: List<CreatureDto> = emptyList()
 )
 
 /**
@@ -159,7 +162,10 @@ data class AdventureUiState(
     val currentPuzzle: PuzzleDto? = null,
     val puzzleProgress: PuzzleProgressResponse? = null,
     val isLoadingPuzzle: Boolean = false,
-    val puzzlesAtLocation: List<PuzzleDto> = emptyList()
+    val puzzlesAtLocation: List<PuzzleDto> = emptyList(),
+    // Charm state
+    val showCharmTargetSelection: Boolean = false,
+    val charmableCreatures: List<CreatureDto> = emptyList()
 ) {
     // Derived properties
     val currentLocation: LocationDto?
@@ -314,7 +320,9 @@ class AdventureViewModel {
             currentPuzzle = local.currentPuzzle,
             puzzleProgress = local.puzzleProgress,
             isLoadingPuzzle = local.isLoadingPuzzle,
-            puzzlesAtLocation = local.puzzlesAtLocation
+            puzzlesAtLocation = local.puzzlesAtLocation,
+            showCharmTargetSelection = local.showCharmTargetSelection,
+            charmableCreatures = local.charmableCreatures
         )
     }.stateIn(
         scope = scope,
@@ -1240,6 +1248,12 @@ class AdventureViewModel {
             return
         }
 
+        // Handle charm ability — requires target selection, works outside combat
+        if (ability.effects.contains("\"type\":\"charm\"")) {
+            handleCharmAbility(ability)
+            return
+        }
+
         val needToJoinCombat = !CombatStateHolder.isInCombat
         if (needToJoinCombat) {
             // AoE abilities can initiate combat with all hostiles
@@ -1408,6 +1422,82 @@ class AdventureViewModel {
                 UserStateHolder.refreshUser()
             }.onFailure { error ->
                 logError("Failed to sneak: ${error.message}")
+            }
+        }
+    }
+
+    // =========================================================================
+    // CHARM
+    // =========================================================================
+
+    private fun handleCharmAbility(ability: AbilityDto) {
+        if (CombatStateHolder.isInCombat) {
+            showSnackbar("Cannot charm while in combat!")
+            return
+        }
+
+        // Get creatures at current location for charm targeting
+        val creatures = AdventureStateHolder.creatures.value
+        if (creatures.isEmpty()) {
+            showSnackbar("No creatures here to charm")
+            return
+        }
+
+        // Show creature selection for charm
+        _localState.update {
+            it.copy(
+                showCharmTargetSelection = true,
+                charmableCreatures = creatures
+            )
+        }
+    }
+
+    fun selectCharmTarget(creature: CreatureDto) {
+        val userId = UserStateHolder.userId ?: return
+
+        // Close the selection dialog
+        _localState.update {
+            it.copy(
+                showCharmTargetSelection = false,
+                charmableCreatures = emptyList()
+            )
+        }
+
+        scope.launch {
+            ApiClient.charmCreature(userId, creature.id).onSuccess { result ->
+                if (result.success) {
+                    logEvent(result.message, EventType.SUCCESS)
+                    // Refresh to update charmed creature state
+                    UserStateHolder.refreshUser()
+                    // Refresh location creatures since one may now be charmed
+                    AdventureStateHolder.loadLocation()
+                } else {
+                    logMessage(result.message)
+                }
+            }.onFailure { error ->
+                logError("Failed to charm: ${error.message}")
+            }
+        }
+    }
+
+    fun cancelCharmSelection() {
+        _localState.update {
+            it.copy(
+                showCharmTargetSelection = false,
+                charmableCreatures = emptyList()
+            )
+        }
+    }
+
+    fun releaseCharmedCreature() {
+        val userId = UserStateHolder.userId ?: return
+
+        scope.launch {
+            ApiClient.releaseCharmedCreature(userId).onSuccess { result ->
+                logMessage(result.message)
+                UserStateHolder.refreshUser()
+            }.onFailure { error ->
+                logError("Failed to release: ${error.message}")
             }
         }
     }

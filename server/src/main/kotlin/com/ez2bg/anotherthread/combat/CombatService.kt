@@ -3,6 +3,7 @@ package com.ez2bg.anotherthread.combat
 import com.ez2bg.anotherthread.database.*
 import com.ez2bg.anotherthread.events.LocationEventService
 import com.ez2bg.anotherthread.experience.ExperienceService
+import com.ez2bg.anotherthread.game.CharmService
 import com.ez2bg.anotherthread.game.CreatureRespawnService
 import com.ez2bg.anotherthread.game.GameTickService
 import io.ktor.websocket.*
@@ -345,8 +346,27 @@ object CombatService {
             ?: return Result.failure(Exception("User not found"))
 
         val playerCombatant = user.toCombatant()
+        val combatantsToAdd = mutableListOf(playerCombatant)
+
+        // Check if player has a charmed creature that should join combat
+        val charmedCreatureData = CharmService.getCharmedCreatureByUser(userId)
+        if (charmedCreatureData != null) {
+            val creature = CreatureRepository.findById(charmedCreatureData.creatureId)
+            if (creature != null) {
+                // Create a combatant for the charmed creature that fights for the player
+                val charmedCombatant = creature.toCombatant().copy(
+                    id = "charmed-${charmedCreatureData.id}",  // Unique ID to differentiate from enemy creatures
+                    alliedToUserId = userId,
+                    charmedCreatureId = charmedCreatureData.id,
+                    currentHp = charmedCreatureData.currentHp
+                )
+                combatantsToAdd.add(charmedCombatant)
+                log.info("Adding charmed creature ${creature.name} to combat on behalf of player $userId")
+            }
+        }
+
         session = session.copy(
-            combatants = session.combatants + playerCombatant
+            combatants = session.combatants + combatantsToAdd
         )
 
         // If we have both players and creatures, start combat
@@ -1693,6 +1713,7 @@ object CombatService {
 
     /**
      * Simple AI for creature actions - creatures attack players using RNG system.
+     * Charmed creatures attack enemy creatures instead of players.
      * Returns updated combatants list with damage applied.
      */
     private suspend fun processCreatureAI(
@@ -1708,7 +1729,70 @@ object CombatService {
         val currentLocation = LocationRepository.findById(session.locationId)
         val creaturesAtLocation = currentLocation?.creatureIds?.toSet() ?: emptySet()
 
-        for (creature in combatants.filter { it.type == CombatantType.CREATURE && it.isAlive }) {
+        // Separate charmed creatures from enemy creatures
+        val aliveCreatures = combatants.filter { it.type == CombatantType.CREATURE && it.isAlive }
+        val charmedCreatures = aliveCreatures.filter { it.alliedToUserId != null }
+        val enemyCreatures = aliveCreatures.filter { it.alliedToUserId == null }
+
+        // Process charmed creatures first - they attack enemy creatures
+        for (charmed in charmedCreatures) {
+            if (charmed.statusEffects.any { it.effectType == "stun" }) continue
+
+            val targets = updatedCombatants.filter {
+                it.type == CombatantType.CREATURE && it.isAlive && it.alliedToUserId == null
+            }
+            if (targets.isEmpty()) continue
+
+            val target = targets.random()
+            val attackResult = CombatRng.rollAttackWithDice(
+                damageDice = charmed.damageDice,
+                baseDamage = charmed.baseDamage,
+                attackerAccuracy = charmed.accuracy,
+                defenderEvasion = target.evasion,
+                attackerLevel = charmed.level,
+                defenderLevel = target.level,
+                critBonus = charmed.critBonus
+            )
+
+            val message = when {
+                attackResult.hitResult == CombatRng.HitResult.MISS -> {
+                    "Your ${charmed.name}'s attack misses ${target.name}!"
+                }
+                attackResult.wasCritical -> {
+                    "CRITICAL! Your ${charmed.name} devastates ${target.name} for ${attackResult.damage} damage!"
+                }
+                else -> {
+                    "Your ${charmed.name} attacks ${target.name} for ${attackResult.damage} damage!"
+                }
+            }
+
+            CombatEventLogger.logEvent(
+                session = session,
+                eventType = CombatEventType.CREATURE_ATTACK,
+                message = message,
+                actor = charmed,
+                target = target,
+                eventData = mapOf(
+                    "hitResult" to attackResult.hitResult.name,
+                    "finalDamage" to attackResult.damage,
+                    "isCharmedCreature" to true
+                )
+            )
+
+            if (attackResult.damage > 0) {
+                val targetIndex = updatedCombatants.indexOfFirst { it.id == target.id }
+                if (targetIndex >= 0) {
+                    val newHp = (target.currentHp - attackResult.damage).coerceAtLeast(0)
+                    updatedCombatants[targetIndex] = target.copy(
+                        currentHp = newHp,
+                        isAlive = newHp > 0
+                    )
+                }
+            }
+        }
+
+        // Process enemy creatures (original logic)
+        for (creature in enemyCreatures) {
             // Skip creatures that have wandered away from this location
             if (creature.id !in creaturesAtLocation) {
                 log.debug("${creature.name} is no longer at location ${session.locationId}, removing from combat")
@@ -1735,16 +1819,23 @@ object CombatService {
 
             // Execute multiple attacks based on attacksPerRound (MajorMUD-style)
             for (attackNum in 1..creature.attacksPerRound) {
-                // Find a target (prefer standing players over downed ones)
+                // Find a target - can attack players or charmed creatures (enemies)
                 val currentAlivePlayers = updatedCombatants.filter { it.type == CombatantType.PLAYER && it.isAlive }
-                if (currentAlivePlayers.isEmpty()) break
+                val aliveCharmedCreatures = updatedCombatants.filter {
+                    it.type == CombatantType.CREATURE && it.isAlive && it.alliedToUserId != null
+                }
+                val allValidTargets = currentAlivePlayers + aliveCharmedCreatures
+                if (allValidTargets.isEmpty()) break
 
-                // Prefer standing players, but attack downed players if no one else
-                val standingPlayers = currentAlivePlayers.filter { !it.isDowned }
-                val target = if (standingPlayers.isNotEmpty()) {
-                    standingPlayers.random()
+                // 70% chance to target players, 30% chance to target charmed creatures (if any)
+                val target = if (aliveCharmedCreatures.isNotEmpty() && kotlin.random.Random.nextInt(100) < 30) {
+                    aliveCharmedCreatures.random()
+                } else if (currentAlivePlayers.isNotEmpty()) {
+                    // Prefer standing players, but attack downed players if no one else
+                    val standingPlayers = currentAlivePlayers.filter { !it.isDowned }
+                    if (standingPlayers.isNotEmpty()) standingPlayers.random() else currentAlivePlayers.random()
                 } else {
-                    currentAlivePlayers.random()  // All players are downed, finish them off
+                    aliveCharmedCreatures.random()  // Only charmed creatures left
                 }
                 val currentTarget = updatedCombatants.find { it.id == target.id } ?: continue
 
@@ -1860,6 +1951,16 @@ object CombatService {
                         log.info("DEATH: Player ${damagedTarget.name} died! HP=${damagedTarget.currentHp}, threshold=${damagedTarget.deathThreshold}")
                     }
 
+                    // Handle charmed creature damage - update CharmService
+                    if (currentTarget.charmedCreatureId != null && actualDamage > 0) {
+                        val charmBroke = CharmService.damageCharmedCreature(currentTarget.charmedCreatureId, actualDamage)
+                        if (charmBroke) {
+                            log.info("Charm broke on creature ${currentTarget.name} due to combat damage")
+                            // Mark as not alive so it's removed from combat
+                            updatedCombatants[targetIndex] = damagedTarget.copy(isAlive = false)
+                        }
+                    }
+
                     // Apply reflect damage to creature (creatures don't have downed state)
                     if (reflectDamage > 0 && creatureIndex >= 0) {
                         val creatureToUpdate = updatedCombatants[creatureIndex]
@@ -1916,14 +2017,14 @@ object CombatService {
      */
     private fun checkEndConditions(session: CombatSession): CombatSession {
         val alivePlayers = session.alivePlayers
-        val aliveCreatures = session.aliveCreatures
+        val aliveEnemies = session.aliveEnemyCreatures  // Only count enemy creatures, not charmed ones
         val downedPlayers = session.downedPlayers
 
         // Debug: log all player states
         for (player in session.players) {
             log.info("CHECK_END: Player ${player.name}: HP=${player.currentHp}, isAlive=${player.isAlive}, isDowned=${player.isDowned}, deathThreshold=${player.deathThreshold}")
         }
-        log.info("CHECK_END: alivePlayers.size=${alivePlayers.size}, downedPlayers.size=${downedPlayers.size}, aliveCreatures.size=${aliveCreatures.size}, session.creatures.size=${session.creatures.size}")
+        log.info("CHECK_END: alivePlayers.size=${alivePlayers.size}, downedPlayers.size=${downedPlayers.size}, aliveEnemies.size=${aliveEnemies.size}, session.enemyCreatures.size=${session.enemyCreatures.size}")
 
         val (state, endReason) = when {
             // No players left at all - combat ends
@@ -1932,15 +2033,15 @@ object CombatService {
             // All players dead/fled
             alivePlayers.isEmpty() ->
                 CombatState.ENDED to CombatEndReason.ALL_PLAYERS_DEFEATED
-            // All creatures dead BUT there are downed players bleeding out - keep combat running
+            // All enemy creatures dead BUT there are downed players bleeding out - keep combat running
             // so the bleeding tick continues until they either die or are stabilized
-            aliveCreatures.isEmpty() && session.creatures.isNotEmpty() && downedPlayers.isNotEmpty() ->
+            aliveEnemies.isEmpty() && session.enemyCreatures.isNotEmpty() && downedPlayers.isNotEmpty() ->
                 session.state to session.endReason  // Keep combat running
-            // All creatures dead (and there were creatures to fight) and no downed players
-            aliveCreatures.isEmpty() && session.creatures.isNotEmpty() ->
+            // All enemy creatures dead (and there were creatures to fight) and no downed players
+            aliveEnemies.isEmpty() && session.enemyCreatures.isNotEmpty() ->
                 CombatState.ENDED to CombatEndReason.ALL_ENEMIES_DEFEATED
-            // No creatures at all - nothing to fight, end combat
-            session.creatures.isEmpty() ->
+            // No enemy creatures at all - nothing to fight, end combat
+            session.enemyCreatures.isEmpty() ->
                 CombatState.ENDED to CombatEndReason.TIMEOUT
             // Max rounds reached
             session.currentRound >= CombatConfig.MAX_COMBAT_ROUNDS ->

@@ -90,6 +90,24 @@ data class TrailInfo(
     val minutesAgo: Int
 )
 
+@Serializable
+data class CharmResponse(
+    val success: Boolean,
+    val message: String,
+    val charmedCreature: CharmCreatureInfo? = null
+)
+
+@Serializable
+data class CharmCreatureInfo(
+    val id: String,
+    val creatureId: String,
+    val creatureName: String,
+    val currentHp: Int,
+    val maxHp: Int,
+    val remainingMinutes: Int,
+    val imageUrl: String?
+)
+
 /**
  * Auth routes for user registration and login.
  * Base path: /auth
@@ -521,6 +539,109 @@ fun Route.userRoutes() {
                 success = result.success,
                 message = result.message,
                 trails = trailInfos
+            ))
+        }
+
+        /**
+         * Attempt to charm a creature at the current location.
+         * Charisma and charmer-type classes have bonuses.
+         * Some creature types are immune (undead, constructs, bosses).
+         */
+        post("/{id}/charm/{creatureId}") {
+            val id = call.parameters["id"] ?: return@post call.respond(HttpStatusCode.BadRequest)
+            val creatureId = call.parameters["creatureId"] ?: return@post call.respond(HttpStatusCode.BadRequest)
+
+            val user = UserRepository.findById(id)
+            if (user == null) {
+                call.respond(HttpStatusCode.NotFound)
+                return@post
+            }
+
+            val locationId = user.currentLocationId
+            if (locationId == null) {
+                call.respond(HttpStatusCode.BadRequest, CharmResponse(
+                    success = false,
+                    message = "You are not at a valid location."
+                ))
+                return@post
+            }
+
+            // Check that the creature exists at this location
+            val location = LocationRepository.findById(locationId)
+            if (location == null || creatureId !in location.creatureIds) {
+                call.respond(HttpStatusCode.BadRequest, CharmResponse(
+                    success = false,
+                    message = "That creature is not here."
+                ))
+                return@post
+            }
+
+            val creature = CreatureRepository.findById(creatureId)
+            if (creature == null) {
+                call.respond(HttpStatusCode.NotFound, CharmResponse(
+                    success = false,
+                    message = "Creature not found."
+                ))
+                return@post
+            }
+
+            val result = com.ez2bg.anotherthread.game.CharmService.attemptCharm(user, creature, locationId)
+
+            val charmedInfo = result.charmedCreature?.let {
+                CharmCreatureInfo(
+                    id = it.id,
+                    creatureId = it.creatureId,
+                    creatureName = it.creatureName,
+                    currentHp = it.currentHp,
+                    maxHp = it.maxHp,
+                    remainingMinutes = it.remainingMinutes,
+                    imageUrl = it.imageUrl
+                )
+            }
+
+            call.respond(CharmResponse(
+                success = result.success,
+                message = result.message,
+                charmedCreature = charmedInfo
+            ))
+        }
+
+        /**
+         * Get the player's currently charmed creature (if any).
+         */
+        get("/{id}/charmed-creature") {
+            val id = call.parameters["id"] ?: return@get call.respond(HttpStatusCode.BadRequest)
+
+            val charmed = com.ez2bg.anotherthread.game.CharmService.getCharmedCreatureDto(id)
+
+            if (charmed == null) {
+                call.respond(HttpStatusCode.OK, mapOf("charmedCreature" to null))
+            } else {
+                call.respond(HttpStatusCode.OK, mapOf(
+                    "charmedCreature" to CharmCreatureInfo(
+                        id = charmed.id,
+                        creatureId = charmed.creatureId,
+                        creatureName = charmed.creatureName,
+                        currentHp = charmed.currentHp,
+                        maxHp = charmed.maxHp,
+                        remainingMinutes = charmed.remainingMinutes,
+                        imageUrl = charmed.imageUrl
+                    )
+                ))
+            }
+        }
+
+        /**
+         * Release the player's charmed creature.
+         */
+        post("/{id}/release-charm") {
+            val id = call.parameters["id"] ?: return@post call.respond(HttpStatusCode.BadRequest)
+
+            val message = com.ez2bg.anotherthread.game.CharmService.releaseCharmedCreature(id)
+
+            call.respond(HttpStatusCode.OK, SimpleSuccessResponse(
+                success = true,
+                message = message
             ))
         }
 

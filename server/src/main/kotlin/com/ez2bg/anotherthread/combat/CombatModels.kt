@@ -86,7 +86,9 @@ data class Combatant(
     val constitution: Int = 10,               // CON stat for death threshold calculation
     val dexterity: Int = 10,                  // DEX stat for extra attacks calculation
     val attacksPerRound: Int = 1,             // Number of attacks per combat round (MajorMUD-style)
-    val partyLeaderId: String? = null         // Party leader ID for party-aware abilities (null = solo or is leader)
+    val partyLeaderId: String? = null,        // Party leader ID for party-aware abilities (null = solo or is leader)
+    val alliedToUserId: String? = null,       // For charmed creatures: the user who charmed them (attacks enemies, not players)
+    val charmedCreatureId: String? = null     // Database ID of the charmed creature record (for tracking damage/expiry)
 )
 
 /**
@@ -139,6 +141,12 @@ data class CombatSession(
     val alivePlayers: List<Combatant> get() = players.filter { it.isAlive }
     val aliveCreatures: List<Combatant> get() = creatures.filter { it.isAlive }
     val downedPlayers: List<Combatant> get() = players.filter { it.isDowned }
+    // Enemy creatures are creatures NOT allied to any player (not charmed)
+    val enemyCreatures: List<Combatant> get() = creatures.filter { it.alliedToUserId == null }
+    val aliveEnemyCreatures: List<Combatant> get() = enemyCreatures.filter { it.isAlive }
+    // Charmed creatures are allied to players
+    val charmedCreatures: List<Combatant> get() = creatures.filter { it.alliedToUserId != null }
+    val aliveCharmedCreatures: List<Combatant> get() = charmedCreatures.filter { it.isAlive }
 }
 
 // ============================================================================
