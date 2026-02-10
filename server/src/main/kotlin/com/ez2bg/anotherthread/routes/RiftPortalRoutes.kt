@@ -211,7 +211,7 @@ fun Route.riftPortalRoutes() {
             // Deduct mana
             UserRepository.spendMana(userId, 10)
 
-            // Create the new exit
+            // Create the exit TO the target area
             val newExit = Exit(
                 locationId = targetLocation.id,
                 direction = ExitDirection.ENTER  // Rift portals use ENTER direction
@@ -225,6 +225,20 @@ fun Route.riftPortalRoutes() {
 
             // Broadcast the exit addition to all players at this location
             LocationEventService.broadcastExitAdded(updatedLocation, newExit)
+
+            // Create the RETURN exit from target back to current location
+            // This ensures bidirectional travel through the rift
+            val returnExit = Exit(
+                locationId = currentLocation.id,
+                direction = ExitDirection.ENTER
+            )
+            val updatedTargetLocation = targetLocation.copy(
+                exits = targetLocation.exits + returnExit
+            )
+            LocationRepository.update(updatedTargetLocation)
+
+            // Broadcast the return exit addition to any players at the target
+            LocationEventService.broadcastExitAdded(updatedTargetLocation, returnExit)
 
             log.info("User $userId created rift portal from ${currentLocation.name} to ${targetLocation.name} in $targetAreaId")
 
@@ -366,13 +380,25 @@ fun Route.riftPortalRoutes() {
             // Deduct mana
             UserRepository.spendMana(userId, 5)
 
-            // Remove the exit
+            // Remove the exit from current location
             val updatedExits = currentLocation.exits.filter { it != exitToSeal }
             val updatedLocation = currentLocation.copy(exits = updatedExits)
             LocationRepository.update(updatedLocation)
 
             // Broadcast the exit removal to all players at this location
             LocationEventService.broadcastExitRemoved(updatedLocation, exitToSeal)
+
+            // Also remove the return exit from the target location
+            val targetLocation = LocationRepository.findById(exitToSeal.locationId)
+            if (targetLocation != null) {
+                val returnExit = targetLocation.exits.find { it.locationId == currentLocation.id && it.direction == ExitDirection.ENTER }
+                if (returnExit != null) {
+                    val updatedTargetExits = targetLocation.exits.filter { it != returnExit }
+                    val updatedTargetLocation = targetLocation.copy(exits = updatedTargetExits)
+                    LocationRepository.update(updatedTargetLocation)
+                    LocationEventService.broadcastExitRemoved(updatedTargetLocation, returnExit)
+                }
+            }
 
             log.info("User $userId sealed rift portal from ${currentLocation.name} to $targetAreaId")
 
