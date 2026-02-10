@@ -645,6 +645,7 @@ fun Route.userRoutes() {
 
         put("/{id}/location") {
             val id = call.parameters["id"] ?: return@put call.respond(HttpStatusCode.BadRequest)
+            try {
             val request = call.receive<UpdateLocationRequest>()
             log.info("Location update request: userId=$id, newLocation=${request.locationId}")
 
@@ -769,6 +770,10 @@ fun Route.userRoutes() {
                 }
             } else {
                 call.respond(HttpStatusCode.NotFound)
+            }
+            } catch (e: Exception) {
+                log.error("Location update failed for user $id", e)
+                call.respond(HttpStatusCode.InternalServerError, mapOf("error" to (e.message ?: "Unknown error")))
             }
         }
 
