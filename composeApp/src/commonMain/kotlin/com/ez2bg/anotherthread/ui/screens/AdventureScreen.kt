@@ -448,7 +448,7 @@ fun AdventureScreen(
                                     it.abilityType != "passive" && it.abilityType != "navigation" &&
                                     (it.targetType == "all_allies" || it.targetType == "single_ally")
                                 }
-                                val isInParty = displayUser?.partyLeaderId != null
+                                val isInParty = displayUser?.partyLeaderId != null || displayUser?.isPartyLeader == true
                                 if (isInParty) {
                                     Box(
                                         modifier = Modifier

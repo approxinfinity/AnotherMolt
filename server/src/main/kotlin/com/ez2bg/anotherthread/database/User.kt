@@ -103,6 +103,8 @@ data class UserResponse(
     val isSneaking: Boolean,
     // Party system: if set, user is following this leader
     val partyLeaderId: String?,
+    // Party system: true if this user has followers (is a party leader)
+    val isPartyLeader: Boolean,
     // Generated appearance description based on equipment
     val appearanceDescription: String
 )
@@ -147,6 +149,7 @@ fun User.toResponse(): UserResponse {
         isHidden = isHidden,
         isSneaking = isSneaking,
         partyLeaderId = partyLeaderId,
+        isPartyLeader = UserRepository.findFollowers(id).isNotEmpty(),
         appearanceDescription = UserRepository.generateAppearanceDescription(this)
     )
 }

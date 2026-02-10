@@ -199,6 +199,8 @@ data class UserDto(
     val isSneaking: Boolean = false,  // Moving stealthily
     // Party system: if set, user is following this leader
     val partyLeaderId: String? = null,
+    // Party system: true if this user has followers (is a party leader)
+    val isPartyLeader: Boolean = false,
     // Generated appearance based on equipment
     val appearanceDescription: String = ""
 )
