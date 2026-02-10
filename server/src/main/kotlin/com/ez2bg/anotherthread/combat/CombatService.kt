@@ -2826,7 +2826,7 @@ object CombatService {
             // Broadcast item drops to players at this location so the UI updates
             location?.let { loc ->
                 droppedItems.forEach { item ->
-                    LocationEventService.broadcastItemAdded(loc, item.id, item.name)
+                    LocationEventService.broadcastItemAdded(loc, item.id)
                 }
             }
         }
