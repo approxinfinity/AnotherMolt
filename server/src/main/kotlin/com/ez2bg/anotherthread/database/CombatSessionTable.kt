@@ -9,7 +9,7 @@ import org.jetbrains.exposed.sql.Table
  */
 object CombatSessionTable : Table("combat_session") {
     val id = varchar("id", 36)
-    val locationId = varchar("location_id", 36)
+    val locationId = text("location_id")  // Human-readable location IDs can exceed 36 chars
     val state = varchar("state", 20)  // WAITING, ACTIVE, ENDED
     val currentRound = integer("current_round")
     val roundStartTime = long("round_start_time")

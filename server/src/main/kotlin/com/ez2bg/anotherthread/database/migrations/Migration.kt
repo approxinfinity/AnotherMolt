@@ -52,7 +52,8 @@ object MigrationRunner {
         V008_DropClassGenerationStartedAt(),
         V009_AddVisibleAbilityIds(),
         V010_AddPartyFields(),
-        V011_WidenLocationIdColumn()
+        V011_WidenLocationIdColumn(),
+        V012_WidenAllLocationIdColumns()
     )
 
     /**

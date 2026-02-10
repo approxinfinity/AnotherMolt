@@ -6,7 +6,7 @@ object ChestTable : Table("chest") {
     val id = varchar("id", 36)
     val name = text("name")
     val desc = text("desc")
-    val locationId = varchar("location_id", 36)
+    val locationId = text("location_id")  // Human-readable location IDs can exceed 36 chars
     val guardianCreatureId = varchar("guardian_creature_id", 36).nullable()  // Must defeat this creature first
     val isLocked = bool("is_locked").default(true)
     val lockDifficulty = integer("lock_difficulty").default(1)  // 1-5 scale for pick lock

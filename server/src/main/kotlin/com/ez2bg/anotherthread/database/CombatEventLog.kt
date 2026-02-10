@@ -95,7 +95,7 @@ data class CombatEventLog(
 object CombatEventLogTable : Table("combat_event_log") {
     val id = varchar("id", 36)
     val sessionId = varchar("session_id", 36)
-    val locationId = varchar("location_id", 36)
+    val locationId = text("location_id")  // Human-readable location IDs can exceed 36 chars
     val locationName = varchar("location_name", 255)
     val eventType = varchar("event_type", 50)
     val roundNumber = integer("round_number")

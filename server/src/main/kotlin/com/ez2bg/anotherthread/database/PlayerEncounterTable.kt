@@ -8,7 +8,7 @@ object PlayerEncounterTable : Table("player_encounter") {
     val encounteredUserId = varchar("encountered_user_id", 36)
     val firstEncounteredAt = long("first_encountered_at")
     val lastEncounteredAt = long("last_encountered_at")
-    val lastLocationId = varchar("last_location_id", 36).nullable()
+    val lastLocationId = text("last_location_id").nullable()  // Human-readable location IDs can exceed 36 chars
     val classification = text("classification").default("neutral") // "friend", "enemy", "neutral"
     val lastKnownDesc = text("last_known_desc").default("")
     val lastKnownImageUrl = text("last_known_image_url").nullable()
