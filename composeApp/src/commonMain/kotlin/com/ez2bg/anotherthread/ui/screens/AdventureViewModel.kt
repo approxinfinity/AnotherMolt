@@ -710,6 +710,7 @@ class AdventureViewModel {
                 allAbilities.filter { it.id in visibleIds }
             }
 
+            println("[Phasewalk] loadPlayerAbilities complete, setting hasPhasewalkAbility=$hasPhasewalk")
             _localState.update {
                 it.copy(
                     playerAbilities = displayedAbilities,
@@ -718,10 +719,11 @@ class AdventureViewModel {
                 )
             }
 
-            // 4. If player has phasewalk, load destinations
+            // 4. If player has phasewalk, load destinations - otherwise clear them
             if (hasPhasewalk) {
                 loadPhasewalkDestinations()
             } else {
+                println("[Phasewalk] Player doesn't have phasewalk, clearing destinations")
                 _localState.update { it.copy(phasewalkDestinations = emptyList()) }
             }
         }
@@ -852,8 +854,10 @@ class AdventureViewModel {
                     logError("Failed to move: ${error.message}")
                 }
 
-            // Load phasewalk destinations for the new location
-            loadPhasewalkDestinations()
+            // Load phasewalk destinations for the new location (only if player has phasewalk)
+            if (_localState.value.hasPhasewalkAbility) {
+                loadPhasewalkDestinations()
+            }
         }
     }
 
@@ -867,8 +871,12 @@ class AdventureViewModel {
      * Local computation uses the client's authoritative location state.
      */
     fun loadPhasewalkDestinations() {
+        val hasPhasewalk = _localState.value.hasPhasewalkAbility
+        println("[Phasewalk] loadPhasewalkDestinations called, hasPhasewalkAbility=$hasPhasewalk")
+
         // Only compute/load if player has phasewalk ability
-        if (!_localState.value.hasPhasewalkAbility) {
+        if (!hasPhasewalk) {
+            println("[Phasewalk] Clearing destinations - player doesn't have phasewalk")
             _localState.update { it.copy(phasewalkDestinations = emptyList()) }
             return
         }
@@ -993,8 +1001,10 @@ class AdventureViewModel {
                     // But we do need to persist the location locally so it survives page refresh
                     UserStateHolder.updateLocationLocally(response.newLocationId)
 
-                    // Load phasewalk destinations for the new location
-                    loadPhasewalkDestinations()
+                    // Load phasewalk destinations for the new location (phasewalk ability already confirmed)
+                    if (_localState.value.hasPhasewalkAbility) {
+                        loadPhasewalkDestinations()
+                    }
                 } else {
                     logError(response.message)
                 }
@@ -1212,6 +1222,12 @@ class AdventureViewModel {
             return
         }
 
+        // Handle track ability — works outside combat
+        if (ability.effects.contains("\"type\":\"track\"")) {
+            handleTrackAbility(ability)
+            return
+        }
+
         val needToJoinCombat = !CombatStateHolder.isInCombat
         if (needToJoinCombat) {
             // AoE abilities can initiate combat with all hostiles
@@ -1281,6 +1297,65 @@ class AdventureViewModel {
 
     fun cancelAbilityTargeting() {
         _localState.update { it.copy(pendingAbility = null) }
+    }
+
+    // =========================================================================
+    // TRACK
+    // =========================================================================
+
+    private fun handleTrackAbility(ability: AbilityDto) {
+        if (CombatStateHolder.isInCombat) {
+            showSnackbar("Cannot track while in combat!")
+            return
+        }
+
+        val userId = UserStateHolder.userId ?: return
+
+        scope.launch {
+            logMessage("You kneel down and examine the ground for tracks...")
+
+            ApiClient.trackLocation(userId).onSuccess { result ->
+                // Log the main message
+                logMessage(result.message)
+
+                // Log details about each detected trail
+                for (trail in result.trails) {
+                    val freshnessEmoji = when (trail.freshness) {
+                        "fresh" -> "[!]"
+                        "recent" -> "[~]"
+                        "old" -> "[.]"
+                        else -> "[?]"
+                    }
+
+                    val directionInfo = buildString {
+                        if (trail.directionFrom != null) {
+                            append("from ${trail.directionFrom}")
+                        }
+                        if (trail.directionTo != null) {
+                            if (trail.directionFrom != null) append(", ")
+                            append("heading ${trail.directionTo}")
+                        }
+                    }.ifEmpty { "origin unknown" }
+
+                    val timeAgo = when {
+                        trail.minutesAgo < 1 -> "moments ago"
+                        trail.minutesAgo == 1 -> "1 minute ago"
+                        trail.minutesAgo < 60 -> "${trail.minutesAgo} minutes ago"
+                        else -> "${trail.minutesAgo / 60} hours ago"
+                    }
+
+                    val entityDesc = if (trail.entityType == "player") {
+                        trail.entityName
+                    } else {
+                        "A ${trail.entityName}"
+                    }
+
+                    logMessage("$freshnessEmoji $entityDesc - $directionInfo ($timeAgo)")
+                }
+            }.onFailure { error ->
+                logError("Failed to track: ${error.message}")
+            }
+        }
     }
 
     // =========================================================================

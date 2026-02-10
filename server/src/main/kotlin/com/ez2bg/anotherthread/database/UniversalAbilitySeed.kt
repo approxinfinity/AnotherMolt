@@ -8,6 +8,7 @@ object UniversalAbilitySeed {
     const val BASIC_ATTACK_ID = "universal-basic-attack"
     const val AID_ABILITY_ID = "universal-aid"
     const val DRAG_ABILITY_ID = "universal-drag"
+    const val TRACK_ABILITY_ID = "universal-track"
 
     /**
      * Seeds universal abilities if they don't exist.
@@ -16,6 +17,7 @@ object UniversalAbilitySeed {
         seedBasicAttack()
         seedAidAbility()
         seedDragAbility()
+        seedTrackAbility()
     }
 
     private fun seedBasicAttack() {
@@ -95,5 +97,31 @@ object UniversalAbilitySeed {
             )
         )
         println("Seeded drag ability")
+    }
+
+    private fun seedTrackAbility() {
+        if (AbilityRepository.findById(TRACK_ABILITY_ID) != null) {
+            return
+        }
+
+        // Track - detect trails of players and creatures who passed through
+        AbilityRepository.create(
+            Ability(
+                id = TRACK_ABILITY_ID,
+                name = "Track",
+                description = "Search for tracks and trails left by creatures and players who passed through this area. Wisdom and tracker-type classes improve detection. Fresher trails are easier to find.",
+                classId = null,  // Universal - available to all classes
+                abilityType = "utility",
+                targetType = "self",  // Area search centered on self
+                range = 0,
+                cooldownType = "short",
+                cooldownRounds = 0,  // No combat cooldown, but has minor stamina cost
+                baseDamage = 0,
+                effects = """[{"type":"track"}]""",
+                powerCost = 0,
+                staminaCost = 2  // Small stamina cost to search for tracks
+            )
+        )
+        println("Seeded track ability")
     }
 }

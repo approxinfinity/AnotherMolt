@@ -326,6 +326,23 @@ data class SearchResultDto(
 )
 
 @Serializable
+data class TrackResultDto(
+    val success: Boolean,
+    val message: String,
+    val trails: List<TrailInfoDto> = emptyList()
+)
+
+@Serializable
+data class TrailInfoDto(
+    val entityType: String,
+    val entityName: String,
+    val directionFrom: String?,
+    val directionTo: String?,
+    val freshness: String,
+    val minutesAgo: Int
+)
+
+@Serializable
 data class IconMappingDto(
     val abilityId: String,
     val iconName: String
@@ -1357,6 +1374,15 @@ object ApiClient {
      */
     suspend fun searchLocation(userId: String): Result<SearchResultDto> = apiCall {
         client.post("$baseUrl/users/$userId/search").body()
+    }
+
+    /**
+     * Track the current location for trails of players and creatures.
+     * Wisdom and tracker-type classes have bonuses.
+     * Fresher trails are easier to detect.
+     */
+    suspend fun trackLocation(userId: String): Result<TrackResultDto> = apiCall {
+        client.post("$baseUrl/users/$userId/track").body()
     }
 
     suspend fun updateUserClass(id: String, classId: String?): Result<UserDto> = apiCall {

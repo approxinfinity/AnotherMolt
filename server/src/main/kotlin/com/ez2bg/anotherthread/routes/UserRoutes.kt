@@ -73,6 +73,23 @@ data class RobResultResponse(
     val itemsStolen: List<String> = emptyList()
 )
 
+@Serializable
+data class TrackResponse(
+    val success: Boolean,
+    val message: String,
+    val trails: List<TrailInfo> = emptyList()
+)
+
+@Serializable
+data class TrailInfo(
+    val entityType: String,
+    val entityName: String,
+    val directionFrom: String?,
+    val directionTo: String?,
+    val freshness: String,
+    val minutesAgo: Int
+)
+
 /**
  * Auth routes for user registration and login.
  * Base path: /auth
@@ -465,6 +482,49 @@ fun Route.userRoutes() {
         }
 
         /**
+         * Track the current location for trails of players and creatures.
+         * Wisdom and tracker-type classes have bonuses.
+         * Fresher trails are easier to detect.
+         */
+        post("/{id}/track") {
+            val id = call.parameters["id"] ?: return@post call.respond(HttpStatusCode.BadRequest)
+            val user = UserRepository.findById(id)
+            if (user == null) {
+                call.respond(HttpStatusCode.NotFound)
+                return@post
+            }
+
+            val locationId = user.currentLocationId
+            if (locationId == null) {
+                call.respond(HttpStatusCode.BadRequest, TrackResponse(
+                    success = false,
+                    message = "You are not at a valid location."
+                ))
+                return@post
+            }
+
+            val result = com.ez2bg.anotherthread.game.TrackingService.attemptTrack(user, locationId)
+
+            // Convert to response DTOs
+            val trailInfos = result.trails.map { trail ->
+                TrailInfo(
+                    entityType = trail.entityType,
+                    entityName = trail.entityName,
+                    directionFrom = trail.directionFrom,
+                    directionTo = trail.directionTo,
+                    freshness = trail.freshness,
+                    minutesAgo = trail.minutesAgo
+                )
+            }
+
+            call.respond(TrackResponse(
+                success = result.success,
+                message = result.message,
+                trails = trailInfos
+            ))
+        }
+
+        /**
          * Stop hiding/sneaking and become visible.
          */
         post("/{id}/reveal") {
@@ -708,6 +768,32 @@ fun Route.userRoutes() {
                 if (newLocation != null && request.locationId != oldLocationId) {
                     log.info("Location update: Broadcasting PLAYER_ENTERED to ${newLocation.name}")
                     LocationEventService.broadcastPlayerEntered(newLocation, id, userName)
+
+                    // Record movement trails for tracking
+                    val directionTo = oldLocation?.exits?.find { it.locationId == request.locationId }?.direction?.name
+                    val directionFrom = newLocation.exits.find { it.locationId == oldLocationId }?.direction?.name
+
+                    // Trail at old location: player left toward new location
+                    if (oldLocation != null) {
+                        com.ez2bg.anotherthread.game.TrackingService.recordMovement(
+                            locationId = oldLocation.id,
+                            entityId = id,
+                            entityType = "player",
+                            entityName = userName,
+                            directionFrom = null,
+                            directionTo = directionTo
+                        )
+                    }
+
+                    // Trail at new location: player arrived from old location
+                    com.ez2bg.anotherthread.game.TrackingService.recordMovement(
+                        locationId = newLocation.id,
+                        entityId = id,
+                        entityType = "player",
+                        entityName = userName,
+                        directionFrom = directionFrom,
+                        directionTo = null
+                    )
                 } else {
                     log.info("Location update: Skipping PLAYER_ENTERED (newLocation null or same location)")
                 }
@@ -733,6 +819,29 @@ fun Route.userRoutes() {
 
                         // Broadcast follower entered new location
                         LocationEventService.broadcastPlayerEntered(newLocation, follower.id, follower.name)
+
+                        // Record movement trails for follower (same directions as leader)
+                        val directionTo = oldLocation?.exits?.find { it.locationId == request.locationId }?.direction?.name
+                        val directionFrom = newLocation.exits.find { it.locationId == oldLocationId }?.direction?.name
+
+                        if (oldLocation != null) {
+                            com.ez2bg.anotherthread.game.TrackingService.recordMovement(
+                                locationId = oldLocation.id,
+                                entityId = follower.id,
+                                entityType = "player",
+                                entityName = follower.name,
+                                directionFrom = null,
+                                directionTo = directionTo
+                            )
+                        }
+                        com.ez2bg.anotherthread.game.TrackingService.recordMovement(
+                            locationId = newLocation.id,
+                            entityId = follower.id,
+                            entityType = "player",
+                            entityName = follower.name,
+                            directionFrom = directionFrom,
+                            directionTo = null
+                        )
 
                         // Notify follower that they followed
                         LocationEventService.sendPartyFollowMove(
