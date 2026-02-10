@@ -6,6 +6,17 @@ This document tracks future feature ideas, known issues, and design decisions th
 
 ## Known Issues / Bugs
 
+### TODO: Test Charm System
+Manually test the newly implemented charm system:
+- [ ] Use Charm ability on a charmable creature (not undead/boss/demon/elemental)
+- [ ] Verify charmed creature follows player to new locations
+- [ ] Enter combat and confirm charmed creature fights alongside player
+- [ ] Test charm duration expires correctly
+- [ ] Test charm breaks when creature takes heavy damage
+- [ ] Test releasing a charmed creature manually
+- [ ] Test charm failure with immune creature types
+- [ ] Test class bonus for bard/enchanter/mesmer classes
+
 ### Connection Line Terrain Awareness
 The dotted connection lines between location exits have terrain-aware pathfinding code, but it doesn't seem to be working correctly. The paths should:
 - Curve around lakes, mountains, swamps
