@@ -1167,7 +1167,18 @@ fun AdventureScreen(
                     showInspectionModal = false
                     showLocationDetailPopup = true
                 },
+                onSearch = { viewModel.searchLocation() },
+                onHide = { viewModel.openHideItemModal() },
                 onDismiss = { showInspectionModal = false }
+            )
+        }
+
+        // Hide Item Modal - shows items that can be hidden
+        if (uiState.showHideItemModal) {
+            HideItemModal(
+                items = uiState.hideableItems,
+                onSelectItem = { item -> viewModel.hideItem(item) },
+                onDismiss = { viewModel.cancelHideItem() }
             )
         }
 
@@ -3304,6 +3315,7 @@ private fun PlayerActionButton(
 /**
  * Modal for inspecting/looking at things in the room.
  * Shows a scrollable list of creatures, items, players, and the location itself.
+ * Also provides Search and Hide actions.
  */
 @Composable
 private fun InspectionModal(
@@ -3315,6 +3327,8 @@ private fun InspectionModal(
     onInspectItem: (ItemDto) -> Unit,
     onInspectPlayer: (UserDto) -> Unit,
     onInspectLocation: () -> Unit,
+    onSearch: () -> Unit,
+    onHide: () -> Unit,
     onDismiss: () -> Unit
 ) {
     val scrollState = rememberScrollState()
@@ -3362,6 +3376,56 @@ private fun InspectionModal(
                         fontWeight = FontWeight.Bold
                     )
                 }
+
+                // Action buttons (Search and Hide)
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    // Search button
+                    Button(
+                        onClick = {
+                            onSearch()
+                            onDismiss()
+                        },
+                        modifier = Modifier.weight(1f),
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = Color(0xFF795548)
+                        ),
+                        shape = RoundedCornerShape(8.dp)
+                    ) {
+                        Icon(
+                            Icons.Filled.Search,
+                            contentDescription = null,
+                            modifier = Modifier.size(18.dp)
+                        )
+                        Spacer(modifier = Modifier.width(4.dp))
+                        Text("Search")
+                    }
+
+                    // Hide button
+                    Button(
+                        onClick = {
+                            onHide()
+                            onDismiss()
+                        },
+                        modifier = Modifier.weight(1f),
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = Color(0xFF607D8B)
+                        ),
+                        shape = RoundedCornerShape(8.dp)
+                    ) {
+                        Icon(
+                            Icons.Filled.Close,
+                            contentDescription = null,
+                            modifier = Modifier.size(18.dp)
+                        )
+                        Spacer(modifier = Modifier.width(4.dp))
+                        Text("Hide")
+                    }
+                }
+
+                HorizontalDivider(color = Color.White.copy(alpha = 0.2f))
 
                 // Location section
                 InspectionItem(
@@ -3496,6 +3560,136 @@ private fun InspectionItem(
             tint = Color.White.copy(alpha = 0.5f),
             modifier = Modifier.size(20.dp)
         )
+    }
+}
+
+// =============================================================================
+// HIDE ITEM MODAL
+// =============================================================================
+
+/**
+ * Modal for selecting an item to hide at the current location.
+ * Hidden items require searching to find.
+ */
+@Composable
+private fun HideItemModal(
+    items: List<ItemDto>,
+    onSelectItem: (ItemDto) -> Unit,
+    onDismiss: () -> Unit
+) {
+    val scrollState = rememberScrollState()
+
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(Color.Black.copy(alpha = 0.7f))
+            .clickable(onClick = onDismiss),
+        contentAlignment = Alignment.Center
+    ) {
+        Card(
+            modifier = Modifier
+                .widthIn(max = 340.dp)
+                .heightIn(max = 400.dp)
+                .clickable(enabled = false) { /* Prevent click-through */ },
+            shape = RoundedCornerShape(16.dp),
+            colors = CardDefaults.cardColors(
+                containerColor = Color(0xFF2A2A3E)
+            )
+        ) {
+            Column(
+                modifier = Modifier
+                    .padding(20.dp)
+                    .verticalScroll(scrollState),
+                verticalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
+                // Header
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.Center,
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Icon(
+                        Icons.Filled.Close,
+                        contentDescription = null,
+                        tint = Color(0xFF607D8B),
+                        modifier = Modifier.size(24.dp)
+                    )
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text(
+                        text = "Hide Item",
+                        style = MaterialTheme.typography.titleLarge,
+                        color = Color.White,
+                        fontWeight = FontWeight.Bold
+                    )
+                }
+
+                Text(
+                    text = "Select an item to hide. Others will need to search to find it.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = Color.White.copy(alpha = 0.6f),
+                    textAlign = TextAlign.Center,
+                    modifier = Modifier.fillMaxWidth()
+                )
+
+                HorizontalDivider(color = Color.White.copy(alpha = 0.2f))
+
+                // Item list
+                items.forEach { item ->
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clip(RoundedCornerShape(8.dp))
+                            .background(Color(0xFF607D8B).copy(alpha = 0.1f))
+                            .clickable { onSelectItem(item) }
+                            .padding(12.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Icon(
+                            Icons.Filled.Star,
+                            contentDescription = null,
+                            tint = Color(0xFF4CAF50),
+                            modifier = Modifier.size(24.dp)
+                        )
+                        Spacer(modifier = Modifier.width(12.dp))
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                text = item.name,
+                                style = MaterialTheme.typography.bodyLarge,
+                                color = Color.White,
+                                fontWeight = FontWeight.Medium
+                            )
+                            if (item.desc.isNotEmpty()) {
+                                Text(
+                                    text = item.desc.take(50) + if (item.desc.length > 50) "..." else "",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = Color.White.copy(alpha = 0.6f),
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis
+                                )
+                            }
+                        }
+                        Icon(
+                            Icons.Filled.Close,
+                            contentDescription = "Hide",
+                            tint = Color.White.copy(alpha = 0.5f),
+                            modifier = Modifier.size(20.dp)
+                        )
+                    }
+                }
+
+                // Cancel button
+                Button(
+                    onClick = onDismiss,
+                    modifier = Modifier.fillMaxWidth(),
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = Color.White.copy(alpha = 0.1f)
+                    ),
+                    shape = RoundedCornerShape(8.dp)
+                ) {
+                    Text("Cancel", color = Color.White)
+                }
+            }
+        }
     }
 }
 

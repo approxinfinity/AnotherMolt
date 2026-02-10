@@ -60,6 +60,13 @@ data class SimpleSuccessResponse(
 )
 
 @Serializable
+data class HideItemResponse(
+    val success: Boolean,
+    val message: String,
+    val user: UserResponse? = null
+)
+
+@Serializable
 data class ErrorResponse(
     val error: String
 )
@@ -1278,6 +1285,63 @@ fun Route.userRoutes() {
 
             val updatedUser = UserRepository.findById(userId)!!
             call.respond(HttpStatusCode.OK, updatedUser.toResponse())
+        }
+
+        // Hide an item from inventory at current location (immediately hidden, requires search to find)
+        post("/{id}/hide/{itemId}") {
+            val userId = call.parameters["id"] ?: return@post call.respond(HttpStatusCode.BadRequest)
+            val itemId = call.parameters["itemId"] ?: return@post call.respond(HttpStatusCode.BadRequest)
+
+            val user = UserRepository.findById(userId)
+            if (user == null) {
+                call.respond(HttpStatusCode.NotFound, mapOf("error" to "User not found"))
+                return@post
+            }
+
+            // Check user has the item
+            if (itemId !in user.itemIds) {
+                call.respond(HttpStatusCode.BadRequest, mapOf("error" to "You don't have that item"))
+                return@post
+            }
+
+            // Get user's current location
+            val locationId = user.currentLocationId
+            if (locationId == null) {
+                call.respond(HttpStatusCode.BadRequest, mapOf("error" to "You must be at a location to hide items"))
+                return@post
+            }
+
+            val location = LocationRepository.findById(locationId)
+            if (location == null) {
+                call.respond(HttpStatusCode.BadRequest, mapOf("error" to "Location not found"))
+                return@post
+            }
+
+            // Check if item is equipped - must unequip first
+            if (itemId in user.equippedItemIds) {
+                call.respond(HttpStatusCode.BadRequest, mapOf("error" to "You must unequip this item before hiding it"))
+                return@post
+            }
+
+            // Get item info for response message
+            val item = ItemRepository.findById(itemId)
+            val itemName = item?.name ?: "Unknown Item"
+
+            // Remove ONE instance of the item from user inventory
+            val updatedItemIds = user.itemIds.toMutableList()
+            updatedItemIds.remove(itemId)
+            UserRepository.update(user.copy(itemIds = updatedItemIds))
+
+            // Add item to location as HIDDEN (will require search to find)
+            // Note: We don't add to location.itemIds since hidden items aren't visible
+            LocationItemRepository.addHiddenItem(locationId, itemId, userId)
+
+            val updatedUser = UserRepository.findById(userId)!!
+            call.respond(HttpStatusCode.OK, HideItemResponse(
+                success = true,
+                message = "You carefully hide the $itemName.",
+                user = updatedUser.toResponse()
+            ))
         }
 
         // Give an item to another player at the same location

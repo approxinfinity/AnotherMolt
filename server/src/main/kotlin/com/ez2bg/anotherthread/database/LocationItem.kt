@@ -97,6 +97,29 @@ object LocationItemRepository {
     }
 
     /**
+     * Add a hidden item to a location (immediately hidden, requires search to find).
+     * Sets droppedAt to the past so isHidden() returns true.
+     */
+    fun addHiddenItem(locationId: String, itemId: String, droppedByUserId: String? = null): LocationItem = transaction {
+        val locationItem = LocationItem(
+            locationId = locationId,
+            itemId = itemId,
+            droppedByUserId = droppedByUserId,
+            droppedAt = System.currentTimeMillis() - LocationItem.HIDDEN_AFTER_MS - 1000  // Set in past to make immediately hidden
+        )
+
+        LocationItemTable.insert {
+            it[id] = locationItem.id
+            it[LocationItemTable.locationId] = locationItem.locationId
+            it[LocationItemTable.itemId] = locationItem.itemId
+            it[droppedAt] = locationItem.droppedAt
+            it[LocationItemTable.droppedByUserId] = locationItem.droppedByUserId
+        }
+
+        locationItem
+    }
+
+    /**
      * Add multiple items at once (e.g., loot drop from combat).
      */
     fun addItems(locationId: String, itemIds: List<String>, droppedByUserId: String? = null): List<LocationItem> = transaction {

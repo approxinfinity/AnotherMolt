@@ -328,6 +328,13 @@ data class SearchResultDto(
 )
 
 @Serializable
+data class HideItemResultDto(
+    val success: Boolean,
+    val message: String,
+    val user: UserDto? = null
+)
+
+@Serializable
 data class TrackResultDto(
     val success: Boolean,
     val message: String,
@@ -1397,6 +1404,14 @@ object ApiClient {
      */
     suspend fun searchLocation(userId: String): Result<SearchResultDto> = apiCall {
         client.post("$baseUrl/users/$userId/search").body()
+    }
+
+    /**
+     * Hide an item from inventory at the current location.
+     * The item will be immediately hidden and require searching to find.
+     */
+    suspend fun hideItem(userId: String, itemId: String): Result<HideItemResultDto> = apiCall {
+        client.post("$baseUrl/users/$userId/hide/$itemId").body()
     }
 
     /**

@@ -91,7 +91,10 @@ data class AdventureLocalState(
     val puzzlesAtLocation: List<PuzzleDto> = emptyList(),
     // Charm state
     val showCharmTargetSelection: Boolean = false,
-    val charmableCreatures: List<CreatureDto> = emptyList()
+    val charmableCreatures: List<CreatureDto> = emptyList(),
+    // Hide item state
+    val showHideItemModal: Boolean = false,
+    val hideableItems: List<ItemDto> = emptyList()
 )
 
 /**
@@ -165,7 +168,10 @@ data class AdventureUiState(
     val puzzlesAtLocation: List<PuzzleDto> = emptyList(),
     // Charm state
     val showCharmTargetSelection: Boolean = false,
-    val charmableCreatures: List<CreatureDto> = emptyList()
+    val charmableCreatures: List<CreatureDto> = emptyList(),
+    // Hide item state
+    val showHideItemModal: Boolean = false,
+    val hideableItems: List<ItemDto> = emptyList()
 ) {
     // Derived properties
     val currentLocation: LocationDto?
@@ -322,7 +328,9 @@ class AdventureViewModel {
             isLoadingPuzzle = local.isLoadingPuzzle,
             puzzlesAtLocation = local.puzzlesAtLocation,
             showCharmTargetSelection = local.showCharmTargetSelection,
-            charmableCreatures = local.charmableCreatures
+            charmableCreatures = local.charmableCreatures,
+            showHideItemModal = local.showHideItemModal,
+            hideableItems = local.hideableItems
         )
     }.stateIn(
         scope = scope,
@@ -1499,6 +1507,83 @@ class AdventureViewModel {
             }.onFailure { error ->
                 logError("Failed to release: ${error.message}")
             }
+        }
+    }
+
+    // =========================================================================
+    // SEARCH
+    // =========================================================================
+
+    fun searchLocation() {
+        val userId = UserStateHolder.userId ?: return
+
+        scope.launch {
+            ApiClient.searchLocation(userId).onSuccess { result ->
+                logMessage(result.message)
+                if (result.discoveredItems.isNotEmpty()) {
+                    // Refresh location to show newly discovered items
+                    AdventureStateHolder.refreshCurrentLocation()
+                }
+            }.onFailure { error ->
+                logError("Failed to search: ${error.message}")
+            }
+        }
+    }
+
+    // =========================================================================
+    // HIDE ITEM
+    // =========================================================================
+
+    fun openHideItemModal() {
+        val user = UserStateHolder.currentUser.value ?: return
+
+        // Get items from user inventory that are not equipped
+        val allItems = AdventureRepository.items.value
+        val hideableItems = user.itemIds
+            .filter { it !in user.equippedItemIds }  // Exclude equipped items
+            .mapNotNull { itemId -> allItems.find { it.id == itemId } }
+
+        if (hideableItems.isEmpty()) {
+            logMessage("You have nothing to hide.")
+            return
+        }
+
+        _localState.update {
+            it.copy(
+                showHideItemModal = true,
+                hideableItems = hideableItems
+            )
+        }
+    }
+
+    fun hideItem(item: ItemDto) {
+        val userId = UserStateHolder.userId ?: return
+
+        // Close the modal
+        _localState.update {
+            it.copy(
+                showHideItemModal = false,
+                hideableItems = emptyList()
+            )
+        }
+
+        scope.launch {
+            ApiClient.hideItem(userId, item.id).onSuccess { result ->
+                logMessage(result.message)
+                // Refresh user to update inventory
+                UserStateHolder.refreshUser()
+            }.onFailure { error ->
+                logError("Failed to hide item: ${error.message}")
+            }
+        }
+    }
+
+    fun cancelHideItem() {
+        _localState.update {
+            it.copy(
+                showHideItemModal = false,
+                hideableItems = emptyList()
+            )
         }
     }
 
