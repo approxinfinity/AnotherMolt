@@ -17,6 +17,11 @@ import kotlinx.serialization.Serializable
 data class SetIconMappingRequest(val iconName: String)
 
 @Serializable
+data class SearchInfoResponse(
+    val durationMs: Long
+)
+
+@Serializable
 data class SearchResponse(
     val success: Boolean,
     val message: String,
@@ -465,6 +470,22 @@ fun Route.userRoutes() {
                 "isSneaking" to result.success,
                 "stealthValue" to result.stealthValue
             ))
+        }
+
+        /**
+         * Get search info (duration) before starting a search.
+         * Client uses this to show spinner for appropriate duration.
+         */
+        get("/{id}/search/info") {
+            val id = call.parameters["id"] ?: return@get call.respond(HttpStatusCode.BadRequest)
+            val user = UserRepository.findById(id)
+            if (user == null) {
+                call.respond(HttpStatusCode.NotFound)
+                return@get
+            }
+
+            val durationMs = com.ez2bg.anotherthread.game.SearchService.getSearchDurationMs(user)
+            call.respond(SearchInfoResponse(durationMs = durationMs))
         }
 
         /**

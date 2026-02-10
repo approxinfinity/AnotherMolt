@@ -141,4 +141,19 @@ object SearchService {
     fun getHiddenItemCount(locationId: String, userId: String): Int {
         return LocationItemRepository.getHiddenItemsForUser(locationId, userId).size
     }
+
+    /**
+     * Calculate search duration for a user based on their stats.
+     * Higher INT, WIS, and level reduce search time.
+     */
+    fun getSearchDurationMs(user: User): Long {
+        val characterClass = user.characterClassId?.let { CharacterClassRepository.findById(it) }
+        val classBonus = getSearchClassBonus(characterClass)
+        return StatModifierService.searchDurationMs(
+            intelligence = user.intelligence,
+            wisdom = user.wisdom,
+            level = user.level,
+            classBonus = classBonus
+        )
+    }
 }

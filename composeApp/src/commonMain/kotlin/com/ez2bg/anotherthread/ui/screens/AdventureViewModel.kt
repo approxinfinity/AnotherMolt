@@ -94,7 +94,10 @@ data class AdventureLocalState(
     val charmableCreatures: List<CreatureDto> = emptyList(),
     // Hide item state
     val showHideItemModal: Boolean = false,
-    val hideableItems: List<ItemDto> = emptyList()
+    val hideableItems: List<ItemDto> = emptyList(),
+    // Search state
+    val isSearching: Boolean = false,
+    val searchDurationMs: Long = 0
 )
 
 /**
@@ -171,7 +174,10 @@ data class AdventureUiState(
     val charmableCreatures: List<CreatureDto> = emptyList(),
     // Hide item state
     val showHideItemModal: Boolean = false,
-    val hideableItems: List<ItemDto> = emptyList()
+    val hideableItems: List<ItemDto> = emptyList(),
+    // Search state
+    val isSearching: Boolean = false,
+    val searchDurationMs: Long = 0
 ) {
     // Derived properties
     val currentLocation: LocationDto?
@@ -330,7 +336,9 @@ class AdventureViewModel {
             showCharmTargetSelection = local.showCharmTargetSelection,
             charmableCreatures = local.charmableCreatures,
             showHideItemModal = local.showHideItemModal,
-            hideableItems = local.hideableItems
+            hideableItems = local.hideableItems,
+            isSearching = local.isSearching,
+            searchDurationMs = local.searchDurationMs
         )
     }.stateIn(
         scope = scope,
@@ -1517,17 +1525,42 @@ class AdventureViewModel {
     fun searchLocation() {
         val userId = UserStateHolder.userId ?: return
 
+        // Already searching
+        if (_localState.value.isSearching) return
+
         scope.launch {
-            ApiClient.searchLocation(userId).onSuccess { result ->
-                logMessage(result.message)
-                if (result.discoveredItems.isNotEmpty()) {
-                    // Refresh location to show newly discovered items
-                    AdventureStateHolder.refreshCurrentLocation()
+            // First get the search duration
+            ApiClient.getSearchInfo(userId).onSuccess { info ->
+                // Show the search overlay
+                _localState.update { it.copy(isSearching = true, searchDurationMs = info.durationMs) }
+
+                // Wait for the search duration
+                kotlinx.coroutines.delay(info.durationMs)
+
+                // Now perform the actual search
+                ApiClient.searchLocation(userId).onSuccess { result ->
+                    logMessage(result.message)
+                    if (result.discoveredItems.isNotEmpty()) {
+                        // Refresh location to show newly discovered items
+                        AdventureStateHolder.refreshCurrentLocation()
+                    }
+                }.onFailure { error ->
+                    logError("Failed to search: ${error.message}")
                 }
+
+                // Hide the overlay
+                _localState.update { it.copy(isSearching = false, searchDurationMs = 0) }
             }.onFailure { error ->
-                logError("Failed to search: ${error.message}")
+                logError("Failed to start search: ${error.message}")
             }
         }
+    }
+
+    /**
+     * Cancel an in-progress search.
+     */
+    fun cancelSearch() {
+        _localState.update { it.copy(isSearching = false, searchDurationMs = 0) }
     }
 
     // =========================================================================

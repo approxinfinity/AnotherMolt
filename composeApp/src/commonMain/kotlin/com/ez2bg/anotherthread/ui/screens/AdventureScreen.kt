@@ -1179,6 +1179,11 @@ fun AdventureScreen(
             )
         }
 
+        // Search overlay - shows pizza spinner while searching
+        if (uiState.isSearching) {
+            SearchOverlay(durationMs = uiState.searchDurationMs)
+        }
+
         // Death transition overlay - covers everything when player dies
         if (isPlayingDeathAnimation && respawnLocationName != null) {
             DeathTransitionOverlay(
@@ -5687,6 +5692,100 @@ private object PreviewData {
         ExitDto("loc-4", ExitDirection.SOUTH),
         ExitDto("loc-5", ExitDirection.WEST)
     )
+}
+
+// =============================================================================
+// SEARCH OVERLAY
+// =============================================================================
+
+/**
+ * Semi-transparent overlay with pizza spinner animation while searching.
+ * Automatically animates based on durationMs.
+ */
+@Composable
+private fun SearchOverlay(durationMs: Long) {
+    // Progress animation from 0 to 1 over the duration
+    var targetProgress by remember { mutableStateOf(0f) }
+    val progress by animateFloatAsState(
+        targetValue = targetProgress,
+        animationSpec = tween(durationMillis = durationMs.toInt(), easing = LinearEasing),
+        label = "searchProgress"
+    )
+
+    // Start the animation when composable appears
+    LaunchedEffect(Unit) {
+        targetProgress = 1f
+    }
+
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(Color.Black.copy(alpha = 0.7f)),
+        contentAlignment = Alignment.Center
+    ) {
+        Column(
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.spacedBy(16.dp)
+        ) {
+            // Pizza spinner (pie slice that grows)
+            Box(
+                modifier = Modifier.size(120.dp),
+                contentAlignment = Alignment.Center
+            ) {
+                Canvas(modifier = Modifier.size(100.dp)) {
+                    val sweepAngle = 360f * progress
+                    val startAngle = -90f // Start from top
+
+                    // Background circle
+                    drawCircle(
+                        color = Color.Gray.copy(alpha = 0.3f),
+                        radius = size.minDimension / 2
+                    )
+
+                    // Progress arc (pizza slice)
+                    drawArc(
+                        color = Color(0xFFFFA000), // Amber/orange color
+                        startAngle = startAngle,
+                        sweepAngle = sweepAngle,
+                        useCenter = true,
+                        size = size
+                    )
+
+                    // Border
+                    drawCircle(
+                        color = Color(0xFFFFA000),
+                        radius = size.minDimension / 2,
+                        style = Stroke(width = 4.dp.toPx())
+                    )
+                }
+
+                // Search icon in center
+                Icon(
+                    imageVector = Icons.Filled.Search,
+                    contentDescription = "Searching",
+                    tint = Color.White,
+                    modifier = Modifier.size(40.dp)
+                )
+            }
+
+            Text(
+                text = "Searching...",
+                color = Color.White,
+                fontSize = 18.sp,
+                fontWeight = FontWeight.Medium
+            )
+
+            // Show time remaining
+            val remainingMs = ((1f - progress) * durationMs).toLong()
+            val remainingSeconds = (remainingMs / 1000f).coerceAtLeast(0f)
+            val formattedSeconds = "${(remainingSeconds * 10).toInt() / 10.0}s"
+            Text(
+                text = formattedSeconds,
+                color = Color.White.copy(alpha = 0.7f),
+                fontSize = 14.sp
+            )
+        }
+    }
 }
 
 @Preview

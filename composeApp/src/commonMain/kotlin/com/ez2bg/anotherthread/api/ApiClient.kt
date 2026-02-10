@@ -319,6 +319,11 @@ data class RobResultDto(
 )
 
 @Serializable
+data class SearchInfoDto(
+    val durationMs: Long
+)
+
+@Serializable
 data class SearchResultDto(
     val success: Boolean,
     val message: String,
@@ -1396,6 +1401,14 @@ object ApiClient {
      */
     suspend fun robPlayer(userId: String, targetId: String): Result<RobResultDto> = apiCall {
         client.post("$baseUrl/users/$userId/rob/$targetId").body()
+    }
+
+    /**
+     * Get search info (duration) before starting a search.
+     * Client uses this to show spinner for appropriate duration.
+     */
+    suspend fun getSearchInfo(userId: String): Result<SearchInfoDto> = apiCall {
+        client.get("$baseUrl/users/$userId/search/info").body()
     }
 
     /**

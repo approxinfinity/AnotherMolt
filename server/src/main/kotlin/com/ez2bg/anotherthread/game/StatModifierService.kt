@@ -340,6 +340,31 @@ object StatModifierService {
         return (30 + (baseMod * 6) + (breakpoint * 8) + (level * 2) + classBonus).coerceIn(10, 95)
     }
 
+    /**
+     * Search duration in milliseconds.
+     * Higher INT, WIS, and level reduce search time.
+     * Base time is 5 seconds, minimum is 1.5 seconds.
+     * @param classBonus Additional bonus from thief/rogue classes (reduces time)
+     */
+    fun searchDurationMs(intelligence: Int, wisdom: Int, level: Int, classBonus: Int = 0): Long {
+        val intMod = attributeModifier(intelligence)
+        val wisMod = attributeModifier(wisdom)
+        val intBreakpoint = breakpointBonus(intelligence)
+        val wisBreakpoint = breakpointBonus(wisdom)
+
+        // Base 5000ms (5 seconds)
+        // Reduce by 200ms per INT mod, 150ms per WIS mod
+        // Reduce by 300ms per INT breakpoint, 200ms per WIS breakpoint
+        // Reduce by 100ms per level
+        // Reduce by 50ms per class bonus point
+        val baseMs = 5000L
+        val reduction = (intMod * 200) + (wisMod * 150) +
+                        (intBreakpoint * 300) + (wisBreakpoint * 200) +
+                        (level * 100) + (classBonus * 50)
+
+        return (baseMs - reduction).coerceIn(1500, 5000)
+    }
+
     // ============================================================================
     // CONSTITUTION (CON) - Vitality & Endurance
     // ============================================================================
