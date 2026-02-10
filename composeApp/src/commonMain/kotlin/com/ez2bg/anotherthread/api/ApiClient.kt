@@ -1951,6 +1951,10 @@ object ApiClient {
         client.get("$baseUrl/shop/$locationId/sellable/$userId").body()
     }
 
+    suspend fun getShopBanStatus(locationId: String, userId: String): Result<ShopBanResponse> = apiCall {
+        client.get("$baseUrl/shop/$locationId/ban-status/$userId").body()
+    }
+
     suspend fun sellItem(locationId: String, userId: String, itemId: String): Result<ShopActionResponse> = apiCall {
         client.post("$baseUrl/shop/$locationId/sell") {
             contentType(ContentType.Application.Json)
@@ -2905,6 +2909,13 @@ data class SellableItemDto(
 data class SellableItemsResponse(
     val success: Boolean,
     val items: List<SellableItemDto>
+)
+
+@Serializable
+data class ShopBanResponse(
+    val isBanned: Boolean,
+    val message: String? = null,
+    val banExpiresAt: Long? = null
 )
 
 // ============================================================================

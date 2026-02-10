@@ -491,3 +491,45 @@ Instead of a slider, the fish "tells a story" through movement patterns and you 
 - **Skill-based curve**: rewards feel and timing over memorization
 - **Narrative-driven difficulty**: a rusty lock is easier to trace, a legendary fish has wilder patterns, a skilled merchant is harder to haggle with
 - **Mobile-first**: designed for touch screens but could adapt to mouse/keyboard
+
+---
+
+## Cursed Items System
+
+### Current Implementation
+- **Ancient Tomb Gold**: Cursed gold from the undead crypt. The general store shopkeeper refuses to buy it, gets scared, and bans the player for the rest of the day.
+- Ban expires at midnight (local time).
+- Player can return tomorrow but will be turned away if they still have cursed items.
+
+### Future: Uncursing Cursed Items
+Need a way for players to remove curses from items like Ancient Tomb Gold:
+
+**Option 1: Temple/Priest Service**
+- Pay a cleric at a temple to purify the gold
+- Cost could scale with amount of cursed gold
+- Requires visiting a holy location (Tun du Lac temple?)
+
+**Option 2: Quest-Based**
+- Complete a quest for the temple or a holy order
+- Reward: ability to purify a batch of cursed items
+- Makes uncursing feel earned rather than transactional
+
+**Option 3: Crafting/Alchemy**
+- Combine cursed gold with holy water or other purifying reagent
+- Creates "Purified Gold" that can be sold normally
+- Slight gold loss in the conversion (curse "burns off" some value)
+
+**Option 4: Special NPC**
+- Find a sketchy fence or black market dealer who WILL buy cursed items
+- Pays less than normal shops would
+- May have other consequences (reputation, wanted status)
+
+**Option 5: Time-Based Decay**
+- Curse weakens over time if item is left in inventory
+- After X days, curse lifts naturally
+- Encourages hoarding and patience
+
+**Considerations:**
+- Should cursed items have other negative effects while carried? (bad luck, reduced stats)
+- Should there be a "curse resistance" stat that reduces effects?
+- What other items should be cursed? (Vampire artifacts, demon-touched weapons)

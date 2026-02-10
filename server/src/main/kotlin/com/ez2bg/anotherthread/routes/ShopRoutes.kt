@@ -8,6 +8,9 @@ import io.ktor.server.request.*
 import io.ktor.server.response.*
 import io.ktor.server.routing.*
 import kotlinx.serialization.Serializable
+import java.time.Instant
+import java.time.ZoneId
+import java.time.temporal.ChronoUnit
 
 @Serializable
 data class BuyItemRequest(val userId: String, val itemId: String)
@@ -20,6 +23,59 @@ data class SellFoodItemRequest(val userId: String, val foodItemId: String)
 
 @Serializable
 data class RestRequest(val userId: String)
+
+@Serializable
+data class ShopBanResponse(
+    val isBanned: Boolean,
+    val message: String? = null,
+    val banExpiresAt: Long? = null
+)
+
+// Cursed item IDs that the shopkeeper refuses to buy
+private val CURSED_ITEM_IDS = setOf(
+    UndeadCryptSeed.ANCIENT_TOMB_GOLD_ID
+)
+
+/**
+ * Get the shop ban key for a user.
+ */
+private fun shopBanKey(userId: String) = "shop.ban.$userId"
+
+/**
+ * Check if a user is banned from the general store.
+ * Returns the ban expiry timestamp if banned, null if not banned.
+ */
+private fun getShopBanExpiry(userId: String): Long? {
+    val banExpiry = GameConfigRepository.getLong(shopBanKey(userId), 0L)
+    return if (banExpiry > System.currentTimeMillis()) banExpiry else null
+}
+
+/**
+ * Ban a user from the general store until tomorrow (midnight local time).
+ */
+private fun banUserFromShop(userId: String) {
+    // Calculate midnight tomorrow
+    val tomorrow = Instant.now()
+        .atZone(ZoneId.systemDefault())
+        .plusDays(1)
+        .truncatedTo(ChronoUnit.DAYS)
+        .toInstant()
+        .toEpochMilli()
+
+    GameConfigRepository.setLong(
+        shopBanKey(userId),
+        tomorrow,
+        "Shop ban for attempting to sell cursed items",
+        "shop"
+    )
+}
+
+/**
+ * Check if user has any cursed items in inventory.
+ */
+private fun hasCursedItems(user: User): Boolean {
+    return user.itemIds.any { it in CURSED_ITEM_IDS }
+}
 
 @Serializable
 data class SellableItemDto(
@@ -66,6 +122,40 @@ private fun applyCharismaDiscount(basePrice: Int, charisma: Int): Int {
 
 fun Route.shopRoutes() {
     route("/shop") {
+        // Check if user is banned from the general store
+        get("/{locationId}/ban-status/{userId}") {
+            val locationId = call.parameters["locationId"]
+                ?: return@get call.respond(HttpStatusCode.BadRequest, ShopBanResponse(false))
+            val userId = call.parameters["userId"]
+                ?: return@get call.respond(HttpStatusCode.BadRequest, ShopBanResponse(false))
+
+            // Only applies to general store
+            if (locationId != GeneralStoreSeed.GENERAL_STORE_ID) {
+                return@get call.respond(ShopBanResponse(isBanned = false))
+            }
+
+            val user = UserRepository.findById(userId)
+                ?: return@get call.respond(HttpStatusCode.NotFound, ShopBanResponse(false))
+
+            val banExpiry = getShopBanExpiry(userId)
+            if (banExpiry != null) {
+                // Still banned - check if they still have cursed items
+                val hasCursed = hasCursedItems(user)
+                val message = if (hasCursed) {
+                    "The shopkeeper eyes you suspiciously. \"Come back tomorrow, and don't bring that cursed gold!\""
+                } else {
+                    "The shopkeeper waves you away. \"I said come back tomorrow! I need time to recover from that fright.\""
+                }
+                return@get call.respond(ShopBanResponse(
+                    isBanned = true,
+                    message = message,
+                    banExpiresAt = banExpiry
+                ))
+            }
+
+            call.respond(ShopBanResponse(isBanned = false))
+        }
+
         // Buy an item from a shop location
         post("/{locationId}/buy") {
             val locationId = call.parameters["locationId"]
@@ -239,6 +329,15 @@ fun Route.shopRoutes() {
             val user = UserRepository.findById(request.userId)
                 ?: return@post call.respond(HttpStatusCode.NotFound, ShopActionResponse(false, "User not found"))
 
+            // Check if user is banned from the shop
+            val banExpiry = getShopBanExpiry(request.userId)
+            if (banExpiry != null) {
+                return@post call.respond(HttpStatusCode.Forbidden, ShopActionResponse(
+                    false,
+                    "The shopkeeper refuses to deal with you. \"Come back tomorrow!\""
+                ))
+            }
+
             // Check user has the item
             if (request.itemId !in user.itemIds) {
                 return@post call.respond(HttpStatusCode.BadRequest, ShopActionResponse(false, "You don't have that item"))
@@ -246,6 +345,16 @@ fun Route.shopRoutes() {
 
             val item = ItemRepository.findById(request.itemId)
                 ?: return@post call.respond(HttpStatusCode.NotFound, ShopActionResponse(false, "Item not found"))
+
+            // Check if trying to sell cursed items
+            if (request.itemId in CURSED_ITEM_IDS) {
+                // Ban the user and kick them out!
+                banUserFromShop(request.userId)
+                return@post call.respond(HttpStatusCode.Forbidden, ShopActionResponse(
+                    false,
+                    "The shopkeeper's face goes pale as he sees the ancient coins. \"That... that's tomb gold! Cursed! I want none of that here!\" He backs away, making a warding sign. \"BE GONE! Don't come back until tomorrow, and rid yourself of that cursed treasure!\""
+                ))
+            }
 
             if (item.value <= 0) {
                 return@post call.respond(HttpStatusCode.BadRequest, ShopActionResponse(false, "That item has no value"))

@@ -65,6 +65,8 @@ data class AdventureLocalState(
     val isGeneralStore: Boolean = false,
     val sellableItems: List<com.ez2bg.anotherthread.api.SellableItemDto> = emptyList(),
     val showSellModal: Boolean = false,
+    val isShopBanned: Boolean = false,
+    val shopBanMessage: String? = null,
     // Teleport state
     val showMapSelection: Boolean = false,
     val teleportDestinations: List<TeleportDestinationDto> = emptyList(),
@@ -156,6 +158,8 @@ data class AdventureUiState(
     val isGeneralStore: Boolean = false,
     val sellableItems: List<com.ez2bg.anotherthread.api.SellableItemDto> = emptyList(),
     val showSellModal: Boolean = false,
+    val isShopBanned: Boolean = false,
+    val shopBanMessage: String? = null,
     // Teleport state
     val showMapSelection: Boolean = false,
     val teleportDestinations: List<TeleportDestinationDto> = emptyList(),
@@ -342,6 +346,8 @@ class AdventureViewModel {
             isGeneralStore = local.isGeneralStore,
             sellableItems = local.sellableItems,
             showSellModal = local.showSellModal,
+            isShopBanned = local.isShopBanned,
+            shopBanMessage = local.shopBanMessage,
             showMapSelection = local.showMapSelection,
             teleportDestinations = local.teleportDestinations,
             teleportAbilityId = local.teleportAbilityId,
@@ -1128,16 +1134,45 @@ class AdventureViewModel {
 
     /**
      * Load sellable items for the general store.
+     * Also checks if the user is banned from the store.
      */
     private fun loadSellableItems(locationId: String) {
         val userId = currentUser?.id ?: return
         scope.launch {
-            ApiClient.getSellableItems(locationId, userId).onSuccess { response ->
-                if (response.success) {
-                    _localState.update { it.copy(sellableItems = response.items) }
+            // First check ban status
+            ApiClient.getShopBanStatus(locationId, userId).onSuccess { banResponse ->
+                if (banResponse.isBanned) {
+                    _localState.update {
+                        it.copy(
+                            isShopBanned = true,
+                            shopBanMessage = banResponse.message,
+                            sellableItems = emptyList()
+                        )
+                    }
+                    // Show the ban message in the event log
+                    banResponse.message?.let { msg ->
+                        CombatStateHolder.addEventLogEntry(msg, EventLogType.ERROR)
+                    }
+                    return@onSuccess
+                }
+
+                // Not banned, load sellable items
+                _localState.update { it.copy(isShopBanned = false, shopBanMessage = null) }
+                ApiClient.getSellableItems(locationId, userId).onSuccess { response ->
+                    if (response.success) {
+                        _localState.update { it.copy(sellableItems = response.items) }
+                    }
+                }.onFailure {
+                    println("[AdventureViewModel] Failed to load sellable items: ${it.message}")
                 }
             }.onFailure {
-                println("[AdventureViewModel] Failed to load sellable items: ${it.message}")
+                println("[AdventureViewModel] Failed to check shop ban status: ${it.message}")
+                // Still try to load items if ban check fails
+                ApiClient.getSellableItems(locationId, userId).onSuccess { response ->
+                    if (response.success) {
+                        _localState.update { it.copy(sellableItems = response.items) }
+                    }
+                }
             }
         }
     }
@@ -1149,6 +1184,15 @@ class AdventureViewModel {
         val locationId = _localState.value.let {
             if (it.isGeneralStore) generalStoreLocationId else null
         } ?: return
+
+        // Check if banned - don't open modal, just show message
+        if (_localState.value.isShopBanned) {
+            _localState.value.shopBanMessage?.let { msg ->
+                CombatStateHolder.addEventLogEntry(msg, EventLogType.ERROR)
+            }
+            return
+        }
+
         loadSellableItems(locationId)
         _localState.update { it.copy(showSellModal = true) }
     }
@@ -1180,10 +1224,19 @@ class AdventureViewModel {
                     // Refresh sellable items
                     loadSellableItems(generalStoreLocationId)
                 } else {
-                    logError(response.message)
+                    // Check if this was a cursed item attempt - the message will contain the ban
+                    CombatStateHolder.addEventLogEntry(response.message, EventLogType.ERROR)
+                    // Reload to get updated ban status and close modal
+                    loadSellableItems(generalStoreLocationId)
+                    closeSellModal()
                 }
-            }.onFailure {
-                logError("Failed to sell item: ${it.message}")
+            }.onFailure { error ->
+                // Server returned an error - likely banned or cursed item
+                val errorMessage = error.message ?: "Failed to sell item"
+                CombatStateHolder.addEventLogEntry(errorMessage, EventLogType.ERROR)
+                // Reload to check for ban status
+                loadSellableItems(generalStoreLocationId)
+                closeSellModal()
             }
         }
     }
