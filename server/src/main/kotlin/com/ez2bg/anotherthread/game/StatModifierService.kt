@@ -366,6 +366,48 @@ object StatModifierService {
     }
 
     // ============================================================================
+    // FISHING CALCULATIONS
+    // ============================================================================
+
+    /**
+     * Fishing success chance (percentage).
+     * Uses DEX (hand-eye coordination) + INT (patience/pattern recognition).
+     * Base 50% + DEX mod (5%/pt) + INT mod (3%/pt) + breakpoints + level
+     */
+    fun fishingSuccessChance(dexterity: Int, intelligence: Int, level: Int): Int {
+        val dexMod = attributeModifier(dexterity)
+        val intMod = attributeModifier(intelligence)
+        val dexBreakpoint = breakpointBonus(dexterity)
+        val intBreakpoint = breakpointBonus(intelligence)
+
+        // Base 50% + 5% per DEX mod + 3% per INT mod
+        // + 6% per DEX breakpoint + 4% per INT breakpoint
+        // + 2% per level
+        return (50 + (dexMod * 5) + (intMod * 3) +
+                (dexBreakpoint * 6) + (intBreakpoint * 4) +
+                (level * 2)).coerceIn(20, 95)
+    }
+
+    /**
+     * Fishing duration in milliseconds.
+     * Higher WIS reduces wait time (patience/intuition).
+     * Base 10 seconds, min 4 seconds, max 15 seconds.
+     */
+    fun fishingDurationMs(wisdom: Int, level: Int): Long {
+        val wisMod = attributeModifier(wisdom)
+        val wisBreakpoint = breakpointBonus(wisdom)
+
+        // Base 10000ms (10 seconds)
+        // Reduce by 400ms per WIS mod
+        // Reduce by 600ms per WIS breakpoint
+        // Reduce by 200ms per level
+        val baseMs = 10000L
+        val reduction = (wisMod * 400) + (wisBreakpoint * 600) + (level * 200)
+
+        return (baseMs - reduction).coerceIn(4000, 15000)
+    }
+
+    // ============================================================================
     // CONSTITUTION (CON) - Vitality & Endurance
     // ============================================================================
 

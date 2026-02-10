@@ -380,6 +380,43 @@ data class CharmedCreatureDto(
 )
 
 @Serializable
+data class FishingInfoDto(
+    val canFish: Boolean,
+    val reason: String? = null,
+    val nearEnabled: Boolean,
+    val midEnabled: Boolean,
+    val farEnabled: Boolean,
+    val midStrRequired: Int,
+    val farStrRequired: Int,
+    val currentStr: Int,
+    val successChance: Int,
+    val durationMs: Long,
+    val staminaCost: Int,
+    val manaCost: Int
+)
+
+@Serializable
+data class FishingRequestDto(
+    val distance: String
+)
+
+@Serializable
+data class FishingResultDto(
+    val success: Boolean,
+    val message: String,
+    val fishCaught: FishCaughtDto? = null,
+    val manaRestored: Int = 0
+)
+
+@Serializable
+data class FishCaughtDto(
+    val id: String,
+    val name: String,
+    val weight: Int,
+    val value: Int
+)
+
+@Serializable
 data class IconMappingDto(
     val abilityId: String,
     val iconName: String
@@ -1454,6 +1491,24 @@ object ApiClient {
      */
     suspend fun trackLocation(userId: String): Result<TrackResultDto> = apiCall {
         client.post("$baseUrl/users/$userId/track").body()
+    }
+
+    /**
+     * Get fishing info (duration, costs, distance requirements) for the current location.
+     */
+    suspend fun getFishingInfo(userId: String): Result<FishingInfoDto> = apiCall {
+        client.get("$baseUrl/users/$userId/fish/info").body()
+    }
+
+    /**
+     * Attempt to fish at the current location.
+     * DEX + INT determine success, STR determines available distances.
+     */
+    suspend fun fish(userId: String, distance: String): Result<FishingResultDto> = apiCall {
+        client.post("$baseUrl/users/$userId/fish") {
+            contentType(ContentType.Application.Json)
+            setBody(FishingRequestDto(distance = distance))
+        }.body()
     }
 
     /**

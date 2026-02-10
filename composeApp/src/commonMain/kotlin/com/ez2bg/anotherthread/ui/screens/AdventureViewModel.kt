@@ -16,6 +16,7 @@ import com.ez2bg.anotherthread.api.TrainerInfoResponse
 import com.ez2bg.anotherthread.api.UserDto
 import com.ez2bg.anotherthread.api.PuzzleDto
 import com.ez2bg.anotherthread.api.PuzzleProgressResponse
+import com.ez2bg.anotherthread.api.FishingInfoDto
 import com.ez2bg.anotherthread.data.AdventureRepository
 import com.ez2bg.anotherthread.state.AdventureStateHolder
 import com.ez2bg.anotherthread.state.CombatStateHolder
@@ -97,7 +98,12 @@ data class AdventureLocalState(
     val hideableItems: List<ItemDto> = emptyList(),
     // Search state
     val isSearching: Boolean = false,
-    val searchDurationMs: Long = 0
+    val searchDurationMs: Long = 0,
+    // Fishing state
+    val isFishing: Boolean = false,
+    val fishingDurationMs: Long = 0,
+    val showFishingDistanceModal: Boolean = false,
+    val fishingInfo: FishingInfoDto? = null
 )
 
 /**
@@ -177,7 +183,12 @@ data class AdventureUiState(
     val hideableItems: List<ItemDto> = emptyList(),
     // Search state
     val isSearching: Boolean = false,
-    val searchDurationMs: Long = 0
+    val searchDurationMs: Long = 0,
+    // Fishing state
+    val isFishing: Boolean = false,
+    val fishingDurationMs: Long = 0,
+    val showFishingDistanceModal: Boolean = false,
+    val fishingInfo: FishingInfoDto? = null
 ) {
     // Derived properties
     val currentLocation: LocationDto?
@@ -338,7 +349,11 @@ class AdventureViewModel {
             showHideItemModal = local.showHideItemModal,
             hideableItems = local.hideableItems,
             isSearching = local.isSearching,
-            searchDurationMs = local.searchDurationMs
+            searchDurationMs = local.searchDurationMs,
+            isFishing = local.isFishing,
+            fishingDurationMs = local.fishingDurationMs,
+            showFishingDistanceModal = local.showFishingDistanceModal,
+            fishingInfo = local.fishingInfo
         )
     }.stateIn(
         scope = scope,
@@ -1561,6 +1576,118 @@ class AdventureViewModel {
      */
     fun cancelSearch() {
         _localState.update { it.copy(isSearching = false, searchDurationMs = 0) }
+    }
+
+    // =========================================================================
+    // FISHING
+    // =========================================================================
+
+    /**
+     * Open the fishing distance modal.
+     * Fetches fishing info from server and shows distance options.
+     */
+    fun openFishingModal() {
+        val userId = UserStateHolder.userId ?: return
+
+        // Already fishing
+        if (_localState.value.isFishing) return
+
+        scope.launch {
+            ApiClient.getFishingInfo(userId).onSuccess { info ->
+                if (!info.canFish) {
+                    logMessage(info.reason ?: "You cannot fish here.")
+                    return@onSuccess
+                }
+                _localState.update {
+                    it.copy(
+                        showFishingDistanceModal = true,
+                        fishingInfo = info
+                    )
+                }
+            }.onFailure { error ->
+                logError("Failed to get fishing info: ${error.message}")
+            }
+        }
+    }
+
+    /**
+     * Close the fishing distance modal without fishing.
+     */
+    fun closeFishingModal() {
+        _localState.update {
+            it.copy(
+                showFishingDistanceModal = false,
+                fishingInfo = null
+            )
+        }
+    }
+
+    /**
+     * Start fishing at the specified distance.
+     * Shows the fishing overlay for the appropriate duration, then performs the catch.
+     */
+    fun startFishing(distance: String) {
+        val userId = UserStateHolder.userId ?: return
+        val info = _localState.value.fishingInfo ?: return
+
+        // Already fishing
+        if (_localState.value.isFishing) return
+
+        scope.launch {
+            // Close the modal and show the fishing overlay
+            _localState.update {
+                it.copy(
+                    showFishingDistanceModal = false,
+                    isFishing = true,
+                    fishingDurationMs = info.durationMs
+                )
+            }
+
+            // Wait for the fishing duration
+            kotlinx.coroutines.delay(info.durationMs)
+
+            // Now perform the actual fishing
+            ApiClient.fish(userId, distance).onSuccess { result ->
+                if (result.success && result.fishCaught != null) {
+                    val fish = result.fishCaught
+                    val sizeDesc = when {
+                        fish.weight >= 6 -> "massive"
+                        fish.weight >= 4 -> "large"
+                        fish.weight >= 2 -> "nice"
+                        else -> "small"
+                    }
+                    logMessage("You caught a $sizeDesc ${fish.name}! (+${result.manaRestored} mana)", EventLogType.LOOT)
+                    // Refresh user data to update inventory
+                    UserStateHolder.refreshUser()
+                } else {
+                    logMessage(result.message)
+                }
+            }.onFailure { error ->
+                logError("Failed to fish: ${error.message}")
+            }
+
+            // Hide the overlay
+            _localState.update {
+                it.copy(
+                    isFishing = false,
+                    fishingDurationMs = 0,
+                    fishingInfo = null
+                )
+            }
+        }
+    }
+
+    /**
+     * Cancel an in-progress fishing attempt.
+     */
+    fun cancelFishing() {
+        _localState.update {
+            it.copy(
+                isFishing = false,
+                fishingDurationMs = 0,
+                fishingInfo = null
+            )
+        }
     }
 
     // =========================================================================

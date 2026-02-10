@@ -1111,6 +1111,7 @@ fun Application.module() {
     UndeadCryptSeed.seedIfEmpty()
     ElementalChaosSeed.seedIfEmpty()
     ClassicDungeonSeed.seedIfEmpty()
+    FishingSeed.seedIfEmpty()
 
     // Seed dungeon location modules (adventure modules)
     UndeadCryptLocationsSeed.seedIfEmpty()

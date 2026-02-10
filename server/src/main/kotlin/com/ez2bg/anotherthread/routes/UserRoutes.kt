@@ -120,6 +120,43 @@ data class CharmCreatureInfo(
     val imageUrl: String?
 )
 
+@Serializable
+data class FishingInfoResponse(
+    val canFish: Boolean,
+    val reason: String? = null,
+    val nearEnabled: Boolean,
+    val midEnabled: Boolean,
+    val farEnabled: Boolean,
+    val midStrRequired: Int,
+    val farStrRequired: Int,
+    val currentStr: Int,
+    val successChance: Int,
+    val durationMs: Long,
+    val staminaCost: Int,
+    val manaCost: Int
+)
+
+@Serializable
+data class FishingRequest(
+    val distance: String // "NEAR", "MID", or "FAR"
+)
+
+@Serializable
+data class FishingResponse(
+    val success: Boolean,
+    val message: String,
+    val fishCaught: FishCaughtInfo? = null,
+    val manaRestored: Int = 0
+)
+
+@Serializable
+data class FishCaughtInfo(
+    val id: String,
+    val name: String,
+    val weight: Int,
+    val value: Int
+)
+
 /**
  * Auth routes for user registration and login.
  * Base path: /auth
@@ -524,6 +561,99 @@ fun Route.userRoutes() {
                 discoveredItems = discoveredItemDetails,
                 totalHidden = result.totalHidden,
                 hasMoreHidden = result.totalHidden > result.discoveredItems.size
+            ))
+        }
+
+        /**
+         * Get fishing info (duration, costs, distance requirements) before starting to fish.
+         * Client uses this to show spinner for appropriate duration and enable/disable distance options.
+         */
+        get("/{id}/fish/info") {
+            val id = call.parameters["id"] ?: return@get call.respond(HttpStatusCode.BadRequest)
+            val user = UserRepository.findById(id)
+            if (user == null) {
+                call.respond(HttpStatusCode.NotFound)
+                return@get
+            }
+
+            val locationId = user.currentLocationId
+            if (locationId == null) {
+                call.respond(FishingInfoResponse(
+                    canFish = false,
+                    reason = "You are not at a valid location.",
+                    nearEnabled = false,
+                    midEnabled = false,
+                    farEnabled = false,
+                    midStrRequired = 10,
+                    farStrRequired = 14,
+                    currentStr = user.strength,
+                    successChance = 0,
+                    durationMs = 0,
+                    staminaCost = 5,
+                    manaCost = 2
+                ))
+                return@get
+            }
+
+            val info = com.ez2bg.anotherthread.game.FishingService.getFishingInfo(user, locationId)
+            call.respond(FishingInfoResponse(
+                canFish = info.canFish,
+                reason = info.reason,
+                nearEnabled = info.nearEnabled,
+                midEnabled = info.midEnabled,
+                farEnabled = info.farEnabled,
+                midStrRequired = info.midStrRequired,
+                farStrRequired = info.farStrRequired,
+                currentStr = info.currentStr,
+                successChance = info.successChance,
+                durationMs = info.durationMs,
+                staminaCost = info.staminaCost,
+                manaCost = info.manaCost
+            ))
+        }
+
+        /**
+         * Attempt to fish at the current location.
+         * DEX + INT determine success, STR determines available distances.
+         * Costs stamina and mana; successful catches restore mana.
+         */
+        post("/{id}/fish") {
+            val id = call.parameters["id"] ?: return@post call.respond(HttpStatusCode.BadRequest)
+            val request = call.receive<FishingRequest>()
+
+            val user = UserRepository.findById(id)
+            if (user == null) {
+                call.respond(HttpStatusCode.NotFound)
+                return@post
+            }
+
+            // Parse distance
+            val distance = try {
+                com.ez2bg.anotherthread.game.FishingService.FishingDistance.valueOf(request.distance.uppercase())
+            } catch (e: IllegalArgumentException) {
+                call.respond(HttpStatusCode.BadRequest, FishingResponse(
+                    success = false,
+                    message = "Invalid distance. Use NEAR, MID, or FAR."
+                ))
+                return@post
+            }
+
+            val result = com.ez2bg.anotherthread.game.FishingService.attemptFishing(user, distance)
+
+            val fishInfo = result.fishCaught?.let { fish ->
+                FishCaughtInfo(
+                    id = fish.id,
+                    name = fish.name,
+                    weight = fish.weight,
+                    value = fish.value
+                )
+            }
+
+            call.respond(FishingResponse(
+                success = result.success,
+                message = result.message,
+                fishCaught = fishInfo,
+                manaRestored = result.manaRestored
             ))
         }
 

@@ -61,6 +61,7 @@ import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.rememberInfiniteTransition
+import androidx.compose.animation.core.RepeatMode
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
@@ -90,6 +91,7 @@ import com.ez2bg.anotherthread.api.PuzzleProgressResponse
 import com.ez2bg.anotherthread.api.LeverStateDto
 import com.ez2bg.anotherthread.api.PuzzleType
 import com.ez2bg.anotherthread.api.ADMIN_FEATURE_ID
+import com.ez2bg.anotherthread.api.FishingInfoDto
 import com.ez2bg.anotherthread.ui.CreatureStateIcon
 import com.ez2bg.anotherthread.ui.SwordIcon
 import com.ez2bg.anotherthread.ui.getBlindItemDescription
@@ -1147,11 +1149,15 @@ fun AdventureScreen(
 
         // Inspection Modal - shows creatures, items, and players you can look at
         if (showInspectionModal && uiState.currentLocation != null) {
+            // Check if this is a fishing location
+            val isFishingLocation = uiState.currentLocation!!.featureIds.contains("feature-fishing-spot")
+
             InspectionModal(
                 creatures = uiState.creaturesHere,
                 items = uiState.itemsHere,
                 players = uiState.playersHere,
                 location = uiState.currentLocation!!,
+                isFishingLocation = isFishingLocation,
                 onInspectCreature = { creature ->
                     showInspectionModal = false
                     viewModel.selectCreature(creature)
@@ -1172,6 +1178,7 @@ fun AdventureScreen(
                 },
                 onSearch = { viewModel.searchLocation() },
                 onHide = { viewModel.openHideItemModal() },
+                onFish = { viewModel.openFishingModal() },
                 onDismiss = { showInspectionModal = false }
             )
         }
@@ -1188,6 +1195,21 @@ fun AdventureScreen(
         // Search overlay - shows pizza spinner while searching
         if (uiState.isSearching) {
             SearchOverlay(durationMs = uiState.searchDurationMs)
+        }
+
+        // Fishing overlay - shows fishing animation while fishing
+        if (uiState.isFishing) {
+            FishingOverlay(durationMs = uiState.fishingDurationMs)
+        }
+
+        // Fishing distance modal - choose cast distance
+        val fishingInfo = uiState.fishingInfo
+        if (uiState.showFishingDistanceModal && fishingInfo != null) {
+            FishingDistanceModal(
+                fishingInfo = fishingInfo,
+                onSelectDistance = { viewModel.startFishing(it) },
+                onDismiss = { viewModel.closeFishingModal() }
+            )
         }
 
         // Death transition overlay - covers everything when player dies
@@ -3324,7 +3346,7 @@ private fun PlayerActionButton(
 /**
  * Modal for inspecting/looking at things in the room.
  * Shows a scrollable list of creatures, items, players, and the location itself.
- * Also provides Search and Hide actions.
+ * Also provides Search, Hide, and Fish actions.
  */
 @Composable
 private fun InspectionModal(
@@ -3332,12 +3354,14 @@ private fun InspectionModal(
     items: List<ItemDto>,
     players: List<UserDto>,
     location: LocationDto,
+    isFishingLocation: Boolean,
     onInspectCreature: (CreatureDto) -> Unit,
     onInspectItem: (ItemDto) -> Unit,
     onInspectPlayer: (UserDto) -> Unit,
     onInspectLocation: () -> Unit,
     onSearch: () -> Unit,
     onHide: () -> Unit,
+    onFish: () -> Unit,
     onDismiss: () -> Unit
 ) {
     val scrollState = rememberScrollState()
@@ -3386,7 +3410,7 @@ private fun InspectionModal(
                     )
                 }
 
-                // Action buttons (Search and Hide)
+                // Action buttons (Search, Hide, and optionally Fish)
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.spacedBy(8.dp)
@@ -3431,6 +3455,25 @@ private fun InspectionModal(
                         )
                         Spacer(modifier = Modifier.width(4.dp))
                         Text("Hide")
+                    }
+                }
+
+                // Fish button (only at fishing locations)
+                if (isFishingLocation) {
+                    Button(
+                        onClick = {
+                            onFish()
+                            onDismiss()
+                        },
+                        modifier = Modifier.fillMaxWidth(),
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = Color(0xFF1E88E5)  // Blue water color
+                        ),
+                        shape = RoundedCornerShape(8.dp)
+                    ) {
+                        Text("\uD83C\uDFA3")  // Fishing pole emoji
+                        Spacer(modifier = Modifier.width(4.dp))
+                        Text("Fish")
                     }
                 }
 
@@ -5792,6 +5835,274 @@ private fun SearchOverlay(durationMs: Long) {
                 color = Color.White.copy(alpha = 0.7f),
                 fontSize = 14.sp
             )
+        }
+    }
+}
+
+// =============================================================================
+// FISHING OVERLAY
+// =============================================================================
+
+/**
+ * Semi-transparent overlay with fishing rod animation while fishing.
+ * Automatically animates based on durationMs.
+ */
+@Composable
+private fun FishingOverlay(durationMs: Long) {
+    // Progress animation from 0 to 1 over the duration
+    var targetProgress by remember { mutableStateOf(0f) }
+    val progress by animateFloatAsState(
+        targetValue = targetProgress,
+        animationSpec = tween(durationMillis = durationMs.toInt(), easing = LinearEasing),
+        label = "fishingProgress"
+    )
+
+    // Bobbing animation for the bobber
+    val infiniteTransition = rememberInfiniteTransition(label = "bobber")
+    val bobberOffset by infiniteTransition.animateFloat(
+        initialValue = -5f,
+        targetValue = 5f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(800, easing = LinearEasing),
+            repeatMode = RepeatMode.Reverse
+        ),
+        label = "bobberFloat"
+    )
+
+    // Start the animation when composable appears
+    LaunchedEffect(Unit) {
+        targetProgress = 1f
+    }
+
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(Color.Black.copy(alpha = 0.7f)),
+        contentAlignment = Alignment.Center
+    ) {
+        Column(
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.spacedBy(16.dp)
+        ) {
+            // Fishing animation area
+            Box(
+                modifier = Modifier.size(120.dp),
+                contentAlignment = Alignment.Center
+            ) {
+                Canvas(modifier = Modifier.size(100.dp)) {
+                    val sweepAngle = 360f * progress
+                    val startAngle = -90f // Start from top
+
+                    // Background circle (water)
+                    drawCircle(
+                        color = Color(0xFF1E88E5).copy(alpha = 0.3f),
+                        radius = size.minDimension / 2
+                    )
+
+                    // Progress arc
+                    drawArc(
+                        color = Color(0xFF1E88E5),
+                        startAngle = startAngle,
+                        sweepAngle = sweepAngle,
+                        useCenter = true,
+                        size = size
+                    )
+
+                    // Border
+                    drawCircle(
+                        color = Color(0xFF1E88E5),
+                        radius = size.minDimension / 2,
+                        style = Stroke(width = 4.dp.toPx())
+                    )
+
+                    // Draw bobber (red and white)
+                    val centerX = size.width / 2
+                    val centerY = size.height / 2 + bobberOffset
+
+                    // Bobber top (red)
+                    drawCircle(
+                        color = Color.Red,
+                        radius = 12.dp.toPx(),
+                        center = Offset(centerX, centerY - 8.dp.toPx())
+                    )
+                    // Bobber bottom (white)
+                    drawCircle(
+                        color = Color.White,
+                        radius = 8.dp.toPx(),
+                        center = Offset(centerX, centerY + 4.dp.toPx())
+                    )
+                }
+            }
+
+            Text(
+                text = "Fishing...",
+                color = Color.White,
+                fontSize = 18.sp,
+                fontWeight = FontWeight.Medium
+            )
+
+            // Show time remaining
+            val remainingMs = ((1f - progress) * durationMs).toLong()
+            val remainingSeconds = (remainingMs / 1000f).coerceAtLeast(0f)
+            val formattedSeconds = "${(remainingSeconds * 10).toInt() / 10.0}s"
+            Text(
+                text = formattedSeconds,
+                color = Color.White.copy(alpha = 0.7f),
+                fontSize = 14.sp
+            )
+        }
+    }
+}
+
+// =============================================================================
+// FISHING DISTANCE MODAL
+// =============================================================================
+
+/**
+ * Modal for selecting fishing cast distance.
+ */
+@Composable
+private fun FishingDistanceModal(
+    fishingInfo: FishingInfoDto,
+    onSelectDistance: (String) -> Unit,
+    onDismiss: () -> Unit
+) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = {
+            Text(
+                text = "Cast Your Line",
+                fontWeight = FontWeight.Bold
+            )
+        },
+        text = {
+            Column(
+                verticalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
+                Text(
+                    text = "Choose how far to cast. Farther casts require more strength but yield bigger fish.",
+                    fontSize = 14.sp
+                )
+
+                Spacer(modifier = Modifier.height(8.dp))
+
+                // Near option
+                FishingDistanceOption(
+                    distance = "NEAR",
+                    label = "Near Shore",
+                    description = "Small fish (no STR requirement)",
+                    enabled = fishingInfo.nearEnabled,
+                    onClick = { onSelectDistance("NEAR") }
+                )
+
+                // Mid option
+                FishingDistanceOption(
+                    distance = "MID",
+                    label = "Mid Water",
+                    description = "Medium fish (STR ${fishingInfo.midStrRequired}+)",
+                    enabled = fishingInfo.midEnabled,
+                    strRequired = if (!fishingInfo.midEnabled) fishingInfo.midStrRequired else null,
+                    currentStr = fishingInfo.currentStr,
+                    onClick = { onSelectDistance("MID") }
+                )
+
+                // Far option
+                FishingDistanceOption(
+                    distance = "FAR",
+                    label = "Deep Water",
+                    description = "Large/trophy fish (STR ${fishingInfo.farStrRequired}+)",
+                    enabled = fishingInfo.farEnabled,
+                    strRequired = if (!fishingInfo.farEnabled) fishingInfo.farStrRequired else null,
+                    currentStr = fishingInfo.currentStr,
+                    onClick = { onSelectDistance("FAR") }
+                )
+
+                Spacer(modifier = Modifier.height(8.dp))
+
+                // Stats
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween
+                ) {
+                    Text(
+                        text = "Success: ${fishingInfo.successChance}%",
+                        fontSize = 12.sp,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    Text(
+                        text = "Cost: ${fishingInfo.staminaCost} STA, ${fishingInfo.manaCost} MP",
+                        fontSize = 12.sp,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+            }
+        },
+        confirmButton = {},
+        dismissButton = {
+            TextButton(onClick = onDismiss) {
+                Text("Cancel")
+            }
+        }
+    )
+}
+
+@Composable
+private fun FishingDistanceOption(
+    distance: String,
+    label: String,
+    description: String,
+    enabled: Boolean,
+    strRequired: Int? = null,
+    currentStr: Int = 0,
+    onClick: () -> Unit
+) {
+    val backgroundColor = when {
+        !enabled -> MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
+        distance == "FAR" -> Color(0xFF1565C0).copy(alpha = 0.2f)  // Deep blue
+        distance == "MID" -> Color(0xFF1E88E5).copy(alpha = 0.2f)  // Medium blue
+        else -> Color(0xFF42A5F5).copy(alpha = 0.2f)  // Light blue
+    }
+
+    Surface(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable(enabled = enabled) { onClick() },
+        shape = RoundedCornerShape(8.dp),
+        color = backgroundColor,
+        border = if (enabled) null else androidx.compose.foundation.BorderStroke(
+            1.dp,
+            MaterialTheme.colorScheme.outline.copy(alpha = 0.3f)
+        )
+    ) {
+        Row(
+            modifier = Modifier
+                .padding(12.dp)
+                .fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Column {
+                Text(
+                    text = label,
+                    fontWeight = FontWeight.SemiBold,
+                    color = if (enabled) MaterialTheme.colorScheme.onSurface
+                            else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f)
+                )
+                Text(
+                    text = description,
+                    fontSize = 12.sp,
+                    color = if (enabled) MaterialTheme.colorScheme.onSurfaceVariant
+                            else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f)
+                )
+            }
+
+            if (strRequired != null && !enabled) {
+                Text(
+                    text = "Need STR $strRequired (You: $currentStr)",
+                    fontSize = 11.sp,
+                    color = Color.Red.copy(alpha = 0.8f)
+                )
+            }
         }
     }
 }
