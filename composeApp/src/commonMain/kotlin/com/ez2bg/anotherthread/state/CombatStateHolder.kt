@@ -602,13 +602,16 @@ object CombatStateHolder {
     /**
      * Called when death animation completes.
      * Refreshes user data to get new location and HP.
+     * Uses server's location (not local) since we respawned at a new location.
      */
     fun onDeathAnimationComplete() {
         _isPlayingDeathAnimation.value = false
         _respawnLocationName.value = null
         // Now refresh user data to update location/HP
+        // IMPORTANT: Use refreshUserWithServerLocation() to get the respawn location,
+        // not the death location that's currently cached locally.
         scope.launch {
-            UserStateHolder.refreshUser()
+            UserStateHolder.refreshUserWithServerLocation()
         }
     }
 

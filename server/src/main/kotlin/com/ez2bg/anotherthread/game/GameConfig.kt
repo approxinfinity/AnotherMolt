@@ -167,13 +167,13 @@ object GameConfig {
         /** Whether players drop items on death */
         val dropItemsOnDeath: Boolean
             get() = getCached("death.dropItemsOnDeath") {
-                GameConfigRepository.getBoolean("death.dropItemsOnDeath", true)
+                GameConfigRepository.getBoolean("death.dropItemsOnDeath", false)
             }
 
         /** Whether players drop gold on death */
         val dropGoldOnDeath: Boolean
             get() = getCached("death.dropGoldOnDeath") {
-                GameConfigRepository.getBoolean("death.dropGoldOnDeath", true)
+                GameConfigRepository.getBoolean("death.dropGoldOnDeath", false)
             }
 
         /** Percentage of gold dropped on death (0.0-1.0) */

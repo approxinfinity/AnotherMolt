@@ -198,9 +198,13 @@ object GameConfigRepository {
 
         // Death config
         setIfNotExists("death.respawnLocationId", "tun-du-lac-inn", "Location ID where players respawn after death", "death", "string")
-        setIfNotExists("death.dropItemsOnDeath", "true", "Whether players drop items on death", "death", "boolean")
-        setIfNotExists("death.dropGoldOnDeath", "true", "Whether players drop gold on death", "death", "boolean")
+        setIfNotExists("death.dropItemsOnDeath", "false", "Whether players drop items on death", "death", "boolean")
+        setIfNotExists("death.dropGoldOnDeath", "false", "Whether players drop gold on death", "death", "boolean")
         setIfNotExists("death.goldDropPercent", "0.1", "Percentage of gold dropped on death (0.0-1.0)", "death", "double")
+
+        // One-time migration: Force update death config to new defaults (items/gold NOT dropped)
+        // This is needed because existing databases have the old defaults of "true"
+        migrateDeathConfigToNewDefaults()
 
         // XP config
         setIfNotExists("xp.baseCreatureXp", "50", "Base XP for defeating a creature", "xp", "int")
@@ -242,5 +246,23 @@ object GameConfigRepository {
         if (get(key) == null) {
             set(key, value, description, category, valueType)
         }
+    }
+
+    /**
+     * One-time migration to update death config from old defaults (drop items/gold)
+     * to new defaults (keep items/gold). Uses a marker to ensure it only runs once.
+     */
+    private fun migrateDeathConfigToNewDefaults() {
+        val migrationKey = "migration.deathConfigV2Applied"
+        if (getBoolean(migrationKey, false)) {
+            return  // Already migrated
+        }
+
+        // Force update the death config values
+        set("death.dropItemsOnDeath", "false", "Whether players drop items on death", "death", "boolean")
+        set("death.dropGoldOnDeath", "false", "Whether players drop gold on death", "death", "boolean")
+
+        // Mark migration as complete
+        set(migrationKey, "true", "Death config V2 migration applied", "migration", "boolean")
     }
 }
