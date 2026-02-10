@@ -1437,7 +1437,7 @@ class AdventureViewModel {
         }
 
         // Get creatures at current location for charm targeting
-        val creatures = AdventureStateHolder.creatures.value
+        val creatures = AdventureStateHolder.creaturesHere.value
         if (creatures.isEmpty()) {
             showSnackbar("No creatures here to charm")
             return
@@ -1466,11 +1466,11 @@ class AdventureViewModel {
         scope.launch {
             ApiClient.charmCreature(userId, creature.id).onSuccess { result ->
                 if (result.success) {
-                    logEvent(result.message, EventType.SUCCESS)
+                    logMessage(result.message)
                     // Refresh to update charmed creature state
                     UserStateHolder.refreshUser()
                     // Refresh location creatures since one may now be charmed
-                    AdventureStateHolder.loadLocation()
+                    AdventureStateHolder.refreshCurrentLocation()
                 } else {
                     logMessage(result.message)
                 }

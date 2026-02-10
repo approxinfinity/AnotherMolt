@@ -1032,7 +1032,7 @@ fun AdventureScreen(
                     currentStamina = playerCombatant?.currentStamina ?: displayUser?.currentStamina ?: 0,
                     onBasicAttack = { viewModel.initiateBasicAttack(selectedCreature.id) },
                     onAbilityClick = { ability -> viewModel.useAbilityOnCreature(ability, selectedCreature) },
-                    onTrain = if (!selectedCreature.isAggressive) {
+                    onTrain = if (selectedCreature.isTrainer) {
                         { viewModel.openTrainerModal(selectedCreature) }
                     } else null,
                     onLook = {
@@ -3087,8 +3087,8 @@ private fun CreatureInteractionModal(
                         onClick = onLook
                     )
 
-                    // Train (only for non-aggressive creatures)
-                    if (onTrain != null && !creature.isAggressive) {
+                    // Train (only for trainer creatures)
+                    if (onTrain != null && creature.isTrainer) {
                         ActionButton(
                             icon = Icons.Filled.School,
                             label = "Train",
@@ -4037,8 +4037,8 @@ private fun DetailView(
     val detailName = creature?.name ?: item?.name ?: ""
     val detailImageUrl = creature?.imageUrl ?: item?.imageUrl
 
-    // Check if this is a non-aggressive creature (potential trainer)
-    val isNonAggressive = creature != null && !creature.isAggressive
+    // Check if this creature is a trainer
+    val isTrainerCreature = creature != null && creature.isTrainer
 
     // Filter combat abilities for the ring display (exclude passive, utility for non-combat scenarios)
     val combatAbilities = playerAbilities.filter { ability ->
@@ -4067,8 +4067,8 @@ private fun DetailView(
         )
 
         // Combat ability ring around creature (similar to location ability ring)
-        // Only show for aggressive creatures - non-aggressive NPCs show Train button instead
-        if (creature != null && !isNonAggressive && combatAbilities.isNotEmpty()) {
+        // Only show for non-trainer creatures - trainers show Train button instead
+        if (creature != null && !isTrainerCreature && combatAbilities.isNotEmpty()) {
             CreatureCombatRing(
                 abilities = combatAbilities,
                 cooldowns = cooldowns,
@@ -4077,8 +4077,8 @@ private fun DetailView(
             )
         }
 
-        // Train button for non-aggressive creatures (trainers, shopkeepers, etc.)
-        if (isNonAggressive && creature != null) {
+        // Train button for trainer creatures
+        if (isTrainerCreature && creature != null) {
             Box(
                 modifier = Modifier
                     .align(Alignment.CenterEnd)

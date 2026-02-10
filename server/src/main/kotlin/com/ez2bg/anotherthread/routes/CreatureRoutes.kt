@@ -8,6 +8,7 @@ import com.ez2bg.anotherthread.database.AuditAction
 import com.ez2bg.anotherthread.database.AuditLogRepository
 import com.ez2bg.anotherthread.database.Creature
 import com.ez2bg.anotherthread.database.CreatureRepository
+import com.ez2bg.anotherthread.database.FeatureRepository
 import com.ez2bg.anotherthread.database.LocationRepository
 import io.ktor.http.*
 import io.ktor.server.application.*
@@ -15,11 +16,79 @@ import io.ktor.server.request.*
 import io.ktor.server.response.*
 import io.ktor.server.routing.*
 import kotlinx.coroutines.launch
+import kotlinx.serialization.Serializable
+import kotlinx.serialization.json.Json
+
+@Serializable
+data class CreatureResponse(
+    val id: String,
+    val name: String,
+    val desc: String,
+    val itemIds: List<String>,
+    val featureIds: List<String>,
+    val imageUrl: String?,
+    val lockedBy: String?,
+    val maxHp: Int,
+    val baseDamage: Int,
+    val damageDice: String?,
+    val abilityIds: List<String>,
+    val level: Int,
+    val experienceValue: Int,
+    val challengeRating: Int,
+    val isAggressive: Boolean,
+    val lootTableId: String?,
+    val minGoldDrop: Int,
+    val maxGoldDrop: Int,
+    val attribution: String?,
+    val isTrainer: Boolean
+)
+
+private val json = Json { ignoreUnknownKeys = true }
+
+/**
+ * Check if a creature is a trainer by looking for a feature with featureType="trainer".
+ */
+private fun isTrainer(creature: Creature): Boolean {
+    for (featureId in creature.featureIds) {
+        val feature = FeatureRepository.findById(featureId) ?: continue
+        try {
+            val data = json.decodeFromString<TrainerFeatureData>(feature.data)
+            if (data.featureType == "trainer") return true
+        } catch (_: Exception) {
+            // Not a trainer feature, continue
+        }
+    }
+    return false
+}
+
+private fun Creature.toResponse(): CreatureResponse = CreatureResponse(
+    id = id,
+    name = name,
+    desc = desc,
+    itemIds = itemIds,
+    featureIds = featureIds,
+    imageUrl = imageUrl,
+    lockedBy = lockedBy,
+    maxHp = maxHp,
+    baseDamage = baseDamage,
+    damageDice = damageDice,
+    abilityIds = abilityIds,
+    level = level,
+    experienceValue = experienceValue,
+    challengeRating = challengeRating,
+    isAggressive = isAggressive,
+    lootTableId = lootTableId,
+    minGoldDrop = minGoldDrop,
+    maxGoldDrop = maxGoldDrop,
+    attribution = attribution,
+    isTrainer = isTrainer(this)
+)
 
 fun Route.creatureRoutes() {
     route("/creatures") {
         get {
-            call.respond(CreatureRepository.findAll())
+            val creatures = CreatureRepository.findAll()
+            call.respond(creatures.map { it.toResponse() })
         }
 
         // Get activity states for all creatures (wandering, in_combat, idle)
@@ -75,7 +144,7 @@ fun Route.creatureRoutes() {
                 }
             }
 
-            call.respond(HttpStatusCode.Created, createdCreature)
+            call.respond(HttpStatusCode.Created, createdCreature.toResponse())
         }
 
         put("/{id}") {
@@ -129,7 +198,7 @@ fun Route.creatureRoutes() {
                         }
                     }
                 }
-                call.respond(HttpStatusCode.OK, creature)
+                call.respond(HttpStatusCode.OK, creature.toResponse())
             } else {
                 call.respond(HttpStatusCode.NotFound)
             }
@@ -150,8 +219,8 @@ fun Route.creatureRoutes() {
             }
 
             if (CreatureRepository.updateLockedBy(id, newLockedBy)) {
-                val updatedCreature = CreatureRepository.findById(id)
-                call.respond(HttpStatusCode.OK, updatedCreature!!)
+                val updatedCreature = CreatureRepository.findById(id)!!
+                call.respond(HttpStatusCode.OK, updatedCreature.toResponse())
             } else {
                 call.respond(HttpStatusCode.InternalServerError)
             }
