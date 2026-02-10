@@ -53,7 +53,8 @@ object MigrationRunner {
         V009_AddVisibleAbilityIds(),
         V010_AddPartyFields(),
         V011_WidenLocationIdColumn(),
-        V012_WidenAllLocationIdColumns()
+        V012_WidenAllLocationIdColumns(),
+        V013_AddItemIsStackable()
     )
 
     /**

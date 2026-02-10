@@ -162,9 +162,25 @@ fun UserProfileView(
         }
     }
 
-    // Calculate item counts for stacking display
+    // Calculate item counts for weight calculation (counts all items regardless of stacking)
     val itemCounts: Map<String, Int> = remember(user.itemIds) {
         user.itemIds.groupingBy { it }.eachCount()
+    }
+
+    // Build display entries: stackable items show as one entry with count,
+    // non-stackable items show as separate entries (one per item instance)
+    data class DisplayEntry(val item: ItemDto, val count: Int, val instanceIndex: Int = 0)
+    val displayEntries: List<DisplayEntry> = remember(inventoryItems, itemCounts) {
+        inventoryItems.flatMap { item ->
+            val count = itemCounts[item.id] ?: 1
+            if (item.isStackable) {
+                // Stackable: one entry with total count
+                listOf(DisplayEntry(item, count))
+            } else {
+                // Non-stackable: one entry per instance
+                (0 until count).map { index -> DisplayEntry(item, 1, index) }
+            }
+        }
     }
 
     // Calculate weight-based encumbrance
@@ -718,19 +734,18 @@ fun UserProfileView(
                         )
                     }
 
-                    // Collapsed summary: comma-delimited list of items with counts
+                    // Collapsed summary: comma-delimited list of items with counts (respects stacking)
                     if (!inventoryExpanded) {
-                        val summaryText = inventoryItems.joinToString(", ") { item ->
-                            val count = itemCounts[item.id] ?: 1
-                            val countSuffix = if (count > 1) " x$count" else ""
+                        val summaryText = displayEntries.joinToString(", ") { entry ->
+                            val countSuffix = if (entry.count > 1) " x${entry.count}" else ""
                             // Only show slot suffix for equipped items
-                            val isEquipped = item.id in equippedItemIds
+                            val isEquipped = entry.item.id in equippedItemIds
                             val slotSuffix = if (isEquipped) {
-                                item.equipmentSlot?.let { slot ->
+                                entry.item.equipmentSlot?.let { slot ->
                                     " (${slot.replace("_", " ")})"
                                 } ?: ""
                             } else ""
-                            "${item.name}$countSuffix$slotSuffix"
+                            "${entry.item.name}$countSuffix$slotSuffix"
                         }
                         Spacer(modifier = Modifier.height(8.dp))
                         Text(
@@ -743,9 +758,10 @@ fun UserProfileView(
                     if (inventoryExpanded) {
                         Spacer(modifier = Modifier.height(12.dp))
 
-                        // Group items by slot
+                        // Group items by equipped status
                         val equippedItems = inventoryItems.filter { it.id in equippedItemIds }
-                        val unequippedItems = inventoryItems.filter { it.id !in equippedItemIds }
+                        // For unequipped items, use displayEntries to respect stacking
+                        val unequippedDisplayEntries = displayEntries.filter { it.item.id !in equippedItemIds }
 
                         // Equipment Paperdoll - visual representation of worn gear
                         if (equippedItems.isNotEmpty()) {
@@ -800,8 +816,8 @@ fun UserProfileView(
                             }
                         }
 
-                        // Unequipped items section
-                        if (unequippedItems.isNotEmpty()) {
+                        // Unequipped items section (respects isStackable)
+                        if (unequippedDisplayEntries.isNotEmpty()) {
                             if (equippedItems.isNotEmpty()) {
                                 Spacer(modifier = Modifier.height(12.dp))
                             }
@@ -812,10 +828,11 @@ fun UserProfileView(
                                 modifier = Modifier.padding(bottom = 8.dp)
                             )
                             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                                unequippedItems.forEach { item ->
+                                unequippedDisplayEntries.forEach { entry ->
+                                    val item = entry.item
                                     InventoryItemCard(
                                         item = item,
-                                        count = itemCounts[item.id] ?: 1,
+                                        count = entry.count,
                                         isEquipped = false,
                                         abilities = item.abilityIds.mapNotNull { itemAbilitiesMap[it] },
                                         onEquipToggle = if (item.equipmentSlot != null) {
@@ -833,19 +850,25 @@ fun UserProfileView(
                                         } else null,
                                         onDrop = if (isOwnProfile) {
                                             {
-                                                val count = itemCounts[item.id] ?: 1
                                                 scope.launch {
-                                                    // Drop all items in the stack at once
-                                                    ApiClient.dropAllItems(user.id, item.id).onSuccess { updatedUser ->
-                                                        UserStateHolder.updateUser(updatedUser)
-                                                        onUserUpdated(updatedUser)
-                                                        message = if (count > 1) {
-                                                            "Dropped $count ${item.name}"
-                                                        } else {
-                                                            "Dropped ${item.name}"
+                                                    if (entry.count > 1) {
+                                                        // Stackable item with count > 1: drop all at once
+                                                        ApiClient.dropAllItems(user.id, item.id).onSuccess { updatedUser ->
+                                                            UserStateHolder.updateUser(updatedUser)
+                                                            onUserUpdated(updatedUser)
+                                                            message = "Dropped ${entry.count} ${item.name}"
+                                                        }.onFailure { error ->
+                                                            message = "Failed to drop: ${error.message}"
                                                         }
-                                                    }.onFailure { error ->
-                                                        message = "Failed to drop: ${error.message}"
+                                                    } else {
+                                                        // Single item (non-stackable or stackable with count=1): drop one
+                                                        ApiClient.dropItem(user.id, item.id).onSuccess { updatedUser ->
+                                                            UserStateHolder.updateUser(updatedUser)
+                                                            onUserUpdated(updatedUser)
+                                                            message = "Dropped ${item.name}"
+                                                        }.onFailure { error ->
+                                                            message = "Failed to drop: ${error.message}"
+                                                        }
                                                     }
                                                 }
                                             }

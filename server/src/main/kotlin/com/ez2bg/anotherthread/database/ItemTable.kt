@@ -17,6 +17,7 @@ object ItemTable : Table("item") {
     val value = integer("value").default(0)  // Gold value
     val weight = integer("weight").default(1)  // Weight in stone (encumbrance unit), default 1
     val attribution = text("attribution").nullable()  // Content attribution source
+    val isStackable = bool("is_stackable").default(false)  // Whether multiple stack in inventory
 
     override val primaryKey = PrimaryKey(id)
 }

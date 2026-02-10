@@ -38,7 +38,8 @@ data class Item(
     val statBonuses: StatBonuses? = null,
     val value: Int = 0,  // Gold value
     val weight: Int = 1,  // Weight in stone (encumbrance unit), default 1
-    val attribution: String? = null  // Content attribution source
+    val attribution: String? = null,  // Content attribution source
+    val isStackable: Boolean = false  // Whether multiple of this item stack in inventory (e.g., potions, arrows)
 )
 
 object ItemRepository {
@@ -79,7 +80,8 @@ object ItemRepository {
         statBonuses = jsonToStatBonuses(this[ItemTable.statBonuses]),
         value = this[ItemTable.value],
         weight = this[ItemTable.weight],
-        attribution = this[ItemTable.attribution]
+        attribution = this[ItemTable.attribution],
+        isStackable = this[ItemTable.isStackable]
     )
 
     fun create(item: Item): Item = transaction {
@@ -97,6 +99,7 @@ object ItemRepository {
             it[value] = item.value
             it[weight] = item.weight
             it[attribution] = item.attribution
+            it[isStackable] = item.isStackable
         }
         item
     }
@@ -126,6 +129,7 @@ object ItemRepository {
             it[value] = item.value
             it[weight] = item.weight
             it[attribution] = item.attribution
+            it[isStackable] = item.isStackable
         } > 0
     }
 
