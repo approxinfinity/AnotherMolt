@@ -135,6 +135,10 @@ object CombatService {
     private val wanderingCreatures = mutableSetOf<String>()
     private var lastWanderTick = 0L
 
+    // Players who left combat and need to be notified on the next tick
+    // Maps userId -> sessionId (the session they left)
+    private val pendingCombatEndNotifications = ConcurrentHashMap<String, String>()
+
     /**
      * Generate a descriptive engagement message for a creature attacking a player.
      * Uses creature name to generate flavorful attack verbs.
@@ -193,6 +197,10 @@ object CombatService {
     /**
      * Remove a player from combat when they leave a location.
      * Called when player navigates to a different room.
+     *
+     * The combat ended notification is deferred until the next tick, so that
+     * if the player left during combat, they see the combat ended event at the
+     * tick boundary rather than immediately.
      */
     suspend fun removePlayerFromCombat(userId: String) = sessionMutex.withLock {
         val sessionId = playerSessions[userId] ?: return@withLock
@@ -201,7 +209,7 @@ object CombatService {
 
         val combatant = session.combatants.find { it.id == userId } ?: return@withLock
 
-        log.info("Removing $userId from combat session $sessionId (left location)")
+        log.info("Removing $userId from combat session $sessionId (left location) - notification deferred to next tick")
 
         // Remove player from session tracking
         playerSessions.remove(userId)
@@ -221,15 +229,10 @@ object CombatService {
         val updatedSession = session.copy(combatants = updatedCombatants)
         sessions[sessionId] = updatedSession
 
-        // Notify the player they've disengaged - send directly to them
-        val endMessage = CombatEndedMessage(
-            sessionId = sessionId,
-            reason = CombatEndReason.PLAYER_LEFT,
-            victors = emptyList(),
-            defeated = listOf(userId)
-        )
-        log.info("Sending CombatEndedMessage (PLAYER_LEFT) directly to player $userId for session $sessionId")
-        sendToPlayer(userId, endMessage)
+        // Defer combat end notification to next tick
+        // This ensures tick-based combat resolution timing
+        pendingCombatEndNotifications[userId] = sessionId
+        log.info("Queued CombatEndedMessage (PLAYER_LEFT) for player $userId, will send on next tick")
 
         // Check if combat should end (no players left)
         if (updatedSession.alivePlayers.isEmpty()) {
@@ -594,14 +597,32 @@ object CombatService {
     }
 
     /**
-     * Process a combat tick - resolve all pending actions and advance the round.
-     */
-    /**
      * Process combat tick for all active sessions.
      * Called by GameTickService on the global tick.
+     *
+     * This also processes deferred combat end notifications for players who left
+     * combat mid-round (e.g., by navigating to another room).
      */
     suspend fun processTick() = sessionMutex.withLock {
         val now = System.currentTimeMillis()
+
+        // Process deferred combat end notifications for players who left
+        // These players left combat between ticks and need to receive their
+        // CombatEndedMessage now, on the tick boundary
+        if (pendingCombatEndNotifications.isNotEmpty()) {
+            log.info("Processing ${pendingCombatEndNotifications.size} deferred combat end notifications")
+            for ((userId, sessionId) in pendingCombatEndNotifications.toMap()) {
+                val endMessage = CombatEndedMessage(
+                    sessionId = sessionId,
+                    reason = CombatEndReason.PLAYER_LEFT,
+                    victors = emptyList(),
+                    defeated = listOf(userId)
+                )
+                log.info("Sending deferred CombatEndedMessage (PLAYER_LEFT) to player $userId for session $sessionId")
+                sendToPlayer(userId, endMessage)
+                pendingCombatEndNotifications.remove(userId)
+            }
+        }
 
         if (sessions.isNotEmpty()) {
             log.debug("processTick: ${sessions.size} sessions")
