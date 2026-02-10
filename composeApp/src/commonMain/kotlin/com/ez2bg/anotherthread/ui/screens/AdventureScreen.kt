@@ -3605,7 +3605,7 @@ private fun InspectionModal(
                         Text("Search")
                     }
 
-                    // Hide button
+                    // Hide Item button
                     Button(
                         onClick = {
                             onHide()
@@ -3623,7 +3623,7 @@ private fun InspectionModal(
                             modifier = Modifier.size(18.dp)
                         )
                         Spacer(modifier = Modifier.width(4.dp))
-                        Text("Hide")
+                        Text("Hide Item")
                     }
                 }
 
