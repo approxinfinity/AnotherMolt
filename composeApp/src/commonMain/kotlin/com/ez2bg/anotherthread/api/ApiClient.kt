@@ -1276,7 +1276,9 @@ object ApiClient {
     }
 
     suspend fun getUser(id: String): Result<UserDto?> = apiCall {
-        client.get("$baseUrl/users/$id").body()
+        val user: UserDto? = client.get("$baseUrl/users/$id").body()
+        println("[ApiClient] getUser: userId=$id, serverLocationId=${user?.currentLocationId}")
+        user
     }
 
     /**
@@ -1295,9 +1297,14 @@ object ApiClient {
     }
 
     suspend fun updateUserLocation(id: String, locationId: String?): Result<Unit> = apiCall {
-        client.put("$baseUrl/users/$id/location") {
+        println("[ApiClient] updateUserLocation: userId=$id, locationId=$locationId")
+        val response = client.put("$baseUrl/users/$id/location") {
             contentType(ContentType.Application.Json)
             setBody(UpdateUserLocationRequest(locationId))
+        }
+        println("[ApiClient] updateUserLocation response: status=${response.status}")
+        if (!response.status.isSuccess()) {
+            throw Exception("Server returned ${response.status}")
         }
         Unit
     }

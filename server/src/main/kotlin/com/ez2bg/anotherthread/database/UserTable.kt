@@ -10,7 +10,7 @@ object UserTable : Table("user") {
     val itemIds = text("item_ids").default("[]")
     val featureIds = text("feature_ids").default("[]")
     val imageUrl = text("image_url").nullable()
-    val currentLocationId = varchar("current_location_id", 36).nullable()
+    val currentLocationId = text("current_location_id").nullable()  // Human-readable location IDs can exceed 36 chars
     val characterClassId = varchar("character_class_id", 36).nullable()
     val createdAt = long("created_at")
     val lastActiveAt = long("last_active_at")

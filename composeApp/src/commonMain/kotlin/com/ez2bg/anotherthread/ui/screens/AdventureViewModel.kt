@@ -582,13 +582,16 @@ class AdventureViewModel {
         }
 
         val userId = UserStateHolder.userId ?: return
+        val clientLocationId = AdventureRepository.currentLocationId.value
+        println("[AdventureViewModel] syncLocationWithServer: fetching user $userId, client location = $clientLocationId")
+
         scope.launch {
             ApiClient.getUser(userId).onSuccess { user ->
                 if (user != null) {
                     val serverLocationId = user.currentLocationId
-                    val clientLocationId = AdventureRepository.currentLocationId.value
+                    println("[AdventureViewModel] syncLocationWithServer: server location = $serverLocationId")
                     if (serverLocationId != null && serverLocationId != clientLocationId) {
-                        println("[AdventureViewModel] Location mismatch detected! Server=$serverLocationId, Client=$clientLocationId - correcting")
+                        println("[AdventureViewModel] Location mismatch detected! Server=$serverLocationId, Client=$clientLocationId - correcting to server")
                         AdventureRepository.setCurrentLocation(serverLocationId)
                         UserStateHolder.updateLocationLocally(serverLocationId)
                         // Update shop/inn state
@@ -598,8 +601,12 @@ class AdventureViewModel {
                                 isInnLocation = serverLocationId == innLocationId
                             )
                         }
+                    } else {
+                        println("[AdventureViewModel] syncLocationWithServer: locations match, no correction needed")
                     }
                 }
+            }.onFailure { error ->
+                println("[AdventureViewModel] syncLocationWithServer: FAILED to fetch user - ${error.message}")
             }
         }
     }
