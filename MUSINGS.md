@@ -454,3 +454,40 @@ discovered_item (
 Currently all auto-generated wilderness is named "Wilderness". Could vary:
 - "Dense Forest", "Open Plains", "Rocky Wastes" based on terrain
 - User editing removes wilderness status (becomes real location)
+
+---
+
+## Tactile Minigame Ideas
+
+Ideas for touch-friendly, skill-based minigames that reward good input. All share a common design philosophy: one primary touch input (tap, hold, drag, or swipe), a visible tension/feedback element, and a skill curve that rewards feel over memorization. Difficulty can be modulated by AI based on narrative context.
+
+### Lockpicking / Disarming Traps
+A "trace the path" mechanic where you drag your finger along a winding route without touching the edges. Speed and precision determine success. Shaky lines = harder difficulty. Very intuitive on touch.
+
+### Crafting / Alchemy
+A timing-based "pour and mix" where you tap-and-hold to fill a vessel to the right level (like a bar filling up), then release at the right moment. Overfill or underfill and you get a lesser result. Could chain multiple ingredients for complex recipes.
+
+### Haggling / Persuasion
+A tug-of-war slider where you and the NPC each pull a marker. You tap rhythmically to push it toward your side, but tapping too fast exhausts your persuasion. Rewards finding the right cadence.
+
+### Foraging / Harvesting
+A "pull" mechanic — tap and hold on a plant/resource, and a tension meter builds. Release at the sweet spot for max yield. Pull too hard or too long and you damage it. Basically Stardew fishing inverted.
+
+### Stealth / Sneaking
+A heartbeat-style wave scrolls across screen. You tap in rhythm to stay quiet. Miss the rhythm and your "noise" meter spikes. Could get faster as tension increases.
+
+### Spell Casting (Gesture-Based)
+Draw simple gestures/runes on screen to cast. Accuracy and speed of the trace determine spell power. Could combine multiple gestures for combo spells — fits the "reward good input" philosophy.
+
+### Mining / Digging
+A "dig down" layered mechanic where you swipe to clear layers, but you have to identify and avoid hitting hazards (rocks, gas pockets) that appear briefly before you swipe. Reaction-based.
+
+### Fishing (Narrative Variant)
+Instead of a slider, the fish "tells a story" through movement patterns and you have to mirror them — swipe the direction the fish darts. It becomes a call-and-response, which fits the storytelling ethos. A legendary fish has a wilder, more complex pattern than a minnow.
+
+### Design Principles
+- **Single primary input**: tap, hold, drag, or swipe
+- **Visible feedback**: tension meters, progress bars, visual cues
+- **Skill-based curve**: rewards feel and timing over memorization
+- **Narrative-driven difficulty**: a rusty lock is easier to trace, a legendary fish has wilder patterns, a skilled merchant is harder to haggle with
+- **Mobile-first**: designed for touch screens but could adapt to mouse/keyboard
