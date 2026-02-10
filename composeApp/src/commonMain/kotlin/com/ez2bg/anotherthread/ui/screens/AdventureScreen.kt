@@ -85,6 +85,10 @@ import com.ez2bg.anotherthread.api.SealableRiftDto
 import com.ez2bg.anotherthread.api.TrainerAbilityInfo
 import com.ez2bg.anotherthread.api.TrainerInfoResponse
 import com.ez2bg.anotherthread.api.UserDto
+import com.ez2bg.anotherthread.api.PuzzleDto
+import com.ez2bg.anotherthread.api.PuzzleProgressResponse
+import com.ez2bg.anotherthread.api.LeverStateDto
+import com.ez2bg.anotherthread.api.PuzzleType
 import com.ez2bg.anotherthread.api.ADMIN_FEATURE_ID
 import com.ez2bg.anotherthread.ui.CreatureStateIcon
 import com.ez2bg.anotherthread.ui.SwordIcon
@@ -406,10 +410,12 @@ fun AdventureScreen(
                                 itemsHere = uiState.itemsHere,
                                 creatureStates = uiState.creatureStates,
                                 isBlinded = isBlinded,
+                                puzzlesHere = uiState.puzzlesAtLocation,
                                 onCreatureClick = { if (!ghostMode) viewModel.selectCreature(it) },
                                 onItemClick = { if (!ghostMode) viewModel.pickupItem(it) },
                                 onPlayerClick = { if (!ghostMode && !isBlinded) viewModel.selectPlayer(it) },
                                 onLocationNameClick = { showLocationDetailPopup = true },
+                                onPuzzleClick = { if (!ghostMode) viewModel.openPuzzleModal(it) },
                                 modifier = Modifier
                                     .fillMaxWidth()
                                     .padding(16.dp)
@@ -970,6 +976,17 @@ fun AdventureScreen(
                 )
             }
 
+            // === PUZZLE MODAL ===
+            if (uiState.showPuzzleModal) {
+                PuzzleModal(
+                    puzzle = uiState.currentPuzzle,
+                    puzzleProgress = uiState.puzzleProgress,
+                    isLoading = uiState.isLoadingPuzzle,
+                    onPullLever = { leverId -> viewModel.pullLever(leverId) },
+                    onDismiss = { viewModel.dismissPuzzleModal() }
+                )
+            }
+
             // === PLAYER INTERACTION MODAL ===
             val selectedPlayer = uiState.selectedPlayer
             if (uiState.showPlayerInteractionModal && selectedPlayer != null) {
@@ -1176,10 +1193,12 @@ private fun LocationInfoPanel(
     itemsHere: List<ItemDto>,
     creatureStates: Map<String, String>,
     isBlinded: Boolean,
+    puzzlesHere: List<PuzzleDto> = emptyList(),
     onCreatureClick: (CreatureDto) -> Unit,
     onItemClick: (ItemDto) -> Unit,
     onPlayerClick: (UserDto) -> Unit = {},
     onLocationNameClick: () -> Unit = {},
+    onPuzzleClick: (PuzzleDto) -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     Column(
@@ -1313,6 +1332,46 @@ private fun LocationInfoPanel(
                                 .clickable { onItemClick(item) }
                                 .padding(vertical = 2.dp)
                         )
+                    }
+                }
+            }
+        }
+
+        // Puzzles section - only show if puzzles exist and not blinded
+        if (puzzlesHere.isNotEmpty() && !isBlinded) {
+            Spacer(modifier = Modifier.height(8.dp))
+            Text(
+                text = "Puzzles",
+                color = Color.Gray,
+                fontSize = 10.sp
+            )
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .horizontalScroll(rememberScrollState()),
+                horizontalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
+                puzzlesHere.forEach { puzzle ->
+                    key(puzzle.id) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            modifier = Modifier
+                                .clickable { onPuzzleClick(puzzle) }
+                                .padding(vertical = 2.dp)
+                        ) {
+                            Icon(
+                                imageVector = Icons.Filled.Gavel,
+                                contentDescription = "Puzzle",
+                                tint = Color(0xFF9C27B0),
+                                modifier = Modifier.size(14.dp)
+                            )
+                            Spacer(modifier = Modifier.width(4.dp))
+                            Text(
+                                text = puzzle.name,
+                                color = Color(0xFF9C27B0),
+                                fontSize = 14.sp
+                            )
+                        }
                     }
                 }
             }
@@ -4999,6 +5058,285 @@ private fun TrainerAbilityRow(
                 Text(
                     text = "${abilityInfo.goldCost}g",
                     color = if (canAfford) Color.White else Color.Gray,
+                    fontSize = 12.sp
+                )
+            }
+        }
+    }
+}
+
+// =============================================================================
+// PUZZLE MODAL
+// =============================================================================
+
+/**
+ * Modal for interacting with lever puzzles.
+ * Shows the puzzle description, lever states, and allows pulling levers.
+ */
+@Composable
+private fun PuzzleModal(
+    puzzle: PuzzleDto?,
+    puzzleProgress: PuzzleProgressResponse?,
+    isLoading: Boolean,
+    onPullLever: (String) -> Unit,
+    onDismiss: () -> Unit
+) {
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(Color.Black.copy(alpha = 0.85f))
+            .pointerInput(Unit) {
+                detectTapGestures(onTap = { onDismiss() })
+            },
+        contentAlignment = Alignment.Center
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth(0.9f)
+                .fillMaxHeight(0.8f)
+                .background(Color(0xFF1A1A1A), RoundedCornerShape(16.dp))
+                .border(2.dp, Color(0xFF9C27B0), RoundedCornerShape(16.dp))
+                .padding(16.dp)
+                .pointerInput(Unit) {
+                    detectTapGestures { /* Consume taps to prevent dismissal */ }
+                },
+            horizontalAlignment = Alignment.CenterHorizontally
+        ) {
+            // Header
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Icon(
+                        imageVector = Icons.Filled.Gavel,
+                        contentDescription = "Puzzle",
+                        tint = Color(0xFF9C27B0),
+                        modifier = Modifier.size(28.dp)
+                    )
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text(
+                        text = puzzle?.name ?: "Puzzle",
+                        color = Color.White,
+                        fontSize = 20.sp,
+                        fontWeight = FontWeight.Bold
+                    )
+                }
+                // Solved indicator
+                if (puzzleProgress?.isSolved == true) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Icon(
+                            imageVector = Icons.Filled.Check,
+                            contentDescription = "Solved",
+                            tint = Color(0xFF4CAF50),
+                            modifier = Modifier.size(20.dp)
+                        )
+                        Spacer(modifier = Modifier.width(4.dp))
+                        Text(
+                            text = "Solved",
+                            color = Color(0xFF4CAF50),
+                            fontSize = 14.sp,
+                            fontWeight = FontWeight.Medium
+                        )
+                    }
+                }
+            }
+
+            Spacer(modifier = Modifier.height(8.dp))
+
+            // Puzzle description
+            if (puzzle != null) {
+                Text(
+                    text = puzzle.description,
+                    color = Color.White.copy(alpha = 0.8f),
+                    fontSize = 14.sp,
+                    textAlign = TextAlign.Center,
+                    modifier = Modifier.padding(horizontal = 8.dp)
+                )
+            }
+
+            Spacer(modifier = Modifier.height(16.dp))
+
+            // Content
+            if (isLoading) {
+                Box(
+                    modifier = Modifier.weight(1f),
+                    contentAlignment = Alignment.Center
+                ) {
+                    CircularProgressIndicator(color = Color(0xFF9C27B0))
+                }
+            } else if (puzzleProgress == null || puzzle == null) {
+                Box(
+                    modifier = Modifier.weight(1f),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Text(
+                        text = "Unable to load puzzle.",
+                        color = Color.Gray,
+                        textAlign = TextAlign.Center
+                    )
+                }
+            } else {
+                // Lever list
+                LazyColumn(
+                    modifier = Modifier.weight(1f),
+                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    items(puzzleProgress.levers) { lever ->
+                        LeverRow(
+                            lever = lever,
+                            isSolved = puzzleProgress.isSolved,
+                            onPull = { onPullLever(lever.id) }
+                        )
+                    }
+                }
+
+                // Show revealed passages if solved
+                if (puzzleProgress.isSolved && puzzleProgress.revealedPassages.isNotEmpty()) {
+                    Spacer(modifier = Modifier.height(16.dp))
+                    Text(
+                        text = "Secret Passages Revealed:",
+                        color = Color(0xFF4CAF50),
+                        fontSize = 14.sp,
+                        fontWeight = FontWeight.Medium
+                    )
+                    Spacer(modifier = Modifier.height(8.dp))
+                    puzzleProgress.revealedPassages.forEach { passage ->
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .background(Color(0xFF1B5E20).copy(alpha = 0.3f), RoundedCornerShape(8.dp))
+                                .padding(12.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Icon(
+                                imageVector = Icons.Filled.MeetingRoom,
+                                contentDescription = "Secret Passage",
+                                tint = Color(0xFF4CAF50),
+                                modifier = Modifier.size(24.dp)
+                            )
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Column {
+                                Text(
+                                    text = passage.name,
+                                    color = Color.White,
+                                    fontSize = 14.sp,
+                                    fontWeight = FontWeight.Medium
+                                )
+                                Text(
+                                    text = passage.description,
+                                    color = Color.White.copy(alpha = 0.7f),
+                                    fontSize = 12.sp
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+
+            Spacer(modifier = Modifier.height(16.dp))
+
+            // Close button
+            TextButton(onClick = onDismiss) {
+                Text("Close", color = Color.White.copy(alpha = 0.7f))
+            }
+        }
+    }
+}
+
+/**
+ * A single lever row in the puzzle modal.
+ */
+@Composable
+private fun LeverRow(
+    lever: LeverStateDto,
+    isSolved: Boolean,
+    onPull: () -> Unit
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .background(
+                when {
+                    lever.isPulled -> Color(0xFF9C27B0).copy(alpha = 0.3f)
+                    else -> Color(0xFF2A2A2A)
+                },
+                RoundedCornerShape(8.dp)
+            )
+            .border(
+                1.dp,
+                when {
+                    lever.isPulled -> Color(0xFF9C27B0)
+                    else -> Color(0xFF444444)
+                },
+                RoundedCornerShape(8.dp)
+            )
+            .padding(12.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        // Lever icon
+        Box(
+            modifier = Modifier
+                .size(48.dp)
+                .background(
+                    if (lever.isPulled) Color(0xFF9C27B0).copy(alpha = 0.5f)
+                    else Color(0xFF444444).copy(alpha = 0.5f),
+                    RoundedCornerShape(8.dp)
+                ),
+            contentAlignment = Alignment.Center
+        ) {
+            Icon(
+                imageVector = Icons.Filled.Gavel,
+                contentDescription = lever.name,
+                tint = if (lever.isPulled) Color.White else Color.Gray,
+                modifier = Modifier
+                    .size(28.dp)
+                    .graphicsLayer(rotationZ = if (lever.isPulled) -45f else 0f)
+            )
+        }
+
+        Spacer(modifier = Modifier.width(12.dp))
+
+        // Lever info
+        Column(modifier = Modifier.weight(1f)) {
+            Text(
+                text = lever.name,
+                color = Color.White,
+                fontSize = 16.sp,
+                fontWeight = FontWeight.Medium
+            )
+            Text(
+                text = lever.description,
+                color = Color.White.copy(alpha = 0.7f),
+                fontSize = 12.sp,
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis
+            )
+        }
+
+        Spacer(modifier = Modifier.width(8.dp))
+
+        // Pull button or status
+        if (lever.isPulled) {
+            Text(
+                text = "Pulled",
+                color = Color(0xFF9C27B0),
+                fontSize = 12.sp,
+                fontWeight = FontWeight.Medium
+            )
+        } else if (!isSolved) {
+            Button(
+                onClick = onPull,
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = Color(0xFF9C27B0)
+                ),
+                contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp),
+                shape = RoundedCornerShape(4.dp)
+            ) {
+                Text(
+                    text = "Pull",
+                    color = Color.White,
                     fontSize = 12.sp
                 )
             }

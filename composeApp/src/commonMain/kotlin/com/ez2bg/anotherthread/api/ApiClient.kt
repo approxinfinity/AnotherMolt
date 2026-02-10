@@ -1705,6 +1705,34 @@ object ApiClient {
         client.get("$baseUrl/trainer/learned/$userId").body()
     }
 
+    // =========================================================================
+    // Puzzle API
+    // =========================================================================
+
+    suspend fun getPuzzlesAtLocation(locationId: String): Result<List<PuzzleDto>> = apiCall {
+        client.get("$baseUrl/puzzles/at-location/$locationId").body()
+    }
+
+    suspend fun getPuzzleProgress(puzzleId: String, userId: String): Result<PuzzleProgressResponse> = apiCall {
+        client.get("$baseUrl/puzzles/$puzzleId/progress") {
+            header("X-User-Id", userId)
+        }.body()
+    }
+
+    suspend fun pullLever(puzzleId: String, leverId: String, userId: String): Result<PullLeverResponse> = apiCall {
+        client.post("$baseUrl/puzzles/$puzzleId/pull-lever") {
+            contentType(ContentType.Application.Json)
+            header("X-User-Id", userId)
+            setBody(PullLeverRequest(leverId = leverId))
+        }.body()
+    }
+
+    suspend fun searchPuzzle(puzzleId: String, userId: String): Result<Map<String, Any>> = apiCall {
+        client.post("$baseUrl/puzzles/$puzzleId/search") {
+            header("X-User-Id", userId)
+        }.body()
+    }
+
     // Entity identification
     @Serializable
     data class IdentifiedEntitiesResponse(
@@ -2596,6 +2624,92 @@ data class TrainerInfoResponse(
     val trainerId: String,
     val trainerName: String,
     val abilities: List<TrainerAbilityInfo>
+)
+
+// ============================================================================
+// Puzzle DTOs (Lever puzzles and secret passages)
+// ============================================================================
+
+enum class PuzzleType {
+    LEVER_SEQUENCE,      // Pull levers in specific order
+    LEVER_COMBINATION,   // Pull specific levers (any order)
+    SEARCH_AND_ENTER,    // Search to find hidden passage
+    BUTTON_PRESS         // Press buttons in sequence
+}
+
+@Serializable
+data class LeverDto(
+    val id: String,
+    val name: String,
+    val description: String,
+    val pulledDescription: String = "The lever has been pulled."
+)
+
+@Serializable
+data class SecretPassageDto(
+    val id: String,
+    val name: String,
+    val description: String,
+    val targetLocationId: String,
+    val direction: ExitDirection = ExitDirection.ENTER,
+    val searchHint: String? = null
+)
+
+@Serializable
+data class PuzzleDto(
+    val id: String,
+    val name: String,
+    val description: String,
+    val locationId: String,
+    val puzzleType: PuzzleType = PuzzleType.LEVER_COMBINATION,
+    val levers: List<LeverDto> = emptyList(),
+    val requiredSequence: List<String> = emptyList(),
+    val requiredLevers: List<String> = emptyList(),
+    val secretPassages: List<SecretPassageDto> = emptyList(),
+    val solvedMessage: String = "You hear a click as something unlocks!",
+    val failureMessage: String = "Nothing happens.",
+    val resetOnFailure: Boolean = false,
+    val isRepeatable: Boolean = false,
+    val goldReward: Int = 0,
+    val itemRewards: List<String> = emptyList()
+)
+
+@Serializable
+data class PuzzleProgressDto(
+    val leversPulled: List<String> = emptyList(),
+    val solved: Boolean = false,
+    val solvedAt: Long? = null,
+    val passagesRevealed: List<String> = emptyList()
+)
+
+@Serializable
+data class LeverStateDto(
+    val id: String,
+    val name: String,
+    val description: String,
+    val isPulled: Boolean
+)
+
+@Serializable
+data class PuzzleProgressResponse(
+    val puzzleId: String,
+    val progress: PuzzleProgressDto,
+    val levers: List<LeverStateDto>,
+    val isSolved: Boolean,
+    val revealedPassages: List<SecretPassageDto>
+)
+
+@Serializable
+data class PullLeverRequest(val leverId: String)
+
+@Serializable
+data class PullLeverResponse(
+    val success: Boolean,
+    val message: String,
+    val leverState: LeverStateDto,
+    val puzzleSolved: Boolean,
+    val puzzleReset: Boolean = false,
+    val revealedPassages: List<SecretPassageDto>? = null
 )
 
 // ============================================================================

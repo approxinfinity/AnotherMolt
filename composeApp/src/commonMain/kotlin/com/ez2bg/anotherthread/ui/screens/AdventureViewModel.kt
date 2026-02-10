@@ -14,6 +14,8 @@ import com.ez2bg.anotherthread.api.UnconnectedAreaDto
 import com.ez2bg.anotherthread.api.SealableRiftDto
 import com.ez2bg.anotherthread.api.TrainerInfoResponse
 import com.ez2bg.anotherthread.api.UserDto
+import com.ez2bg.anotherthread.api.PuzzleDto
+import com.ez2bg.anotherthread.api.PuzzleProgressResponse
 import com.ez2bg.anotherthread.data.AdventureRepository
 import com.ez2bg.anotherthread.state.AdventureStateHolder
 import com.ez2bg.anotherthread.state.CombatStateHolder
@@ -80,7 +82,13 @@ data class AdventureLocalState(
     val showPlayerInteractionModal: Boolean = false,
     val showGiveItemModal: Boolean = false,
     // Creature interaction state
-    val showCreatureInteractionModal: Boolean = false
+    val showCreatureInteractionModal: Boolean = false,
+    // Puzzle state
+    val showPuzzleModal: Boolean = false,
+    val currentPuzzle: PuzzleDto? = null,
+    val puzzleProgress: PuzzleProgressResponse? = null,
+    val isLoadingPuzzle: Boolean = false,
+    val puzzlesAtLocation: List<PuzzleDto> = emptyList()
 )
 
 /**
@@ -145,7 +153,13 @@ data class AdventureUiState(
     val showPlayerInteractionModal: Boolean = false,
     val showGiveItemModal: Boolean = false,
     // Creature interaction state
-    val showCreatureInteractionModal: Boolean = false
+    val showCreatureInteractionModal: Boolean = false,
+    // Puzzle state
+    val showPuzzleModal: Boolean = false,
+    val currentPuzzle: PuzzleDto? = null,
+    val puzzleProgress: PuzzleProgressResponse? = null,
+    val isLoadingPuzzle: Boolean = false,
+    val puzzlesAtLocation: List<PuzzleDto> = emptyList()
 ) {
     // Derived properties
     val currentLocation: LocationDto?
@@ -295,7 +309,12 @@ class AdventureViewModel {
             selectedPlayer = local.selectedPlayer,
             showPlayerInteractionModal = local.showPlayerInteractionModal,
             showGiveItemModal = local.showGiveItemModal,
-            showCreatureInteractionModal = local.showCreatureInteractionModal
+            showCreatureInteractionModal = local.showCreatureInteractionModal,
+            showPuzzleModal = local.showPuzzleModal,
+            currentPuzzle = local.currentPuzzle,
+            puzzleProgress = local.puzzleProgress,
+            isLoadingPuzzle = local.isLoadingPuzzle,
+            puzzlesAtLocation = local.puzzlesAtLocation
         )
     }.stateIn(
         scope = scope,
@@ -477,6 +496,9 @@ class AdventureViewModel {
 
                     // Load other players at this location
                     loadPlayersAtLocation(locationId)
+
+                    // Load puzzles at this location
+                    loadPuzzlesAtLocation(locationId)
 
                     // NOTE: We no longer update the server when the repository falls back to (0,0).
                     // The server has the correct location - the listenForUserUpdates() function
@@ -1552,6 +1574,105 @@ class AdventureViewModel {
                 showTrainerModal = false,
                 trainerInfo = null,
                 isLoadingTrainer = false
+            )
+        }
+    }
+
+    // =========================================================================
+    // PUZZLE INTERACTION
+    // =========================================================================
+
+    /**
+     * Load puzzles at the current location.
+     */
+    fun loadPuzzlesAtLocation(locationId: String) {
+        scope.launch {
+            ApiClient.getPuzzlesAtLocation(locationId)
+                .onSuccess { puzzles ->
+                    _localState.update { it.copy(puzzlesAtLocation = puzzles) }
+                }
+                .onFailure {
+                    _localState.update { it.copy(puzzlesAtLocation = emptyList()) }
+                }
+        }
+    }
+
+    /**
+     * Open a puzzle modal.
+     */
+    fun openPuzzleModal(puzzle: PuzzleDto) {
+        val userId = UserStateHolder.userId ?: return
+
+        _localState.update {
+            it.copy(
+                showPuzzleModal = true,
+                currentPuzzle = puzzle,
+                isLoadingPuzzle = true
+            )
+        }
+
+        scope.launch {
+            ApiClient.getPuzzleProgress(puzzle.id, userId)
+                .onSuccess { progress ->
+                    _localState.update {
+                        it.copy(
+                            puzzleProgress = progress,
+                            isLoadingPuzzle = false
+                        )
+                    }
+                }
+                .onFailure { error ->
+                    _localState.update {
+                        it.copy(
+                            showPuzzleModal = false,
+                            isLoadingPuzzle = false
+                        )
+                    }
+                    showSnackbar("Failed to load puzzle: ${error.message}")
+                }
+        }
+    }
+
+    /**
+     * Pull a lever in the current puzzle.
+     */
+    fun pullLever(leverId: String) {
+        val puzzle = _localState.value.currentPuzzle ?: return
+        val userId = UserStateHolder.userId ?: return
+
+        scope.launch {
+            ApiClient.pullLever(puzzle.id, leverId, userId)
+                .onSuccess { response ->
+                    // Show the message from the server
+                    showSnackbar(response.message.replace("\n\n", " "))
+
+                    // Refresh puzzle progress
+                    ApiClient.getPuzzleProgress(puzzle.id, userId)
+                        .onSuccess { progress ->
+                            _localState.update { it.copy(puzzleProgress = progress) }
+                        }
+
+                    // If puzzle was solved, refresh the location to show new exits
+                    if (response.puzzleSolved) {
+                        AdventureRepository.refresh()
+                    }
+                }
+                .onFailure { error ->
+                    showSnackbar("Failed to pull lever: ${error.message}")
+                }
+        }
+    }
+
+    /**
+     * Close the puzzle modal.
+     */
+    fun dismissPuzzleModal() {
+        _localState.update {
+            it.copy(
+                showPuzzleModal = false,
+                currentPuzzle = null,
+                puzzleProgress = null,
+                isLoadingPuzzle = false
             )
         }
     }
