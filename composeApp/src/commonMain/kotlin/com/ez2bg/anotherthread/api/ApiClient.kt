@@ -1144,6 +1144,15 @@ object ApiClient {
         locations.find { it.id == id }
     }
 
+    /**
+     * Get a single location with user context (includes puzzle-revealed secret passages).
+     */
+    suspend fun getLocationWithUserContext(id: String, userId: String): Result<LocationDto> = apiCall {
+        client.get("$baseUrl/locations/$id") {
+            header("X-User-Id", userId)
+        }.body()
+    }
+
     suspend fun toggleLocationLock(locationId: String, userId: String): Result<LocationDto> = apiCall {
         client.put("$baseUrl/locations/$locationId/lock") {
             contentType(ContentType.Application.Json)
@@ -2630,6 +2639,7 @@ data class TrainerInfoResponse(
 // Puzzle DTOs (Lever puzzles and secret passages)
 // ============================================================================
 
+@Serializable
 enum class PuzzleType {
     LEVER_SEQUENCE,      // Pull levers in specific order
     LEVER_COMBINATION,   // Pull specific levers (any order)

@@ -1586,12 +1586,15 @@ class AdventureViewModel {
      * Load puzzles at the current location.
      */
     fun loadPuzzlesAtLocation(locationId: String) {
+        println("[AdventureViewModel] Loading puzzles for location: $locationId")
         scope.launch {
             ApiClient.getPuzzlesAtLocation(locationId)
                 .onSuccess { puzzles ->
+                    println("[AdventureViewModel] Loaded ${puzzles.size} puzzles: ${puzzles.map { it.name }}")
                     _localState.update { it.copy(puzzlesAtLocation = puzzles) }
                 }
-                .onFailure {
+                .onFailure { error ->
+                    println("[AdventureViewModel] Failed to load puzzles: ${error.message}")
                     _localState.update { it.copy(puzzlesAtLocation = emptyList()) }
                 }
         }
@@ -1652,9 +1655,12 @@ class AdventureViewModel {
                             _localState.update { it.copy(puzzleProgress = progress) }
                         }
 
-                    // If puzzle was solved, refresh the location to show new exits
+                    // If puzzle was solved, refresh the current location to show new exits
                     if (response.puzzleSolved) {
-                        AdventureRepository.refresh()
+                        val currentLocationId = AdventureRepository.currentLocationId.value
+                        if (currentLocationId != null) {
+                            AdventureRepository.refreshLocationWithUserContext(currentLocationId, userId)
+                        }
                     }
                 }
                 .onFailure { error ->

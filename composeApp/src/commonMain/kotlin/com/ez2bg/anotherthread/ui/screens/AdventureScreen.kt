@@ -5105,41 +5105,47 @@ private fun PuzzleModal(
             // Header
             Row(
                 modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
+                Icon(
+                    imageVector = Icons.Filled.Gavel,
+                    contentDescription = "Puzzle",
+                    tint = Color(0xFF9C27B0),
+                    modifier = Modifier.size(28.dp)
+                )
+                Spacer(modifier = Modifier.width(8.dp))
+                Text(
+                    text = puzzle?.name ?: "Puzzle",
+                    color = Color.White,
+                    fontSize = 20.sp,
+                    fontWeight = FontWeight.Bold
+                )
+            }
+
+            // Solved indicator - shown below title when solved
+            if (puzzleProgress?.isSolved == true) {
+                Spacer(modifier = Modifier.height(8.dp))
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .background(Color(0xFF1B5E20).copy(alpha = 0.4f), RoundedCornerShape(8.dp))
+                        .padding(horizontal = 12.dp, vertical = 8.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.Center
+                ) {
                     Icon(
-                        imageVector = Icons.Filled.Gavel,
-                        contentDescription = "Puzzle",
-                        tint = Color(0xFF9C27B0),
-                        modifier = Modifier.size(28.dp)
+                        imageVector = Icons.Filled.Check,
+                        contentDescription = "Solved",
+                        tint = Color(0xFF4CAF50),
+                        modifier = Modifier.size(20.dp)
                     )
                     Spacer(modifier = Modifier.width(8.dp))
                     Text(
-                        text = puzzle?.name ?: "Puzzle",
-                        color = Color.White,
-                        fontSize = 20.sp,
+                        text = "Puzzle Solved!",
+                        color = Color(0xFF4CAF50),
+                        fontSize = 16.sp,
                         fontWeight = FontWeight.Bold
                     )
-                }
-                // Solved indicator
-                if (puzzleProgress?.isSolved == true) {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Icon(
-                            imageVector = Icons.Filled.Check,
-                            contentDescription = "Solved",
-                            tint = Color(0xFF4CAF50),
-                            modifier = Modifier.size(20.dp)
-                        )
-                        Spacer(modifier = Modifier.width(4.dp))
-                        Text(
-                            text = "Solved",
-                            color = Color(0xFF4CAF50),
-                            fontSize = 14.sp,
-                            fontWeight = FontWeight.Medium
-                        )
-                    }
                 }
             }
 

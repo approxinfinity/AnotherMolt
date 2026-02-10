@@ -290,6 +290,22 @@ object AdventureRepository {
         }
     }
 
+    /**
+     * Refresh a single location with user context.
+     * This fetches the location including any puzzle-revealed secret passages.
+     */
+    fun refreshLocationWithUserContext(locationId: String, userId: String) {
+        scope.launch {
+            ApiClient.getLocationWithUserContext(locationId, userId)
+                .onSuccess { updatedLocation ->
+                    // Update just this location in the list
+                    _locations.value = _locations.value.map { location ->
+                        if (location.id == locationId) updatedLocation else location
+                    }
+                }
+        }
+    }
+
     // =========================================================================
     // DERIVED STATE HELPERS
     // =========================================================================
