@@ -133,7 +133,9 @@ data class FishingInfoResponse(
     val successChance: Int,
     val durationMs: Long,
     val staminaCost: Int,
-    val manaCost: Int
+    val manaCost: Int,
+    val waterType: String = "freshwater",  // "freshwater" or "coastal"
+    val isCoastal: Boolean = false
 )
 
 @Serializable
@@ -157,6 +159,45 @@ data class FishCaughtInfo(
     val name: String,
     val weight: Int,
     val value: Int
+)
+
+// ===================== FISHING MINIGAME DTOs =====================
+
+@Serializable
+data class FishingMinigameStartResponse(
+    val success: Boolean,
+    val message: String? = null,
+    val sessionId: String? = null,
+    val fishName: String? = null,
+    val fishDifficulty: Int = 1,   // 1-10, affects fish movement speed/erraticness
+    val catchZoneSize: Int = 25,   // Size of player's catch zone (20-40%)
+    val durationMs: Long = 15000,  // Total time for minigame
+    val startingScore: Int = 50,   // Score starts at 50
+    val fishBehavior: FishBehaviorInfo? = null
+)
+
+@Serializable
+data class FishBehaviorInfo(
+    val speed: Float,              // Movement speed (0.1-1.0 of bar per second)
+    val changeDirectionChance: Float,  // Chance per tick to change direction
+    val erraticness: Float         // Randomness in movement (0.0-1.0)
+)
+
+@Serializable
+data class FishingMinigameCompleteRequest(
+    val sessionId: String,
+    val finalScore: Int  // 0-100, >= 100 means caught
+)
+
+@Serializable
+data class FishingMinigameCompleteResponse(
+    val success: Boolean,
+    val message: String,
+    val caught: Boolean = false,
+    val fishCaught: FishCaughtInfo? = null,
+    val manaRestored: Int = 0,
+    val totalFishCaught: Int = 0,
+    val earnedBadge: Boolean = false
 )
 
 // ===================== FOOD DTOs =====================
@@ -667,7 +708,9 @@ fun Route.userRoutes() {
                 successChance = info.successChance,
                 durationMs = info.durationMs,
                 staminaCost = info.staminaCost,
-                manaCost = info.manaCost
+                manaCost = info.manaCost,
+                waterType = info.waterType,
+                isCoastal = info.isCoastal
             ))
         }
 
@@ -711,6 +754,103 @@ fun Route.userRoutes() {
             call.respond(FishingResponse(
                 success = result.success,
                 message = result.message,
+                fishCaught = fishInfo,
+                manaRestored = result.manaRestored,
+                totalFishCaught = result.totalFishCaught,
+                earnedBadge = result.earnedBadge
+            ))
+        }
+
+        // ===================== FISHING MINIGAME ROUTES =====================
+
+        /**
+         * Start a fishing minigame session.
+         * Spends resources upfront and returns minigame parameters.
+         * Client runs the Stardew-style minigame, then calls /fish/complete with result.
+         */
+        post("/{id}/fish/start") {
+            val id = call.parameters["id"] ?: return@post call.respond(HttpStatusCode.BadRequest)
+            val request = call.receive<FishingRequest>()
+
+            val user = UserRepository.findById(id)
+            if (user == null) {
+                call.respond(HttpStatusCode.NotFound)
+                return@post
+            }
+
+            // Parse distance
+            val distance = try {
+                com.ez2bg.anotherthread.game.FishingService.FishingDistance.valueOf(request.distance.uppercase())
+            } catch (e: IllegalArgumentException) {
+                call.respond(HttpStatusCode.BadRequest, FishingMinigameStartResponse(
+                    success = false,
+                    message = "Invalid distance. Use NEAR, MID, or FAR."
+                ))
+                return@post
+            }
+
+            val result = com.ez2bg.anotherthread.game.FishingService.startFishingMinigame(user, distance)
+
+            result.fold(
+                onSuccess = { minigame ->
+                    val behavior = com.ez2bg.anotherthread.game.FishingService.getFishBehavior(minigame.fishDifficulty)
+                    call.respond(FishingMinigameStartResponse(
+                        success = true,
+                        sessionId = minigame.sessionId,
+                        fishName = minigame.fishName,
+                        fishDifficulty = minigame.fishDifficulty,
+                        catchZoneSize = minigame.catchZoneSize,
+                        durationMs = minigame.durationMs,
+                        startingScore = minigame.startingScore,
+                        fishBehavior = FishBehaviorInfo(
+                            speed = behavior.speed,
+                            changeDirectionChance = behavior.changeDirectionChance,
+                            erraticness = behavior.erraticness
+                        )
+                    ))
+                },
+                onFailure = { error ->
+                    call.respond(HttpStatusCode.BadRequest, FishingMinigameStartResponse(
+                        success = false,
+                        message = error.message
+                    ))
+                }
+            )
+        }
+
+        /**
+         * Complete a fishing minigame session.
+         * Client sends the final score; if >= 100, fish is caught.
+         */
+        post("/{id}/fish/complete") {
+            val id = call.parameters["id"] ?: return@post call.respond(HttpStatusCode.BadRequest)
+            val request = call.receive<FishingMinigameCompleteRequest>()
+
+            // User check is optional since session tracks user
+            val user = UserRepository.findById(id)
+            if (user == null) {
+                call.respond(HttpStatusCode.NotFound)
+                return@post
+            }
+
+            val result = com.ez2bg.anotherthread.game.FishingService.completeFishingMinigame(
+                sessionId = request.sessionId,
+                finalScore = request.finalScore
+            )
+
+            val fishInfo = result.fishCaught?.let { fish ->
+                FishCaughtInfo(
+                    id = fish.id,
+                    name = fish.name,
+                    weight = fish.weight,
+                    value = fish.value
+                )
+            }
+
+            call.respond(FishingMinigameCompleteResponse(
+                success = result.success,
+                message = result.message,
+                caught = result.success,
                 fishCaught = fishInfo,
                 manaRestored = result.manaRestored,
                 totalFishCaught = result.totalFishCaught,

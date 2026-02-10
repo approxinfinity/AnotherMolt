@@ -394,7 +394,9 @@ data class FishingInfoDto(
     val successChance: Int,
     val durationMs: Long,
     val staminaCost: Int,
-    val manaCost: Int
+    val manaCost: Int,
+    val waterType: String = "freshwater",  // "freshwater" or "coastal"
+    val isCoastal: Boolean = false
 )
 
 @Serializable
@@ -418,6 +420,45 @@ data class FishCaughtDto(
     val name: String,
     val weight: Int,
     val value: Int
+)
+
+// ===================== FISHING MINIGAME DTOs =====================
+
+@Serializable
+data class FishingMinigameStartDto(
+    val success: Boolean,
+    val message: String? = null,
+    val sessionId: String? = null,
+    val fishName: String? = null,
+    val fishDifficulty: Int = 1,   // 1-10, affects fish movement speed/erraticness
+    val catchZoneSize: Int = 25,   // Size of player's catch zone (20-40%)
+    val durationMs: Long = 15000,  // Total time for minigame
+    val startingScore: Int = 50,   // Score starts at 50
+    val fishBehavior: FishBehaviorDto? = null
+)
+
+@Serializable
+data class FishBehaviorDto(
+    val speed: Float,              // Movement speed (0.1-1.0 of bar per second)
+    val changeDirectionChance: Float,  // Chance per tick to change direction
+    val erraticness: Float         // Randomness in movement (0.0-1.0)
+)
+
+@Serializable
+data class FishingMinigameCompleteRequestDto(
+    val sessionId: String,
+    val finalScore: Int  // 0-100, >= 100 means caught
+)
+
+@Serializable
+data class FishingMinigameCompleteDto(
+    val success: Boolean,
+    val message: String,
+    val caught: Boolean = false,
+    val fishCaught: FishCaughtDto? = null,
+    val manaRestored: Int = 0,
+    val totalFishCaught: Int = 0,
+    val earnedBadge: Boolean = false
 )
 
 @Serializable
@@ -1512,6 +1553,28 @@ object ApiClient {
         client.post("$baseUrl/users/$userId/fish") {
             contentType(ContentType.Application.Json)
             setBody(FishingRequestDto(distance = distance))
+        }.body()
+    }
+
+    /**
+     * Start a fishing minigame session.
+     * Spends resources upfront and returns minigame parameters.
+     */
+    suspend fun startFishingMinigame(userId: String, distance: String): Result<FishingMinigameStartDto> = apiCall {
+        client.post("$baseUrl/users/$userId/fish/start") {
+            contentType(ContentType.Application.Json)
+            setBody(FishingRequestDto(distance = distance))
+        }.body()
+    }
+
+    /**
+     * Complete a fishing minigame session.
+     * Client sends the final score; if >= 100, fish is caught.
+     */
+    suspend fun completeFishingMinigame(userId: String, sessionId: String, finalScore: Int): Result<FishingMinigameCompleteDto> = apiCall {
+        client.post("$baseUrl/users/$userId/fish/complete") {
+            contentType(ContentType.Application.Json)
+            setBody(FishingMinigameCompleteRequestDto(sessionId = sessionId, finalScore = finalScore))
         }.body()
     }
 

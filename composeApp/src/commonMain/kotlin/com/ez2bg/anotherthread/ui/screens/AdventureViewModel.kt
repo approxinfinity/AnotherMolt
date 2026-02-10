@@ -17,6 +17,8 @@ import com.ez2bg.anotherthread.api.UserDto
 import com.ez2bg.anotherthread.api.PuzzleDto
 import com.ez2bg.anotherthread.api.PuzzleProgressResponse
 import com.ez2bg.anotherthread.api.FishingInfoDto
+import com.ez2bg.anotherthread.api.FishingMinigameStartDto
+import com.ez2bg.anotherthread.api.FishBehaviorDto
 import com.ez2bg.anotherthread.data.AdventureRepository
 import com.ez2bg.anotherthread.state.AdventureStateHolder
 import com.ez2bg.anotherthread.state.CombatStateHolder
@@ -103,7 +105,10 @@ data class AdventureLocalState(
     val isFishing: Boolean = false,
     val fishingDurationMs: Long = 0,
     val showFishingDistanceModal: Boolean = false,
-    val fishingInfo: FishingInfoDto? = null
+    val fishingInfo: FishingInfoDto? = null,
+    // Fishing minigame state
+    val showFishingMinigame: Boolean = false,
+    val fishingMinigameData: FishingMinigameStartDto? = null
 )
 
 /**
@@ -188,7 +193,10 @@ data class AdventureUiState(
     val isFishing: Boolean = false,
     val fishingDurationMs: Long = 0,
     val showFishingDistanceModal: Boolean = false,
-    val fishingInfo: FishingInfoDto? = null
+    val fishingInfo: FishingInfoDto? = null,
+    // Fishing minigame state
+    val showFishingMinigame: Boolean = false,
+    val fishingMinigameData: FishingMinigameStartDto? = null
 ) {
     // Derived properties
     val currentLocation: LocationDto?
@@ -353,7 +361,9 @@ class AdventureViewModel {
             isFishing = local.isFishing,
             fishingDurationMs = local.fishingDurationMs,
             showFishingDistanceModal = local.showFishingDistanceModal,
-            fishingInfo = local.fishingInfo
+            fishingInfo = local.fishingInfo,
+            showFishingMinigame = local.showFishingMinigame,
+            fishingMinigameData = local.fishingMinigameData
         )
     }.stateIn(
         scope = scope,
@@ -1624,31 +1634,69 @@ class AdventureViewModel {
 
     /**
      * Start fishing at the specified distance.
-     * Shows the fishing overlay for the appropriate duration, then performs the catch.
+     * Calls the API to start a minigame session, then shows the interactive minigame UI.
      */
     fun startFishing(distance: String) {
         val userId = UserStateHolder.userId ?: return
         val info = _localState.value.fishingInfo ?: return
 
         // Already fishing
-        if (_localState.value.isFishing) return
+        if (_localState.value.isFishing || _localState.value.showFishingMinigame) return
 
         scope.launch {
-            // Close the modal and show the fishing overlay
+            // Close the modal and show loading
             _localState.update {
                 it.copy(
                     showFishingDistanceModal = false,
-                    isFishing = true,
-                    fishingDurationMs = info.durationMs
+                    isFishing = true
                 )
             }
 
-            // Wait for the fishing duration
-            kotlinx.coroutines.delay(info.durationMs)
+            // Start the minigame session on server
+            ApiClient.startFishingMinigame(userId, distance).onSuccess { minigameData ->
+                if (!minigameData.success) {
+                    logMessage(minigameData.message ?: "Failed to start fishing")
+                    _localState.update {
+                        it.copy(
+                            isFishing = false,
+                            fishingInfo = null
+                        )
+                    }
+                    return@onSuccess
+                }
 
-            // Now perform the actual fishing
-            ApiClient.fish(userId, distance).onSuccess { result ->
-                if (result.success && result.fishCaught != null) {
+                // Show the minigame UI
+                _localState.update {
+                    it.copy(
+                        isFishing = false,
+                        showFishingMinigame = true,
+                        fishingMinigameData = minigameData
+                    )
+                }
+            }.onFailure { error ->
+                logError("Failed to start fishing: ${error.message}")
+                _localState.update {
+                    it.copy(
+                        isFishing = false,
+                        fishingInfo = null
+                    )
+                }
+            }
+        }
+    }
+
+    /**
+     * Complete the fishing minigame with the final score.
+     * Called by the minigame UI when the game ends.
+     */
+    fun completeFishingMinigame(finalScore: Int) {
+        val userId = UserStateHolder.userId ?: return
+        val minigameData = _localState.value.fishingMinigameData ?: return
+        val sessionId = minigameData.sessionId ?: return
+
+        scope.launch {
+            ApiClient.completeFishingMinigame(userId, sessionId, finalScore).onSuccess { result ->
+                if (result.caught && result.fishCaught != null) {
                     val fish = result.fishCaught
                     val sizeDesc = when {
                         fish.weight >= 6 -> "massive"
@@ -1669,14 +1717,14 @@ class AdventureViewModel {
                     logMessage(result.message)
                 }
             }.onFailure { error ->
-                logError("Failed to fish: ${error.message}")
+                logError("Failed to complete fishing: ${error.message}")
             }
 
-            // Hide the overlay
+            // Hide the minigame UI
             _localState.update {
                 it.copy(
-                    isFishing = false,
-                    fishingDurationMs = 0,
+                    showFishingMinigame = false,
+                    fishingMinigameData = null,
                     fishingInfo = null
                 )
             }
@@ -1684,14 +1732,16 @@ class AdventureViewModel {
     }
 
     /**
-     * Cancel an in-progress fishing attempt.
+     * Cancel an in-progress fishing attempt or minigame.
      */
     fun cancelFishing() {
         _localState.update {
             it.copy(
                 isFishing = false,
                 fishingDurationMs = 0,
-                fishingInfo = null
+                fishingInfo = null,
+                showFishingMinigame = false,
+                fishingMinigameData = null
             )
         }
     }

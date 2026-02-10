@@ -92,6 +92,7 @@ import com.ez2bg.anotherthread.api.LeverStateDto
 import com.ez2bg.anotherthread.api.PuzzleType
 import com.ez2bg.anotherthread.api.ADMIN_FEATURE_ID
 import com.ez2bg.anotherthread.api.FishingInfoDto
+import com.ez2bg.anotherthread.api.FishingMinigameStartDto
 import com.ez2bg.anotherthread.ui.CreatureStateIcon
 import com.ez2bg.anotherthread.ui.SwordIcon
 import com.ez2bg.anotherthread.ui.getBlindItemDescription
@@ -1209,6 +1210,16 @@ fun AdventureScreen(
                 fishingInfo = fishingInfo,
                 onSelectDistance = { viewModel.startFishing(it) },
                 onDismiss = { viewModel.closeFishingModal() }
+            )
+        }
+
+        // Fishing minigame overlay - Stardew Valley style slider
+        val minigameData = uiState.fishingMinigameData
+        if (uiState.showFishingMinigame && minigameData != null) {
+            FishingMinigameOverlay(
+                minigameData = minigameData,
+                onComplete = { finalScore -> viewModel.completeFishingMinigame(finalScore) },
+                onCancel = { viewModel.cancelFishing() }
             )
         }
 
@@ -5950,6 +5961,265 @@ private fun FishingOverlay(durationMs: Long) {
                 color = Color.White.copy(alpha = 0.7f),
                 fontSize = 14.sp
             )
+        }
+    }
+}
+
+// =============================================================================
+// FISHING MINIGAME OVERLAY (STARDEW VALLEY STYLE)
+// =============================================================================
+
+/**
+ * Interactive fishing minigame where fish moves up/down and player controls catch zone.
+ * - Fish moves along Y-axis based on difficulty (speed, erraticness)
+ * - Player slides catch zone to keep fish inside
+ * - Score starts at 50, increases when fish is in zone, decreases when outside
+ * - Reach 100 = catch, hit 0 = fish escapes
+ */
+@Composable
+private fun FishingMinigameOverlay(
+    minigameData: FishingMinigameStartDto,
+    onComplete: (finalScore: Int) -> Unit,
+    onCancel: () -> Unit
+) {
+    val fishBehavior = minigameData.fishBehavior
+    val durationMs = minigameData.durationMs
+    val startingScore = minigameData.startingScore
+    val catchZoneSizePercent = minigameData.catchZoneSize  // 20-40%
+
+    // Game state
+    var score by remember { mutableStateOf(startingScore.toFloat()) }
+    var fishPosition by remember { mutableStateOf(0.5f) }  // 0-1, center of bar
+    var catchZonePosition by remember { mutableStateOf(0.5f) }  // 0-1, center of bar
+    var fishDirection by remember { mutableStateOf(if (kotlin.random.Random.nextBoolean()) 1f else -1f) }
+    var gameEnded by remember { mutableStateOf(false) }
+    var lastUpdateTime by remember { mutableStateOf(0L) }
+
+    // Bar dimensions
+    val barHeight = 300.dp
+    val barWidth = 60.dp
+    val catchZoneSize = catchZoneSizePercent / 100f  // Convert to 0-0.4 range
+
+    // Fish behavior parameters
+    val fishSpeed = fishBehavior?.speed ?: 0.3f
+    val changeDirectionChance = fishBehavior?.changeDirectionChance ?: 0.05f
+    val erraticness = fishBehavior?.erraticness ?: 0.3f
+
+    // Game loop
+    LaunchedEffect(Unit) {
+        val startTime = com.ez2bg.anotherthread.platform.currentTimeMillis()
+        lastUpdateTime = startTime
+
+        while (!gameEnded) {
+            val currentTime = com.ez2bg.anotherthread.platform.currentTimeMillis()
+            val deltaTime = (currentTime - lastUpdateTime) / 1000f  // Seconds
+            lastUpdateTime = currentTime
+
+            // Check if time is up
+            if (currentTime - startTime >= durationMs) {
+                gameEnded = true
+                onComplete(score.toInt())
+                break
+            }
+
+            // Move fish
+            val baseMove = fishSpeed * deltaTime * fishDirection
+            val randomJitter = (kotlin.random.Random.nextFloat() - 0.5f) * erraticness * deltaTime
+            fishPosition = (fishPosition + baseMove + randomJitter).coerceIn(0.1f, 0.9f)
+
+            // Randomly change direction
+            if (kotlin.random.Random.nextFloat() < changeDirectionChance) {
+                fishDirection = -fishDirection
+            }
+
+            // Bounce off edges
+            if (fishPosition <= 0.1f || fishPosition >= 0.9f) {
+                fishDirection = -fishDirection
+            }
+
+            // Check if fish is in catch zone
+            val catchZoneTop = catchZonePosition - catchZoneSize / 2
+            val catchZoneBottom = catchZonePosition + catchZoneSize / 2
+            val fishInZone = fishPosition >= catchZoneTop && fishPosition <= catchZoneBottom
+
+            // Update score
+            val scoreChange = if (fishInZone) 15f * deltaTime else -20f * deltaTime
+            score = (score + scoreChange).coerceIn(0f, 100f)
+
+            // Check win/lose conditions
+            if (score >= 100f) {
+                gameEnded = true
+                onComplete(100)
+                break
+            } else if (score <= 0f) {
+                gameEnded = true
+                onComplete(0)
+                break
+            }
+
+            kotlinx.coroutines.delay(16)  // ~60 FPS
+        }
+    }
+
+    // UI
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(Color.Black.copy(alpha = 0.85f)),
+        contentAlignment = Alignment.Center
+    ) {
+        Column(
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.spacedBy(16.dp)
+        ) {
+            // Fish name
+            Text(
+                text = minigameData.fishName ?: "Fish",
+                color = Color.White,
+                fontSize = 20.sp,
+                fontWeight = FontWeight.Bold
+            )
+
+            // Difficulty indicator
+            Row(
+                horizontalArrangement = Arrangement.spacedBy(2.dp)
+            ) {
+                repeat(10) { i ->
+                    Box(
+                        modifier = Modifier
+                            .size(8.dp)
+                            .background(
+                                if (i < minigameData.fishDifficulty) Color(0xFFFF6B6B) else Color.Gray.copy(alpha = 0.3f),
+                                RoundedCornerShape(2.dp)
+                            )
+                    )
+                }
+            }
+
+            Row(
+                horizontalArrangement = Arrangement.spacedBy(24.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                // Score meter on left
+                Column(
+                    horizontalAlignment = Alignment.CenterHorizontally
+                ) {
+                    Text("OFF", color = Color.Red, fontSize = 10.sp)
+                    Box(
+                        modifier = Modifier
+                            .width(20.dp)
+                            .height(barHeight)
+                            .background(Color.Gray.copy(alpha = 0.3f), RoundedCornerShape(4.dp))
+                    ) {
+                        // Score fill (from bottom)
+                        Box(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .fillMaxHeight(score / 100f)
+                                .align(Alignment.BottomCenter)
+                                .background(
+                                    when {
+                                        score >= 75 -> Color(0xFF4CAF50)  // Green
+                                        score >= 40 -> Color(0xFFFFEB3B)  // Yellow
+                                        else -> Color(0xFFFF5722)  // Red/Orange
+                                    },
+                                    RoundedCornerShape(4.dp)
+                                )
+                        )
+                    }
+                    Text("CAUGHT", color = Color.Green, fontSize = 10.sp)
+                }
+
+                // Main fishing bar with catch zone and fish
+                Box(
+                    modifier = Modifier
+                        .width(barWidth)
+                        .height(barHeight)
+                        .background(Color(0xFF1E88E5).copy(alpha = 0.3f), RoundedCornerShape(8.dp))
+                        .border(2.dp, Color(0xFF1E88E5), RoundedCornerShape(8.dp))
+                        .pointerInput(Unit) {
+                            detectDragGestures { change, dragAmount ->
+                                change.consume()
+                                // Move catch zone based on drag
+                                val dragPercent = dragAmount.y / barHeight.toPx()
+                                catchZonePosition = (catchZonePosition + dragPercent).coerceIn(
+                                    catchZoneSize / 2,
+                                    1f - catchZoneSize / 2
+                                )
+                            }
+                        }
+                ) {
+                    // Catch zone (green box that player controls)
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .fillMaxHeight(catchZoneSize)
+                            .offset(y = (barHeight * (catchZonePosition - catchZoneSize / 2)))
+                            .background(
+                                Color.Green.copy(alpha = 0.4f),
+                                RoundedCornerShape(4.dp)
+                            )
+                            .border(2.dp, Color.Green, RoundedCornerShape(4.dp))
+                    )
+
+                    // Fish (red/orange circle)
+                    Box(
+                        modifier = Modifier
+                            .size(24.dp)
+                            .offset(
+                                x = (barWidth - 24.dp) / 2,
+                                y = barHeight * fishPosition - 12.dp
+                            )
+                            .background(
+                                Brush.radialGradient(
+                                    colors = listOf(Color(0xFFFF6B6B), Color(0xFFFF5722))
+                                ),
+                                CircleShape
+                            )
+                            .border(2.dp, Color.White, CircleShape)
+                    )
+                }
+
+                // Instructions on right
+                Column(
+                    modifier = Modifier.width(80.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    Text(
+                        "Drag to move",
+                        color = Color.White.copy(alpha = 0.7f),
+                        fontSize = 12.sp,
+                        textAlign = TextAlign.Center
+                    )
+                    Text(
+                        "Keep fish in green zone!",
+                        color = Color.White.copy(alpha = 0.7f),
+                        fontSize = 12.sp,
+                        textAlign = TextAlign.Center
+                    )
+                }
+            }
+
+            // Score text
+            Text(
+                text = "Score: ${score.toInt()}/100",
+                color = when {
+                    score >= 75 -> Color(0xFF4CAF50)
+                    score >= 40 -> Color(0xFFFFEB3B)
+                    else -> Color(0xFFFF5722)
+                },
+                fontSize = 18.sp,
+                fontWeight = FontWeight.Bold
+            )
+
+            // Cancel button
+            TextButton(
+                onClick = onCancel,
+                colors = ButtonDefaults.textButtonColors(contentColor = Color.White.copy(alpha = 0.7f))
+            ) {
+                Text("Give Up")
+            }
         }
     }
 }
