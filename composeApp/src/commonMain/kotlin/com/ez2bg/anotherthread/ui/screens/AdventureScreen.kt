@@ -1380,8 +1380,15 @@ private fun LocationInfoPanel(
                 itemsHere.forEachIndexed { index, item ->
                     // Use key() to help Compose track individual items and avoid full recomposition
                     key(item.id) {
+                        // Show asterisk prefix for items discovered via search
+                        val isDiscovered = item.id in location.discoveredItemIds
+                        val displayName = when {
+                            isBlinded -> getBlindItemDescription(item, index)
+                            isDiscovered -> "*${item.name}"
+                            else -> item.name
+                        }
                         Text(
-                            text = if (isBlinded) getBlindItemDescription(item, index) else item.name,
+                            text = displayName,
                             color = if (isBlinded) Color.White.copy(alpha = 0.6f) else Color(0xFFFFD54F),
                             fontSize = 14.sp,
                             modifier = Modifier

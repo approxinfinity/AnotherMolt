@@ -8,7 +8,69 @@ import io.ktor.server.request.*
 import io.ktor.server.response.*
 import io.ktor.server.routing.*
 import kotlinx.coroutines.launch
+import kotlinx.serialization.Serializable
 import java.time.LocalDateTime
+
+/**
+ * Extended location response that includes user-specific discovered items.
+ */
+@Serializable
+data class LocationWithDiscoveredItems(
+    val id: String,
+    val name: String,
+    val desc: String,
+    val itemIds: List<String>,
+    val creatureIds: List<String>,
+    val exits: List<Exit>,
+    val featureIds: List<String>,
+    val imageUrl: String? = null,
+    val lockedBy: String? = null,
+    val gridX: Int? = null,
+    val gridY: Int? = null,
+    val areaId: String? = null,
+    val lastEditedBy: String? = null,
+    val lastEditedAt: String? = null,
+    val locationType: LocationType? = null,
+    val biome: String? = null,
+    val elevation: Float? = null,
+    val moisture: Float? = null,
+    val isRiver: Boolean? = null,
+    val isCoast: Boolean? = null,
+    val terrainFeatures: List<String>? = null,
+    val isOriginalTerrain: Boolean? = null,
+    val shopLayoutDirection: ShopLayoutDirection? = null,
+    // User-specific: items the user has discovered via search (shown with * prefix)
+    val discoveredItemIds: List<String> = emptyList()
+) {
+    companion object {
+        fun from(location: Location, discoveredItemIds: List<String> = emptyList()) = LocationWithDiscoveredItems(
+            id = location.id,
+            name = location.name,
+            desc = location.desc,
+            itemIds = location.itemIds,
+            creatureIds = location.creatureIds,
+            exits = location.exits,
+            featureIds = location.featureIds,
+            imageUrl = location.imageUrl,
+            lockedBy = location.lockedBy,
+            gridX = location.gridX,
+            gridY = location.gridY,
+            areaId = location.areaId,
+            lastEditedBy = location.lastEditedBy,
+            lastEditedAt = location.lastEditedAt,
+            locationType = location.locationType,
+            biome = location.biome,
+            elevation = location.elevation,
+            moisture = location.moisture,
+            isRiver = location.isRiver,
+            isCoast = location.isCoast,
+            terrainFeatures = location.terrainFeatures,
+            isOriginalTerrain = location.isOriginalTerrain,
+            shopLayoutDirection = location.shopLayoutDirection,
+            discoveredItemIds = discoveredItemIds
+        )
+    }
+}
 
 /**
  * Location routes for managing game locations.
@@ -26,7 +88,7 @@ fun Route.locationRoutes() {
             call.respond(LocationRepository.findAll())
         }
 
-        // Get location by ID with puzzle-revealed secret passages
+        // Get location by ID with puzzle-revealed secret passages and discovered items
         get("/{id}") {
             val id = call.parameters["id"] ?: return@get call.respond(HttpStatusCode.BadRequest)
             val userId = call.request.header("X-User-Id")
@@ -37,9 +99,9 @@ fun Route.locationRoutes() {
                 return@get
             }
 
-            // If no user, return location as-is
+            // If no user, return location as-is (with empty discovered items)
             if (userId == null) {
-                call.respond(location)
+                call.respond(LocationWithDiscoveredItems.from(location))
                 return@get
             }
 
@@ -62,15 +124,25 @@ fun Route.locationRoutes() {
                 }
             }
 
-            // Return location with any additional revealed exits
-            if (additionalExits.isNotEmpty()) {
-                val locationWithSecrets = location.copy(
-                    exits = location.exits + additionalExits
-                )
-                call.respond(locationWithSecrets)
+            // Get discovered item IDs for this user at this location
+            val visibleLocationItems = LocationItemRepository.getVisibleItemsForUser(id, userId)
+            val allLocationItems = LocationItemRepository.findByLocation(id)
+            // Items that are visible AND were hidden (discovered via search)
+            val discoveredItemIds = visibleLocationItems
+                .filter { locItem ->
+                    // It's considered "discovered" if it's hidden but visible to the user
+                    locItem.isHidden() && LocationItemRepository.hasDiscovered(userId, locItem.id)
+                }
+                .map { it.itemId }
+
+            // Build final location with any additional revealed exits
+            val finalLocation = if (additionalExits.isNotEmpty()) {
+                location.copy(exits = location.exits + additionalExits)
             } else {
-                call.respond(location)
+                location
             }
+
+            call.respond(LocationWithDiscoveredItems.from(finalLocation, discoveredItemIds))
         }
         post {
             val request = call.receive<CreateLocationRequest>()

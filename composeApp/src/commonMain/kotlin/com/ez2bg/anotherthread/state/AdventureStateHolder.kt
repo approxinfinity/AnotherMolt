@@ -177,7 +177,7 @@ object AdventureStateHolder {
                         _navigationEvents.emit(NavigationEvent.NavigationBlocked(errorMessage))
                         CombatStateHolder.addEventLogEntry(
                             errorMessage,
-                            EventLogType.SYSTEM
+                            EventLogType.ERROR
                         )
                     }
                 }

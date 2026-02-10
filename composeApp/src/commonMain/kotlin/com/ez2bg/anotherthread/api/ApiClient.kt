@@ -71,7 +71,9 @@ data class LocationDto(
     val terrainFeatures: List<String>? = null,
     val isOriginalTerrain: Boolean? = null,
     // Shop layout direction (default VERTICAL)
-    val shopLayoutDirection: ShopLayoutDirection? = null
+    val shopLayoutDirection: ShopLayoutDirection? = null,
+    // Item IDs that the user has discovered via search (shown with * prefix)
+    val discoveredItemIds: List<String> = emptyList()
 )
 
 @Serializable
@@ -1293,13 +1295,18 @@ object ApiClient {
         Unit
     }
 
+    /**
+     * Get a single location by ID with user context.
+     * Includes puzzle-revealed secret passages and discovered items (shown with * prefix).
+     * Uses X-User-Id from DefaultRequest header (set via setUserContext).
+     */
     suspend fun getLocation(id: String): Result<LocationDto?> = apiCall {
-        val locations: List<LocationDto> = client.get("$baseUrl/locations").body()
-        locations.find { it.id == id }
+        client.get("$baseUrl/locations/$id").body<LocationDto?>()
     }
 
     /**
-     * Get a single location with user context (includes puzzle-revealed secret passages).
+     * Get a single location with explicit user context (includes puzzle-revealed secret passages
+     * and discovered items).
      */
     suspend fun getLocationWithUserContext(id: String, userId: String): Result<LocationDto> = apiCall {
         client.get("$baseUrl/locations/$id") {
