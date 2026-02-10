@@ -31,6 +31,7 @@ import com.ez2bg.anotherthread.routes.teleportRoutes
 import com.ez2bg.anotherthread.routes.phasewalkRoutes
 import com.ez2bg.anotherthread.routes.riftPortalRoutes
 import com.ez2bg.anotherthread.routes.worldGenRoutes
+import com.ez2bg.anotherthread.routes.puzzleRoutes
 import com.ez2bg.anotherthread.events.LocationEventService
 import com.ez2bg.anotherthread.spell.*
 import com.ez2bg.anotherthread.SimpleGoldBalancer
@@ -1854,6 +1855,7 @@ fun Application.module() {
         teleportRoutes()
         phasewalkRoutes()
         riftPortalRoutes()
+        puzzleRoutes()
     }
 }
 

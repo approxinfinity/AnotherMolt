@@ -25,6 +25,53 @@ fun Route.locationRoutes() {
         get {
             call.respond(LocationRepository.findAll())
         }
+
+        // Get location by ID with puzzle-revealed secret passages
+        get("/{id}") {
+            val id = call.parameters["id"] ?: return@get call.respond(HttpStatusCode.BadRequest)
+            val userId = call.request.header("X-User-Id")
+
+            val location = LocationRepository.findById(id)
+            if (location == null) {
+                call.respond(HttpStatusCode.NotFound)
+                return@get
+            }
+
+            // If no user, return location as-is
+            if (userId == null) {
+                call.respond(location)
+                return@get
+            }
+
+            // Check for any puzzles at this location that reveal secret exits
+            val puzzles = PuzzleRepository.findByLocationId(id)
+            val additionalExits = mutableListOf<Exit>()
+
+            for (puzzle in puzzles) {
+                val progress = PuzzleRepository.getProgress(userId, puzzle.id)
+                if (progress.solved) {
+                    // Add revealed secret passages as exits
+                    for (passage in puzzle.secretPassages) {
+                        if (passage.id in progress.passagesRevealed) {
+                            additionalExits.add(Exit(
+                                locationId = passage.targetLocationId,
+                                direction = passage.direction
+                            ))
+                        }
+                    }
+                }
+            }
+
+            // Return location with any additional revealed exits
+            if (additionalExits.isNotEmpty()) {
+                val locationWithSecrets = location.copy(
+                    exits = location.exits + additionalExits
+                )
+                call.respond(locationWithSecrets)
+            } else {
+                call.respond(location)
+            }
+        }
         post {
             val request = call.receive<CreateLocationRequest>()
             val userId = call.request.header("X-User-Id") ?: "unknown"
