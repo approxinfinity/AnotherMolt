@@ -1228,6 +1228,18 @@ class AdventureViewModel {
             return
         }
 
+        // Handle hide ability — works outside combat
+        if (ability.effects.contains("\"type\":\"hide\"")) {
+            handleHideAbility(ability)
+            return
+        }
+
+        // Handle sneak ability — works outside combat
+        if (ability.effects.contains("\"type\":\"sneak\"")) {
+            handleSneakAbility(ability)
+            return
+        }
+
         val needToJoinCombat = !CombatStateHolder.isInCombat
         if (needToJoinCombat) {
             // AoE abilities can initiate combat with all hostiles
@@ -1354,6 +1366,48 @@ class AdventureViewModel {
                 }
             }.onFailure { error ->
                 logError("Failed to track: ${error.message}")
+            }
+        }
+    }
+
+    // =========================================================================
+    // HIDE / SNEAK
+    // =========================================================================
+
+    private fun handleHideAbility(ability: AbilityDto) {
+        if (CombatStateHolder.isInCombat) {
+            showSnackbar("Cannot hide while in combat!")
+            return
+        }
+
+        val userId = UserStateHolder.userId ?: return
+
+        scope.launch {
+            ApiClient.attemptHide(userId).onSuccess { result ->
+                logMessage(result.message)
+                // Refresh user data to update isHidden status
+                UserStateHolder.refreshUser()
+            }.onFailure { error ->
+                logError("Failed to hide: ${error.message}")
+            }
+        }
+    }
+
+    private fun handleSneakAbility(ability: AbilityDto) {
+        if (CombatStateHolder.isInCombat) {
+            showSnackbar("Cannot sneak while in combat!")
+            return
+        }
+
+        val userId = UserStateHolder.userId ?: return
+
+        scope.launch {
+            ApiClient.attemptSneak(userId).onSuccess { result ->
+                logMessage(result.message)
+                // Refresh user data to update isSneaking status
+                UserStateHolder.refreshUser()
+            }.onFailure { error ->
+                logError("Failed to sneak: ${error.message}")
             }
         }
     }

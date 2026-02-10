@@ -9,6 +9,8 @@ object UniversalAbilitySeed {
     const val AID_ABILITY_ID = "universal-aid"
     const val DRAG_ABILITY_ID = "universal-drag"
     const val TRACK_ABILITY_ID = "universal-track"
+    const val HIDE_ABILITY_ID = "universal-hide"
+    const val SNEAK_ABILITY_ID = "universal-sneak"
 
     /**
      * Seeds universal abilities if they don't exist.
@@ -18,6 +20,8 @@ object UniversalAbilitySeed {
         seedAidAbility()
         seedDragAbility()
         seedTrackAbility()
+        seedHideAbility()
+        seedSneakAbility()
     }
 
     private fun seedBasicAttack() {
@@ -123,5 +127,57 @@ object UniversalAbilitySeed {
             )
         )
         println("Seeded track ability")
+    }
+
+    private fun seedHideAbility() {
+        if (AbilityRepository.findById(HIDE_ABILITY_ID) != null) {
+            return
+        }
+
+        // Hide - become invisible in current location
+        AbilityRepository.create(
+            Ability(
+                id = HIDE_ABILITY_ID,
+                name = "Hide",
+                description = "Slip into the shadows and become hidden. Other characters must pass perception checks to notice you. Cannot be used in combat. Moving while hidden breaks the effect - use Sneak to move stealthily.",
+                classId = null,  // Universal - available to all classes
+                abilityType = "utility",
+                targetType = "self",
+                range = 0,
+                cooldownType = "short",
+                cooldownRounds = 0,
+                baseDamage = 0,
+                effects = """[{"type":"hide"}]""",
+                powerCost = 0,
+                staminaCost = 3  // Costs stamina to find a good hiding spot
+            )
+        )
+        println("Seeded hide ability")
+    }
+
+    private fun seedSneakAbility() {
+        if (AbilityRepository.findById(SNEAK_ABILITY_ID) != null) {
+            return
+        }
+
+        // Sneak - move stealthily between locations
+        AbilityRepository.create(
+            Ability(
+                id = SNEAK_ABILITY_ID,
+                name = "Sneak",
+                description = "Begin moving stealthily. You can move between locations while remaining hidden from others. Dexterity and rogue-type classes improve success. Heavy armor penalizes stealth. Cannot be used in combat.",
+                classId = null,  // Universal - available to all classes
+                abilityType = "utility",
+                targetType = "self",
+                range = 0,
+                cooldownType = "short",
+                cooldownRounds = 0,
+                baseDamage = 0,
+                effects = """[{"type":"sneak"}]""",
+                powerCost = 0,
+                staminaCost = 2  // Ongoing cost per movement handled elsewhere
+            )
+        )
+        println("Seeded sneak ability")
     }
 }
