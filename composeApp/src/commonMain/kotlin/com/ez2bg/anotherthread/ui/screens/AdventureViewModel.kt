@@ -1657,7 +1657,13 @@ class AdventureViewModel {
                         else -> "small"
                     }
                     logMessage("You caught a $sizeDesc ${fish.name}! (+${result.manaRestored} mana)", EventLogType.LOOT)
-                    // Refresh user data to update inventory
+
+                    // Show badge earned message if applicable
+                    if (result.earnedBadge) {
+                        logMessage("You earned the Angler's Badge! Your fishing skill has improved.", EventLogType.LOOT)
+                    }
+
+                    // Refresh user data to update inventory and abilities
                     UserStateHolder.refreshUser()
                 } else {
                     logMessage(result.message)

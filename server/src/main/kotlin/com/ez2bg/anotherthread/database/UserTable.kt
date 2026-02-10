@@ -45,6 +45,8 @@ object UserTable : Table("user") {
     val isSneaking = bool("is_sneaking").default(false)  // Moving stealthily
     // Party system: if set, user is following this leader
     val partyLeaderId = varchar("party_leader_id", 36).nullable()
+    // Fishing stats
+    val fishCaught = integer("fish_caught").default(0)
 
     override val primaryKey = PrimaryKey(id)
 }

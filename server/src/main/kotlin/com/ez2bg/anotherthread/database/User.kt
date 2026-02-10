@@ -54,7 +54,9 @@ data class User(
     val isHidden: Boolean = false,    // Currently hiding in place
     val isSneaking: Boolean = false,  // Moving stealthily
     // Party system: if set, user is following this leader
-    val partyLeaderId: String? = null
+    val partyLeaderId: String? = null,
+    // Fishing stats
+    val fishCaught: Int = 0
 )
 
 /**
@@ -106,7 +108,9 @@ data class UserResponse(
     // Party system: true if this user has followers (is a party leader)
     val isPartyLeader: Boolean,
     // Generated appearance description based on equipment
-    val appearanceDescription: String
+    val appearanceDescription: String,
+    // Fishing stats
+    val fishCaught: Int
 )
 
 fun User.toResponse(): UserResponse {
@@ -150,7 +154,8 @@ fun User.toResponse(): UserResponse {
         isSneaking = isSneaking,
         partyLeaderId = partyLeaderId,
         isPartyLeader = UserRepository.findFollowers(id).isNotEmpty(),
-        appearanceDescription = UserRepository.generateAppearanceDescription(this)
+        appearanceDescription = UserRepository.generateAppearanceDescription(this),
+        fishCaught = fishCaught
     )
 }
 
@@ -204,7 +209,8 @@ object UserRepository {
         visibleAbilityIds = jsonToList(this[UserTable.visibleAbilityIds]),
         isHidden = this[UserTable.isHidden],
         isSneaking = this[UserTable.isSneaking],
-        partyLeaderId = this[UserTable.partyLeaderId]
+        partyLeaderId = this[UserTable.partyLeaderId],
+        fishCaught = this[UserTable.fishCaught]
     )
 
     fun create(user: User): User = transaction {
@@ -244,6 +250,7 @@ object UserRepository {
             it[isHidden] = user.isHidden
             it[isSneaking] = user.isSneaking
             it[partyLeaderId] = user.partyLeaderId
+            it[fishCaught] = user.fishCaught
         }
         user
     }
@@ -823,6 +830,20 @@ object UserRepository {
             it[currentStamina] = newStamina
             it[lastActiveAt] = System.currentTimeMillis()
         } > 0
+    }
+
+    /**
+     * Increment fish caught counter.
+     * Returns the new total fish caught.
+     */
+    fun incrementFishCaught(id: String): Int = transaction {
+        val user = findById(id) ?: return@transaction 0
+        val newCount = user.fishCaught + 1
+        UserTable.update({ UserTable.id eq id }) {
+            it[fishCaught] = newCount
+            it[lastActiveAt] = System.currentTimeMillis()
+        }
+        newCount
     }
 
     /**

@@ -34,6 +34,13 @@ object FishingService {
     private const val MID_LOOT_TABLE = "loot-table-fishing-mid"
     private const val FAR_LOOT_TABLE = "loot-table-fishing-far"
 
+    // Fishing rod bonus
+    private const val FISHING_ROD_BONUS = 20  // 20% bonus with fishing rod
+    private const val FISHING_BADGE_BONUS = 15  // 15% bonus with fishing badge
+
+    // Fish needed for badge
+    private const val FISH_FOR_BADGE = 10
+
     /**
      * Fishing distance options.
      */
@@ -50,7 +57,9 @@ object FishingService {
         val success: Boolean,
         val message: String,
         val fishCaught: Item? = null,
-        val manaRestored: Int = 0
+        val manaRestored: Int = 0,
+        val totalFishCaught: Int = 0,
+        val earnedBadge: Boolean = false
     )
 
     /**
@@ -84,6 +93,41 @@ object FishingService {
     fun isFishingLocation(locationId: String): Boolean {
         val location = LocationRepository.findById(locationId) ?: return false
         return isFishingLocation(location)
+    }
+
+    /**
+     * Check if user has a fishing rod in inventory.
+     */
+    fun hasFishingRod(user: User): Boolean {
+        return user.itemIds.contains(FishingSeed.FISHING_ROD_ID)
+    }
+
+    /**
+     * Check if user has the fishing badge ability.
+     */
+    fun hasFishingBadge(user: User): Boolean {
+        return user.learnedAbilityIds.contains(FishingSeed.FISHING_BADGE_ID)
+    }
+
+    /**
+     * Calculate total fishing bonus from equipment and abilities.
+     */
+    fun getFishingBonus(user: User): Int {
+        var bonus = 0
+        if (hasFishingRod(user)) bonus += FISHING_ROD_BONUS
+        if (hasFishingBadge(user)) bonus += FISHING_BADGE_BONUS
+        return bonus
+    }
+
+    /**
+     * Calculate total success chance including bonuses.
+     */
+    fun calculateSuccessChance(user: User): Int {
+        val baseChance = StatModifierService.fishingSuccessChance(
+            user.dexterity, user.intelligence, user.level
+        )
+        val bonus = getFishingBonus(user)
+        return (baseChance + bonus).coerceIn(20, 95)
     }
 
     /**
@@ -181,9 +225,7 @@ object FishingService {
             midStrRequired = MID_STR_REQUIREMENT,
             farStrRequired = FAR_STR_REQUIREMENT,
             currentStr = user.strength,
-            successChance = StatModifierService.fishingSuccessChance(
-                user.dexterity, user.intelligence, user.level
-            ),
+            successChance = calculateSuccessChance(user),
             durationMs = StatModifierService.fishingDurationMs(user.wisdom, user.level),
             staminaCost = STAMINA_COST,
             manaCost = MANA_COST
@@ -245,16 +287,17 @@ object FishingService {
         UserRepository.spendStamina(user.id, STAMINA_COST)
         UserRepository.spendMana(user.id, MANA_COST)
 
-        // Calculate success
-        val successChance = StatModifierService.fishingSuccessChance(
-            user.dexterity, user.intelligence, user.level
-        )
+        // Calculate success (includes bonuses from fishing rod and badge)
+        val successChance = calculateSuccessChance(user)
         val roll = Random.nextInt(100)
         val caught = roll < successChance
 
+        val hasRod = hasFishingRod(user)
+        val hasBadge = hasFishingBadge(user)
         log.debug(
             "${user.name} fishing at $distance: rolled $roll vs $successChance% " +
-            "(DEX=${user.dexterity}, INT=${user.intelligence}, level=${user.level})"
+            "(DEX=${user.dexterity}, INT=${user.intelligence}, level=${user.level}, " +
+            "rod=$hasRod, badge=$hasBadge)"
         )
 
         if (!caught) {
@@ -290,6 +333,18 @@ object FishingService {
         val manaRestored = Random.nextInt(MANA_RESTORE_MIN, MANA_RESTORE_MAX + 1)
         UserRepository.restoreMana(user.id, manaRestored)
 
+        // Increment fish caught counter
+        val totalFishCaught = UserRepository.incrementFishCaught(user.id)
+
+        // Check if user earned the fishing badge (at 10 fish)
+        var earnedBadge = false
+        if (totalFishCaught == FISH_FOR_BADGE && !hasFishingBadge(user)) {
+            // Grant the fishing badge ability
+            UserRepository.learnAbility(user.id, FishingSeed.FISHING_BADGE_ID)
+            earnedBadge = true
+            log.info("${user.name} earned the Angler's Badge after catching $totalFishCaught fish!")
+        }
+
         val sizeDesc = when {
             fish.weight >= 6 -> "massive"
             fish.weight >= 4 -> "large"
@@ -297,13 +352,15 @@ object FishingService {
             else -> "small"
         }
 
-        log.info("${user.name} caught a ${fish.name} (weight=${fish.weight}, value=${fish.value})")
+        log.info("${user.name} caught a ${fish.name} (weight=${fish.weight}, value=${fish.value}, total=$totalFishCaught)")
 
         return FishingResult(
             success = true,
             message = "You caught a $sizeDesc ${fish.name}!",
             fishCaught = fish,
-            manaRestored = manaRestored
+            manaRestored = manaRestored,
+            totalFishCaught = totalFishCaught,
+            earnedBadge = earnedBadge
         )
     }
 

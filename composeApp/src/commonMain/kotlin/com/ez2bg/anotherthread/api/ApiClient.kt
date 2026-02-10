@@ -202,7 +202,9 @@ data class UserDto(
     // Party system: true if this user has followers (is a party leader)
     val isPartyLeader: Boolean = false,
     // Generated appearance based on equipment
-    val appearanceDescription: String = ""
+    val appearanceDescription: String = "",
+    // Fishing stats
+    val fishCaught: Int = 0
 )
 
 @Serializable
@@ -405,7 +407,9 @@ data class FishingResultDto(
     val success: Boolean,
     val message: String,
     val fishCaught: FishCaughtDto? = null,
-    val manaRestored: Int = 0
+    val manaRestored: Int = 0,
+    val totalFishCaught: Int = 0,
+    val earnedBadge: Boolean = false
 )
 
 @Serializable

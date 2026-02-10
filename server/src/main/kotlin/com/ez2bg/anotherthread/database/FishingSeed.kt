@@ -15,6 +15,8 @@ object FishingSeed {
         seedFishItems()
         seedFishingLootTables()
         seedFishingFeature()
+        seedFishingRod()
+        seedFishingBadge()
     }
 
     private fun seedFishItems() {
@@ -253,5 +255,86 @@ object FishingSeed {
             FeatureRepository.create(fishingFeature)
             log.info("Created fishing spot feature")
         }
+
+        // Add fishing spot to Lake Rainier
+        addFishingSpotToLakeRainier()
+    }
+
+    private fun addFishingSpotToLakeRainier() {
+        val lakeRainierId = "54521394-6a46-4747-9782-3a05848d2166"
+        val location = LocationRepository.findById(lakeRainierId) ?: return
+
+        if (!location.featureIds.contains(FISHING_FEATURE_ID)) {
+            val updatedLocation = location.copy(featureIds = location.featureIds + FISHING_FEATURE_ID)
+            LocationRepository.update(updatedLocation)
+            log.info("Added fishing spot feature to Lake Rainier")
+        }
+    }
+
+    // Fishing rod item ID
+    const val FISHING_ROD_ID = "item-fishing-rod"
+
+    // Fishing badge ability ID
+    const val FISHING_BADGE_ID = "ability-fishing-badge"
+
+    // Feature ID
+    private const val FISHING_FEATURE_ID = "feature-fishing-spot"
+
+    /**
+     * Seed the fishing rod item (sold at shops).
+     */
+    private fun seedFishingRod() {
+        if (ItemRepository.findById(FISHING_ROD_ID) == null) {
+            val fishingRod = Item(
+                id = FISHING_ROD_ID,
+                name = "Fishing Rod",
+                desc = "A sturdy fishing rod with a reliable reel. Improves your chances of catching fish by 20%.",
+                featureIds = emptyList(),
+                value = 50,
+                weight = 2,
+                isStackable = false
+            )
+            ItemRepository.create(fishingRod)
+            log.info("Created fishing rod item")
+        }
+
+        // Add fishing rod to the weapons shop
+        addFishingRodToShop()
+    }
+
+    private fun addFishingRodToShop() {
+        val weaponsShopId = "tun-du-lac-weapons-shop"
+        val shop = LocationRepository.findById(weaponsShopId) ?: return
+
+        if (!shop.itemIds.contains(FISHING_ROD_ID)) {
+            val updatedShop = shop.copy(itemIds = shop.itemIds + FISHING_ROD_ID)
+            LocationRepository.update(updatedShop)
+            log.info("Added fishing rod to weapons shop")
+        }
+    }
+
+    /**
+     * Seed the fishing badge passive ability.
+     */
+    private fun seedFishingBadge() {
+        if (AbilityRepository.findById(FISHING_BADGE_ID) != null) return
+
+        val fishingBadge = Ability(
+            id = FISHING_BADGE_ID,
+            name = "Angler's Badge",
+            description = "Awarded for catching 10 fish. Permanently improves fishing success by 15%.",
+            classId = null,  // Universal ability
+            abilityType = "passive",
+            targetType = "self",
+            range = 0,
+            cooldownType = "none",
+            cooldownRounds = 0,
+            effects = """[{"type": "fishing_bonus", "value": 15}]""",
+            manaCost = 0,
+            staminaCost = 0,
+            minLevel = 1
+        )
+        AbilityRepository.create(fishingBadge)
+        log.info("Created fishing badge ability")
     }
 }

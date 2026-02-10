@@ -146,7 +146,9 @@ data class FishingResponse(
     val success: Boolean,
     val message: String,
     val fishCaught: FishCaughtInfo? = null,
-    val manaRestored: Int = 0
+    val manaRestored: Int = 0,
+    val totalFishCaught: Int = 0,
+    val earnedBadge: Boolean = false
 )
 
 @Serializable
@@ -653,7 +655,9 @@ fun Route.userRoutes() {
                 success = result.success,
                 message = result.message,
                 fishCaught = fishInfo,
-                manaRestored = result.manaRestored
+                manaRestored = result.manaRestored,
+                totalFishCaught = result.totalFishCaught,
+                earnedBadge = result.earnedBadge
             ))
         }
 
