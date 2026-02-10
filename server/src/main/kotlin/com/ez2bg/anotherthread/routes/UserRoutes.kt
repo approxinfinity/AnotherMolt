@@ -1602,8 +1602,10 @@ fun Route.userRoutes() {
                 return@post
             }
 
-            // Check item is at the location
-            if (itemId !in location.itemIds) {
+            // Check item is at the location - in location_item table (ground drops)
+            // Note: Shop items are in location.itemIds and use /buy endpoint, not pickup
+            val locationItem = LocationItemRepository.findByItemId(itemId, request.locationId)
+            if (locationItem == null) {
                 call.respond(HttpStatusCode.BadRequest, mapOf("error" to "Item is not at this location"))
                 return@post
             }
@@ -1626,11 +1628,11 @@ fun Route.userRoutes() {
             // Add to user inventory
             UserRepository.addItems(userId, listOf(itemId))
 
-            // Remove from location (both legacy itemIds and new LocationItem table)
-            val updatedItemIds = location.itemIds.filter { it != itemId }
-            val updatedLocation = location.copy(itemIds = updatedItemIds)
-            LocationRepository.update(updatedLocation)
-            LocationItemRepository.removeItemByItemId(itemId, request.locationId)
+            // Remove from ground (location_item table only)
+            LocationItemRepository.removeItem(locationItem.id)
+
+            // Broadcast item removed
+            LocationEventService.broadcastItemRemoved(location, itemId)
 
             val updatedUser = UserRepository.findById(userId)!!
             call.respond(HttpStatusCode.OK, updatedUser.toResponse())
@@ -1677,10 +1679,7 @@ fun Route.userRoutes() {
             updatedItemIds.remove(itemId)
             UserRepository.update(user.copy(itemIds = updatedItemIds))
 
-            // Add item to location (both legacy itemIds and new LocationItem table)
-            val updatedLocationItemIds = location.itemIds + itemId
-            val updatedLocation = location.copy(itemIds = updatedLocationItemIds)
-            LocationRepository.update(updatedLocation)
+            // Add item to ground (location_item table only - not location.itemIds)
             LocationItemRepository.addItem(locationId, itemId, userId)
 
             // Broadcast item added to location observers
@@ -1731,13 +1730,7 @@ fun Route.userRoutes() {
             val updatedItemIds = user.itemIds.filter { it != itemId }
             UserRepository.update(user.copy(itemIds = updatedItemIds))
 
-            // Add all items to location
-            val itemsToAdd = List(itemCount) { itemId }
-            val updatedLocationItemIds = location.itemIds + itemsToAdd
-            val updatedLocation = location.copy(itemIds = updatedLocationItemIds)
-            LocationRepository.update(updatedLocation)
-
-            // Add each to LocationItem table
+            // Add all items to ground (location_item table only)
             repeat(itemCount) {
                 LocationItemRepository.addItem(locationId, itemId, userId)
             }
