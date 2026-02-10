@@ -326,8 +326,8 @@ object FishingService {
             )
         }
 
-        // Add fish to inventory
-        UserRepository.addItems(user.id, listOf(fish.id))
+        // Add fish to food inventory with spoil tracking
+        FoodService.addFishToInventory(user.id, fish.id)
 
         // Restore mana
         val manaRestored = Random.nextInt(MANA_RESTORE_MIN, MANA_RESTORE_MAX + 1)

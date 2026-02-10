@@ -159,6 +159,63 @@ data class FishCaughtInfo(
     val value: Int
 )
 
+// ===================== FOOD DTOs =====================
+
+@Serializable
+data class FoodItemInfo(
+    val id: String,  // UserFoodItem ID
+    val itemId: String,  // Item template ID
+    val name: String,
+    val state: String,  // "raw", "cooked", "salted"
+    val spoilsIn: String,  // Human readable time until spoil
+    val isSpoiled: Boolean,
+    val weight: Int,
+    val value: Int
+)
+
+@Serializable
+data class FoodInventoryResponse(
+    val items: List<FoodItemInfo>,
+    val spoiledCount: Int = 0
+)
+
+@Serializable
+data class EatFoodRequest(
+    val foodItemId: String
+)
+
+@Serializable
+data class EatFoodResponse(
+    val success: Boolean,
+    val message: String,
+    val hpRestored: Int = 0,
+    val gotSick: Boolean = false
+)
+
+@Serializable
+data class CookFoodRequest(
+    val foodItemId: String
+)
+
+@Serializable
+data class CookFoodResponse(
+    val success: Boolean,
+    val message: String,
+    val newSpoilTime: String? = null
+)
+
+@Serializable
+data class SaltFoodRequest(
+    val foodItemId: String
+)
+
+@Serializable
+data class SaltFoodResponse(
+    val success: Boolean,
+    val message: String,
+    val newSpoilTime: String? = null
+)
+
 /**
  * Auth routes for user registration and login.
  * Base path: /auth
@@ -658,6 +715,116 @@ fun Route.userRoutes() {
                 manaRestored = result.manaRestored,
                 totalFishCaught = result.totalFishCaught,
                 earnedBadge = result.earnedBadge
+            ))
+        }
+
+        // ===================== FOOD ROUTES =====================
+
+        /**
+         * Get all food items in user's inventory with spoilage info.
+         * Also cleans up any spoiled items.
+         */
+        get("/{id}/food") {
+            val id = call.parameters["id"] ?: return@get call.respond(HttpStatusCode.BadRequest)
+            val user = UserRepository.findById(id)
+            if (user == null) {
+                call.respond(HttpStatusCode.NotFound)
+                return@get
+            }
+
+            // Clean up any spoiled items first
+            val spoiledCount = com.ez2bg.anotherthread.game.FoodService.cleanupSpoiledFood(id)
+
+            // Get all fresh food items
+            val foodItems = com.ez2bg.anotherthread.game.FoodService.getUserFoodItems(id)
+
+            val foodInfoList = foodItems.mapNotNull { foodItem ->
+                val item = ItemRepository.findById(foodItem.itemId) ?: return@mapNotNull null
+                FoodItemInfo(
+                    id = foodItem.id,
+                    itemId = foodItem.itemId,
+                    name = item.name,
+                    state = foodItem.state,
+                    spoilsIn = foodItem.getTimeUntilSpoil(),
+                    isSpoiled = foodItem.isSpoiled(),
+                    weight = item.weight,
+                    value = item.value
+                )
+            }
+
+            call.respond(FoodInventoryResponse(
+                items = foodInfoList,
+                spoiledCount = spoiledCount
+            ))
+        }
+
+        /**
+         * Eat a food item. Raw food has a chance of sickness.
+         * Restores HP based on food state and size.
+         */
+        post("/{id}/food/eat") {
+            val id = call.parameters["id"] ?: return@post call.respond(HttpStatusCode.BadRequest)
+            val request = call.receive<EatFoodRequest>()
+
+            val user = UserRepository.findById(id)
+            if (user == null) {
+                call.respond(HttpStatusCode.NotFound)
+                return@post
+            }
+
+            val result = com.ez2bg.anotherthread.game.FoodService.eatFood(user, request.foodItemId)
+
+            call.respond(EatFoodResponse(
+                success = result.success,
+                message = result.message,
+                hpRestored = result.hpRestored,
+                gotSick = result.gotSick
+            ))
+        }
+
+        /**
+         * Cook a raw food item. Requires being at a location with a cooking fire/hearth.
+         * Extends spoil time to 7 days and increases HP restoration when eaten.
+         */
+        post("/{id}/food/cook") {
+            val id = call.parameters["id"] ?: return@post call.respond(HttpStatusCode.BadRequest)
+            val request = call.receive<CookFoodRequest>()
+
+            val user = UserRepository.findById(id)
+            if (user == null) {
+                call.respond(HttpStatusCode.NotFound)
+                return@post
+            }
+
+            val result = com.ez2bg.anotherthread.game.FoodService.cookFood(user, request.foodItemId)
+
+            call.respond(CookFoodResponse(
+                success = result.success,
+                message = result.message,
+                newSpoilTime = result.newSpoilTime
+            ))
+        }
+
+        /**
+         * Salt a food item for preservation. Consumes 1 salt from inventory.
+         * Extends spoil time to 3 months.
+         */
+        post("/{id}/food/salt") {
+            val id = call.parameters["id"] ?: return@post call.respond(HttpStatusCode.BadRequest)
+            val request = call.receive<SaltFoodRequest>()
+
+            val user = UserRepository.findById(id)
+            if (user == null) {
+                call.respond(HttpStatusCode.NotFound)
+                return@post
+            }
+
+            val result = com.ez2bg.anotherthread.game.FoodService.saltFood(user, request.foodItemId)
+
+            call.respond(SaltFoodResponse(
+                success = result.success,
+                message = result.message,
+                newSpoilTime = result.newSpoilTime
             ))
         }
 

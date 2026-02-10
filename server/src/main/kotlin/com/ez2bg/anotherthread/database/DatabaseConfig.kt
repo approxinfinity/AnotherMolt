@@ -103,7 +103,8 @@ object DatabaseConfig {
                 PlayerEncounterTable,
                 CombatEventLogTable,
                 GameConfigTable,
-                CharmedCreatureTable
+                CharmedCreatureTable,
+                UserFoodItemTable
             )
         }
     }
