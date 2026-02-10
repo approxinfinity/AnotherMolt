@@ -497,6 +497,9 @@ class GridWorldGenerator(
             }
         }
 
+        // Ensure a gateway location exists at (0,0) for rift portal access
+        ensureGatewayLocation(createdIds)
+
         // Calculate stats
         val allCells = grid.flatMap { it.toList() }
         val stats = WorldGenStats(
@@ -617,5 +620,63 @@ class GridWorldGenerator(
                 desc = content.description
             ))
         }
+    }
+
+    /**
+     * Ensure a gateway location exists at (0,0) for this area.
+     * If terrain doesn't naturally have a location at 0,0, creates one
+     * and connects it to the nearest existing location.
+     */
+    private fun ensureGatewayLocation(createdIds: MutableList<String>) {
+        // Check if a location already exists at (0,0) for this area
+        val existingOrigin = LocationRepository.findByCoordinates(0, 0, params.areaId)
+        if (existingOrigin != null) {
+            return // Already have a location at 0,0
+        }
+
+        // Find the nearest location to use as a connection point
+        val allLocations = LocationRepository.findAll().filter { it.areaId == params.areaId }
+        if (allLocations.isEmpty()) {
+            return // No locations to connect to
+        }
+
+        // Find the location closest to (0,0)
+        val nearest = allLocations.minByOrNull { loc ->
+            val x = loc.gridX ?: 0
+            val y = loc.gridY ?: 0
+            x * x + y * y // Distance squared from origin
+        } ?: return
+
+        // Format area name nicely
+        val areaName = params.areaId.split("-", "_")
+            .joinToString(" ") { it.replaceFirstChar { c -> c.uppercase() } }
+
+        // Create the gateway location at (0,0)
+        val gateway = Location(
+            id = UUID.randomUUID().toString(),
+            name = "Gateway of $areaName",
+            desc = "A shimmering nexus point where travelers materialize, marked by ancient runestones. The path ahead leads into the heart of $areaName.",
+            itemIds = emptyList(),
+            creatureIds = emptyList(),
+            exits = listOf(
+                Exit(locationId = nearest.id, direction = ExitDirection.ENTER)
+            ),
+            featureIds = emptyList(),
+            gridX = 0,
+            gridY = 0,
+            areaId = params.areaId,
+            locationType = LocationType.OUTDOOR_GROUND
+        )
+
+        val createdGateway = LocationRepository.create(gateway)
+        createdIds.add(createdGateway.id)
+
+        // Add a return exit from the nearest location back to the gateway
+        val updatedNearest = nearest.copy(
+            exits = nearest.exits + Exit(locationId = createdGateway.id, direction = ExitDirection.ENTER)
+        )
+        LocationRepository.update(updatedNearest)
+
+        println("Created gateway location at (0,0) for area ${params.areaId}, connected to ${nearest.name}")
     }
 }
