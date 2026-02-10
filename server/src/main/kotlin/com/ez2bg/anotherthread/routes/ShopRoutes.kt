@@ -1,6 +1,7 @@
 package com.ez2bg.anotherthread.routes
 
 import com.ez2bg.anotherthread.database.*
+import com.ez2bg.anotherthread.game.FoodService
 import io.ktor.http.*
 import io.ktor.server.application.*
 import io.ktor.server.request.*
@@ -12,7 +13,30 @@ import kotlinx.serialization.Serializable
 data class BuyItemRequest(val userId: String, val itemId: String)
 
 @Serializable
+data class SellItemRequest(val userId: String, val itemId: String)
+
+@Serializable
+data class SellFoodItemRequest(val userId: String, val foodItemId: String)
+
+@Serializable
 data class RestRequest(val userId: String)
+
+@Serializable
+data class SellableItemDto(
+    val id: String,
+    val itemId: String,
+    val name: String,
+    val sellValue: Int,
+    val isFoodItem: Boolean = false,
+    val foodState: String? = null,
+    val timeUntilSpoil: String? = null
+)
+
+@Serializable
+data class SellableItemsResponse(
+    val success: Boolean,
+    val items: List<SellableItemDto>
+)
 
 @Serializable
 data class ShopActionResponse(
@@ -123,6 +147,182 @@ fun Route.shopRoutes() {
             call.respond(ShopActionResponse(
                 success = true,
                 message = "You rest at the inn and feel completely refreshed. All HP, mana, and stamina restored!",
+                user = updatedUser?.toResponse()
+            ))
+        }
+
+        // Get sellable items for a user at a general store
+        get("/{locationId}/sellable/{userId}") {
+            val locationId = call.parameters["locationId"]
+                ?: return@get call.respond(HttpStatusCode.BadRequest, SellableItemsResponse(false, emptyList()))
+            val userId = call.parameters["userId"]
+                ?: return@get call.respond(HttpStatusCode.BadRequest, SellableItemsResponse(false, emptyList()))
+
+            // Validate this is the general store
+            if (locationId != GeneralStoreSeed.GENERAL_STORE_ID) {
+                return@get call.respond(HttpStatusCode.BadRequest, SellableItemsResponse(false, emptyList()))
+            }
+
+            val user = UserRepository.findById(userId)
+                ?: return@get call.respond(HttpStatusCode.NotFound, SellableItemsResponse(false, emptyList()))
+
+            val sellableItems = mutableListOf<SellableItemDto>()
+
+            // Add regular sellable items from inventory
+            // Sellable items: rations, torches, rope, waterskin, bedroll, salt, etc.
+            val sellableItemIds = setOf(
+                GeneralStoreSeed.SALT_ID,
+                GeneralStoreSeed.RATIONS_ID,
+                GeneralStoreSeed.WATERSKIN_ID,
+                GeneralStoreSeed.TORCH_ID,
+                GeneralStoreSeed.ROPE_ID,
+                GeneralStoreSeed.BEDROLL_ID,
+                FishingSeed.FISHING_ROD_ID
+            )
+
+            user.itemIds.forEach { itemId ->
+                if (itemId in sellableItemIds) {
+                    val item = ItemRepository.findById(itemId)
+                    if (item != null && item.value > 0) {
+                        // Sell price is 50% of value
+                        val sellValue = (item.value / 2).coerceAtLeast(1)
+                        sellableItems.add(SellableItemDto(
+                            id = itemId,  // For regular items, id = itemId
+                            itemId = itemId,
+                            name = item.name,
+                            sellValue = sellValue,
+                            isFoodItem = false
+                        ))
+                    }
+                }
+            }
+
+            // Add food items (fish) from food inventory
+            val foodItems = FoodService.getUserFoodItems(userId)
+            foodItems.forEach { foodItem ->
+                val item = ItemRepository.findById(foodItem.itemId)
+                if (item != null && item.value > 0) {
+                    // Base sell price is 50% of value
+                    var sellValue = (item.value / 2).coerceAtLeast(1)
+                    // Cooked fish sell for more, salted for slightly less
+                    when (foodItem.state) {
+                        "cooked" -> sellValue = (sellValue * 1.5).toInt()
+                        "salted" -> sellValue = (sellValue * 0.8).toInt().coerceAtLeast(1)
+                    }
+                    sellableItems.add(SellableItemDto(
+                        id = foodItem.id,  // Food items use their unique ID
+                        itemId = foodItem.itemId,
+                        name = item.name,
+                        sellValue = sellValue,
+                        isFoodItem = true,
+                        foodState = foodItem.state,
+                        timeUntilSpoil = foodItem.getTimeUntilSpoil()
+                    ))
+                }
+            }
+
+            call.respond(SellableItemsResponse(true, sellableItems))
+        }
+
+        // Sell a regular item at the general store
+        post("/{locationId}/sell") {
+            val locationId = call.parameters["locationId"]
+                ?: return@post call.respond(HttpStatusCode.BadRequest, ShopActionResponse(false, "Missing location ID"))
+
+            val request = call.receive<SellItemRequest>()
+
+            // Validate this is the general store
+            if (locationId != GeneralStoreSeed.GENERAL_STORE_ID) {
+                return@post call.respond(HttpStatusCode.BadRequest, ShopActionResponse(false, "You can only sell items at the general store"))
+            }
+
+            val user = UserRepository.findById(request.userId)
+                ?: return@post call.respond(HttpStatusCode.NotFound, ShopActionResponse(false, "User not found"))
+
+            // Check user has the item
+            if (request.itemId !in user.itemIds) {
+                return@post call.respond(HttpStatusCode.BadRequest, ShopActionResponse(false, "You don't have that item"))
+            }
+
+            val item = ItemRepository.findById(request.itemId)
+                ?: return@post call.respond(HttpStatusCode.NotFound, ShopActionResponse(false, "Item not found"))
+
+            if (item.value <= 0) {
+                return@post call.respond(HttpStatusCode.BadRequest, ShopActionResponse(false, "That item has no value"))
+            }
+
+            // Sell price is 50% of value
+            val sellValue = (item.value / 2).coerceAtLeast(1)
+
+            // Remove item and add gold
+            UserRepository.removeItems(request.userId, listOf(request.itemId))
+            UserRepository.addGold(request.userId, sellValue)
+
+            val updatedUser = UserRepository.findById(request.userId)
+            call.respond(ShopActionResponse(
+                success = true,
+                message = "Sold ${item.name} for ${sellValue}g",
+                user = updatedUser?.toResponse()
+            ))
+        }
+
+        // Sell a food item (fish) at the general store
+        post("/{locationId}/sell-food") {
+            val locationId = call.parameters["locationId"]
+                ?: return@post call.respond(HttpStatusCode.BadRequest, ShopActionResponse(false, "Missing location ID"))
+
+            val request = call.receive<SellFoodItemRequest>()
+
+            // Validate this is the general store
+            if (locationId != GeneralStoreSeed.GENERAL_STORE_ID) {
+                return@post call.respond(HttpStatusCode.BadRequest, ShopActionResponse(false, "You can only sell items at the general store"))
+            }
+
+            val user = UserRepository.findById(request.userId)
+                ?: return@post call.respond(HttpStatusCode.NotFound, ShopActionResponse(false, "User not found"))
+
+            val foodItem = UserFoodItemRepository.findById(request.foodItemId)
+                ?: return@post call.respond(HttpStatusCode.NotFound, ShopActionResponse(false, "Food item not found"))
+
+            if (foodItem.userId != user.id) {
+                return@post call.respond(HttpStatusCode.BadRequest, ShopActionResponse(false, "That's not your item"))
+            }
+
+            val item = ItemRepository.findById(foodItem.itemId)
+                ?: return@post call.respond(HttpStatusCode.NotFound, ShopActionResponse(false, "Item template not found"))
+
+            if (item.value <= 0) {
+                return@post call.respond(HttpStatusCode.BadRequest, ShopActionResponse(false, "That item has no value"))
+            }
+
+            // Check if spoiled
+            if (foodItem.isSpoiled()) {
+                UserFoodItemRepository.delete(foodItem.id)
+                return@post call.respond(HttpStatusCode.BadRequest, ShopActionResponse(false, "That ${item.name} has spoiled! It was discarded."))
+            }
+
+            // Base sell price is 50% of value
+            var sellValue = (item.value / 2).coerceAtLeast(1)
+            // Cooked fish sell for more, salted for slightly less
+            when (foodItem.state) {
+                "cooked" -> sellValue = (sellValue * 1.5).toInt()
+                "salted" -> sellValue = (sellValue * 0.8).toInt().coerceAtLeast(1)
+            }
+
+            // Remove food item and add gold
+            UserFoodItemRepository.delete(foodItem.id)
+            UserRepository.addGold(request.userId, sellValue)
+
+            val statePrefix = when (foodItem.state) {
+                "cooked" -> "cooked "
+                "salted" -> "salted "
+                else -> "raw "
+            }
+
+            val updatedUser = UserRepository.findById(request.userId)
+            call.respond(ShopActionResponse(
+                success = true,
+                message = "Sold $statePrefix${item.name} for ${sellValue}g",
                 user = updatedUser?.toResponse()
             ))
         }

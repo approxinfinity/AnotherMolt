@@ -397,9 +397,12 @@ fun AdventureScreen(
                                 playerGold = uiState.playerGold,
                                 playerCharisma = currentUser?.charisma ?: 10,
                                 isInn = uiState.isInnLocation,
+                                isGeneralStore = uiState.isGeneralStore,
+                                sellableItems = uiState.sellableItems,
                                 innCost = 25,
                                 onBuyItem = { viewModel.buyItem(it.id) },
                                 onRest = { viewModel.restAtInn() },
+                                onSellItem = { viewModel.sellItem(it) },
                                 onLocationNameClick = { showLocationDetailPopup = true },
                                 modifier = Modifier
                                     .fillMaxWidth()
@@ -1457,12 +1460,18 @@ private fun ShopPanel(
     playerGold: Int,
     playerCharisma: Int,
     isInn: Boolean,
+    isGeneralStore: Boolean = false,
+    sellableItems: List<com.ez2bg.anotherthread.api.SellableItemDto> = emptyList(),
     innCost: Int,
     onBuyItem: (ItemDto) -> Unit,
     onRest: () -> Unit,
+    onSellItem: (com.ez2bg.anotherthread.api.SellableItemDto) -> Unit = {},
     onLocationNameClick: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
+    // Track whether we're in buy or sell mode for general store
+    var showSellSection by remember { mutableStateOf(false) }
+
     Column(modifier = modifier) {
         // Shop name (clickable to show location details)
         Text(
@@ -1539,49 +1548,197 @@ private fun ShopPanel(
                 )
             }
 
-            // Check layout direction - default to VERTICAL
-            val isHorizontal = location.shopLayoutDirection == ShopLayoutDirection.HORIZONTAL
-
-            if (isHorizontal) {
-                // Horizontal scrolling item list (compact cards)
+            // For general store, show Buy/Sell tabs
+            if (isGeneralStore) {
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .horizontalScroll(rememberScrollState()),
+                        .padding(bottom = 8.dp),
                     horizontalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
-                    shopItems.forEach { item ->
-                        val discountedPrice = applyCharismaDiscount(item.value, playerCharisma)
-                        ShopItemCard(
-                            item = item,
-                            basePrice = item.value,
-                            discountedPrice = discountedPrice,
-                            canAfford = playerGold >= discountedPrice,
-                            onBuy = { onBuyItem(item) }
+                    // Buy tab
+                    Box(
+                        modifier = Modifier
+                            .weight(1f)
+                            .background(
+                                if (!showSellSection) Color(0xFF2E7D32).copy(alpha = 0.5f)
+                                else Color.Gray.copy(alpha = 0.2f),
+                                RoundedCornerShape(6.dp)
+                            )
+                            .border(
+                                1.dp,
+                                if (!showSellSection) Color(0xFF4CAF50) else Color.Gray,
+                                RoundedCornerShape(6.dp)
+                            )
+                            .clickable { showSellSection = false }
+                            .padding(8.dp),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Text(
+                            text = "Buy",
+                            color = if (!showSellSection) Color.White else Color.Gray,
+                            fontWeight = FontWeight.Bold
                         )
                     }
-                }
-            } else {
-                // Vertical scrolling item list (default - full width rows)
-                // No height constraint - the shop panel expands to fill available space
-                Column(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .verticalScroll(rememberScrollState()),
-                    verticalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
-                    shopItems.forEach { item ->
-                        val discountedPrice = applyCharismaDiscount(item.value, playerCharisma)
-                        ShopItemRow(
-                            item = item,
-                            basePrice = item.value,
-                            discountedPrice = discountedPrice,
-                            canAfford = playerGold >= discountedPrice,
-                            onBuy = { onBuyItem(item) }
+                    // Sell tab
+                    Box(
+                        modifier = Modifier
+                            .weight(1f)
+                            .background(
+                                if (showSellSection) Color(0xFFB71C1C).copy(alpha = 0.5f)
+                                else Color.Gray.copy(alpha = 0.2f),
+                                RoundedCornerShape(6.dp)
+                            )
+                            .border(
+                                1.dp,
+                                if (showSellSection) Color(0xFFEF5350) else Color.Gray,
+                                RoundedCornerShape(6.dp)
+                            )
+                            .clickable { showSellSection = true }
+                            .padding(8.dp),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Text(
+                            text = "Sell",
+                            color = if (showSellSection) Color.White else Color.Gray,
+                            fontWeight = FontWeight.Bold
                         )
                     }
                 }
             }
+
+            if (showSellSection && isGeneralStore) {
+                // Sell section - show sellable items
+                if (sellableItems.isEmpty()) {
+                    Text(
+                        text = "You have nothing to sell here.",
+                        color = Color(0xFFAAAAAA),
+                        fontSize = 13.sp,
+                        modifier = Modifier.padding(vertical = 16.dp)
+                    )
+                } else {
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .verticalScroll(rememberScrollState()),
+                        verticalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        sellableItems.forEach { sellableItem ->
+                            SellableItemRow(
+                                item = sellableItem,
+                                onSell = { onSellItem(sellableItem) }
+                            )
+                        }
+                    }
+                }
+            } else {
+                // Buy section - show shop items
+                // Check layout direction - default to VERTICAL
+                val isHorizontal = location.shopLayoutDirection == ShopLayoutDirection.HORIZONTAL
+
+                if (isHorizontal) {
+                    // Horizontal scrolling item list (compact cards)
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .horizontalScroll(rememberScrollState()),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        shopItems.forEach { item ->
+                            val discountedPrice = applyCharismaDiscount(item.value, playerCharisma)
+                            ShopItemCard(
+                                item = item,
+                                basePrice = item.value,
+                                discountedPrice = discountedPrice,
+                                canAfford = playerGold >= discountedPrice,
+                                onBuy = { onBuyItem(item) }
+                            )
+                        }
+                    }
+                } else {
+                    // Vertical scrolling item list (default - full width rows)
+                    // No height constraint - the shop panel expands to fill available space
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .verticalScroll(rememberScrollState()),
+                        verticalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        shopItems.forEach { item ->
+                            val discountedPrice = applyCharismaDiscount(item.value, playerCharisma)
+                            ShopItemRow(
+                                item = item,
+                                basePrice = item.value,
+                                discountedPrice = discountedPrice,
+                                canAfford = playerGold >= discountedPrice,
+                                onBuy = { onBuyItem(item) }
+                            )
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun SellableItemRow(
+    item: com.ez2bg.anotherthread.api.SellableItemDto,
+    onSell: () -> Unit
+) {
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        modifier = Modifier
+            .fillMaxWidth()
+            .background(Color.White.copy(alpha = 0.05f), RoundedCornerShape(6.dp))
+            .padding(8.dp)
+    ) {
+        // Item info
+        Column(modifier = Modifier.weight(1f)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(
+                    text = item.name,
+                    color = Color(0xFFFFD54F),
+                    fontSize = 14.sp,
+                    fontWeight = FontWeight.Medium
+                )
+                // Show food state if applicable
+                item.foodState?.let { state ->
+                    val stateColor = when (state) {
+                        "cooked" -> Color(0xFF81C784)
+                        "salted" -> Color(0xFF90CAF9)
+                        else -> Color(0xFFEF5350)
+                    }
+                    Text(
+                        text = " ($state)",
+                        color = stateColor,
+                        fontSize = 12.sp
+                    )
+                }
+            }
+            // Show time until spoil for food items
+            item.timeUntilSpoil?.let { time ->
+                Text(
+                    text = "Fresh for: $time",
+                    color = Color(0xFFAAAAAA),
+                    fontSize = 11.sp
+                )
+            }
+        }
+
+        // Sell button
+        Box(
+            modifier = Modifier
+                .background(Color(0xFFB71C1C).copy(alpha = 0.5f), RoundedCornerShape(4.dp))
+                .clickable { onSell() }
+                .padding(horizontal = 10.dp, vertical = 6.dp)
+        ) {
+            Text(
+                text = "Sell ${item.sellValue}g",
+                color = Color(0xFFFFD700),
+                fontSize = 13.sp,
+                fontWeight = FontWeight.Bold
+            )
         }
     }
 }

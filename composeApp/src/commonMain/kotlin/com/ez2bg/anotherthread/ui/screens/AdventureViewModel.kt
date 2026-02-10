@@ -62,6 +62,9 @@ data class AdventureLocalState(
     val shopItems: List<ItemDto> = emptyList(),
     val isShopLocation: Boolean = false,
     val isInnLocation: Boolean = false,
+    val isGeneralStore: Boolean = false,
+    val sellableItems: List<com.ez2bg.anotherthread.api.SellableItemDto> = emptyList(),
+    val showSellModal: Boolean = false,
     // Teleport state
     val showMapSelection: Boolean = false,
     val teleportDestinations: List<TeleportDestinationDto> = emptyList(),
@@ -150,6 +153,9 @@ data class AdventureUiState(
     val shopItems: List<ItemDto> = emptyList(),
     val isShopLocation: Boolean = false,
     val isInnLocation: Boolean = false,
+    val isGeneralStore: Boolean = false,
+    val sellableItems: List<com.ez2bg.anotherthread.api.SellableItemDto> = emptyList(),
+    val showSellModal: Boolean = false,
     // Teleport state
     val showMapSelection: Boolean = false,
     val teleportDestinations: List<TeleportDestinationDto> = emptyList(),
@@ -265,9 +271,11 @@ class AdventureViewModel {
         "tun-du-lac-magic-shop",
         "tun-du-lac-armor-shop",
         "tun-du-lac-weapons-shop",
+        "tun-du-lac-general-store",
         "location-hermits-hollow"
     )
     private val innLocationId = "tun-du-lac-inn"
+    private val generalStoreLocationId = "tun-du-lac-general-store"
 
     // Get current user reactively from UserStateHolder
     private val currentUser: UserDto?
@@ -278,7 +286,8 @@ class AdventureViewModel {
     private val _localState = MutableStateFlow(
         AdventureLocalState(
             isShopLocation = UserStateHolder.currentLocationId in shopLocationIds,
-            isInnLocation = UserStateHolder.currentLocationId == innLocationId
+            isInnLocation = UserStateHolder.currentLocationId == innLocationId,
+            isGeneralStore = UserStateHolder.currentLocationId == generalStoreLocationId
         )
     )
 
@@ -330,6 +339,9 @@ class AdventureViewModel {
             shopItems = local.shopItems,
             isShopLocation = local.isShopLocation,
             isInnLocation = local.isInnLocation,
+            isGeneralStore = local.isGeneralStore,
+            sellableItems = local.sellableItems,
+            showSellModal = local.showSellModal,
             showMapSelection = local.showMapSelection,
             teleportDestinations = local.teleportDestinations,
             teleportAbilityId = local.teleportAbilityId,
@@ -371,7 +383,8 @@ class AdventureViewModel {
         initialValue = AdventureUiState(
             currentLocationId = UserStateHolder.currentLocationId,
             isShopLocation = UserStateHolder.currentLocationId in shopLocationIds,
-            isInnLocation = UserStateHolder.currentLocationId == innLocationId
+            isInnLocation = UserStateHolder.currentLocationId == innLocationId,
+            isGeneralStore = UserStateHolder.currentLocationId == generalStoreLocationId
         )
     )
 
@@ -532,10 +545,13 @@ class AdventureViewModel {
                     // Check if this is a shop or inn location
                     val isShop = locationId in shopLocationIds
                     val isInn = locationId == innLocationId
+                    val isGenStore = locationId == generalStoreLocationId
                     _localState.update {
                         it.copy(
                             isShopLocation = isShop,
-                            isInnLocation = isInn
+                            isInnLocation = isInn,
+                            isGeneralStore = isGenStore,
+                            sellableItems = emptyList()  // Clear sellable items when changing location
                         )
                     }
                     // Load shop items if at a shop
@@ -856,6 +872,7 @@ class AdventureViewModel {
             // Clear selection and update shop state
             val isShop = exit.locationId in shopLocationIds
             val isInn = exit.locationId == innLocationId
+            val isGenStore = exit.locationId == generalStoreLocationId
             _localState.update {
                 it.copy(
                     selectedCreature = null,
@@ -863,7 +880,10 @@ class AdventureViewModel {
                     showDescriptionPopup = false,
                     isShopLocation = isShop,
                     isInnLocation = isInn,
-                    shopItems = emptyList()
+                    isGeneralStore = isGenStore,
+                    shopItems = emptyList(),
+                    sellableItems = emptyList(),
+                    showSellModal = false
                 )
             }
 
@@ -878,6 +898,10 @@ class AdventureViewModel {
             }
             if (isShop) {
                 loadShopItems(exit.locationId)
+                // Load sellable items for general store
+                if (isGenStore) {
+                    loadSellableItems(exit.locationId)
+                }
             }
 
             // Update server - CRITICAL: rollback client state if this fails
@@ -1094,6 +1118,72 @@ class AdventureViewModel {
                     val shopItems = allItems.filter { it.id in itemIds }
                     _localState.update { it.copy(shopItems = shopItems) }
                 }
+            }
+            // Also load sellable items if at general store
+            if (locationId == generalStoreLocationId) {
+                loadSellableItems(locationId)
+            }
+        }
+    }
+
+    /**
+     * Load sellable items for the general store.
+     */
+    private fun loadSellableItems(locationId: String) {
+        val userId = currentUser?.id ?: return
+        scope.launch {
+            ApiClient.getSellableItems(locationId, userId).onSuccess { response ->
+                if (response.success) {
+                    _localState.update { it.copy(sellableItems = response.items) }
+                }
+            }.onFailure {
+                println("[AdventureViewModel] Failed to load sellable items: ${it.message}")
+            }
+        }
+    }
+
+    /**
+     * Show the sell modal at the general store.
+     */
+    fun openSellModal() {
+        val locationId = _localState.value.let {
+            if (it.isGeneralStore) generalStoreLocationId else null
+        } ?: return
+        loadSellableItems(locationId)
+        _localState.update { it.copy(showSellModal = true) }
+    }
+
+    /**
+     * Close the sell modal.
+     */
+    fun closeSellModal() {
+        _localState.update { it.copy(showSellModal = false) }
+    }
+
+    /**
+     * Sell an item at the general store.
+     */
+    fun sellItem(sellableItem: com.ez2bg.anotherthread.api.SellableItemDto) {
+        val userId = currentUser?.id ?: return
+        scope.launch {
+            val result = if (sellableItem.isFoodItem) {
+                ApiClient.sellFoodItem(generalStoreLocationId, userId, sellableItem.id)
+            } else {
+                ApiClient.sellItem(generalStoreLocationId, userId, sellableItem.itemId)
+            }
+
+            result.onSuccess { response ->
+                if (response.success) {
+                    CombatStateHolder.addEventLogEntry(response.message, EventLogType.LOOT)
+                    // Update user state with new gold
+                    response.user?.let { UserStateHolder.updateUser(it) }
+                    // Refresh sellable items
+                    loadSellableItems(generalStoreLocationId)
+                } else {
+                    logError(response.message)
+                }
+            }.onFailure {
+                logError("Failed to sell item: ${it.message}")
             }
         }
     }

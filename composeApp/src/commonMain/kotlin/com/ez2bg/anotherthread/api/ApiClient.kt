@@ -1947,6 +1947,24 @@ object ApiClient {
         }.body()
     }
 
+    suspend fun getSellableItems(locationId: String, userId: String): Result<SellableItemsResponse> = apiCall {
+        client.get("$baseUrl/shop/$locationId/sellable/$userId").body()
+    }
+
+    suspend fun sellItem(locationId: String, userId: String, itemId: String): Result<ShopActionResponse> = apiCall {
+        client.post("$baseUrl/shop/$locationId/sell") {
+            contentType(ContentType.Application.Json)
+            setBody(SellItemRequest(userId = userId, itemId = itemId))
+        }.body()
+    }
+
+    suspend fun sellFoodItem(locationId: String, userId: String, foodItemId: String): Result<ShopActionResponse> = apiCall {
+        client.post("$baseUrl/shop/$locationId/sell-food") {
+            contentType(ContentType.Application.Json)
+            setBody(SellFoodItemRequest(userId = userId, foodItemId = foodItemId))
+        }.body()
+    }
+
     // =========================================================================
     // Trainer API
     // =========================================================================
@@ -2857,6 +2875,12 @@ data class PlayerDeathResponse(
 data class BuyItemRequest(val userId: String, val itemId: String)
 
 @Serializable
+data class SellItemRequest(val userId: String, val itemId: String)
+
+@Serializable
+data class SellFoodItemRequest(val userId: String, val foodItemId: String)
+
+@Serializable
 data class RestAtInnRequest(val userId: String)
 
 @Serializable
@@ -2864,6 +2888,23 @@ data class ShopActionResponse(
     val success: Boolean,
     val message: String,
     val user: UserDto? = null
+)
+
+@Serializable
+data class SellableItemDto(
+    val id: String,
+    val itemId: String,
+    val name: String,
+    val sellValue: Int,
+    val isFoodItem: Boolean = false,
+    val foodState: String? = null,
+    val timeUntilSpoil: String? = null
+)
+
+@Serializable
+data class SellableItemsResponse(
+    val success: Boolean,
+    val items: List<SellableItemDto>
 )
 
 // ============================================================================
