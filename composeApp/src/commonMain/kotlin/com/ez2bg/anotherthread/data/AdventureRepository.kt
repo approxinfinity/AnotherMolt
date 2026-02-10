@@ -4,6 +4,7 @@ import com.ez2bg.anotherthread.api.ApiClient
 import com.ez2bg.anotherthread.api.CreatureDto
 import com.ez2bg.anotherthread.api.ItemDto
 import com.ez2bg.anotherthread.api.LocationDto
+import com.ez2bg.anotherthread.api.LocationEventType
 import com.ez2bg.anotherthread.combat.GlobalEvent
 import com.ez2bg.anotherthread.state.CombatStateHolder
 import kotlinx.coroutines.CoroutineScope
@@ -108,6 +109,30 @@ object AdventureRepository {
                 // Update creature location in real-time
                 updateCreatureLocation(event.creatureId, event.toLocationId)
             }
+            is GlobalEvent.LocationMutated -> {
+                // Handle location mutations that affect creature tracking
+                val mutation = event.event
+                when (mutation.eventType) {
+                    LocationEventType.CREATURE_REMOVED -> {
+                        mutation.creatureIdRemoved?.let { creatureId ->
+                            println("[AdventureRepository] Creature removed: $creatureId from ${mutation.locationId}")
+                            removeCreatureFromLocation(creatureId)
+                        }
+                    }
+                    LocationEventType.CREATURE_ADDED -> {
+                        mutation.creatureIdAdded?.let { creatureId ->
+                            println("[AdventureRepository] Creature added: $creatureId to ${mutation.locationId}")
+                            updateCreatureLocation(creatureId, mutation.locationId)
+                        }
+                    }
+                    else -> { /* Other location mutations handled elsewhere */ }
+                }
+            }
+            is GlobalEvent.CreatureDefeated -> {
+                // When a creature is defeated in combat, remove it from location tracking
+                println("[AdventureRepository] Creature defeated: ${event.response.creatureId}")
+                removeCreatureFromLocation(event.response.creatureId)
+            }
             // Handle other events that affect world state if needed
             else -> { /* Other events handled by CombatStateHolder */ }
         }
@@ -115,11 +140,21 @@ object AdventureRepository {
 
     /**
      * Update a creature's location. This is called when we receive
-     * a CreatureMoved WebSocket event.
+     * a CreatureMoved WebSocket event or CREATURE_ADDED location mutation.
      */
     private fun updateCreatureLocation(creatureId: String, newLocationId: String) {
         _creatureLocations.value = _creatureLocations.value.toMutableMap().apply {
             put(creatureId, newLocationId)
+        }
+    }
+
+    /**
+     * Remove a creature from location tracking. This is called when we receive
+     * a CREATURE_REMOVED location mutation or CreatureDefeated event.
+     */
+    private fun removeCreatureFromLocation(creatureId: String) {
+        _creatureLocations.value = _creatureLocations.value.toMutableMap().apply {
+            remove(creatureId)
         }
     }
 
