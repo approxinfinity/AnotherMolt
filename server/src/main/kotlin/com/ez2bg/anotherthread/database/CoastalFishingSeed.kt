@@ -313,14 +313,26 @@ object CoastalFishingSeed {
         }
     }
 
+    // Words that indicate a coastal location
+    private val coastalNamePatterns = listOf(
+        "coast", "beach", "shore", "cove", "bay", "harbor", "harbour",
+        "pier", "dock", "wharf", "ocean", "cliff", "bluff", "tide",
+        "surf", "reef", "cape", "inlet", "lagoon", "port"
+    )
+
+    private fun isCoastalByName(name: String): Boolean {
+        val lowerName = name.lowercase()
+        return coastalNamePatterns.any { pattern -> lowerName.contains(pattern) }
+    }
+
     private fun addCoastalFishingSpotsToWestIsland() {
-        // Find all coastal locations and add fishing feature
+        // Find all coastal locations by name pattern or isCoast flag
         val allLocations = LocationRepository.findAll()
 
         var added = 0
         for (location in allLocations) {
-            // Check if this is a coastal location
-            val isCoastal = location.isCoast == true
+            // Check if this is a coastal location by flag OR name pattern
+            val isCoastal = location.isCoast == true || isCoastalByName(location.name)
 
             // Add to all coastal locations that don't already have the feature
             if (isCoastal && !location.featureIds.contains(COASTAL_FISHING_FEATURE)) {
