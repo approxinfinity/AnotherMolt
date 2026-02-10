@@ -761,9 +761,6 @@ fun AdventureScreen(
                                     currentStamina = playerCombatant?.currentStamina ?: displayUser?.currentStamina ?: 0,
                                     onAbilityClick = { viewModel.handleAbilityClick(it) },
                                     iconMappings = iconMappings,
-                                    hasThingsToInspect = uiState.creaturesHere.isNotEmpty() ||
-                                        uiState.itemsHere.isNotEmpty() ||
-                                        uiState.playersHere.isNotEmpty(),
                                     onInspectClick = { showInspectionModal = true },
                                     modifier = Modifier.weight(1f)
                                 )
@@ -2532,7 +2529,6 @@ private fun AbilityRow(
     currentStamina: Int = 0,
     onAbilityClick: (AbilityDto) -> Unit,
     iconMappings: Map<String, String> = emptyMap(),
-    hasThingsToInspect: Boolean = false,
     onInspectClick: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
