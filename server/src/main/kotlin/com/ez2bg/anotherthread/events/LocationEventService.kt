@@ -553,6 +553,9 @@ object LocationEventService {
             val message = when (reason) {
                 "left" -> "You left the party"
                 "disbanded" -> "Your party has been disbanded"
+                "moved_independently" -> "You left the party by moving on your own"
+                "died" -> "You left the party"
+                "disconnected" -> "You left the party"
                 else -> "You are no longer in a party"
             }
 

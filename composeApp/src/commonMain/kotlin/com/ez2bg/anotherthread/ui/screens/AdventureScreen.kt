@@ -437,13 +437,13 @@ fun AdventureScreen(
                                     borderColor = Color.White.copy(alpha = 0.15f)
                                 )
 
-                                // Party abilities icon - only show when in a party and has party abilities
+                                // Party icon - show when in a party (for party abilities and Leave Party)
                                 val partyAbilities = uiState.playerAbilities.filter {
                                     it.abilityType != "passive" && it.abilityType != "navigation" &&
                                     (it.targetType == "all_allies" || it.targetType == "single_ally")
                                 }
                                 val isInParty = displayUser?.partyLeaderId != null
-                                if (isInParty && partyAbilities.isNotEmpty()) {
+                                if (isInParty) {
                                     Box(
                                         modifier = Modifier
                                             .size(32.dp)
@@ -498,13 +498,14 @@ fun AdventureScreen(
                                 }
                                 }
 
-                                // Party abilities dropdown - animated
+                                // Party abilities dropdown - animated (always show if in party for Leave button)
                                 val partyAbilitiesForDropdown = uiState.playerAbilities.filter {
                                     it.abilityType != "passive" && it.abilityType != "navigation" &&
                                     (it.targetType == "all_allies" || it.targetType == "single_ally")
                                 }
+                                val isInPartyForDropdown = displayUser?.partyLeaderId != null
                                 AnimatedVisibility(
-                                    visible = showPartyAbilitiesDropdown && partyAbilitiesForDropdown.isNotEmpty(),
+                                    visible = showPartyAbilitiesDropdown && isInPartyForDropdown,
                                     enter = expandVertically(
                                         animationSpec = tween(200),
                                         expandFrom = Alignment.Top
@@ -522,6 +523,10 @@ fun AdventureScreen(
                                         currentStamina = playerCombatant?.currentStamina ?: displayUser?.currentStamina ?: 0,
                                         onAbilityClick = { ability ->
                                             viewModel.handleAbilityClick(ability)
+                                            showPartyAbilitiesDropdown = false
+                                        },
+                                        onLeaveParty = {
+                                            viewModel.leaveParty()
                                             showPartyAbilitiesDropdown = false
                                         },
                                         iconMappings = iconMappings,
@@ -2353,6 +2358,7 @@ private fun PartyAbilitiesDropdown(
     currentMana: Int = 0,
     currentStamina: Int = 0,
     onAbilityClick: (AbilityDto) -> Unit,
+    onLeaveParty: () -> Unit,
     iconMappings: Map<String, String> = emptyMap(),
     modifier: Modifier = Modifier
 ) {
@@ -2376,36 +2382,69 @@ private fun PartyAbilitiesDropdown(
         )
 
         // Abilities in a flow layout
-        FlowRow(
-            horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.End),
-            verticalArrangement = Arrangement.spacedBy(8.dp)
-        ) {
-            abilities.forEach { ability ->
-                val canAfford = (ability.manaCost <= currentMana) && (ability.staminaCost <= currentStamina)
-                Column(
-                    horizontalAlignment = Alignment.CenterHorizontally,
-                    modifier = Modifier.width(50.dp)
-                ) {
-                    AbilityIconButton(
-                        ability = ability,
-                        cooldownRounds = cooldowns[ability.id] ?: 0,
-                        isQueued = ability.id == queuedAbilityId,
-                        enabled = canAfford,
-                        onClick = { onAbilityClick(ability) },
-                        size = iconSize,
-                        customIconName = iconMappings[ability.id]
-                    )
-                    Text(
-                        text = ability.name,
-                        color = Color.White.copy(alpha = 0.8f),
-                        fontSize = 9.sp,
-                        maxLines = 2,
-                        textAlign = TextAlign.Center,
-                        overflow = TextOverflow.Ellipsis,
-                        modifier = Modifier.padding(top = 2.dp)
-                    )
+        if (abilities.isNotEmpty()) {
+            FlowRow(
+                horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.End),
+                verticalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                abilities.forEach { ability ->
+                    val canAfford = (ability.manaCost <= currentMana) && (ability.staminaCost <= currentStamina)
+                    Column(
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        modifier = Modifier.width(50.dp)
+                    ) {
+                        AbilityIconButton(
+                            ability = ability,
+                            cooldownRounds = cooldowns[ability.id] ?: 0,
+                            isQueued = ability.id == queuedAbilityId,
+                            enabled = canAfford,
+                            onClick = { onAbilityClick(ability) },
+                            size = iconSize,
+                            customIconName = iconMappings[ability.id]
+                        )
+                        Text(
+                            text = ability.name,
+                            color = Color.White.copy(alpha = 0.8f),
+                            fontSize = 9.sp,
+                            maxLines = 2,
+                            textAlign = TextAlign.Center,
+                            overflow = TextOverflow.Ellipsis,
+                            modifier = Modifier.padding(top = 2.dp)
+                        )
+                    }
                 }
             }
+
+            // Divider before Leave Party
+            HorizontalDivider(
+                color = Color.White.copy(alpha = 0.2f),
+                thickness = 1.dp,
+                modifier = Modifier.padding(vertical = 4.dp)
+            )
+        }
+
+        // Leave Party button
+        Row(
+            modifier = Modifier
+                .clip(RoundedCornerShape(8.dp))
+                .background(Color(0xFFD32F2F).copy(alpha = 0.8f))
+                .clickable { onLeaveParty() }
+                .padding(horizontal = 12.dp, vertical = 8.dp),
+            horizontalArrangement = Arrangement.spacedBy(6.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Icon(
+                Icons.Filled.Close,
+                contentDescription = null,
+                tint = Color.White,
+                modifier = Modifier.size(16.dp)
+            )
+            Text(
+                text = "Leave Party",
+                color = Color.White,
+                fontSize = 12.sp,
+                fontWeight = FontWeight.Medium
+            )
         }
     }
 }

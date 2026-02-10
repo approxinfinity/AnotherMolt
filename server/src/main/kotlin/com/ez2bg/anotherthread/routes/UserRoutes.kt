@@ -679,6 +679,15 @@ fun Route.userRoutes() {
                 // Remove player from any active combat when they change location
                 CombatService.removePlayerFromCombat(id)
 
+                // If this player is a follower, leaving the room means leaving the party
+                val partyLeaderId = user?.partyLeaderId
+                if (partyLeaderId != null && oldLocationId != request.locationId) {
+                    log.info("Location update: Follower $userName is navigating independently - leaving party")
+                    UserRepository.leaveParty(id)
+                    // Notify the player they left the party
+                    LocationEventService.sendPartyLeft(id, "moved_independently")
+                }
+
                 // Broadcast player left old location (before updating location tracking)
                 log.info("Location update: oldLocation=${oldLocation?.id}, oldLocationId=$oldLocationId, newLocationId=${request.locationId}")
                 if (oldLocation != null && oldLocationId != request.locationId) {

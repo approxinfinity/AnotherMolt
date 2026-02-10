@@ -2069,6 +2069,13 @@ object CombatService {
             UserRepository.updateCombatState(playerCombatant.id, user.maxHp, null)
             playerSessions.remove(playerCombatant.id)
 
+            // Leave party on death
+            if (user.partyLeaderId != null) {
+                log.info("Player ${user.name} is leaving party due to death")
+                UserRepository.leaveParty(playerCombatant.id)
+                LocationEventService.sendPartyLeft(playerCombatant.id, "died")
+            }
+
             // Notify the player about their death
             sendToPlayer(playerCombatant.id, PlayerDeathMessage(
                 playerId = playerCombatant.id,
@@ -2150,6 +2157,13 @@ object CombatService {
         UserRepository.healToFull(userId)
         UserRepository.updateCombatState(userId, user.maxHp, null)
         playerSessions.remove(userId)
+
+        // Leave party on death
+        if (user.partyLeaderId != null) {
+            log.info("Player ${user.name} is leaving party due to voluntary death")
+            UserRepository.leaveParty(userId)
+            LocationEventService.sendPartyLeft(userId, "died")
+        }
 
         val deathMessage = PlayerDeathMessage(
             playerId = userId,

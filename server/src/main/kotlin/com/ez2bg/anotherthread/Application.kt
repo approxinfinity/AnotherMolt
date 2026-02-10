@@ -1264,6 +1264,12 @@ fun Application.module() {
                         }
                     }
                 }
+                // Leave party on disconnect
+                if (disconnectingUser?.partyLeaderId != null) {
+                    log.info("User ${disconnectingUser.name} leaving party due to disconnect")
+                    UserRepository.leaveParty(userId)
+                    // Note: Can't send WebSocket message since connection is closing
+                }
                 CombatService.unregisterConnection(userId)
                 LocationEventService.unregisterConnection(userId)
                 log.info("WebSocket connection closed for user $userId")
