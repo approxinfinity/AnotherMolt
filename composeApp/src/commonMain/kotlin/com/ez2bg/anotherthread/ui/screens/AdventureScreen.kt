@@ -1150,8 +1150,9 @@ fun AdventureScreen(
 
         // Inspection Modal - shows creatures, items, and players you can look at
         if (showInspectionModal && uiState.currentLocation != null) {
-            // Check if this is a fishing location
-            val isFishingLocation = uiState.currentLocation!!.featureIds.contains("feature-fishing-spot")
+            // Check if this is a fishing location (freshwater or coastal)
+            val isFishingLocation = uiState.currentLocation!!.featureIds.contains("feature-fishing-spot") ||
+                                    uiState.currentLocation!!.featureIds.contains("feature-coastal-fishing")
 
             InspectionModal(
                 creatures = uiState.creaturesHere,
