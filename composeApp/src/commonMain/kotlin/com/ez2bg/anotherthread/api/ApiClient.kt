@@ -1468,7 +1468,22 @@ object ApiClient {
         }
         println("[ApiClient] updateUserLocation response: status=${response.status}")
         if (!response.status.isSuccess()) {
-            throw Exception("Server returned ${response.status}")
+            // Try to parse error message from response body
+            val errorBody = try {
+                response.bodyAsText()
+            } catch (e: Exception) {
+                null
+            }
+            // Try to extract "error" field from JSON response
+            val errorMessage = try {
+                errorBody?.let { body ->
+                    val regex = """"error"\s*:\s*"([^"]+)"""".toRegex()
+                    regex.find(body)?.groupValues?.get(1)
+                }
+            } catch (e: Exception) {
+                null
+            }
+            throw Exception(errorMessage ?: "Server returned ${response.status}")
         }
         Unit
     }

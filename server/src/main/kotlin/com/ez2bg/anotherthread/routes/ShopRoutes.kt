@@ -435,5 +435,171 @@ fun Route.shopRoutes() {
                 user = updatedUser?.toResponse()
             ))
         }
+
+        // Get sellable weapons for a user at the weapons shop (Blade & Bow)
+        get("/{locationId}/sellable-weapons/{userId}") {
+            val locationId = call.parameters["locationId"]
+                ?: return@get call.respond(HttpStatusCode.BadRequest, SellableItemsResponse(false, emptyList()))
+            val userId = call.parameters["userId"]
+                ?: return@get call.respond(HttpStatusCode.BadRequest, SellableItemsResponse(false, emptyList()))
+
+            // Validate this is the weapons shop
+            if (locationId != TunDuLacSeed.WEAPONS_SHOP_ID) {
+                return@get call.respond(HttpStatusCode.BadRequest, SellableItemsResponse(false, emptyList()))
+            }
+
+            val user = UserRepository.findById(userId)
+                ?: return@get call.respond(HttpStatusCode.NotFound, SellableItemsResponse(false, emptyList()))
+
+            val sellableItems = mutableListOf<SellableItemDto>()
+
+            // Find all weapons in user's inventory
+            user.itemIds.forEach { itemId ->
+                val item = ItemRepository.findById(itemId)
+                if (item != null && item.equipmentType == "weapon" && item.value > 0) {
+                    // Sell price is 50% of value
+                    val sellValue = (item.value / 2).coerceAtLeast(1)
+                    sellableItems.add(SellableItemDto(
+                        id = itemId,
+                        itemId = itemId,
+                        name = item.name,
+                        sellValue = sellValue,
+                        isFoodItem = false
+                    ))
+                }
+            }
+
+            call.respond(SellableItemsResponse(true, sellableItems))
+        }
+
+        // Sell a weapon at the weapons shop (Blade & Bow)
+        post("/{locationId}/sell-weapon") {
+            val locationId = call.parameters["locationId"]
+                ?: return@post call.respond(HttpStatusCode.BadRequest, ShopActionResponse(false, "Missing location ID"))
+
+            val request = call.receive<SellItemRequest>()
+
+            // Validate this is the weapons shop
+            if (locationId != TunDuLacSeed.WEAPONS_SHOP_ID) {
+                return@post call.respond(HttpStatusCode.BadRequest, ShopActionResponse(false, "You can only sell weapons at the weapons shop"))
+            }
+
+            val user = UserRepository.findById(request.userId)
+                ?: return@post call.respond(HttpStatusCode.NotFound, ShopActionResponse(false, "User not found"))
+
+            // Check user has the item
+            if (request.itemId !in user.itemIds) {
+                return@post call.respond(HttpStatusCode.BadRequest, ShopActionResponse(false, "You don't have that item"))
+            }
+
+            val item = ItemRepository.findById(request.itemId)
+                ?: return@post call.respond(HttpStatusCode.NotFound, ShopActionResponse(false, "Item not found"))
+
+            // Verify it's a weapon
+            if (item.equipmentType != "weapon") {
+                return@post call.respond(HttpStatusCode.BadRequest, ShopActionResponse(false, "The shopkeeper shakes his head. \"I only deal in weapons here.\""))
+            }
+
+            if (item.value <= 0) {
+                return@post call.respond(HttpStatusCode.BadRequest, ShopActionResponse(false, "That weapon has no value"))
+            }
+
+            // Sell price is 50% of value
+            val sellValue = (item.value / 2).coerceAtLeast(1)
+
+            // Remove item and add gold
+            UserRepository.removeItems(request.userId, listOf(request.itemId))
+            UserRepository.addGold(request.userId, sellValue)
+
+            val updatedUser = UserRepository.findById(request.userId)
+            call.respond(ShopActionResponse(
+                success = true,
+                message = "Sold ${item.name} for ${sellValue}g",
+                user = updatedUser?.toResponse()
+            ))
+        }
+
+        // Get sellable armor for a user at the armor shop (Iron Scales)
+        get("/{locationId}/sellable-armor/{userId}") {
+            val locationId = call.parameters["locationId"]
+                ?: return@get call.respond(HttpStatusCode.BadRequest, SellableItemsResponse(false, emptyList()))
+            val userId = call.parameters["userId"]
+                ?: return@get call.respond(HttpStatusCode.BadRequest, SellableItemsResponse(false, emptyList()))
+
+            // Validate this is the armor shop
+            if (locationId != TunDuLacSeed.ARMOR_SHOP_ID) {
+                return@get call.respond(HttpStatusCode.BadRequest, SellableItemsResponse(false, emptyList()))
+            }
+
+            val user = UserRepository.findById(userId)
+                ?: return@get call.respond(HttpStatusCode.NotFound, SellableItemsResponse(false, emptyList()))
+
+            val sellableItems = mutableListOf<SellableItemDto>()
+
+            // Find all armor in user's inventory
+            user.itemIds.forEach { itemId ->
+                val item = ItemRepository.findById(itemId)
+                if (item != null && item.equipmentType == "armor" && item.value > 0) {
+                    // Sell price is 50% of value
+                    val sellValue = (item.value / 2).coerceAtLeast(1)
+                    sellableItems.add(SellableItemDto(
+                        id = itemId,
+                        itemId = itemId,
+                        name = item.name,
+                        sellValue = sellValue,
+                        isFoodItem = false
+                    ))
+                }
+            }
+
+            call.respond(SellableItemsResponse(true, sellableItems))
+        }
+
+        // Sell armor at the armor shop (Iron Scales)
+        post("/{locationId}/sell-armor") {
+            val locationId = call.parameters["locationId"]
+                ?: return@post call.respond(HttpStatusCode.BadRequest, ShopActionResponse(false, "Missing location ID"))
+
+            val request = call.receive<SellItemRequest>()
+
+            // Validate this is the armor shop
+            if (locationId != TunDuLacSeed.ARMOR_SHOP_ID) {
+                return@post call.respond(HttpStatusCode.BadRequest, ShopActionResponse(false, "You can only sell armor at the armor shop"))
+            }
+
+            val user = UserRepository.findById(request.userId)
+                ?: return@post call.respond(HttpStatusCode.NotFound, ShopActionResponse(false, "User not found"))
+
+            // Check user has the item
+            if (request.itemId !in user.itemIds) {
+                return@post call.respond(HttpStatusCode.BadRequest, ShopActionResponse(false, "You don't have that item"))
+            }
+
+            val item = ItemRepository.findById(request.itemId)
+                ?: return@post call.respond(HttpStatusCode.NotFound, ShopActionResponse(false, "Item not found"))
+
+            // Verify it's armor
+            if (item.equipmentType != "armor") {
+                return@post call.respond(HttpStatusCode.BadRequest, ShopActionResponse(false, "The dwarf frowns. \"That's not armor. Take your trinkets elsewhere.\""))
+            }
+
+            if (item.value <= 0) {
+                return@post call.respond(HttpStatusCode.BadRequest, ShopActionResponse(false, "That armor has no value"))
+            }
+
+            // Sell price is 50% of value
+            val sellValue = (item.value / 2).coerceAtLeast(1)
+
+            // Remove item and add gold
+            UserRepository.removeItems(request.userId, listOf(request.itemId))
+            UserRepository.addGold(request.userId, sellValue)
+
+            val updatedUser = UserRepository.findById(request.userId)
+            call.respond(ShopActionResponse(
+                success = true,
+                message = "Sold ${item.name} for ${sellValue}g",
+                user = updatedUser?.toResponse()
+            ))
+        }
     }
 }

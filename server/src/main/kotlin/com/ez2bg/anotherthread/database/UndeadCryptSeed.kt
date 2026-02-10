@@ -547,7 +547,7 @@ object UndeadCryptSeed {
                 name = "Vampire Spawn Loot",
                 entries = listOf(
                     LootEntry(itemId = ANCIENT_TOMB_GOLD_ID, chance = 0.45f, minQty = 2, maxQty = 4),
-                    LootEntry(itemId = VAMPIRE_FANG_ID, chance = 0.40f, minQty = 1, maxQty = 1),
+                    LootEntry(itemId = VAMPIRE_FANG_ID, chance = 0.10f, minQty = 1, maxQty = 1),
                     LootEntry(itemId = CLOAK_OF_SHADOWS_ID, chance = 0.10f, minQty = 1, maxQty = 1)
                 )
             ),
@@ -566,7 +566,7 @@ object UndeadCryptSeed {
                 name = "Vampire Lord Loot",
                 entries = listOf(
                     LootEntry(itemId = ANCIENT_TOMB_GOLD_ID, chance = 1.0f, minQty = 8, maxQty = 15),
-                    LootEntry(itemId = VAMPIRE_FANG_ID, chance = 1.0f, minQty = 2, maxQty = 3),
+                    LootEntry(itemId = VAMPIRE_FANG_ID, chance = 0.25f, minQty = 1, maxQty = 2),
                     LootEntry(itemId = HOLY_AVENGER_ID, chance = 0.15f, minQty = 1, maxQty = 1),
                     LootEntry(itemId = AMULET_OF_LIFE_PROTECTION_ID, chance = 0.20f, minQty = 1, maxQty = 1),
                     LootEntry(itemId = PHYLACTERY_SHARD_ID, chance = 0.25f, minQty = 1, maxQty = 1)

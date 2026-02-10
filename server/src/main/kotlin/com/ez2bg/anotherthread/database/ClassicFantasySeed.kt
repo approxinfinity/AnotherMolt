@@ -575,10 +575,10 @@ object ClassicFantasySeed {
                 id = LOOT_TABLE_DRAGON_ID,
                 name = "Dragon Loot",
                 entries = listOf(
-                    LootEntry(itemId = DRAGON_TOOTH_ID, chance = 1.0f, minQty = 1, maxQty = 2),
+                    LootEntry(itemId = DRAGON_TOOTH_ID, chance = 0.15f, minQty = 1, maxQty = 1),
                     LootEntry(itemId = RUBY_GEMSTONE_ID, chance = 0.75f, minQty = 2, maxQty = 4),
                     LootEntry(itemId = FLAMING_SWORD_ID, chance = 0.25f, minQty = 1, maxQty = 1),
-                    LootEntry(itemId = DRAGONSCALE_SHIELD_ID, chance = 0.20f, minQty = 1, maxQty = 1),
+                    LootEntry(itemId = DRAGONSCALE_SHIELD_ID, chance = 0.05f, minQty = 1, maxQty = 1),
                     LootEntry(itemId = ANCIENT_GOLD_COIN_ID, chance = 1.0f, minQty = 10, maxQty = 20)
                 )
             )

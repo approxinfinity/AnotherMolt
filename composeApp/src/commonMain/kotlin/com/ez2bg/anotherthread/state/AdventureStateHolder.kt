@@ -148,28 +148,40 @@ object AdventureStateHolder {
     fun navigateTo(locationId: String) {
         val location = _allLocations.value.find { it.id == locationId }
         if (location != null) {
+            // Store old location for rollback if needed
+            val oldLocation = _currentLocation.value
+
+            // Optimistically update the UI
             setCurrentLocation(location)
 
             // Update user's current location on server
             currentUserId?.let { userId ->
                 scope.launch {
-                    ApiClient.updateUserLocation(userId, locationId)
+                    ApiClient.updateUserLocation(userId, locationId).onSuccess {
+                        // Server accepted the move - emit navigation event
+                        _navigationEvents.emit(NavigationEvent.MovedToLocation(locationId, location.name))
+
+                        // Add to event log with coordinates for debugging
+                        val coordStr = if (location.gridX != null && location.gridY != null) {
+                            " (${location.gridX},${location.gridY})"
+                        } else ""
+                        CombatStateHolder.addEventLogEntry(
+                            "Arrived at ${location.name}$coordStr",
+                            EventLogType.NAVIGATION
+                        )
+                    }.onFailure { error ->
+                        // Server rejected the move - rollback and show error
+                        oldLocation?.let { setCurrentLocation(it) }
+
+                        val errorMessage = error.message ?: "Cannot move to that location"
+                        _navigationEvents.emit(NavigationEvent.NavigationBlocked(errorMessage))
+                        CombatStateHolder.addEventLogEntry(
+                            errorMessage,
+                            EventLogType.SYSTEM
+                        )
+                    }
                 }
             }
-
-            // Emit navigation event
-            scope.launch {
-                _navigationEvents.emit(NavigationEvent.MovedToLocation(locationId, location.name))
-            }
-
-            // Add to event log with coordinates for debugging
-            val coordStr = if (location.gridX != null && location.gridY != null) {
-                " (${location.gridX},${location.gridY})"
-            } else ""
-            CombatStateHolder.addEventLogEntry(
-                "Arrived at ${location.name}$coordStr",
-                EventLogType.NAVIGATION
-            )
         }
     }
 

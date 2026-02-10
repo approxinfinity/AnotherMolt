@@ -2814,9 +2814,21 @@ object CombatService {
             }
         }
 
-        // Award items to killer
+        // Drop items on the ground at the combat location (not into player inventory)
         if (droppedItems.isNotEmpty()) {
-            UserRepository.addItems(killer.id, droppedItems.map { it.id })
+            val location = LocationRepository.findById(session.locationId)
+            // Use LocationItem system for tracked ground items
+            LocationItemRepository.addItems(session.locationId, droppedItems.map { it.id }, null)
+            // Also update the legacy itemIds for backwards compatibility
+            LocationRepository.addItems(session.locationId, droppedItems.map { it.id })
+            log.info("Dropped ${droppedItems.size} items on ground at ${session.locationId}")
+
+            // Broadcast item drops to players at this location so the UI updates
+            location?.let { loc ->
+                droppedItems.forEach { item ->
+                    LocationEventService.broadcastItemAdded(loc, item.id, item.name)
+                }
+            }
         }
 
         val lootResult = LootResult(
