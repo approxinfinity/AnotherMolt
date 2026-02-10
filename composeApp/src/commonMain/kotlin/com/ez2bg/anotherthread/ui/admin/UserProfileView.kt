@@ -194,9 +194,10 @@ fun UserProfileView(
     val encumbrancePercent = if (maxCapacity > 0) (currentWeight * 100) / maxCapacity else 100
     val encumbranceTier = getEncumbranceTier(encumbrancePercent)
 
-    // Load abilities granted by inventory items
-    LaunchedEffect(inventoryItems) {
-        val abilityIds = inventoryItems.flatMap { it.abilityIds }.distinct()
+    // Load abilities granted by EQUIPPED inventory items only
+    LaunchedEffect(inventoryItems, equippedItemIds) {
+        val equippedItems = inventoryItems.filter { it.id in equippedItemIds }
+        val abilityIds = equippedItems.flatMap { it.abilityIds }.distinct()
         if (abilityIds.isNotEmpty()) {
             ApiClient.getAbilities().onSuccess { allAbilities ->
                 itemAbilitiesMap = allAbilities.filter { it.id in abilityIds }.associateBy { it.id }
@@ -1652,10 +1653,11 @@ private fun UnifiedAbilitiesSection(
     var isLoading by remember { mutableStateOf(false) }
     var iconPickerAbilityId by remember { mutableStateOf<String?>(null) }
 
-    // Build a map from ability ID to the item(s) that grant it
-    val abilityToItemMap: Map<String, ItemDto> = remember(inventoryItems) {
+    // Build a map from ability ID to the EQUIPPED item(s) that grant it
+    val abilityToItemMap: Map<String, ItemDto> = remember(inventoryItems, equippedItemIds) {
         val map = mutableMapOf<String, ItemDto>()
-        for (item in inventoryItems) {
+        val equippedItems = inventoryItems.filter { it.id in equippedItemIds }
+        for (item in equippedItems) {
             for (abilityId in item.abilityIds) {
                 // If multiple items grant same ability, show first one found
                 if (abilityId !in map) {
