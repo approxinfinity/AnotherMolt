@@ -38,13 +38,9 @@ object FoodService {
     // Sickness debuff duration (in game ticks, assuming 1 tick = 1 second)
     private const val SICKNESS_DURATION_TICKS = 60  // 1 minute
 
-    // Fish item IDs (from FishingSeed)
-    private val FISH_ITEM_IDS = listOf(
-        "fish-minnow", "fish-perch", "fish-bluegill", "fish-sardine",
-        "fish-trout", "fish-bass", "fish-catfish", "fish-pike",
-        "fish-salmon", "fish-carp", "fish-walleye", "fish-sturgeon",
-        "fish-giant-catfish", "fish-golden-trout", "fish-legendary-bass", "fish-ancient-sturgeon"
-    )
+    // Fish item IDs (from FishingSeed and CoastalFishingSeed)
+    // Rather than maintaining a hardcoded list, we check if the item ID starts with "fish-"
+    private fun isFishItemId(itemId: String): Boolean = itemId.startsWith("fish-")
 
     /**
      * Result of eating food.
@@ -78,7 +74,7 @@ object FoodService {
      * Check if an item is a fish/food item.
      */
     fun isFoodItem(itemId: String): Boolean {
-        return FISH_ITEM_IDS.contains(itemId)
+        return isFishItemId(itemId)
     }
 
     /**

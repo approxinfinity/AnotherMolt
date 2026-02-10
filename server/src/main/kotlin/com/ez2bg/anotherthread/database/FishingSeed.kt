@@ -21,29 +21,30 @@ object FishingSeed {
 
     private fun seedFishItems() {
         val fishItems = listOf(
-            // Small fish (weight 1, value 5-15)
+            // ========== EASY FISH (difficulty 1-2, value 5-15) ==========
+            // These barely fight - great for beginners
             Item(
                 id = "fish-minnow",
                 name = "Minnow",
-                desc = "A tiny silver fish, barely a mouthful.",
+                desc = "A tiny silver fish, barely a mouthful. Practically jumps onto the hook.",
                 featureIds = emptyList(),
                 value = 5,
                 weight = 1,
                 isStackable = true
             ),
             Item(
-                id = "fish-perch",
-                name = "Perch",
-                desc = "A small yellow perch with dark stripes.",
+                id = "fish-bluegill",
+                name = "Bluegill",
+                desc = "A small bluegill sunfish with a colorful belly. Easy to catch, fun for kids.",
                 featureIds = emptyList(),
                 value = 8,
                 weight = 1,
                 isStackable = true
             ),
             Item(
-                id = "fish-bluegill",
-                name = "Bluegill",
-                desc = "A small bluegill sunfish with a colorful belly.",
+                id = "fish-perch",
+                name = "Perch",
+                desc = "A small yellow perch with dark stripes. Puts up a token struggle.",
                 featureIds = emptyList(),
                 value = 10,
                 weight = 1,
@@ -52,18 +53,19 @@ object FishingSeed {
             Item(
                 id = "fish-sardine",
                 name = "Sardine",
-                desc = "A small oily fish, good for bait or a snack.",
+                desc = "A small oily fish, good for bait or a snack. Schools are easy pickings.",
                 featureIds = emptyList(),
                 value = 6,
                 weight = 1,
                 isStackable = true
             ),
 
-            // Medium fish (weight 2, value 20-40)
+            // ========== MODERATE FISH (difficulty 3-4, value 20-45) ==========
+            // These put up a decent fight
             Item(
                 id = "fish-trout",
                 name = "Trout",
-                desc = "A fresh rainbow trout, its scales glinting with color.",
+                desc = "A fresh rainbow trout, its scales glinting with color. Feisty but manageable.",
                 featureIds = emptyList(),
                 value = 25,
                 weight = 2,
@@ -72,45 +74,46 @@ object FishingSeed {
             Item(
                 id = "fish-bass",
                 name = "Bass",
-                desc = "A plump largemouth bass, a fisherman's prize.",
+                desc = "A plump largemouth bass, a fisherman's prize. Known for jumping when hooked.",
                 featureIds = emptyList(),
-                value = 30,
+                value = 32,
                 weight = 2,
                 isStackable = true
             ),
             Item(
                 id = "fish-catfish",
                 name = "Catfish",
-                desc = "A whiskered catfish, slippery and strong.",
+                desc = "A whiskered catfish, slippery and strong. Digs deep when hooked.",
                 featureIds = emptyList(),
-                value = 35,
+                value = 38,
                 weight = 2,
                 isStackable = true
             ),
             Item(
-                id = "fish-pike",
-                name = "Pike",
-                desc = "A northern pike with sharp teeth and a mean look.",
+                id = "fish-crappie",
+                name = "Crappie",
+                desc = "A panfish that travels in schools. Quick to bite, quick to fight.",
                 featureIds = emptyList(),
-                value = 40,
-                weight = 2,
+                value = 22,
+                weight = 1,
                 isStackable = true
             ),
 
-            // Large fish (weight 4, value 60-100)
+            // ========== CHALLENGING FISH (difficulty 5-6, value 50-100) ==========
+            // Real sport fish - require skill
             Item(
-                id = "fish-salmon",
-                name = "Salmon",
-                desc = "A magnificent salmon, pink-fleshed and delicious.",
+                id = "fish-pike",
+                name = "Northern Pike",
+                desc = "A northern pike with razor teeth and explosive strikes. Mean and powerful.",
                 featureIds = emptyList(),
-                value = 60,
-                weight = 4,
+                value = 55,
+                weight = 3,
                 isStackable = true
             ),
             Item(
-                id = "fish-carp",
-                name = "Carp",
-                desc = "A heavy golden carp, prized in eastern cuisine.",
+                id = "fish-salmon",
+                name = "Salmon",
+                desc = "A magnificent salmon, pink-fleshed and delicious. Famous for leaping upstream.",
                 featureIds = emptyList(),
                 value = 70,
                 weight = 4,
@@ -119,57 +122,181 @@ object FishingSeed {
             Item(
                 id = "fish-walleye",
                 name = "Walleye",
-                desc = "A walleye with distinctive glassy eyes.",
+                desc = "A walleye with distinctive glassy eyes. Subtle bites but strong runs.",
                 featureIds = emptyList(),
-                value = 80,
+                value = 85,
+                weight = 3,
+                isStackable = true
+            ),
+            Item(
+                id = "fish-carp",
+                name = "Carp",
+                desc = "A heavy golden carp. Uses its bulk to resist with steady determination.",
+                featureIds = emptyList(),
+                value = 65,
                 weight = 4,
+                isStackable = true
+            ),
+
+            // ========== HARD FISH (difficulty 7-8, value 120-220) ==========
+            // Serious anglers only - these fish FIGHT
+            Item(
+                id = "fish-muskie",
+                name = "Muskellunge",
+                desc = "The 'fish of ten thousand casts.' Ambush predator that tests your patience and skill.",
+                featureIds = emptyList(),
+                value = 140,
+                weight = 5,
                 isStackable = true
             ),
             Item(
                 id = "fish-sturgeon",
                 name = "Sturgeon",
-                desc = "An ancient-looking sturgeon, armored with bony plates.",
+                desc = "An ancient-looking sturgeon, armored with bony plates. Can fight for an hour.",
                 featureIds = emptyList(),
-                value = 100,
-                weight = 4,
+                value = 180,
+                weight = 5,
                 isStackable = true
             ),
-
-            // Trophy fish (weight 6, value 150-300)
             Item(
                 id = "fish-giant-catfish",
                 name = "Giant Catfish",
                 desc = "An enormous catfish, the stuff of legends. Its whiskers are as long as your arm.",
                 featureIds = emptyList(),
-                value = 150,
+                value = 160,
+                weight = 6,
+                isStackable = true
+            ),
+            Item(
+                id = "fish-steelhead",
+                name = "Steelhead",
+                desc = "A sea-run rainbow trout. Acrobatic fighter with incredible stamina.",
+                featureIds = emptyList(),
+                value = 200,
+                weight = 4,
+                isStackable = true
+            ),
+
+            // ========== VERY HARD / RARE (difficulty 9, value 300-500) ==========
+            // Trophy fish - only the best land these
+            Item(
+                id = "fish-legendary-bass",
+                name = "Legendary Bass",
+                desc = "A massive bass of legendary proportions. Fishermen speak of this one in hushed tones.",
+                featureIds = emptyList(),
+                value = 350,
                 weight = 6,
                 isStackable = true
             ),
             Item(
                 id = "fish-golden-trout",
                 name = "Golden Trout",
-                desc = "A rare golden trout that shimmers with an almost magical light.",
+                desc = "A rare golden trout that shimmers with an almost magical light. Lives only in pristine alpine waters.",
                 featureIds = emptyList(),
-                value = 250,
-                weight = 6,
-                isStackable = true
-            ),
-            Item(
-                id = "fish-legendary-bass",
-                name = "Legendary Bass",
-                desc = "A massive bass of legendary proportions. Fishermen speak of this one in hushed tones.",
-                featureIds = emptyList(),
-                value = 200,
-                weight = 6,
+                value = 400,
+                weight = 4,
                 isStackable = true
             ),
             Item(
                 id = "fish-ancient-sturgeon",
                 name = "Ancient Sturgeon",
-                desc = "A prehistoric-looking sturgeon that may have lived for centuries.",
+                desc = "A prehistoric-looking sturgeon that may have lived for centuries. Fights with ancient wisdom.",
                 featureIds = emptyList(),
-                value = 300,
+                value = 450,
+                weight = 8,
+                isStackable = true
+            ),
+            Item(
+                id = "fish-tiger-muskie",
+                name = "Tiger Muskie",
+                desc = "A rare hybrid predator with tiger stripes. Combines the aggression of both parent species.",
+                featureIds = emptyList(),
+                value = 480,
                 weight = 6,
+                isStackable = true
+            ),
+
+            // ========== ULTRA RARE / LEGENDARY (difficulty 10, value 600-2000) ==========
+            // Mythical fish - once in a lifetime catches
+            Item(
+                id = "fish-albino-catfish",
+                name = "Albino Catfish",
+                desc = "A ghostly white catfish, almost never seen. Local legend says it grants luck to those who release it.",
+                featureIds = emptyList(),
+                value = 650,
+                weight = 5,
+                isStackable = true
+            ),
+            Item(
+                id = "fish-emerald-sturgeon",
+                name = "Emerald Sturgeon",
+                desc = "A sturgeon with scales that shimmer green like emeralds. Said to contain a precious gem in its belly.",
+                featureIds = emptyList(),
+                value = 800,
+                weight = 7,
+                isStackable = true
+            ),
+            Item(
+                id = "fish-spectral-pike",
+                name = "Spectral Pike",
+                desc = "A translucent pike that seems to phase in and out of reality. Some say it swims between worlds.",
+                featureIds = emptyList(),
+                value = 900,
+                weight = 4,
+                isStackable = true
+            ),
+            Item(
+                id = "fish-blood-salmon",
+                name = "Blood Salmon",
+                desc = "A crimson salmon said to spawn once every decade. Its flesh is rumored to have magical properties.",
+                featureIds = emptyList(),
+                value = 1000,
+                weight = 5,
+                isStackable = true
+            ),
+            Item(
+                id = "fish-deepmaw",
+                name = "Deepmaw",
+                desc = "A terrifying fish from lake depths that never see sunlight. All teeth and hunger.",
+                featureIds = emptyList(),
+                value = 1100,
+                weight = 6,
+                isStackable = true
+            ),
+            Item(
+                id = "fish-prismatic-koi",
+                name = "Prismatic Koi",
+                desc = "A legendary koi that shimmers with every color of the rainbow. Considered sacred in many cultures.",
+                featureIds = emptyList(),
+                value = 1300,
+                weight = 4,
+                isStackable = true
+            ),
+            Item(
+                id = "fish-lake-wyrm",
+                name = "Lake Wyrm",
+                desc = "A serpentine creature of impossible length. Is it a fish or something else entirely?",
+                featureIds = emptyList(),
+                value = 1500,
+                weight = 9,
+                isStackable = true
+            ),
+            Item(
+                id = "fish-old-whiskers",
+                name = "Old Whiskers",
+                desc = "THE catfish. A hundred years old if it's a day. Locals have named it and tell tales of its escapes.",
+                featureIds = emptyList(),
+                value = 1800,
+                weight = 10,
+                isStackable = true
+            ),
+            Item(
+                id = "fish-the-leviathan",
+                name = "The Leviathan",
+                desc = "A creature of myth made flesh. Entire boats have been pulled under trying to land this one. Why are you fishing for this?!",
+                featureIds = emptyList(),
+                value = 2000,
+                weight = 10,
                 isStackable = true
             )
         )
@@ -188,44 +315,71 @@ object FishingSeed {
 
     private fun seedFishingLootTables() {
         val lootTables = listOf(
-            // Near shore - small fish, some medium
+            // Near shore - mostly easy fish, small chance of moderate
             LootTableData(
                 id = "loot-table-fishing-near",
                 name = "Near Shore Fish",
                 entries = listOf(
-                    LootEntry("fish-minnow", chance = 0.30f),
-                    LootEntry("fish-perch", chance = 0.25f),
+                    // Easy (85%)
+                    LootEntry("fish-minnow", chance = 0.28f),
                     LootEntry("fish-bluegill", chance = 0.25f),
-                    LootEntry("fish-sardine", chance = 0.15f),
-                    LootEntry("fish-trout", chance = 0.05f)
+                    LootEntry("fish-perch", chance = 0.18f),
+                    LootEntry("fish-sardine", chance = 0.14f),
+                    // Moderate (15%)
+                    LootEntry("fish-crappie", chance = 0.07f),
+                    LootEntry("fish-trout", chance = 0.05f),
+                    LootEntry("fish-bass", chance = 0.03f)
                 )
             ),
-            // Mid water - medium fish, some large
+            // Mid water - moderate to challenging, small chance at hard fish
             LootTableData(
                 id = "loot-table-fishing-mid",
                 name = "Mid Water Fish",
                 entries = listOf(
-                    LootEntry("fish-trout", chance = 0.25f),
-                    LootEntry("fish-bass", chance = 0.25f),
-                    LootEntry("fish-catfish", chance = 0.20f),
-                    LootEntry("fish-pike", chance = 0.15f),
-                    LootEntry("fish-salmon", chance = 0.10f),
-                    LootEntry("fish-walleye", chance = 0.05f)
+                    // Moderate (40%)
+                    LootEntry("fish-trout", chance = 0.15f),
+                    LootEntry("fish-bass", chance = 0.13f),
+                    LootEntry("fish-catfish", chance = 0.12f),
+                    // Challenging (45%)
+                    LootEntry("fish-pike", chance = 0.14f),
+                    LootEntry("fish-salmon", chance = 0.12f),
+                    LootEntry("fish-walleye", chance = 0.10f),
+                    LootEntry("fish-carp", chance = 0.09f),
+                    // Hard (15%)
+                    LootEntry("fish-muskie", chance = 0.06f),
+                    LootEntry("fish-sturgeon", chance = 0.04f),
+                    LootEntry("fish-steelhead", chance = 0.03f),
+                    LootEntry("fish-giant-catfish", chance = 0.02f)
                 )
             ),
-            // Deep water - large fish, rare trophy fish
+            // Deep water - challenging to legendary, this is where the monsters live
             LootTableData(
                 id = "loot-table-fishing-far",
                 name = "Deep Water Fish",
                 entries = listOf(
-                    LootEntry("fish-salmon", chance = 0.25f),
-                    LootEntry("fish-carp", chance = 0.20f),
-                    LootEntry("fish-walleye", chance = 0.20f),
-                    LootEntry("fish-sturgeon", chance = 0.15f),
-                    LootEntry("fish-giant-catfish", chance = 0.10f),
-                    LootEntry("fish-golden-trout", chance = 0.05f),
-                    LootEntry("fish-legendary-bass", chance = 0.03f),
-                    LootEntry("fish-ancient-sturgeon", chance = 0.02f)
+                    // Challenging (20%)
+                    LootEntry("fish-salmon", chance = 0.10f),
+                    LootEntry("fish-walleye", chance = 0.10f),
+                    // Hard (35%)
+                    LootEntry("fish-muskie", chance = 0.12f),
+                    LootEntry("fish-sturgeon", chance = 0.10f),
+                    LootEntry("fish-giant-catfish", chance = 0.07f),
+                    LootEntry("fish-steelhead", chance = 0.06f),
+                    // Very Hard / Rare (30%)
+                    LootEntry("fish-legendary-bass", chance = 0.08f),
+                    LootEntry("fish-golden-trout", chance = 0.07f),
+                    LootEntry("fish-ancient-sturgeon", chance = 0.06f),
+                    LootEntry("fish-tiger-muskie", chance = 0.09f),
+                    // Ultra Rare / Legendary (15% combined, individually rare)
+                    LootEntry("fish-albino-catfish", chance = 0.04f),
+                    LootEntry("fish-emerald-sturgeon", chance = 0.03f),
+                    LootEntry("fish-spectral-pike", chance = 0.025f),
+                    LootEntry("fish-blood-salmon", chance = 0.02f),
+                    LootEntry("fish-deepmaw", chance = 0.015f),
+                    LootEntry("fish-prismatic-koi", chance = 0.01f),
+                    LootEntry("fish-lake-wyrm", chance = 0.007f),
+                    LootEntry("fish-old-whiskers", chance = 0.005f),
+                    LootEntry("fish-the-leviathan", chance = 0.003f)
                 )
             )
         )
