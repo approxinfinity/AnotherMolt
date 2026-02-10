@@ -331,7 +331,12 @@ object CombatService {
         if (session == null) {
             // Create new session - returns null if no valid creatures found
             session = createSession(locationId, targetCreatureIds)
-                ?: return Result.failure(Exception("No creatures to fight at this location"))
+            if (session == null) {
+                val location = LocationRepository.findById(locationId)
+                val creaturesAtLoc = location?.creatureIds ?: emptyList()
+                log.warn("joinCombat failed: no creatures at $locationId. Requested: $targetCreatureIds, DB creatureIds: $creaturesAtLoc")
+                return Result.failure(Exception("No creatures to fight at this location (requested: ${targetCreatureIds.size}, at location: ${creaturesAtLoc.size})"))
+            }
         }
 
         // Check if player is already a combatant in this session (e.g., from a previous reconnect)

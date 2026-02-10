@@ -162,9 +162,12 @@ object AdventureStateHolder {
                 _navigationEvents.emit(NavigationEvent.MovedToLocation(locationId, location.name))
             }
 
-            // Add to event log
+            // Add to event log with coordinates for debugging
+            val coordStr = if (location.gridX != null && location.gridY != null) {
+                " (${location.gridX},${location.gridY})"
+            } else ""
             CombatStateHolder.addEventLogEntry(
-                "Arrived at ${location.name}",
+                "Arrived at ${location.name}$coordStr",
                 EventLogType.NAVIGATION
             )
         }
