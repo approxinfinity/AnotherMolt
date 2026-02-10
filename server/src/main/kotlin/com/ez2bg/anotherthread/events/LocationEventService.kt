@@ -114,6 +114,30 @@ data class PartyLeftEvent(
 )
 
 /**
+ * Party new leader event sent when leadership is transferred.
+ */
+@Serializable
+data class PartyNewLeaderEvent(
+    val type: String = "PARTY_NEW_LEADER",
+    val userId: String,
+    val newLeaderId: String,
+    val newLeaderName: String,
+    val message: String
+)
+
+/**
+ * Player death event sent to players at a location when someone dies.
+ */
+@Serializable
+data class PlayerDeathEvent(
+    val type: String = "PLAYER_DEATH",
+    val playerId: String,
+    val playerName: String,
+    val locationId: String,
+    val message: String
+)
+
+/**
  * Rob notification event sent to a player when someone attempts to rob them.
  */
 @Serializable
@@ -570,6 +594,59 @@ object LocationEventService {
                 log.debug("Sent party left to $userId: $reason")
             } catch (e: Exception) {
                 log.debug("Failed to send party left to $userId: ${e.message}")
+            }
+        }
+    }
+
+    /**
+     * Send party new leader notification to a party member.
+     */
+    fun sendPartyNewLeader(userId: String, newLeaderId: String, newLeaderName: String) {
+        kotlinx.coroutines.runBlocking {
+            val connection = playerConnections[userId] ?: return@runBlocking
+
+            val event = PartyNewLeaderEvent(
+                userId = userId,
+                newLeaderId = newLeaderId,
+                newLeaderName = newLeaderName,
+                message = "$newLeaderName is now the party leader"
+            )
+
+            try {
+                connection.send(Frame.Text(json.encodeToString(event)))
+                log.debug("Sent party new leader to $userId: $newLeaderName")
+            } catch (e: Exception) {
+                log.debug("Failed to send party new leader to $userId: ${e.message}")
+            }
+        }
+    }
+
+    /**
+     * Send player death notification to all players at a location.
+     */
+    fun sendPlayerDeath(locationId: String, playerId: String, playerName: String, excludePlayerId: String? = null) {
+        kotlinx.coroutines.runBlocking {
+            // Find all players at this location
+            val playersAtLocation = playerConnections.keys.filter { id ->
+                id != excludePlayerId && playerLocations[id] == locationId
+            }
+
+            val event = PlayerDeathEvent(
+                playerId = playerId,
+                playerName = playerName,
+                locationId = locationId,
+                message = "$playerName has died"
+            )
+
+            val eventText = json.encodeToString(event)
+            for (targetId in playersAtLocation) {
+                val connection = playerConnections[targetId] ?: continue
+                try {
+                    connection.send(Frame.Text(eventText))
+                    log.debug("Sent player death event to $targetId: $playerName died")
+                } catch (e: Exception) {
+                    log.debug("Failed to send player death to $targetId: ${e.message}")
+                }
             }
         }
     }

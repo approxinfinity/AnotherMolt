@@ -2326,6 +2326,23 @@ class AdventureViewModel {
             }
         }
     }
+
+    /**
+     * Disband the party (leader only).
+     */
+    fun disbandParty() {
+        val userId = currentUser?.id ?: return
+
+        scope.launch {
+            ApiClient.disbandParty(userId).onSuccess { response ->
+                logMessage(response.message)
+                // Refresh user data to update isPartyLeader
+                UserStateHolder.refreshUser()
+            }.onFailure { error ->
+                logMessage("Failed to disband party: ${error.message}")
+            }
+        }
+    }
 }
 
 /**

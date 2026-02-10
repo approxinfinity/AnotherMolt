@@ -1759,6 +1759,35 @@ fun Route.userRoutes() {
             ))
         }
 
+        // Disband party (leader only)
+        post("/{id}/party/disband") {
+            val userId = call.parameters["id"] ?: return@post call.respond(HttpStatusCode.BadRequest)
+
+            val user = UserRepository.findById(userId)
+            if (user == null) {
+                call.respond(HttpStatusCode.NotFound, ErrorResponse("User not found"))
+                return@post
+            }
+
+            // Check if this user is a party leader
+            val followers = UserRepository.findFollowers(userId)
+            if (followers.isEmpty()) {
+                call.respond(HttpStatusCode.BadRequest, ErrorResponse("You are not a party leader"))
+                return@post
+            }
+
+            // Remove all followers from the party
+            for (follower in followers) {
+                UserRepository.leaveParty(follower.id)
+                LocationEventService.sendPartyLeft(follower.id, "disbanded")
+            }
+
+            call.respond(HttpStatusCode.OK, SimpleSuccessResponse(
+                success = true,
+                message = "Party disbanded"
+            ))
+        }
+
         // Get pending party invite info for a user
         get("/{id}/party/pending-invite") {
             val userId = call.parameters["id"] ?: return@get call.respond(HttpStatusCode.BadRequest)

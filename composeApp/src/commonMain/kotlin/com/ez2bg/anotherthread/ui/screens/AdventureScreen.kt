@@ -504,12 +504,13 @@ fun AdventureScreen(
                                 }
                                 }
 
-                                // Party abilities dropdown - animated (always show if in party for Leave button)
+                                // Party abilities dropdown - animated (show if in party as leader or member)
                                 val partyAbilitiesForDropdown = uiState.playerAbilities.filter {
                                     it.abilityType != "passive" && it.abilityType != "navigation" &&
                                     (it.targetType == "all_allies" || it.targetType == "single_ally")
                                 }
-                                val isInPartyForDropdown = displayUser?.partyLeaderId != null
+                                val isInPartyForDropdown = displayUser?.partyLeaderId != null || displayUser?.isPartyLeader == true
+                                val isPartyLeaderForDropdown = displayUser?.isPartyLeader == true
                                 AnimatedVisibility(
                                     visible = showPartyAbilitiesDropdown && isInPartyForDropdown,
                                     enter = expandVertically(
@@ -527,12 +528,17 @@ fun AdventureScreen(
                                         queuedAbilityId = queuedAbilityId,
                                         currentMana = playerCombatant?.currentMana ?: displayUser?.currentMana ?: 0,
                                         currentStamina = playerCombatant?.currentStamina ?: displayUser?.currentStamina ?: 0,
+                                        isPartyLeader = isPartyLeaderForDropdown,
                                         onAbilityClick = { ability ->
                                             viewModel.handleAbilityClick(ability)
                                             showPartyAbilitiesDropdown = false
                                         },
                                         onLeaveParty = {
                                             viewModel.leaveParty()
+                                            showPartyAbilitiesDropdown = false
+                                        },
+                                        onDisbandParty = {
+                                            viewModel.disbandParty()
                                             showPartyAbilitiesDropdown = false
                                         },
                                         iconMappings = iconMappings,
@@ -2429,8 +2435,10 @@ private fun PartyAbilitiesDropdown(
     queuedAbilityId: String?,
     currentMana: Int = 0,
     currentStamina: Int = 0,
+    isPartyLeader: Boolean = false,
     onAbilityClick: (AbilityDto) -> Unit,
     onLeaveParty: () -> Unit,
+    onDisbandParty: () -> Unit = {},
     iconMappings: Map<String, String> = emptyMap(),
     modifier: Modifier = Modifier
 ) {
@@ -2487,7 +2495,7 @@ private fun PartyAbilitiesDropdown(
                 }
             }
 
-            // Divider before Leave Party
+            // Divider before Leave/Disband Party
             HorizontalDivider(
                 color = Color.White.copy(alpha = 0.2f),
                 thickness = 1.dp,
@@ -2495,12 +2503,12 @@ private fun PartyAbilitiesDropdown(
             )
         }
 
-        // Leave Party button
+        // Leave Party (for members) or Disband Party (for leaders)
         Row(
             modifier = Modifier
                 .clip(RoundedCornerShape(8.dp))
                 .background(Color(0xFFD32F2F).copy(alpha = 0.8f))
-                .clickable { onLeaveParty() }
+                .clickable { if (isPartyLeader) onDisbandParty() else onLeaveParty() }
                 .padding(horizontal = 12.dp, vertical = 8.dp),
             horizontalArrangement = Arrangement.spacedBy(6.dp),
             verticalAlignment = Alignment.CenterVertically
@@ -2512,7 +2520,7 @@ private fun PartyAbilitiesDropdown(
                 modifier = Modifier.size(16.dp)
             )
             Text(
-                text = "Leave Party",
+                text = if (isPartyLeader) "Disband Party" else "Leave Party",
                 color = Color.White,
                 fontSize = 12.sp,
                 fontWeight = FontWeight.Medium

@@ -52,6 +52,9 @@ sealed class GlobalEvent {
     data class PartyAccepted(val leaderId: String, val followerId: String, val followerName: String, val message: String) : GlobalEvent()
     data class PartyFollowMove(val leaderId: String, val leaderName: String, val newLocationId: String, val newLocationName: String, val message: String) : GlobalEvent()
     data class PartyLeft(val reason: String, val message: String) : GlobalEvent()
+    data class PartyNewLeader(val newLeaderId: String, val newLeaderName: String, val message: String) : GlobalEvent()
+    // Death broadcast to other players
+    data class OtherPlayerDied(val playerId: String, val playerName: String, val message: String) : GlobalEvent()
     data class Error(val message: String, val code: String?) : GlobalEvent()
 }
 
@@ -490,6 +493,24 @@ class CombatClient(
                     val event = json.decodeFromString<PartyLeftEvent>(extractPayload(text))
                     _events.emit(GlobalEvent.PartyLeft(
                         reason = event.reason,
+                        message = event.message
+                    ))
+                }
+
+                text.contains("PARTY_NEW_LEADER") -> {
+                    val event = json.decodeFromString<PartyNewLeaderEvent>(extractPayload(text))
+                    _events.emit(GlobalEvent.PartyNewLeader(
+                        newLeaderId = event.newLeaderId,
+                        newLeaderName = event.newLeaderName,
+                        message = event.message
+                    ))
+                }
+
+                text.contains("PLAYER_DEATH") && !text.contains("PlayerDeathMessage") -> {
+                    val event = json.decodeFromString<PlayerDeathEvent>(extractPayload(text))
+                    _events.emit(GlobalEvent.OtherPlayerDied(
+                        playerId = event.playerId,
+                        playerName = event.playerName,
                         message = event.message
                     ))
                 }

@@ -573,6 +573,19 @@ object CombatStateHolder {
                     UserStateHolder.refreshUser()
                 }
             }
+
+            is GlobalEvent.PartyNewLeader -> {
+                addEventLogEntry(event.message, EventLogType.INFO)
+                // Refresh user data to update partyLeaderId and isPartyLeader
+                scope.launch {
+                    UserStateHolder.refreshUser()
+                }
+            }
+
+            is GlobalEvent.OtherPlayerDied -> {
+                // Show death notification in event log for other players at the location
+                addEventLogEntry(event.message, EventLogType.ERROR)
+            }
         }
     }
 

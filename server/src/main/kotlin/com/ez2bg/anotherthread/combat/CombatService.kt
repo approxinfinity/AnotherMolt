@@ -2175,11 +2175,38 @@ object CombatService {
             UserRepository.updateCombatState(playerCombatant.id, user.maxHp, null)
             playerSessions.remove(playerCombatant.id)
 
-            // Leave party on death
+            // Handle party on death - either leave (if follower) or transfer leadership (if leader)
             if (user.partyLeaderId != null) {
+                // Player is a follower - just leave the party
                 log.info("Player ${user.name} is leaving party due to death")
                 UserRepository.leaveParty(playerCombatant.id)
                 LocationEventService.sendPartyLeft(playerCombatant.id, "died")
+            } else {
+                // Check if player is a party leader
+                val followers = UserRepository.findFollowers(playerCombatant.id)
+                if (followers.isNotEmpty()) {
+                    // Transfer leadership to the first follower
+                    val newLeader = followers.first()
+                    log.info("Player ${user.name} (party leader) died - transferring leadership to ${newLeader.name}")
+
+                    // The new leader leaves the old party (clears their partyLeaderId)
+                    UserRepository.leaveParty(newLeader.id)
+
+                    // All other followers now follow the new leader
+                    val otherFollowers = followers.drop(1)
+                    for (follower in otherFollowers) {
+                        UserRepository.setPartyLeader(follower.id, newLeader.id)
+                        LocationEventService.sendPartyNewLeader(follower.id, newLeader.id, newLeader.name)
+                    }
+
+                    // Notify the new leader they are now the leader
+                    LocationEventService.sendPartyNewLeader(newLeader.id, newLeader.id, newLeader.name)
+                }
+            }
+
+            // Broadcast death to other players at the location
+            if (deathLocationId != null) {
+                LocationEventService.sendPlayerDeath(deathLocationId, playerCombatant.id, user.name, playerCombatant.id)
             }
 
             // Notify the player about their death
@@ -2264,11 +2291,38 @@ object CombatService {
         UserRepository.updateCombatState(userId, user.maxHp, null)
         playerSessions.remove(userId)
 
-        // Leave party on death
+        // Handle party on death - either leave (if follower) or transfer leadership (if leader)
         if (user.partyLeaderId != null) {
+            // Player is a follower - just leave the party
             log.info("Player ${user.name} is leaving party due to voluntary death")
             UserRepository.leaveParty(userId)
             LocationEventService.sendPartyLeft(userId, "died")
+        } else {
+            // Check if player is a party leader
+            val followers = UserRepository.findFollowers(userId)
+            if (followers.isNotEmpty()) {
+                // Transfer leadership to the first follower
+                val newLeader = followers.first()
+                log.info("Player ${user.name} (party leader) voluntarily died - transferring leadership to ${newLeader.name}")
+
+                // The new leader leaves the old party (clears their partyLeaderId)
+                UserRepository.leaveParty(newLeader.id)
+
+                // All other followers now follow the new leader
+                val otherFollowers = followers.drop(1)
+                for (follower in otherFollowers) {
+                    UserRepository.setPartyLeader(follower.id, newLeader.id)
+                    LocationEventService.sendPartyNewLeader(follower.id, newLeader.id, newLeader.name)
+                }
+
+                // Notify the new leader they are now the leader
+                LocationEventService.sendPartyNewLeader(newLeader.id, newLeader.id, newLeader.name)
+            }
+        }
+
+        // Broadcast death to other players at the location
+        if (deathLocationId != null) {
+            LocationEventService.sendPlayerDeath(deathLocationId, userId, user.name, userId)
         }
 
         val deathMessage = PlayerDeathMessage(

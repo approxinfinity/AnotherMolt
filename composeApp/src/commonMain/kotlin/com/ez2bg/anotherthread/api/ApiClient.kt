@@ -562,6 +562,24 @@ data class PartyLeftEvent(
 )
 
 @Serializable
+data class PartyNewLeaderEvent(
+    val type: String = "PARTY_NEW_LEADER",
+    val userId: String,
+    val newLeaderId: String,
+    val newLeaderName: String,
+    val message: String
+)
+
+@Serializable
+data class PlayerDeathEvent(
+    val type: String = "PLAYER_DEATH",
+    val playerId: String,
+    val playerName: String,
+    val locationId: String,
+    val message: String
+)
+
+@Serializable
 data class PendingPartyInviteDto(
     val hasPendingInvite: Boolean,
     val inviterId: String? = null,
@@ -1655,6 +1673,24 @@ object ApiClient {
      */
     suspend fun leaveParty(userId: String): Result<PartyActionResponse> = apiCall {
         val response = client.post("$baseUrl/users/$userId/party/leave")
+        if (response.status.isSuccess()) {
+            response.body()
+        } else {
+            val errorBody = response.bodyAsText()
+            val errorMessage = try {
+                Json.decodeFromString<Map<String, String>>(errorBody)["error"] ?: errorBody
+            } catch (e: Exception) {
+                errorBody
+            }
+            throw Exception(errorMessage)
+        }
+    }
+
+    /**
+     * Disband the party (leader only).
+     */
+    suspend fun disbandParty(userId: String): Result<PartyActionResponse> = apiCall {
+        val response = client.post("$baseUrl/users/$userId/party/disband")
         if (response.status.isSuccess()) {
             response.body()
         } else {
