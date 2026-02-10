@@ -1,6 +1,7 @@
 package com.ez2bg.anotherthread.database
 
 import com.ez2bg.anotherthread.database.migrations.MigrationRunner
+import com.ez2bg.anotherthread.game.CharmedCreatureTable
 import org.jetbrains.exposed.sql.Database
 import org.jetbrains.exposed.sql.SchemaUtils
 import org.jetbrains.exposed.sql.deleteAll
@@ -101,7 +102,8 @@ object DatabaseConfig {
                 CustomIconMappingTable,
                 PlayerEncounterTable,
                 CombatEventLogTable,
-                GameConfigTable
+                GameConfigTable,
+                CharmedCreatureTable
             )
         }
     }
