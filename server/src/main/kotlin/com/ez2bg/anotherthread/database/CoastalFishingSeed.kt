@@ -314,29 +314,27 @@ object CoastalFishingSeed {
     }
 
     private fun addCoastalFishingSpotsToWestIsland() {
-        // Find all coastal locations on the west side of the island
+        // Find all coastal locations and add fishing feature
         val allLocations = LocationRepository.findAll()
 
         var added = 0
         for (location in allLocations) {
-            // Check if this is a coastal location on the west side
+            // Check if this is a coastal location
             val isCoastal = location.isCoast == true
-            val gridX = location.gridX ?: continue
 
-            // West island is roughly x < 50 based on typical map layout
-            // Only add to locations that don't already have the feature
-            if (isCoastal && gridX < 50 && !location.featureIds.contains(COASTAL_FISHING_FEATURE)) {
+            // Add to all coastal locations that don't already have the feature
+            if (isCoastal && !location.featureIds.contains(COASTAL_FISHING_FEATURE)) {
                 val updatedLocation = location.copy(
                     featureIds = location.featureIds + COASTAL_FISHING_FEATURE
                 )
                 LocationRepository.update(updatedLocation)
                 added++
-                log.debug("Added coastal fishing to ${location.name} at ($gridX, ${location.gridY})")
+                log.debug("Added coastal fishing to ${location.name} at (${location.gridX}, ${location.gridY})")
             }
         }
 
         if (added > 0) {
-            log.info("Added coastal fishing feature to $added west island coastal locations")
+            log.info("Added coastal fishing feature to $added coastal locations")
         }
     }
 }
