@@ -523,7 +523,7 @@ object ClassicDungeonSeed {
                 featureIds = emptyList(),
                 abilityIds = emptyList(),
                 equipmentType = "accessory",
-                equipmentSlot = "ring",
+                equipmentSlot = "finger",
                 statBonuses = StatBonuses(attack = 0, defense = 3, maxHp = 10),
                 value = 300,
                 attribution = ATTRIBUTION
@@ -535,7 +535,7 @@ object ClassicDungeonSeed {
                 featureIds = emptyList(),
                 abilityIds = emptyList(),
                 equipmentType = "accessory",
-                equipmentSlot = "ring",
+                equipmentSlot = "finger",
                 statBonuses = StatBonuses(attack = 3, defense = 3, maxHp = 0),
                 value = 800,
                 attribution = ATTRIBUTION

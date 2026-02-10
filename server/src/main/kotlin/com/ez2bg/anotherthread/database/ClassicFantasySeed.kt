@@ -434,7 +434,7 @@ object ClassicFantasySeed {
                 featureIds = emptyList(),
                 abilityIds = emptyList(),
                 equipmentType = "accessory",
-                equipmentSlot = "ring",
+                equipmentSlot = "finger",
                 statBonuses = StatBonuses(attack = 0, defense = 0, maxHp = 20),
                 value = 500
             ),

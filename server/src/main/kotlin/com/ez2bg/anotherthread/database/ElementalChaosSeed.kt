@@ -487,7 +487,7 @@ object ElementalChaosSeed {
                 featureIds = emptyList(),
                 abilityIds = emptyList(),
                 equipmentType = "accessory",
-                equipmentSlot = "ring",
+                equipmentSlot = "finger",
                 statBonuses = StatBonuses(attack = 3, defense = 0, maxHp = 10),
                 value = 600,
                 attribution = ATTRIBUTION
@@ -499,7 +499,7 @@ object ElementalChaosSeed {
                 featureIds = emptyList(),
                 abilityIds = emptyList(),
                 equipmentType = "accessory",
-                equipmentSlot = "ring",
+                equipmentSlot = "finger",
                 statBonuses = StatBonuses(attack = 0, defense = 3, maxHp = 15),
                 value = 600,
                 attribution = ATTRIBUTION

@@ -12,7 +12,7 @@ object ItemTable : Table("item") {
     val lockedBy = varchar("locked_by", 36).nullable()
     // Equipment fields
     val equipmentType = text("equipment_type").nullable()  // "weapon", "armor", "accessory", or null
-    val equipmentSlot = text("equipment_slot").nullable()  // "main_hand", "off_hand", "head", "chest", "legs", "feet", "ring", "amulet"
+    val equipmentSlot = text("equipment_slot").nullable()  // "main_hand", "off_hand", "head", "chest", "legs", "feet", "finger", "amulet"
     val statBonuses = text("stat_bonuses").nullable()  // JSON: {"attack": 5, "defense": 3, "maxHp": 10}
     val value = integer("value").default(0)  // Gold value
     val weight = integer("weight").default(1)  // Weight in stone (encumbrance unit), default 1

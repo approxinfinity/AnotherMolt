@@ -204,7 +204,7 @@ object FungusForestSeed {
             featureIds = emptyList(),
             abilityIds = emptyList(),
             equipmentType = "accessory",
-            equipmentSlot = "ring",
+            equipmentSlot = "finger",
             statBonuses = StatBonuses(attack = 2, defense = 2, maxHp = 10),
             value = 100
         )
