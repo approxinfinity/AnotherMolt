@@ -124,10 +124,10 @@ fun Route.locationRoutes() {
                 }
             }
 
-            // Get discovered item IDs for this user at this location
+            // Get visible items for this user at this location (from location_item table)
             val visibleLocationItems = LocationItemRepository.getVisibleItemsForUser(id, userId)
-            val allLocationItems = LocationItemRepository.findByLocation(id)
-            // Items that are visible AND were hidden (discovered via search)
+
+            // Items that are visible AND were hidden (discovered via search) - shown with asterisk
             val discoveredItemIds = visibleLocationItems
                 .filter { locItem ->
                     // It's considered "discovered" if it's hidden but visible to the user
@@ -135,12 +135,14 @@ fun Route.locationRoutes() {
                 }
                 .map { it.itemId }
 
-            // Build final location with any additional revealed exits
-            val finalLocation = if (additionalExits.isNotEmpty()) {
-                location.copy(exits = location.exits + additionalExits)
-            } else {
-                location
-            }
+            // Combine static itemIds with visible ground items from location_item table
+            val allVisibleItemIds = (location.itemIds + visibleLocationItems.map { it.itemId }).distinct()
+
+            // Build final location with additional exits and combined item IDs
+            val finalLocation = location.copy(
+                exits = if (additionalExits.isNotEmpty()) location.exits + additionalExits else location.exits,
+                itemIds = allVisibleItemIds
+            )
 
             call.respond(LocationWithDiscoveredItems.from(finalLocation, discoveredItemIds))
         }
