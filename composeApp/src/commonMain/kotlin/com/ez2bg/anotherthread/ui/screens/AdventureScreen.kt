@@ -2563,24 +2563,21 @@ private fun AbilityRow(
 
         Spacer(Modifier.width(6.dp))
 
-        // Inspect/Look button - only show when there are things to inspect
-        // Inspect/Look button - only show when there are things to inspect
-        if (hasThingsToInspect) {
-            Box(
-                modifier = Modifier
-                    .size(28.dp)
-                    .clip(RoundedCornerShape(6.dp))
-                    .background(Color(0xFF2196F3).copy(alpha = 0.8f))
-                    .clickable { onInspectClick() },
-                contentAlignment = Alignment.Center
-            ) {
-                Icon(
-                    imageVector = Icons.Filled.Visibility,
-                    contentDescription = "Look around",
-                    tint = Color.White,
-                    modifier = Modifier.size(16.dp)
-                )
-            }
+        // Inspect/Look button - always visible
+        Box(
+            modifier = Modifier
+                .size(28.dp)
+                .clip(RoundedCornerShape(6.dp))
+                .background(Color(0xFF2196F3).copy(alpha = 0.8f))
+                .clickable { onInspectClick() },
+            contentAlignment = Alignment.Center
+        ) {
+            Icon(
+                imageVector = Icons.Filled.Visibility,
+                contentDescription = "Look around",
+                tint = Color.White,
+                modifier = Modifier.size(16.dp)
+            )
         }
     }
 }
