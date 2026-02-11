@@ -1,5 +1,9 @@
 package com.ez2bg.anotherthread.database
 
+import com.ez2bg.anotherthread.ImageGenerationService
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
 import org.slf4j.LoggerFactory
 
 /**
@@ -21,6 +25,7 @@ object GrandmaShedSeed {
         seedItem()
         seedLocation()
         updateGrandmasHouseExits()
+        generateImages()
         log.info("Grandma's Shed seed complete")
     }
 
@@ -108,5 +113,55 @@ object GrandmaShedSeed {
                 log.info("Added exit from grandma's house to shed")
             }
         }
+    }
+
+    private fun generateImages() {
+        // Launch image generation in background so seed() doesn't block
+        CoroutineScope(Dispatchers.IO).launch {
+            generateMissingImages()
+        }
+    }
+
+    /**
+     * Generate images for Grandma's Shed entities that don't have images yet.
+     */
+    suspend fun generateMissingImages() {
+        log.info("Starting image generation for Grandma's Shed entities...")
+
+        // Generate image for Grandma's Shed
+        val location = LocationRepository.findById(GRANDMAS_SHED_ID)
+        if (location != null && location.imageUrl == null) {
+            log.info("Generating image for location: ${location.name}")
+            ImageGenerationService.generateImage(
+                entityType = "location",
+                entityId = GRANDMAS_SHED_ID,
+                description = "Cramped dusty wooden shed interior, garden tools on rusty nails, jars of herbs on dusty shelves, moth-eaten blankets, glass display case containing ornate feminine plate armor with faded crest, dim light through grimy window, fantasy RPG location, detailed",
+                entityName = location.name
+            ).onSuccess { imageUrl ->
+                LocationRepository.updateImageUrl(GRANDMAS_SHED_ID, imageUrl)
+                log.info("Generated image for ${location.name}: $imageUrl")
+            }.onFailure { error ->
+                log.warn("Failed to generate image for ${location.name}: ${error.message}")
+            }
+        }
+
+        // Generate image for Wand of Freezing
+        val item = ItemRepository.findById(WAND_OF_FREEZING_ID)
+        if (item != null && item.imageUrl == null) {
+            log.info("Generating image for item: ${item.name}")
+            ImageGenerationService.generateImage(
+                entityType = "item",
+                entityId = WAND_OF_FREEZING_ID,
+                description = "Slender pale blue crystal wand, frost patterns dancing on surface, cold magical aura, ice magic weapon, fantasy RPG item, detailed",
+                entityName = item.name
+            ).onSuccess { imageUrl ->
+                ItemRepository.updateImageUrl(WAND_OF_FREEZING_ID, imageUrl)
+                log.info("Generated image for ${item.name}: $imageUrl")
+            }.onFailure { error ->
+                log.warn("Failed to generate image for ${item.name}: ${error.message}")
+            }
+        }
+
+        log.info("Grandma's Shed image generation complete")
     }
 }
