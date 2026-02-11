@@ -90,6 +90,7 @@ abstract class AdventureModuleSeed {
     private val creatures = mutableListOf<CreatureBuilder>()
     private val locations = mutableListOf<LocationBuilder>()
     private val chests = mutableListOf<ChestBuilder>()
+    private val pools = mutableListOf<PoolBuilder>()
 
     // ============== DSL Entry Point ==============
 
@@ -120,6 +121,9 @@ abstract class AdventureModuleSeed {
 
     /** Generate chest ID */
     protected fun chestId(suffix: String): String = "chest-$moduleId-$suffix"
+
+    /** Generate pool ID */
+    protected fun poolId(suffix: String): String = "pool-$moduleId-$suffix"
 
     // ============== DSL Functions ==============
 
@@ -183,6 +187,16 @@ abstract class AdventureModuleSeed {
         return builder
     }
 
+    /**
+     * Define a magical pool for this module.
+     */
+    protected fun pool(suffix: String, block: PoolBuilder.() -> Unit): PoolBuilder {
+        val builder = PoolBuilder(poolId(suffix), this)
+        builder.block()
+        pools.add(builder)
+        return builder
+    }
+
     // ============== Seeding ==============
 
     /**
@@ -211,6 +225,7 @@ abstract class AdventureModuleSeed {
         creatures.clear()
         locations.clear()
         chests.clear()
+        pools.clear()
 
         defineContent()
 
@@ -223,8 +238,9 @@ abstract class AdventureModuleSeed {
         seedCreatures()
         seedLocations()
         seedChests()
+        seedPools()
 
-        log.info("Seeded adventure module: $moduleName (${abilities.size} abilities, ${items.size} items, ${creatures.size} creatures, ${locations.size} locations, ${chests.size} chests)")
+        log.info("Seeded adventure module: $moduleName (${abilities.size} abilities, ${items.size} items, ${creatures.size} creatures, ${locations.size} locations, ${chests.size} chests, ${pools.size} pools)")
     }
 
     private fun seedAbilities() {
@@ -271,6 +287,14 @@ abstract class AdventureModuleSeed {
         chests.forEach { builder ->
             if (ChestRepository.findById(builder.id) == null) {
                 ChestRepository.create(builder.build())
+            }
+        }
+    }
+
+    private fun seedPools() {
+        pools.forEach { builder ->
+            if (PoolRepository.findById(builder.id) == null) {
+                PoolRepository.create(builder.build())
             }
         }
     }
@@ -573,6 +597,164 @@ abstract class AdventureModuleSeed {
             bashDifficulty = bashDifficulty,
             lootTableId = lootTableSuffix?.let { module.lootId(it) },
             goldAmount = goldAmount
+        )
+    }
+
+    /**
+     * Builder for magical pools with various effects.
+     */
+    class PoolBuilder(val id: String, private val module: AdventureModuleSeed) {
+        var name: String = ""
+        var description: String = ""
+        var locationSuffix: String = ""
+
+        // Visual appearance
+        var liquidColor: String = "clear"
+        var liquidAppearance: String = "still"
+
+        // Effect configuration
+        var effectType: PoolEffectType = PoolEffectType.EMPTY
+        private var effectData: PoolEffectData = PoolEffectData()
+
+        // Usage limits
+        var usesPerDay: Int = 0  // 0 = unlimited
+        var isOneTimeUse: Boolean = false
+
+        // Discovery
+        var isHidden: Boolean = false
+        var identifyDifficulty: Int = 0
+
+        // === Effect Configuration Methods ===
+
+        /** Configure healing effect */
+        fun healing(amount: Int? = null, dice: String? = null, curesDisease: Boolean = false, curesPoison: Boolean = false) {
+            effectType = PoolEffectType.HEALING
+            effectData = effectData.copy(
+                healAmount = amount,
+                healDice = dice,
+                curesDisease = curesDisease,
+                curesPoison = curesPoison
+            )
+        }
+
+        /** Configure damage effect */
+        fun damage(amount: Int? = null, dice: String? = null, type: String = "acid") {
+            effectType = PoolEffectType.DAMAGE
+            effectData = effectData.copy(
+                damageAmount = amount,
+                damageDice = dice,
+                damageType = type
+            )
+        }
+
+        /** Configure stat buff */
+        fun buff(stat: String, modifier: Int, durationRounds: Int? = null, durationMinutes: Int? = null) {
+            effectType = PoolEffectType.BUFF
+            effectData = effectData.copy(
+                statModifier = stat,
+                modifierAmount = modifier,
+                durationRounds = durationRounds,
+                durationMinutes = durationMinutes
+            )
+        }
+
+        /** Configure stat debuff */
+        fun debuff(stat: String, modifier: Int, durationRounds: Int? = null, durationMinutes: Int? = null) {
+            effectType = PoolEffectType.DEBUFF
+            effectData = effectData.copy(
+                statModifier = stat,
+                modifierAmount = modifier,
+                durationRounds = durationRounds,
+                durationMinutes = durationMinutes
+            )
+        }
+
+        /** Configure poison effect */
+        fun poison(damageDice: String, durationRounds: Int, chance: Float = 1.0f) {
+            effectType = PoolEffectType.POISON
+            effectData = effectData.copy(
+                damageDice = damageDice,
+                appliesCondition = "poisoned",
+                conditionDuration = durationRounds,
+                conditionChance = chance
+            )
+        }
+
+        /** Configure condition effect (charmed, sleeping, etc.) */
+        fun condition(conditionName: String, duration: Int, chance: Float = 1.0f) {
+            effectType = when (conditionName) {
+                "charmed" -> PoolEffectType.CHARM
+                "sleeping" -> PoolEffectType.SLEEP
+                else -> PoolEffectType.STRANGE
+            }
+            effectData = effectData.copy(
+                appliesCondition = conditionName,
+                conditionDuration = duration,
+                conditionChance = chance
+            )
+        }
+
+        /** Configure teleport effect */
+        fun teleport(locationSuffix: String) {
+            effectType = PoolEffectType.TELEPORT
+            effectData = effectData.copy(
+                teleportLocationId = module.locationId(locationSuffix)
+            )
+        }
+
+        /** Configure treasure at bottom of pool */
+        fun treasure(itemSuffix: String? = null, gold: Int = 0) {
+            effectType = PoolEffectType.TREASURE
+            effectData = effectData.copy(
+                containsItemId = itemSuffix?.let { module.itemId(it) },
+                goldAmount = gold
+            )
+        }
+
+        /** Configure trap effect */
+        fun trap(message: String, damageDice: String? = null) {
+            effectType = PoolEffectType.TRAP
+            effectData = effectData.copy(
+                trapMessage = message,
+                damageDice = damageDice
+            )
+        }
+
+        /** Configure wine/drinkable effect */
+        fun wine(message: String? = null) {
+            effectType = PoolEffectType.WINE
+            effectData = effectData.copy(customMessage = message ?: "The wine is surprisingly good!")
+        }
+
+        /** Configure empty/dried pool */
+        fun empty(message: String? = null) {
+            effectType = PoolEffectType.EMPTY
+            effectData = effectData.copy(customMessage = message ?: "The pool is empty.")
+        }
+
+        /** Configure custom message for any effect */
+        fun message(customMessage: String) {
+            effectData = effectData.copy(customMessage = customMessage)
+        }
+
+        /** Configure secret message revealed after identification */
+        fun secretMessage(message: String) {
+            effectData = effectData.copy(secretMessage = message)
+        }
+
+        fun build(): Pool = Pool(
+            id = id,
+            name = name,
+            description = description,
+            locationId = module.locationId(locationSuffix),
+            liquidColor = liquidColor,
+            liquidAppearance = liquidAppearance,
+            effectType = effectType,
+            effectData = effectData,
+            usesPerDay = usesPerDay,
+            isOneTimeUse = isOneTimeUse,
+            isHidden = isHidden,
+            identifyDifficulty = identifyDifficulty
         )
     }
 }

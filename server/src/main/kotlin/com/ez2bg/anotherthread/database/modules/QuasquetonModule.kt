@@ -37,6 +37,7 @@ object QuasquetonModule : AdventureModuleSeed() {
         defineCreatures()
         defineLocations()
         defineChests()
+        definePools()
     }
 
     // ==================== ABILITIES ====================
@@ -1339,6 +1340,198 @@ object QuasquetonModule : AdventureModuleSeed() {
             isLocked = false
             goldAmount = 75
             lootTableSuffix = "orc-loot"
+        }
+    }
+
+    // ==================== POOLS ====================
+    /**
+     * The famous Room of Pools from B1 - 14 magical pools with different effects.
+     * Based on the original module's description of each pool's properties.
+     */
+    private fun definePools() {
+        // Pool 1: Clear, still water - Actually healing
+        pool("pool-1-healing") {
+            name = "Pool of Clear Water"
+            description = "A pool of perfectly clear, still water. It looks refreshing and pure."
+            locationSuffix = "room-of-pools"
+            liquidColor = "clear"
+            liquidAppearance = "still"
+            healing(dice = "1d6+1", curesDisease = true, curesPoison = false)
+            identifyDifficulty = 2
+            usesPerDay = 1
+            message("You drink the clear water. It is cool and refreshing, and you feel your wounds begin to heal!")
+            secretMessage("This pool has healing properties and cures disease.")
+        }
+
+        // Pool 2: Pinkish liquid - Extra healing
+        pool("pool-2-pink-healing") {
+            name = "Pool of Pink Liquid"
+            description = "A pool containing a pinkish liquid with a faint floral scent."
+            locationSuffix = "room-of-pools"
+            liquidColor = "pink"
+            liquidAppearance = "still"
+            healing(dice = "2d4", curesDisease = true, curesPoison = true)
+            identifyDifficulty = 3
+            usesPerDay = 1
+            message("The pink liquid is surprisingly sweet. Your wounds close and any ailments fade away!")
+            secretMessage("A powerful healing pool that cures both disease and poison.")
+        }
+
+        // Pool 3: Green, bubbling - Acid damage
+        pool("pool-3-acid") {
+            name = "Pool of Green Liquid"
+            description = "A pool of sickly green liquid that bubbles and hisses. Wisps of vapor rise from its surface."
+            locationSuffix = "room-of-pools"
+            liquidColor = "green"
+            liquidAppearance = "bubbling"
+            damage(dice = "1d8", type = "acid")
+            identifyDifficulty = 1
+            message("The green liquid burns! It's acid!")
+            secretMessage("Highly corrosive acid - do not touch!")
+        }
+
+        // Pool 4: Dark red - Wine
+        pool("pool-4-wine") {
+            name = "Pool of Dark Red Liquid"
+            description = "A pool of dark red liquid that smells faintly of fermentation."
+            locationSuffix = "room-of-pools"
+            liquidColor = "dark red"
+            liquidAppearance = "still"
+            wine("It's wine! Quite good, actually. You feel slightly relaxed.")
+            identifyDifficulty = 1
+            message("The liquid is wine! It has a rich, full-bodied flavor.")
+            secretMessage("An apparently inexhaustible pool of fine red wine.")
+        }
+
+        // Pool 5: Milky white - Slow poison
+        pool("pool-5-poison") {
+            name = "Pool of Milky White Liquid"
+            description = "A pool of opaque, milky white liquid with no discernible odor."
+            locationSuffix = "room-of-pools"
+            liquidColor = "milky white"
+            liquidAppearance = "still"
+            poison(damageDice = "1d4", durationRounds = 10, chance = 0.75f)
+            identifyDifficulty = 4
+            message("The liquid tastes slightly bitter... Your stomach begins to churn ominously.")
+            secretMessage("Slow-acting poison! Damages over time.")
+        }
+
+        // Pool 6: Pale blue - Strength buff
+        pool("pool-6-strength") {
+            name = "Pool of Pale Blue Liquid"
+            description = "A pool of pale blue liquid that seems to shimmer with inner light."
+            locationSuffix = "room-of-pools"
+            liquidColor = "pale blue"
+            liquidAppearance = "shimmering"
+            buff("strength", modifier = 2, durationMinutes = 30)
+            identifyDifficulty = 3
+            usesPerDay = 1
+            message("Power surges through your muscles! You feel incredibly strong!")
+            secretMessage("Temporarily increases strength by +2 for 30 minutes.")
+        }
+
+        // Pool 7: Golden - Speed/dexterity buff
+        pool("pool-7-speed") {
+            name = "Pool of Golden Liquid"
+            description = "A pool of liquid that gleams like molten gold, constantly swirling."
+            locationSuffix = "room-of-pools"
+            liquidColor = "golden"
+            liquidAppearance = "swirling"
+            buff("dexterity", modifier = 2, durationMinutes = 20)
+            identifyDifficulty = 3
+            usesPerDay = 1
+            message("You feel light as a feather and quick as lightning!")
+            secretMessage("Temporarily increases dexterity by +2 for 20 minutes.")
+        }
+
+        // Pool 8: Black - Weakness debuff
+        pool("pool-8-weakness") {
+            name = "Pool of Black Liquid"
+            description = "A pool of inky black liquid that seems to absorb all light around it."
+            locationSuffix = "room-of-pools"
+            liquidColor = "black"
+            liquidAppearance = "still"
+            debuff("strength", modifier = 2, durationMinutes = 30)
+            identifyDifficulty = 3
+            message("A terrible weakness washes over you...")
+            secretMessage("Temporarily decreases strength by -2 for 30 minutes.")
+        }
+
+        // Pool 9: Orange - Sleep inducing
+        pool("pool-9-sleep") {
+            name = "Pool of Orange Liquid"
+            description = "A pool of warm orange liquid with a pleasant, drowsy aroma."
+            locationSuffix = "room-of-pools"
+            liquidColor = "orange"
+            liquidAppearance = "still"
+            condition("sleeping", duration = 60, chance = 0.7f)
+            identifyDifficulty = 2
+            message("Overwhelming drowsiness washes over you... so tired...")
+            secretMessage("Induces magical sleep with 70% chance.")
+        }
+
+        // Pool 10: Silver - Charm effect
+        pool("pool-10-charm") {
+            name = "Pool of Silver Liquid"
+            description = "A pool of shimmering silver liquid that reflects your face in strange ways."
+            locationSuffix = "room-of-pools"
+            liquidColor = "silver"
+            liquidAppearance = "shimmering"
+            condition("charmed", duration = 30, chance = 0.5f)
+            identifyDifficulty = 4
+            message("Everything seems wonderful! The world is beautiful!")
+            secretMessage("Has a 50% chance to charm the drinker.")
+        }
+
+        // Pool 11: Bronze/copper - Contains treasure (brass key)
+        pool("pool-11-treasure") {
+            name = "Pool of Copper-Colored Liquid"
+            description = "A pool of liquid the color of old copper. Something glints at the bottom."
+            locationSuffix = "room-of-pools"
+            liquidColor = "copper"
+            liquidAppearance = "still"
+            treasure(itemSuffix = "brass-key-worthless", gold = 0)
+            identifyDifficulty = 1
+            isOneTimeUse = true
+            message("You reach into the pool and fish out a large brass key!")
+            secretMessage("Contains a brass key at the bottom (worthless, fits no locks).")
+        }
+
+        // Pool 12: Purple - Teleportation
+        pool("pool-12-teleport") {
+            name = "Pool of Purple Liquid"
+            description = "A pool of deep purple liquid that swirls in hypnotic patterns."
+            locationSuffix = "room-of-pools"
+            liquidColor = "purple"
+            liquidAppearance = "swirling"
+            teleport("lower-cavern-main")
+            identifyDifficulty = 5
+            message("The world spins around you! When your vision clears, you're somewhere else!")
+            secretMessage("Teleports to the Lower Cavern Main area.")
+        }
+
+        // Pool 13: Glowing green - Minor healing + green glow effect
+        pool("pool-13-green-glow") {
+            name = "Pool of Glowing Green Liquid"
+            description = "A pool of bright green liquid that emits an eerie phosphorescent glow."
+            locationSuffix = "room-of-pools"
+            liquidColor = "bright green"
+            liquidAppearance = "glowing"
+            healing(amount = 2)
+            identifyDifficulty = 2
+            message("The glowing liquid tastes like mint! You feel slightly better, and your skin glows green for a moment.")
+            secretMessage("Heals 2 HP and makes the drinker glow briefly.")
+        }
+
+        // Pool 14: Empty/dry
+        pool("pool-14-empty") {
+            name = "Empty Pool"
+            description = "This pool is completely dry, with only mineral deposits and dust at the bottom."
+            locationSuffix = "room-of-pools"
+            liquidColor = "none"
+            liquidAppearance = "dry"
+            empty("The pool is bone dry. Whatever was here is long gone.")
+            identifyDifficulty = 0
         }
     }
 }

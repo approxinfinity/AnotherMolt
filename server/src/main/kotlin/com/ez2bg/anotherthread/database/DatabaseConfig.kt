@@ -104,7 +104,8 @@ object DatabaseConfig {
                 CombatEventLogTable,
                 GameConfigTable,
                 CharmedCreatureTable,
-                UserFoodItemTable
+                UserFoodItemTable,
+                PoolTable
             )
         }
     }
