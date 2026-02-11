@@ -1298,10 +1298,12 @@ object ApiClient {
     /**
      * Get a single location by ID with user context.
      * Includes puzzle-revealed secret passages and discovered items (shown with * prefix).
-     * Uses X-User-Id from DefaultRequest header (set via setUserContext).
      */
     suspend fun getLocation(id: String): Result<LocationDto?> = apiCall {
-        client.get("$baseUrl/locations/$id").body<LocationDto?>()
+        client.get("$baseUrl/locations/$id") {
+            // Explicitly add user header for user-specific data (discovered items)
+            currentUserId?.let { header("X-User-Id", it) }
+        }.body<LocationDto?>()
     }
 
     /**
