@@ -1139,6 +1139,7 @@ fun Application.module() {
     GeneralStoreSeed.seedIfEmpty()
     LockpickingSeed.seed()
     GrandmaShedSeed.seed()
+    WeaponAbilitySeed.seedWeaponAbilities()
 
     // Seed dungeon location modules (adventure modules)
     UndeadCryptLocationsSeed.seedIfEmpty()
