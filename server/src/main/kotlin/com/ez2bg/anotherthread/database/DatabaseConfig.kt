@@ -109,7 +109,8 @@ object DatabaseConfig {
                 TrapTable,
                 FactionTable,
                 FactionRelationTable,
-                PlayerFactionStandingTable
+                PlayerFactionStandingTable,
+                ManualTestItemTable
             )
         }
     }

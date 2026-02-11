@@ -59,6 +59,9 @@ fun AdminPanelView(
             style = MaterialTheme.typography.titleLarge
         )
 
+        // Manual Testing Checklist (collapsible)
+        ManualTestingPanel()
+
         // Audit Logs Button
         Card(
             modifier = Modifier

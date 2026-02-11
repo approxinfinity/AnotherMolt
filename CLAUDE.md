@@ -109,6 +109,33 @@ call.respond(HttpStatusCode.OK, MyResponse(
 
 **Never require browser refresh as a solution.** When users re-authenticate or perform any action, data should refresh automatically. Telling users to clear localStorage or refresh the browser is never an acceptable fix - always solve data staleness issues in code.
 
+## Manual Testing Checklist
+
+The Admin Panel includes a **Manual Testing Checklist** that tracks features requiring manual verification. When implementing new features:
+
+1. **Add a test item**: After implementing a UI-visible feature, add an entry to `ManualTestItemSeed.kt`:
+   ```kotlin
+   ManualTestItemRepository.create(ManualTestItem(
+       featureName = "Feature Name",
+       description = "What to test and expected behavior",
+       category = "combat|fishing|items|navigation|etc",
+       commitHash = "abc1234"  // optional: first 7 chars of commit
+   ))
+   ```
+
+2. **Categories**: Use consistent categories - `combat`, `faction`, `dungeon`, `pools`, `shop`, `navigation`, `fishing`, `items`, `locations`, `puzzles`
+
+3. **Testing workflow**:
+   - Untested items appear with orange indicator
+   - Click checkmark to mark as tested (records who tested and when)
+   - Tested items move to "Tested" tab
+   - Can be unmarked if regression found
+
+4. **Key files**:
+   - Seed file: `server/.../database/ManualTestItemSeed.kt`
+   - UI component: `composeApp/.../ui/admin/ManualTestingPanel.kt`
+   - API routes: `server/.../routes/ManualTestRoutes.kt`
+
 ## Future Musings / Known Issues
 
 For known issues, future feature ideas, and design decisions still to be made, see [MUSINGS.md](MUSINGS.md).

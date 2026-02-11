@@ -36,6 +36,7 @@ import com.ez2bg.anotherthread.routes.poolRoutes
 import com.ez2bg.anotherthread.routes.trapRoutes
 import com.ez2bg.anotherthread.routes.environmentalRoutes
 import com.ez2bg.anotherthread.routes.factionRoutes
+import com.ez2bg.anotherthread.routes.manualTestRoutes
 import com.ez2bg.anotherthread.game.EnvironmentalEffectService
 import com.ez2bg.anotherthread.events.LocationEventService
 import com.ez2bg.anotherthread.spell.*
@@ -1161,6 +1162,9 @@ fun Application.module() {
     // Apply environmental effects to specific locations
     EnvironmentalEffectService.applyDirectionConfusionToMinotaurMaze()
 
+    // Seed manual testing items for QA tracking
+    ManualTestItemSeed.seed()
+
     // Auto-balance ability costs on startup
     val abilityCostBalancer = AbilityCostBalancer()
     abilityCostBalancer.balanceAbilityCosts()
@@ -1637,6 +1641,9 @@ fun Application.module() {
 
         // Faction system routes
         factionRoutes()
+
+        // Manual testing checklist routes
+        manualTestRoutes()
 
         // Feature Category routes
         route("/feature-categories") {

@@ -531,6 +531,45 @@ data class AlertResultDto(
     val reinforcements: List<String> = emptyList()
 )
 
+// ===================== MANUAL TESTING DTOs =====================
+
+@Serializable
+data class ManualTestItemDto(
+    val id: String,
+    val featureName: String,
+    val description: String,
+    val category: String,
+    val commitHash: String? = null,
+    val addedAt: Long,
+    val testedAt: Long? = null,
+    val testedByUserId: String? = null,
+    val testedByUserName: String? = null,
+    val notes: String? = null
+) {
+    val isTested: Boolean get() = testedAt != null
+}
+
+@Serializable
+data class ManualTestCountsDto(
+    val untested: Int,
+    val tested: Int
+)
+
+@Serializable
+data class CreateManualTestItemRequestDto(
+    val featureName: String,
+    val description: String,
+    val category: String,
+    val commitHash: String? = null
+)
+
+@Serializable
+data class MarkTestedRequestDto(
+    val userId: String,
+    val userName: String,
+    val notes: String? = null
+)
+
 @Serializable
 data class IconMappingDto(
     val abilityId: String,
@@ -2379,6 +2418,78 @@ object ApiClient {
         client.get("$baseUrl/audit-logs/by-user/$userId") {
             parameter("limit", limit)
         }.body()
+    }
+
+    // ===================== MANUAL TESTING API =====================
+
+    /**
+     * Get counts of untested and tested items.
+     */
+    suspend fun getManualTestCounts(): Result<ManualTestCountsDto> = apiCall {
+        client.get("$baseUrl/manual-tests/counts").body()
+    }
+
+    /**
+     * Get all manual test items.
+     */
+    suspend fun getManualTestItems(): Result<List<ManualTestItemDto>> = apiCall {
+        client.get("$baseUrl/manual-tests").body()
+    }
+
+    /**
+     * Get only untested items.
+     */
+    suspend fun getUntestedItems(): Result<List<ManualTestItemDto>> = apiCall {
+        client.get("$baseUrl/manual-tests/untested").body()
+    }
+
+    /**
+     * Get only tested items.
+     */
+    suspend fun getTestedItems(): Result<List<ManualTestItemDto>> = apiCall {
+        client.get("$baseUrl/manual-tests/tested").body()
+    }
+
+    /**
+     * Get all unique categories.
+     */
+    suspend fun getManualTestCategories(): Result<List<String>> = apiCall {
+        client.get("$baseUrl/manual-tests/categories").body()
+    }
+
+    /**
+     * Create a new manual test item.
+     */
+    suspend fun createManualTestItem(request: CreateManualTestItemRequestDto): Result<ManualTestItemDto> = apiCall {
+        client.post("$baseUrl/manual-tests") {
+            contentType(ContentType.Application.Json)
+            setBody(request)
+        }.body()
+    }
+
+    /**
+     * Mark a test item as tested.
+     */
+    suspend fun markTestItemTested(id: String, userId: String, userName: String, notes: String? = null): Result<ManualTestItemDto> = apiCall {
+        client.post("$baseUrl/manual-tests/$id/mark-tested") {
+            contentType(ContentType.Application.Json)
+            setBody(MarkTestedRequestDto(userId, userName, notes))
+        }.body()
+    }
+
+    /**
+     * Unmark a test item (move back to untested).
+     */
+    suspend fun unmarkTestItemTested(id: String): Result<ManualTestItemDto> = apiCall {
+        client.post("$baseUrl/manual-tests/$id/unmark-tested").body()
+    }
+
+    /**
+     * Delete a manual test item.
+     */
+    suspend fun deleteManualTestItem(id: String): Result<Unit> = apiCall {
+        client.delete("$baseUrl/manual-tests/$id")
+        Unit
     }
 
     // Data integrity check

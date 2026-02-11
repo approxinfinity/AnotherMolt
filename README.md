@@ -35,6 +35,11 @@ A Kotlin Multiplatform MUD-style game engine with AI-powered content generation.
 - **Entity Management** - Create, edit, and link locations, creatures, items, and features
 - **Bidirectional Exits** - Adding an exit automatically creates the reverse connection; removal prompts for one-way or two-way
 - **Database Backup/Restore** - Create and restore database backups from the admin interface
+- **Manual Testing Checklist** - Track features requiring manual verification
+  - Collapsible panel showing untested and tested items
+  - Items organized by category (combat, fishing, navigation, etc.)
+  - Mark items as tested with automatic date/user tracking
+  - Move items back to untested if regression found
 
 ### Grid Coordinate System
 Locations can be placed on a 3D grid (X, Y, Z coordinates) for spatial organization:
