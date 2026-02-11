@@ -55,8 +55,13 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.graphics.StrokeJoin
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.layout.onSizeChanged
+import androidx.compose.ui.unit.IntSize
 import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.infiniteRepeatable
@@ -92,6 +97,8 @@ import com.ez2bg.anotherthread.api.LeverStateDto
 import com.ez2bg.anotherthread.api.PuzzleType
 import com.ez2bg.anotherthread.api.ADMIN_FEATURE_ID
 import com.ez2bg.anotherthread.api.FishingInfoDto
+import com.ez2bg.anotherthread.api.LockpickInfoDto
+import com.ez2bg.anotherthread.api.LockpickPathPointDto
 import com.ez2bg.anotherthread.api.FishingMinigameStartDto
 import com.ez2bg.anotherthread.ui.CreatureStateIcon
 import com.ez2bg.anotherthread.ui.SwordIcon
@@ -6160,8 +6167,8 @@ private fun FishingMinigameOverlay(
     var gameEnded by remember { mutableStateOf(false) }
     var lastUpdateTime by remember { mutableStateOf(0L) }
 
-    // Bar dimensions
-    val barHeight = 300.dp
+    // Bar dimensions - taller bar for more challenge
+    val barHeight = 400.dp
     val barWidth = 60.dp
     val catchZoneSize = catchZoneSizePercent / 100f  // Convert to 0-0.4 range
 
@@ -6169,6 +6176,13 @@ private fun FishingMinigameOverlay(
     val fishSpeed = fishBehavior?.speed ?: 0.3f
     val changeDirectionChance = fishBehavior?.changeDirectionChance ?: 0.05f
     val erraticness = fishBehavior?.erraticness ?: 0.3f
+    val dartChance = fishBehavior?.dartChance ?: 0f
+    val edgePull = fishBehavior?.edgePull ?: 0f
+    val behaviorType = fishBehavior?.behaviorType ?: "CALM"
+
+    // DARTING behavior state - tracks if currently in a dart
+    var isDarting by remember { mutableStateOf(false) }
+    var dartTimer by remember { mutableStateOf(0f) }
 
     // Game loop
     LaunchedEffect(Unit) {
@@ -6187,12 +6201,34 @@ private fun FishingMinigameOverlay(
                 break
             }
 
-            // Move fish
-            val baseMove = fishSpeed * deltaTime * fishDirection
-            val randomJitter = (kotlin.random.Random.nextFloat() - 0.5f) * erraticness * deltaTime
-            fishPosition = (fishPosition + baseMove + randomJitter).coerceIn(0.1f, 0.9f)
+            // Handle DARTING behavior - sudden speed bursts
+            if (dartTimer > 0) {
+                dartTimer -= deltaTime
+                if (dartTimer <= 0) {
+                    isDarting = false
+                }
+            } else if (dartChance > 0 && kotlin.random.Random.nextFloat() < dartChance) {
+                isDarting = true
+                dartTimer = 0.3f + kotlin.random.Random.nextFloat() * 0.4f  // Dart for 0.3-0.7 seconds
+            }
 
-            // Randomly change direction
+            // Calculate effective speed (3x during dart)
+            val effectiveSpeed = if (isDarting) fishSpeed * 3f else fishSpeed
+
+            // Move fish
+            val baseMove = effectiveSpeed * deltaTime * fishDirection
+            val randomJitter = (kotlin.random.Random.nextFloat() - 0.5f) * erraticness * deltaTime
+
+            // Apply edge pull for STUBBORN behavior
+            val edgeForce = if (edgePull > 0) {
+                // Pull toward nearest edge (0 or 1)
+                val nearestEdge = if (fishPosition > 0.5f) 1f else 0f
+                (nearestEdge - fishPosition) * edgePull * deltaTime
+            } else 0f
+
+            fishPosition = (fishPosition + baseMove + randomJitter + edgeForce).coerceIn(0.1f, 0.9f)
+
+            // Randomly change direction (more often during WILD/ERRATIC)
             if (kotlin.random.Random.nextFloat() < changeDirectionChance) {
                 fishDirection = -fishDirection
             }
@@ -6207,8 +6243,8 @@ private fun FishingMinigameOverlay(
             val catchZoneBottom = catchZonePosition + catchZoneSize / 2
             val fishInZone = fishPosition >= catchZoneTop && fishPosition <= catchZoneBottom
 
-            // Update score
-            val scoreChange = if (fishInZone) 15f * deltaTime else -20f * deltaTime
+            // Update score - harder: slower gain, faster loss
+            val scoreChange = if (fishInZone) 12f * deltaTime else -25f * deltaTime
             score = (score + scoreChange).coerceIn(0f, 100f)
 
             // Check win/lose conditions
@@ -6269,7 +6305,7 @@ private fun FishingMinigameOverlay(
                 Column(
                     horizontalAlignment = Alignment.CenterHorizontally
                 ) {
-                    Text("OFF", color = Color.Red, fontSize = 10.sp)
+                    Text("CAUGHT", color = Color.Green, fontSize = 10.sp)
                     Box(
                         modifier = Modifier
                             .width(20.dp)
@@ -6292,7 +6328,7 @@ private fun FishingMinigameOverlay(
                                 )
                         )
                     }
-                    Text("CAUGHT", color = Color.Green, fontSize = 10.sp)
+                    Text("OFF", color = Color.Red, fontSize = 10.sp)
                 }
 
                 // Main fishing bar with catch zone and fish
@@ -6377,6 +6413,279 @@ private fun FishingMinigameOverlay(
                 fontSize = 18.sp,
                 fontWeight = FontWeight.Bold
             )
+
+            // Cancel button
+            TextButton(
+                onClick = onCancel,
+                colors = ButtonDefaults.textButtonColors(contentColor = Color.White.copy(alpha = 0.7f))
+            ) {
+                Text("Give Up")
+            }
+        }
+    }
+}
+
+// =============================================================================
+// LOCKPICKING MINIGAME OVERLAY
+// =============================================================================
+
+/**
+ * Lockpicking minigame overlay - "trace the path" mechanic.
+ * Player drags finger to trace a winding path without going outside the tolerance zone.
+ * Higher difficulty locks have narrower paths and shakier lines.
+ */
+@Composable
+fun LockpickingMinigameOverlay(
+    lockInfo: LockpickInfoDto,
+    onComplete: (accuracy: Float) -> Unit,
+    onCancel: () -> Unit
+) {
+    val pathPoints = lockInfo.pathPoints
+    val tolerance = lockInfo.tolerance
+    val shakiness = lockInfo.shakiness
+
+    // Game state
+    var playerPath by remember { mutableStateOf(listOf<Offset>()) }
+    var isTracing by remember { mutableStateOf(false) }
+    var hasStarted by remember { mutableStateOf(false) }
+    var hasFinished by remember { mutableStateOf(false) }
+    var currentAccuracy by remember { mutableStateOf(1f) }
+    var totalDeviation by remember { mutableStateOf(0f) }
+    var deviationSamples by remember { mutableStateOf(0) }
+
+    // Canvas dimensions
+    var canvasSize by remember { mutableStateOf(IntSize.Zero) }
+
+    // Convert normalized path points to canvas coordinates
+    fun toCanvasOffset(point: LockpickPathPointDto): Offset {
+        return Offset(
+            x = point.x * canvasSize.width,
+            y = point.y * canvasSize.height
+        )
+    }
+
+    // Find closest point on path to a given position
+    fun findClosestPointOnPath(pos: Offset): Pair<Offset, Float> {
+        var minDist = Float.MAX_VALUE
+        var closestPoint = pos
+
+        for (i in 0 until pathPoints.size - 1) {
+            val p1 = toCanvasOffset(pathPoints[i])
+            val p2 = toCanvasOffset(pathPoints[i + 1])
+
+            // Project pos onto line segment p1-p2
+            val lineVec = p2 - p1
+            val lineLen = lineVec.getDistance()
+            if (lineLen == 0f) continue
+
+            val t = ((pos - p1).x * lineVec.x + (pos - p1).y * lineVec.y) / (lineLen * lineLen)
+            val tClamped = t.coerceIn(0f, 1f)
+            val projected = p1 + lineVec * tClamped
+            val dist = (pos - projected).getDistance()
+
+            if (dist < minDist) {
+                minDist = dist
+                closestPoint = projected
+            }
+        }
+
+        return Pair(closestPoint, minDist)
+    }
+
+    // Calculate normalized tolerance in pixels
+    val tolerancePx = if (canvasSize.width > 0) {
+        (tolerance / 100f) * canvasSize.width * 0.5f
+    } else 30f
+
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(Color.Black.copy(alpha = 0.9f)),
+        contentAlignment = Alignment.Center
+    ) {
+        Column(
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.spacedBy(16.dp)
+        ) {
+            // Title
+            Text(
+                text = lockInfo.lockLevelName ?: "Pick the Lock",
+                color = Color.White,
+                fontSize = 20.sp,
+                fontWeight = FontWeight.Bold
+            )
+
+            // Difficulty indicator
+            Text(
+                text = "Difficulty: ${lockInfo.difficulty ?: "Unknown"}",
+                color = when (lockInfo.difficulty) {
+                    "SIMPLE" -> Color(0xFF4CAF50)
+                    "STANDARD" -> Color(0xFFFFEB3B)
+                    "COMPLEX" -> Color(0xFFFF9800)
+                    "MASTER" -> Color(0xFFFF5722)
+                    else -> Color.White
+                },
+                fontSize = 14.sp
+            )
+
+            // Instructions
+            if (!hasStarted) {
+                Text(
+                    text = "Trace the path from left to right",
+                    color = Color.White.copy(alpha = 0.7f),
+                    fontSize = 14.sp
+                )
+            }
+
+            // Canvas for the path
+            Canvas(
+                modifier = Modifier
+                    .fillMaxWidth(0.9f)
+                    .height(250.dp)
+                    .background(Color(0xFF1a1a2e), RoundedCornerShape(8.dp))
+                    .onSizeChanged { canvasSize = it }
+                    .pointerInput(Unit) {
+                        detectDragGestures(
+                            onDragStart = { offset ->
+                                if (!hasFinished && canvasSize.width > 0) {
+                                    // Check if starting near the first point
+                                    val startPoint = toCanvasOffset(pathPoints.first())
+                                    val dist = (offset - startPoint).getDistance()
+                                    if (dist < tolerancePx * 2) {
+                                        isTracing = true
+                                        hasStarted = true
+                                        playerPath = listOf(offset)
+                                        totalDeviation = 0f
+                                        deviationSamples = 0
+                                    }
+                                }
+                            },
+                            onDrag = { change, _ ->
+                                if (isTracing && !hasFinished) {
+                                    change.consume()
+                                    val pos = change.position
+                                    playerPath = playerPath + pos
+
+                                    // Calculate deviation from ideal path
+                                    val (_, deviation) = findClosestPointOnPath(pos)
+                                    totalDeviation += deviation
+                                    deviationSamples++
+
+                                    // Update running accuracy
+                                    val avgDeviation = if (deviationSamples > 0) totalDeviation / deviationSamples else 0f
+                                    currentAccuracy = (1f - (avgDeviation / tolerancePx).coerceIn(0f, 1f)).coerceIn(0f, 1f)
+
+                                    // Check if reached the end
+                                    val endPoint = toCanvasOffset(pathPoints.last())
+                                    val distToEnd = (pos - endPoint).getDistance()
+                                    if (distToEnd < tolerancePx * 2) {
+                                        isTracing = false
+                                        hasFinished = true
+                                        onComplete(currentAccuracy)
+                                    }
+                                }
+                            },
+                            onDragEnd = {
+                                if (isTracing) {
+                                    isTracing = false
+                                    // If didn't reach the end, fail
+                                    if (!hasFinished) {
+                                        hasFinished = true
+                                        onComplete(currentAccuracy * 0.5f)  // Penalty for not finishing
+                                    }
+                                }
+                            }
+                        )
+                    }
+            ) {
+                if (canvasSize.width == 0) return@Canvas
+
+                // Draw tolerance zone (the path the player should stay within)
+                val path = Path()
+                pathPoints.forEachIndexed { index, point ->
+                    val canvasPoint = toCanvasOffset(point)
+                    if (index == 0) {
+                        path.moveTo(canvasPoint.x, canvasPoint.y)
+                    } else {
+                        // Apply shakiness for harder locks
+                        val prevPoint = toCanvasOffset(pathPoints[index - 1])
+                        val midX = (prevPoint.x + canvasPoint.x) / 2
+                        val midY = (prevPoint.y + canvasPoint.y) / 2
+                        val offsetY = if (shakiness > 0) {
+                            (kotlin.random.Random.nextFloat() - 0.5f) * shakiness * 50f
+                        } else 0f
+                        path.quadraticBezierTo(midX, midY + offsetY, canvasPoint.x, canvasPoint.y)
+                    }
+                }
+
+                // Draw tolerance zone (wide semi-transparent area)
+                drawPath(
+                    path = path,
+                    color = Color(0xFF3a506b),
+                    style = Stroke(width = tolerancePx * 2, cap = StrokeCap.Round, join = StrokeJoin.Round)
+                )
+
+                // Draw ideal path (thin center line)
+                drawPath(
+                    path = path,
+                    color = Color(0xFF5bc0be),
+                    style = Stroke(width = 4f, cap = StrokeCap.Round, join = StrokeJoin.Round)
+                )
+
+                // Draw start point (green circle)
+                val startPoint = toCanvasOffset(pathPoints.first())
+                drawCircle(
+                    color = Color(0xFF4CAF50),
+                    radius = 15f,
+                    center = startPoint
+                )
+
+                // Draw end point (gold circle)
+                val endPoint = toCanvasOffset(pathPoints.last())
+                drawCircle(
+                    color = Color(0xFFFFD700),
+                    radius = 15f,
+                    center = endPoint
+                )
+
+                // Draw player's trace
+                if (playerPath.size > 1) {
+                    val playerPathObj = Path()
+                    playerPath.forEachIndexed { index, offset ->
+                        if (index == 0) {
+                            playerPathObj.moveTo(offset.x, offset.y)
+                        } else {
+                            playerPathObj.lineTo(offset.x, offset.y)
+                        }
+                    }
+                    drawPath(
+                        path = playerPathObj,
+                        color = if (currentAccuracy >= lockInfo.successThreshold) Color(0xFF4CAF50) else Color(0xFFFF5722),
+                        style = Stroke(width = 6f, cap = StrokeCap.Round, join = StrokeJoin.Round)
+                    )
+                }
+            }
+
+            // Accuracy display
+            if (hasStarted) {
+                val accuracyPercent = (currentAccuracy * 100).toInt()
+                Text(
+                    text = "Accuracy: $accuracyPercent%",
+                    color = when {
+                        currentAccuracy >= lockInfo.successThreshold -> Color(0xFF4CAF50)
+                        currentAccuracy >= lockInfo.successThreshold * 0.7f -> Color(0xFFFFEB3B)
+                        else -> Color(0xFFFF5722)
+                    },
+                    fontSize = 18.sp,
+                    fontWeight = FontWeight.Bold
+                )
+
+                Text(
+                    text = "Need ${(lockInfo.successThreshold * 100).toInt()}% to open",
+                    color = Color.White.copy(alpha = 0.6f),
+                    fontSize = 12.sp
+                )
+            }
 
             // Cancel button
             TextButton(

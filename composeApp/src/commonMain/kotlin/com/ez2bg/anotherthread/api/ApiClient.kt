@@ -443,7 +443,10 @@ data class FishingMinigameStartDto(
 data class FishBehaviorDto(
     val speed: Float,              // Movement speed (0.1-1.0 of bar per second)
     val changeDirectionChance: Float,  // Chance per tick to change direction
-    val erraticness: Float         // Randomness in movement (0.0-1.0)
+    val erraticness: Float,        // Randomness in movement (0.0-1.0)
+    val behaviorType: String = "CALM",  // CALM, ERRATIC, DARTING, STUBBORN, WILD
+    val dartChance: Float = 0f,    // Chance of sudden speed burst (for DARTING)
+    val edgePull: Float = 0f       // Force toward edges (for STUBBORN)
 )
 
 @Serializable
@@ -461,6 +464,40 @@ data class FishingMinigameCompleteDto(
     val manaRestored: Int = 0,
     val totalFishCaught: Int = 0,
     val earnedBadge: Boolean = false
+)
+
+// ===================== LOCKPICKING DTOs =====================
+
+@Serializable
+data class LockpickPathPointDto(
+    val x: Float,  // 0-1 normalized position
+    val y: Float   // 0-1 normalized position
+)
+
+@Serializable
+data class LockpickInfoDto(
+    val success: Boolean,
+    val canAttempt: Boolean,
+    val reason: String?,
+    val difficulty: String?,    // SIMPLE, STANDARD, COMPLEX, MASTER
+    val pathPoints: List<LockpickPathPointDto> = emptyList(),
+    val tolerance: Float = 0f,
+    val shakiness: Float = 0f,
+    val successThreshold: Float = 0f,
+    val lockLevelName: String? = null
+)
+
+@Serializable
+data class LockpickAttemptRequestDto(
+    val accuracy: Float  // 0-1 player's trace accuracy
+)
+
+@Serializable
+data class LockpickResultDto(
+    val success: Boolean,
+    val message: String,
+    val accuracy: Float = 0f,
+    val lockOpened: Boolean = false
 )
 
 @Serializable
@@ -1599,6 +1636,27 @@ object ApiClient {
         client.post("$baseUrl/users/$userId/fish/complete") {
             contentType(ContentType.Application.Json)
             setBody(FishingMinigameCompleteRequestDto(sessionId = sessionId, finalScore = finalScore))
+        }.body()
+    }
+
+    // ===================== LOCKPICKING API =====================
+
+    /**
+     * Get lockpicking info for a locked location.
+     * Returns path points and difficulty settings for the minigame.
+     */
+    suspend fun getLockpickInfo(userId: String, locationId: String): Result<LockpickInfoDto> = apiCall {
+        client.get("$baseUrl/users/$userId/lockpick/$locationId/info").body()
+    }
+
+    /**
+     * Attempt to pick a lock.
+     * Client sends the player's trace accuracy (0-1).
+     */
+    suspend fun attemptLockpick(userId: String, locationId: String, accuracy: Float): Result<LockpickResultDto> = apiCall {
+        client.post("$baseUrl/users/$userId/lockpick/$locationId") {
+            contentType(ContentType.Application.Json)
+            setBody(LockpickAttemptRequestDto(accuracy = accuracy))
         }.body()
     }
 

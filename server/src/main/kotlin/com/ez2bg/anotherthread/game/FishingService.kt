@@ -129,10 +129,22 @@ object FishingService {
         val sessionId: String,
         val fishName: String,
         val fishDifficulty: Int,  // 1-10, affects fish movement speed/erraticness
+        val fishValue: Int,       // For behavior type calculation
         val catchZoneSize: Int,   // Size of player's catch zone (affected by skill/rod)
         val durationMs: Long,     // Total time for minigame
         val startingScore: Int = MINIGAME_STARTING_SCORE
     )
+
+    /**
+     * Fish behavior types for distinct species patterns.
+     */
+    enum class FishBehaviorType {
+        CALM,       // Slow, predictable (bass, carp) - easier to track
+        ERRATIC,    // Fast direction changes (trout, salmon) - jumpy movement
+        DARTING,    // Bursts of speed (pike, barracuda) - slow then fast
+        STUBBORN,   // Stays at edges (catfish, sturgeon) - hard to center
+        WILD        // Completely unpredictable (trophy fish) - chaotic
+    }
 
     /**
      * Fish behavior parameters for the minigame.
@@ -141,7 +153,10 @@ object FishingService {
     data class FishBehavior(
         val speed: Float,           // Movement speed (0.0-1.0 of bar per second)
         val changeDirectionChance: Float,  // Chance per tick to change direction
-        val erraticness: Float      // Randomness in movement (0.0-1.0)
+        val erraticness: Float,     // Randomness in movement (0.0-1.0)
+        val behaviorType: FishBehaviorType = FishBehaviorType.CALM,  // Species-specific pattern
+        val dartChance: Float = 0f,  // Chance of sudden speed burst (for DARTING)
+        val edgePull: Float = 0f     // Force toward edges (for STUBBORN)
     )
 
     /**
@@ -163,41 +178,91 @@ object FishingService {
     }
 
     /**
-     * Get fish behavior based on difficulty.
+     * Get fish behavior based on difficulty and fish value.
+     * Made harder: faster base movement, more direction changes, more erratic.
+     * Different fish types have distinct movement patterns.
      */
-    fun getFishBehavior(difficulty: Int): FishBehavior {
-        val baseSpeed = 0.1f + (difficulty * 0.08f)  // 0.18 to 0.9 of bar per second
-        val changeChance = 0.02f + (difficulty * 0.01f)  // 3% to 12% per tick
-        val erraticness = 0.1f + (difficulty * 0.08f)  // 0.18 to 0.9
+    fun getFishBehavior(difficulty: Int, fishValue: Int = 0): FishBehavior {
+        // Determine behavior type based on fish value/rarity
+        val behaviorType = when {
+            fishValue >= 150 -> FishBehaviorType.WILD       // Trophy fish - chaotic
+            fishValue >= 100 -> FishBehaviorType.DARTING   // Large rare fish - bursts of speed
+            fishValue >= 60 -> FishBehaviorType.ERRATIC    // Large common fish - jumpy
+            fishValue >= 40 -> FishBehaviorType.STUBBORN   // Medium fish - edge huggers
+            fishValue >= 25 -> FishBehaviorType.ERRATIC    // Medium fish - some jumpiness
+            else -> FishBehaviorType.CALM                   // Small fish - predictable
+        }
+
+        // Base values from difficulty
+        var baseSpeed = 0.15f + (difficulty * 0.12f)
+        var changeChance = 0.04f + (difficulty * 0.015f)
+        var erraticness = 0.15f + (difficulty * 0.12f)
+        var dartChance = 0f
+        var edgePull = 0f
+
+        // Apply behavior type modifiers
+        when (behaviorType) {
+            FishBehaviorType.CALM -> {
+                // Slow and predictable - actually reduce stats
+                baseSpeed *= 0.7f
+                changeChance *= 0.5f
+                erraticness *= 0.5f
+            }
+            FishBehaviorType.ERRATIC -> {
+                // Fast direction changes
+                changeChance *= 1.8f
+                erraticness *= 1.5f
+            }
+            FishBehaviorType.DARTING -> {
+                // Sudden bursts of speed
+                baseSpeed *= 0.6f  // Slow normally...
+                dartChance = 0.08f + (difficulty * 0.02f)  // ...but darts frequently
+            }
+            FishBehaviorType.STUBBORN -> {
+                // Pulls toward edges
+                edgePull = 0.3f + (difficulty * 0.05f)
+                changeChance *= 0.7f  // Less direction changes
+            }
+            FishBehaviorType.WILD -> {
+                // Maximum chaos
+                baseSpeed *= 1.3f
+                changeChance *= 2.0f
+                erraticness *= 1.8f
+                dartChance = 0.05f
+            }
+        }
 
         return FishBehavior(
-            speed = baseSpeed.coerceIn(0.1f, 1.0f),
-            changeDirectionChance = changeChance.coerceIn(0.01f, 0.15f),
-            erraticness = erraticness.coerceIn(0.1f, 0.9f)
+            speed = baseSpeed.coerceIn(0.15f, 1.5f),
+            changeDirectionChance = changeChance.coerceIn(0.03f, 0.30f),
+            erraticness = erraticness.coerceIn(0.15f, 1.2f),
+            behaviorType = behaviorType,
+            dartChance = dartChance.coerceIn(0f, 0.15f),
+            edgePull = edgePull.coerceIn(0f, 0.6f)
         )
     }
 
     /**
      * Calculate catch zone size based on user skill and equipment.
-     * Base is 25% of bar, can go up to 40% with bonuses.
+     * Base is 18% of bar, can go up to 30% with bonuses (harder than before).
      */
     fun calculateCatchZoneSize(user: User): Int {
-        var baseSize = 25  // Base 25% of bar
+        var baseSize = 18  // Base 18% of bar (was 25%)
 
-        // DEX bonus (up to +5%)
+        // DEX bonus (up to +4%)
         val dexMod = StatModifierService.attributeModifier(user.dexterity)
-        baseSize += (dexMod * 2).coerceIn(0, 5)
+        baseSize += (dexMod * 2).coerceIn(0, 4)
 
-        // Fishing rod bonus (+5%)
-        if (hasFishingRod(user)) baseSize += 5
+        // Fishing rod bonus (+4%)
+        if (hasFishingRod(user)) baseSize += 4
 
-        // Badge bonus (+3%)
-        if (hasFishingBadge(user)) baseSize += 3
+        // Badge bonus (+2%)
+        if (hasFishingBadge(user)) baseSize += 2
 
-        // Level bonus (+1% per 5 levels, max +4%)
-        baseSize += (user.level / 5).coerceIn(0, 4)
+        // Level bonus (+1% per 5 levels, max +3%)
+        baseSize += (user.level / 5).coerceIn(0, 3)
 
-        return baseSize.coerceIn(20, 40)
+        return baseSize.coerceIn(15, 30)
     }
 
     /**
@@ -446,6 +511,7 @@ object FishingService {
             sessionId = sessionId,
             fishName = fish.name,
             fishDifficulty = difficulty,
+            fishValue = fish.value,
             catchZoneSize = catchZoneSize,
             durationMs = MINIGAME_DURATION_MS,
             startingScore = MINIGAME_STARTING_SCORE

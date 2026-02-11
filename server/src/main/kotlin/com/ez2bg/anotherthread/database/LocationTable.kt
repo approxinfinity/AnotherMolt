@@ -34,6 +34,8 @@ object LocationTable : Table("location") {
     val isOriginalTerrain = bool("is_original_terrain").nullable()
     // Shop layout direction (VERTICAL or HORIZONTAL) - null defaults to VERTICAL
     val shopLayoutDirection = varchar("shop_layout_direction", 20).nullable()
+    // Lock level for lockpicking: null/0 = unlocked, 1-4 = Simple/Standard/Complex/Master
+    val lockLevel = integer("lock_level").nullable()
 
     override val primaryKey = PrimaryKey(id)
 }

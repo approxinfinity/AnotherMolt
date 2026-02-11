@@ -70,7 +70,9 @@ data class Location(
     val terrainFeatures: List<String>? = null,
     val isOriginalTerrain: Boolean? = null,
     // Shop layout direction (default VERTICAL)
-    val shopLayoutDirection: ShopLayoutDirection? = null
+    val shopLayoutDirection: ShopLayoutDirection? = null,
+    // Lock level for lockpicking: null/0 = unlocked, 1-4 = Simple/Standard/Complex/Master
+    val lockLevel: Int? = null
 )
 
 object LocationRepository {
@@ -137,7 +139,8 @@ object LocationRepository {
         isOriginalTerrain = this[LocationTable.isOriginalTerrain],
         shopLayoutDirection = this[LocationTable.shopLayoutDirection]?.let {
             try { ShopLayoutDirection.valueOf(it) } catch (e: Exception) { null }
-        }
+        },
+        lockLevel = this[LocationTable.lockLevel]
     )
 
     fun create(location: Location): Location = transaction {
@@ -165,6 +168,7 @@ object LocationRepository {
             it[terrainFeatures] = location.terrainFeatures?.let { listToJson(it) }
             it[isOriginalTerrain] = location.isOriginalTerrain
             it[shopLayoutDirection] = location.shopLayoutDirection?.name
+            it[lockLevel] = location.lockLevel
         }
         location
     }
@@ -204,6 +208,16 @@ object LocationRepository {
             it[terrainFeatures] = location.terrainFeatures?.let { listToJson(it) }
             it[isOriginalTerrain] = location.isOriginalTerrain
             it[shopLayoutDirection] = location.shopLayoutDirection?.name
+            it[lockLevel] = location.lockLevel
+        } > 0
+    }
+
+    /**
+     * Update the lock level of a location.
+     */
+    fun updateLockLevel(id: String, lockLevel: Int?): Boolean = transaction {
+        LocationTable.update({ LocationTable.id eq id }) {
+            it[LocationTable.lockLevel] = lockLevel
         } > 0
     }
 

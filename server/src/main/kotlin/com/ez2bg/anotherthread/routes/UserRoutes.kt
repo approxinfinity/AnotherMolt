@@ -180,7 +180,10 @@ data class FishingMinigameStartResponse(
 data class FishBehaviorInfo(
     val speed: Float,              // Movement speed (0.1-1.0 of bar per second)
     val changeDirectionChance: Float,  // Chance per tick to change direction
-    val erraticness: Float         // Randomness in movement (0.0-1.0)
+    val erraticness: Float,        // Randomness in movement (0.0-1.0)
+    val behaviorType: String = "CALM",  // CALM, ERRATIC, DARTING, STUBBORN, WILD
+    val dartChance: Float = 0f,    // Chance of sudden speed burst (for DARTING)
+    val edgePull: Float = 0f       // Force toward edges (for STUBBORN)
 )
 
 @Serializable
@@ -255,6 +258,40 @@ data class SaltFoodResponse(
     val success: Boolean,
     val message: String,
     val newSpoilTime: String? = null
+)
+
+// ===================== LOCKPICKING DTOs =====================
+
+@Serializable
+data class LockpickPathPoint(
+    val x: Float,  // 0-1 normalized position
+    val y: Float   // 0-1 normalized position
+)
+
+@Serializable
+data class LockpickInfoResponse(
+    val success: Boolean,
+    val canAttempt: Boolean,
+    val reason: String?,
+    val difficulty: String?,    // SIMPLE, STANDARD, COMPLEX, MASTER
+    val pathPoints: List<LockpickPathPoint> = emptyList(),
+    val tolerance: Float = 0f,
+    val shakiness: Float = 0f,
+    val successThreshold: Float = 0f,
+    val lockLevelName: String? = null
+)
+
+@Serializable
+data class LockpickAttemptRequest(
+    val accuracy: Float  // 0-1 player's trace accuracy
+)
+
+@Serializable
+data class LockpickAttemptResponse(
+    val success: Boolean,
+    val message: String,
+    val accuracy: Float = 0f,
+    val lockOpened: Boolean = false
 )
 
 /**
@@ -793,7 +830,7 @@ fun Route.userRoutes() {
 
             result.fold(
                 onSuccess = { minigame ->
-                    val behavior = com.ez2bg.anotherthread.game.FishingService.getFishBehavior(minigame.fishDifficulty)
+                    val behavior = com.ez2bg.anotherthread.game.FishingService.getFishBehavior(minigame.fishDifficulty, minigame.fishValue)
                     call.respond(FishingMinigameStartResponse(
                         success = true,
                         sessionId = minigame.sessionId,
@@ -805,7 +842,10 @@ fun Route.userRoutes() {
                         fishBehavior = FishBehaviorInfo(
                             speed = behavior.speed,
                             changeDirectionChance = behavior.changeDirectionChance,
-                            erraticness = behavior.erraticness
+                            erraticness = behavior.erraticness,
+                            behaviorType = behavior.behaviorType.name,
+                            dartChance = behavior.dartChance,
+                            edgePull = behavior.edgePull
                         )
                     ))
                 },
@@ -855,6 +895,93 @@ fun Route.userRoutes() {
                 manaRestored = result.manaRestored,
                 totalFishCaught = result.totalFishCaught,
                 earnedBadge = result.earnedBadge
+            ))
+        }
+
+        // ===================== LOCKPICKING ROUTES =====================
+
+        /**
+         * Get lockpicking info for a location.
+         * Returns path points and difficulty settings for the minigame.
+         */
+        get("/{id}/lockpick/{locationId}/info") {
+            val id = call.parameters["id"] ?: return@get call.respond(HttpStatusCode.BadRequest)
+            val locationId = call.parameters["locationId"] ?: return@get call.respond(HttpStatusCode.BadRequest)
+
+            val user = UserRepository.findById(id)
+            if (user == null) {
+                call.respond(HttpStatusCode.NotFound)
+                return@get
+            }
+
+            val location = LocationRepository.findById(locationId)
+            if (location == null) {
+                call.respond(HttpStatusCode.NotFound, LockpickInfoResponse(
+                    success = false,
+                    canAttempt = false,
+                    reason = "Location not found",
+                    difficulty = null
+                ))
+                return@get
+            }
+
+            val lockLevel = location.lockLevel
+            if (lockLevel == null || lockLevel <= 0) {
+                call.respond(HttpStatusCode.OK, LockpickInfoResponse(
+                    success = true,
+                    canAttempt = false,
+                    reason = "This location is not locked",
+                    difficulty = null
+                ))
+                return@get
+            }
+
+            val lockInfo = com.ez2bg.anotherthread.game.LockpickingService.getLockInfo(user, location)
+            if (lockInfo == null) {
+                call.respond(HttpStatusCode.OK, LockpickInfoResponse(
+                    success = true,
+                    canAttempt = false,
+                    reason = "Unable to get lock info",
+                    difficulty = null
+                ))
+                return@get
+            }
+
+            call.respond(HttpStatusCode.OK, LockpickInfoResponse(
+                success = true,
+                canAttempt = lockInfo.canAttempt,
+                reason = lockInfo.reason,
+                difficulty = lockInfo.difficulty.name,
+                pathPoints = lockInfo.pathPoints.map { LockpickPathPoint(it.x, it.y) },
+                tolerance = lockInfo.tolerance,
+                shakiness = lockInfo.shakiness,
+                successThreshold = lockInfo.successThreshold,
+                lockLevelName = com.ez2bg.anotherthread.game.LockpickingService.getLockLevelName(lockLevel)
+            ))
+        }
+
+        /**
+         * Attempt to pick a lock.
+         * Client sends the player's trace accuracy (0-1).
+         */
+        post("/{id}/lockpick/{locationId}") {
+            val id = call.parameters["id"] ?: return@post call.respond(HttpStatusCode.BadRequest)
+            val locationId = call.parameters["locationId"] ?: return@post call.respond(HttpStatusCode.BadRequest)
+            val request = call.receive<LockpickAttemptRequest>()
+
+            val user = UserRepository.findById(id)
+            if (user == null) {
+                call.respond(HttpStatusCode.NotFound)
+                return@post
+            }
+
+            val result = com.ez2bg.anotherthread.game.LockpickingService.attemptLockpick(user, locationId, request.accuracy)
+
+            call.respond(HttpStatusCode.OK, LockpickAttemptResponse(
+                success = result.success,
+                message = result.message,
+                accuracy = result.accuracy,
+                lockOpened = result.lockOpened
             ))
         }
 

@@ -1114,6 +1114,7 @@ fun Application.module() {
     FishingSeed.seedIfEmpty()
     CoastalFishingSeed.seedIfEmpty()
     GeneralStoreSeed.seedIfEmpty()
+    LockpickingSeed.seed()
 
     // Seed dungeon location modules (adventure modules)
     UndeadCryptLocationsSeed.seedIfEmpty()
