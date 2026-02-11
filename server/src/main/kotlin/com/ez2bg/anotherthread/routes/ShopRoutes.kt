@@ -36,6 +36,37 @@ private val CURSED_ITEM_IDS = setOf(
     UndeadCryptSeed.ANCIENT_TOMB_GOLD_ID
 )
 
+// Shop location IDs grouped by type for multi-location support
+// Inns - places where you can rest
+private val INN_LOCATION_IDS = setOf(
+    TunDuLacSeed.INN_ID,
+    "location-keep-borderlands-travelers-inn"
+)
+
+// Weapon shops - buy/sell weapons
+private val WEAPON_SHOP_IDS = setOf(
+    TunDuLacSeed.WEAPONS_SHOP_ID,
+    "location-keep-borderlands-smithy"  // Smithy sells weapons
+)
+
+// Armor shops - buy/sell armor
+private val ARMOR_SHOP_IDS = setOf(
+    TunDuLacSeed.ARMOR_SHOP_ID,
+    "location-keep-borderlands-traders-shop"  // Trader sells armor
+)
+
+// General stores - sell general items and food
+private val GENERAL_STORE_IDS = setOf(
+    GeneralStoreSeed.GENERAL_STORE_ID,
+    "location-keep-borderlands-provisioner-shop"
+)
+
+// Rest cost per inn
+private val INN_REST_COSTS = mapOf(
+    TunDuLacSeed.INN_ID to TunDuLacSeed.INN_REST_COST,
+    "location-keep-borderlands-travelers-inn" to 25  // Keep inn costs 25g
+)
+
 /**
  * Get the shop ban key for a user.
  */
@@ -129,8 +160,8 @@ fun Route.shopRoutes() {
             val userId = call.parameters["userId"]
                 ?: return@get call.respond(HttpStatusCode.BadRequest, ShopBanResponse(false))
 
-            // Only applies to general store
-            if (locationId != GeneralStoreSeed.GENERAL_STORE_ID) {
+            // Only applies to general stores
+            if (locationId !in GENERAL_STORE_IDS) {
                 return@get call.respond(ShopBanResponse(isBanned = false))
             }
 
@@ -218,15 +249,18 @@ fun Route.shopRoutes() {
 
             val request = call.receive<RestRequest>()
 
-            // Validate this is the inn
-            if (locationId != TunDuLacSeed.INN_ID) {
+            // Validate this is an inn
+            if (locationId !in INN_LOCATION_IDS) {
                 return@post call.respond(HttpStatusCode.BadRequest, ShopActionResponse(false, "This is not an inn"))
             }
 
+            // Get rest cost for this inn
+            val restCost = INN_REST_COSTS[locationId] ?: 25
+
             // Spend gold for rest
-            val goldSpent = UserRepository.spendGold(request.userId, TunDuLacSeed.INN_REST_COST)
+            val goldSpent = UserRepository.spendGold(request.userId, restCost)
             if (!goldSpent) {
-                return@post call.respond(HttpStatusCode.BadRequest, ShopActionResponse(false, "Not enough gold (need ${TunDuLacSeed.INN_REST_COST}g)"))
+                return@post call.respond(HttpStatusCode.BadRequest, ShopActionResponse(false, "Not enough gold (need ${restCost}g)"))
             }
 
             // Heal to full and restore all resources
@@ -248,8 +282,8 @@ fun Route.shopRoutes() {
             val userId = call.parameters["userId"]
                 ?: return@get call.respond(HttpStatusCode.BadRequest, SellableItemsResponse(false, emptyList()))
 
-            // Validate this is the general store
-            if (locationId != GeneralStoreSeed.GENERAL_STORE_ID) {
+            // Validate this is a general store
+            if (locationId !in GENERAL_STORE_IDS) {
                 return@get call.respond(HttpStatusCode.BadRequest, SellableItemsResponse(false, emptyList()))
             }
 
@@ -321,9 +355,9 @@ fun Route.shopRoutes() {
 
             val request = call.receive<SellItemRequest>()
 
-            // Validate this is the general store
-            if (locationId != GeneralStoreSeed.GENERAL_STORE_ID) {
-                return@post call.respond(HttpStatusCode.BadRequest, ShopActionResponse(false, "You can only sell items at the general store"))
+            // Validate this is a general store
+            if (locationId !in GENERAL_STORE_IDS) {
+                return@post call.respond(HttpStatusCode.BadRequest, ShopActionResponse(false, "You can only sell items at a general store"))
             }
 
             val user = UserRepository.findById(request.userId)
@@ -382,9 +416,9 @@ fun Route.shopRoutes() {
 
             val request = call.receive<SellFoodItemRequest>()
 
-            // Validate this is the general store
-            if (locationId != GeneralStoreSeed.GENERAL_STORE_ID) {
-                return@post call.respond(HttpStatusCode.BadRequest, ShopActionResponse(false, "You can only sell items at the general store"))
+            // Validate this is a general store
+            if (locationId !in GENERAL_STORE_IDS) {
+                return@post call.respond(HttpStatusCode.BadRequest, ShopActionResponse(false, "You can only sell items at a general store"))
             }
 
             val user = UserRepository.findById(request.userId)
@@ -443,8 +477,8 @@ fun Route.shopRoutes() {
             val userId = call.parameters["userId"]
                 ?: return@get call.respond(HttpStatusCode.BadRequest, SellableItemsResponse(false, emptyList()))
 
-            // Validate this is the weapons shop
-            if (locationId != TunDuLacSeed.WEAPONS_SHOP_ID) {
+            // Validate this is a weapons shop
+            if (locationId !in WEAPON_SHOP_IDS) {
                 return@get call.respond(HttpStatusCode.BadRequest, SellableItemsResponse(false, emptyList()))
             }
 
@@ -479,9 +513,9 @@ fun Route.shopRoutes() {
 
             val request = call.receive<SellItemRequest>()
 
-            // Validate this is the weapons shop
-            if (locationId != TunDuLacSeed.WEAPONS_SHOP_ID) {
-                return@post call.respond(HttpStatusCode.BadRequest, ShopActionResponse(false, "You can only sell weapons at the weapons shop"))
+            // Validate this is a weapons shop
+            if (locationId !in WEAPON_SHOP_IDS) {
+                return@post call.respond(HttpStatusCode.BadRequest, ShopActionResponse(false, "You can only sell weapons at a weapons shop"))
             }
 
             val user = UserRepository.findById(request.userId)
@@ -526,8 +560,8 @@ fun Route.shopRoutes() {
             val userId = call.parameters["userId"]
                 ?: return@get call.respond(HttpStatusCode.BadRequest, SellableItemsResponse(false, emptyList()))
 
-            // Validate this is the armor shop
-            if (locationId != TunDuLacSeed.ARMOR_SHOP_ID) {
+            // Validate this is an armor shop
+            if (locationId !in ARMOR_SHOP_IDS) {
                 return@get call.respond(HttpStatusCode.BadRequest, SellableItemsResponse(false, emptyList()))
             }
 
@@ -562,9 +596,9 @@ fun Route.shopRoutes() {
 
             val request = call.receive<SellItemRequest>()
 
-            // Validate this is the armor shop
-            if (locationId != TunDuLacSeed.ARMOR_SHOP_ID) {
-                return@post call.respond(HttpStatusCode.BadRequest, ShopActionResponse(false, "You can only sell armor at the armor shop"))
+            // Validate this is an armor shop
+            if (locationId !in ARMOR_SHOP_IDS) {
+                return@post call.respond(HttpStatusCode.BadRequest, ShopActionResponse(false, "You can only sell armor at an armor shop"))
             }
 
             val user = UserRepository.findById(request.userId)
