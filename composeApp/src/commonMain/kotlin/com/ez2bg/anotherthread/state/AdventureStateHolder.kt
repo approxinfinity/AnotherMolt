@@ -408,7 +408,8 @@ object AdventureStateHolder {
             LocationEventType.ITEM_REMOVED -> {
                 event.itemIdRemoved?.let { itemId ->
                     currentLoc.copy(
-                        itemIds = currentLoc.itemIds.filter { it != itemId }
+                        itemIds = currentLoc.itemIds.filter { it != itemId },
+                        discoveredItemIds = currentLoc.discoveredItemIds.filter { it != itemId }
                     )
                 } ?: currentLoc
             }
@@ -486,7 +487,10 @@ object AdventureStateHolder {
             }
             LocationEventType.ITEM_REMOVED -> {
                 event.itemIdRemoved?.let { itemId ->
-                    location.copy(itemIds = location.itemIds.filter { it != itemId })
+                    location.copy(
+                        itemIds = location.itemIds.filter { it != itemId },
+                        discoveredItemIds = location.discoveredItemIds.filter { it != itemId }
+                    )
                 } ?: location
             }
             LocationEventType.CREATURE_REMOVED -> {
