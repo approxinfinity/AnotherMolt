@@ -1006,6 +1006,25 @@ fun Application.module() {
         json()
     }
 
+    // Log all HTTP requests for debugging (simple interceptor)
+    val requestLog = org.slf4j.LoggerFactory.getLogger("RequestLog")
+    intercept(ApplicationCallPipeline.Monitoring) {
+        val start = System.currentTimeMillis()
+        val path = call.request.path()
+        val method = call.request.httpMethod.value
+        val userId = call.request.headers["X-User-Id"]?.take(8) ?: "-"
+
+        // Skip static files and websocket
+        if (!path.startsWith("/files/") && call.request.headers["Upgrade"] != "websocket") {
+            proceed()
+            val duration = System.currentTimeMillis() - start
+            val status = call.response.status()?.value ?: 0
+            requestLog.info("[$userId] $method $path -> $status (${duration}ms)")
+        } else {
+            proceed()
+        }
+    }
+
     install(CORS) {
         // Allow credentials (cookies) - required for session auth
         allowCredentials = true

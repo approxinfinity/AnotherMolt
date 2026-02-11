@@ -260,8 +260,27 @@ object AdventureStateHolder {
         scope.launch {
             _isLoadingLocation.value = true
 
-            // Refresh location
-            ApiClient.getLocation(locationId).onSuccess { location ->
+            // Fetch all data first (in parallel for performance)
+            val locationResult = ApiClient.getLocation(locationId)
+            val creaturesResult = ApiClient.getCreatures()
+            val itemsResult = ApiClient.getItems()
+            val statesResult = ApiClient.getCreatureStates()
+
+            // Update caches
+            creaturesResult.onSuccess { creatures ->
+                _allCreatures.value = creatures
+            }
+
+            itemsResult.onSuccess { items ->
+                _allItems.value = items
+            }
+
+            statesResult.onSuccess { states ->
+                _creatureStates.value = states
+            }
+
+            // Update location and entities AFTER items are loaded
+            locationResult.onSuccess { location ->
                 if (location != null) {
                     _currentLocation.value = location
 
@@ -269,24 +288,10 @@ object AdventureStateHolder {
                     _allLocations.value = _allLocations.value.map {
                         if (it.id == locationId) location else it
                     }
+
+                    // Update entities with the fresh location and items
+                    updateEntitiesAtLocation(location)
                 }
-            }
-
-            // Refresh creatures
-            ApiClient.getCreatures().onSuccess { creatures ->
-                _allCreatures.value = creatures
-                _currentLocation.value?.let { loc -> updateEntitiesAtLocation(loc) }
-            }
-
-            // Refresh items
-            ApiClient.getItems().onSuccess { items ->
-                _allItems.value = items
-                _currentLocation.value?.let { loc -> updateEntitiesAtLocation(loc) }
-            }
-
-            // Refresh creature states
-            ApiClient.getCreatureStates().onSuccess { states ->
-                _creatureStates.value = states
             }
 
             _isLoadingLocation.value = false

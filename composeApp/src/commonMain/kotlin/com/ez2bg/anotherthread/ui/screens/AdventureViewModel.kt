@@ -506,6 +506,11 @@ class AdventureViewModel {
                             } else {
                                 println("[AdventureViewModel] Server location sync: no correction needed")
                             }
+                            // Refresh location with user context to get discovered items
+                            val userId = UserStateHolder.userId
+                            if (userId != null) {
+                                AdventureRepository.refreshLocationWithUserContext(serverLocationId, userId)
+                            }
                             // Mark location as synced - UI can now show the location
                             _localState.update { it.copy(isLocationSynced = true) }
                         }
@@ -917,6 +922,8 @@ class AdventureViewModel {
                     println("[Navigation] Location update succeeded")
                     // Persist location locally so it survives page refresh
                     UserStateHolder.updateLocationLocally(exit.locationId)
+                    // Refresh location with user context to get discovered items
+                    AdventureRepository.refreshLocationWithUserContext(exit.locationId, userId)
                 }
                 .onFailure { error ->
                     println("[Navigation] Location update FAILED: ${error.message} - rolling back to $previousLocationId")
