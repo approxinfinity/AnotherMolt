@@ -211,6 +211,9 @@ fun Route.phasewalkRoutes() {
             // 9. Update location
             UserRepository.updateCurrentLocation(user.id, destination.id)
 
+            // 9b. Record visited location for minimap fog-of-war
+            UserRepository.addVisitedLocation(user.id, destination.id)
+
             // 10. Remove player from combat (they phased away from the battlefield)
             CombatService.removePlayerFromCombat(user.id)
 

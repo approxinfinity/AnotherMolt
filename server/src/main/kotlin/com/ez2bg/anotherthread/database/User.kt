@@ -56,7 +56,9 @@ data class User(
     // Party system: if set, user is following this leader
     val partyLeaderId: String? = null,
     // Fishing stats
-    val fishCaught: Int = 0
+    val fishCaught: Int = 0,
+    // Exploration tracking: locations the user has visited
+    val visitedLocationIds: List<String> = emptyList()
 )
 
 /**
@@ -110,7 +112,9 @@ data class UserResponse(
     // Generated appearance description based on equipment
     val appearanceDescription: String,
     // Fishing stats
-    val fishCaught: Int
+    val fishCaught: Int,
+    // Exploration tracking: locations the user has visited
+    val visitedLocationIds: List<String>
 )
 
 fun User.toResponse(): UserResponse {
@@ -155,7 +159,8 @@ fun User.toResponse(): UserResponse {
         partyLeaderId = partyLeaderId,
         isPartyLeader = UserRepository.findFollowers(id).isNotEmpty(),
         appearanceDescription = UserRepository.generateAppearanceDescription(this),
-        fishCaught = fishCaught
+        fishCaught = fishCaught,
+        visitedLocationIds = visitedLocationIds
     )
 }
 
@@ -210,7 +215,8 @@ object UserRepository {
         isHidden = this[UserTable.isHidden],
         isSneaking = this[UserTable.isSneaking],
         partyLeaderId = this[UserTable.partyLeaderId],
-        fishCaught = this[UserTable.fishCaught]
+        fishCaught = this[UserTable.fishCaught],
+        visitedLocationIds = jsonToList(this[UserTable.visitedLocationIds])
     )
 
     fun create(user: User): User = transaction {
@@ -251,6 +257,7 @@ object UserRepository {
             it[isSneaking] = user.isSneaking
             it[partyLeaderId] = user.partyLeaderId
             it[fishCaught] = user.fishCaught
+            it[visitedLocationIds] = listToJson(user.visitedLocationIds)
         }
         user
     }
@@ -306,6 +313,7 @@ object UserRepository {
             it[isHidden] = user.isHidden
             it[isSneaking] = user.isSneaking
             it[partyLeaderId] = user.partyLeaderId
+            it[visitedLocationIds] = listToJson(user.visitedLocationIds)
         } > 0
     }
 
@@ -374,6 +382,35 @@ object UserRepository {
             it[currentLocationId] = locationId
             it[lastActiveAt] = System.currentTimeMillis()
         } > 0
+    }
+
+    /**
+     * Add a location to the user's visited locations list.
+     * Returns true if the location was added (not already visited).
+     */
+    fun addVisitedLocation(id: String, locationId: String): Boolean = transaction {
+        val user = findById(id) ?: return@transaction false
+        if (locationId in user.visitedLocationIds) return@transaction false // Already visited
+        UserTable.update({ UserTable.id eq id }) {
+            it[visitedLocationIds] = listToJson(user.visitedLocationIds + locationId)
+            it[lastActiveAt] = System.currentTimeMillis()
+        } > 0
+    }
+
+    /**
+     * Check if user has visited a specific location.
+     */
+    fun hasVisitedLocation(id: String, locationId: String): Boolean = transaction {
+        val user = findById(id) ?: return@transaction false
+        locationId in user.visitedLocationIds
+    }
+
+    /**
+     * Get all visited location IDs for a user.
+     */
+    fun getVisitedLocationIds(id: String): List<String> = transaction {
+        val user = findById(id) ?: return@transaction emptyList()
+        user.visitedLocationIds
     }
 
     fun updateCharacterClass(id: String, classId: String?): Boolean = transaction {
@@ -588,6 +625,26 @@ object UserRepository {
                 it[currentLocationId] = defaultLocationId
             }
             count++
+        }
+        count
+    }
+
+    /**
+     * Ensure all users have their current location in visited locations.
+     * This is a migration function for existing users before visited tracking was added.
+     * Returns the number of users updated.
+     */
+    fun ensureCurrentLocationVisited(): Int = transaction {
+        val users = findAll()
+        var count = 0
+        users.forEach { user ->
+            val currentLoc = user.currentLocationId
+            if (currentLoc != null && currentLoc !in user.visitedLocationIds) {
+                UserTable.update({ UserTable.id eq user.id }) {
+                    it[visitedLocationIds] = listToJson(user.visitedLocationIds + currentLoc)
+                }
+                count++
+            }
         }
         count
     }

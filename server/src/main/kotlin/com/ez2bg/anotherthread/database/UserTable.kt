@@ -47,6 +47,8 @@ object UserTable : Table("user") {
     val partyLeaderId = varchar("party_leader_id", 36).nullable()
     // Fishing stats
     val fishCaught = integer("fish_caught").default(0)
+    // Exploration tracking: locations the user has visited (JSON array of location IDs)
+    val visitedLocationIds = text("visited_location_ids").default("[]")
 
     override val primaryKey = PrimaryKey(id)
 }

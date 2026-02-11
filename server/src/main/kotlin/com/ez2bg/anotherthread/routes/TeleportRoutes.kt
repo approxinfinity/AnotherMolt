@@ -91,6 +91,9 @@ fun Route.teleportRoutes() {
             // 6. Update location
             UserRepository.updateCurrentLocation(user.id, destination.id)
 
+            // 6b. Record visited location for minimap fog-of-war
+            UserRepository.addVisitedLocation(user.id, destination.id)
+
             // 7. Build messages
             val departureMessage = "With a soft pop ${user.name} dematerializes."
             val arrivalMessage = "${user.name} materializes with a loud bang!"

@@ -209,7 +209,9 @@ data class UserDto(
     // Generated appearance based on equipment
     val appearanceDescription: String = "",
     // Fishing stats
-    val fishCaught: Int = 0
+    val fishCaught: Int = 0,
+    // Exploration tracking: locations the user has visited (for minimap fog-of-war)
+    val visitedLocationIds: List<String> = emptyList()
 )
 
 @Serializable

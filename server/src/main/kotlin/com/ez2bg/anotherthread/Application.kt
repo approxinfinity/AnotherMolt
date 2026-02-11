@@ -1128,6 +1128,12 @@ fun Application.module() {
         log.info("Assigned starting location to $usersGivenLocation users who had none")
     }
 
+    // Ensure existing users have their current location in visited locations (for minimap fog-of-war)
+    val usersGivenVisitedLocation = UserRepository.ensureCurrentLocationVisited()
+    if (usersGivenVisitedLocation > 0) {
+        log.info("Added current location to visited list for $usersGivenVisitedLocation users")
+    }
+
     // Seed Fungus Forest content (creatures, items, loot tables, chest)
     SimpleGoldBalancer.addMissingGoldDrops()
     FungusForestSeed.seedIfEmpty()

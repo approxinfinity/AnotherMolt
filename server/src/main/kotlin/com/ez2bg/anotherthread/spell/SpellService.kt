@@ -423,6 +423,8 @@ object SpellService {
 
         // Move the user
         UserRepository.updateCurrentLocation(user.id, targetLocation.id)
+        // Record visited location for minimap fog-of-war
+        UserRepository.addVisitedLocation(user.id, targetLocation.id)
 
         return CastResult.Success(
             message = "You phase through reality and emerge at ${targetLocation.name}",
@@ -450,6 +452,8 @@ object SpellService {
 
         // Move the user
         UserRepository.updateCurrentLocation(user.id, targetLocation.id)
+        // Record visited location for minimap fog-of-war
+        UserRepository.addVisitedLocation(user.id, targetLocation.id)
 
         return CastResult.Success(
             message = "Reality folds around you as you materialize at ${targetLocation.name}",
@@ -467,6 +471,8 @@ object SpellService {
             ?: return CastResult.Failure("No home location found")
 
         UserRepository.updateCurrentLocation(user.id, homeLocation.id)
+        // Record visited location for minimap fog-of-war
+        UserRepository.addVisitedLocation(user.id, homeLocation.id)
 
         return CastResult.Success(
             message = "You feel the familiar tug of home as you vanish and reappear at ${homeLocation.name}",

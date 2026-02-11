@@ -1453,6 +1453,11 @@ fun Route.userRoutes() {
                 // Update last active timestamp so player shows in active users list
                 UserRepository.updateLastActiveAt(id)
 
+                // Record visited location for minimap fog-of-war
+                request.locationId?.let { locationId ->
+                    UserRepository.addVisitedLocation(id, locationId)
+                }
+
                 // Remove player from any active combat when they change location
                 CombatService.removePlayerFromCombat(id)
 
@@ -1523,6 +1528,11 @@ fun Route.userRoutes() {
                         // Update follower location
                         UserRepository.updateCurrentLocation(follower.id, request.locationId)
                         UserRepository.updateLastActiveAt(follower.id)
+
+                        // Record visited location for follower's minimap
+                        request.locationId?.let { locationId ->
+                            UserRepository.addVisitedLocation(follower.id, locationId)
+                        }
 
                         // Update location tracking for WebSocket events
                         request.locationId?.let { locationId ->

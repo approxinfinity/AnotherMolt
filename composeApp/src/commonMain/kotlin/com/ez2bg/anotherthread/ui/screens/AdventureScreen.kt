@@ -627,10 +627,14 @@ fun AdventureScreen(
                                 onPhasewalk = { direction -> viewModel.phasewalk(direction) }
                             )
 
-                            // Filter to only show locations in the same area for minimap
+                            // Filter to only show locations in the same area that the user has visited (fog-of-war)
                             val currentAreaId = currentLocation.areaId
-                            val areaLocations = remember(uiState.locations, currentAreaId) {
-                                uiState.locations.filter { it.areaId == currentAreaId }
+                            val visitedLocationIds = displayUser?.visitedLocationIds ?: emptyList()
+                            val areaLocations = remember(uiState.locations, currentAreaId, visitedLocationIds, currentLocation.id) {
+                                uiState.locations.filter { location ->
+                                    location.areaId == currentAreaId &&
+                                    (location.id in visitedLocationIds || location.id == currentLocation.id)
+                                }
                             }
 
                             // Centered minimap (replaces location thumbnail)
