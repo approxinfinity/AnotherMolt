@@ -40,6 +40,7 @@ object AbilityIconMapper {
         "security" to Icons.Filled.Security,
         "heart" to Icons.Filled.Favorite,
         "healing" to Icons.Filled.Healing,
+        "first_aid" to Icons.Filled.LocalHospital,
         "spa" to Icons.Filled.Spa,
         "buff" to Icons.Filled.TrendingUp,
         "debuff" to Icons.Filled.TrendingDown,
@@ -62,6 +63,9 @@ object AbilityIconMapper {
         "psychology" to Icons.Filled.Psychology,
         "dangerous" to Icons.Filled.Dangerous,
         "staff" to Icons.Filled.FlashOn,
+        "drag" to Icons.Filled.PanTool,
+        "open_rift" to Icons.Filled.Adjust,
+        "seal_rift" to Icons.Filled.DoNotDisturb,
     )
 
     /**
@@ -81,6 +85,7 @@ object AbilityIconMapper {
         // Healing
         "heart", "heal" -> Icons.Filled.Favorite
         "healing" -> Icons.Filled.Healing
+        "first_aid", "medical", "hospital" -> Icons.Filled.LocalHospital
         "spa", "nature" -> Icons.Filled.Spa
 
         // Buffs/Debuffs
@@ -113,6 +118,11 @@ object AbilityIconMapper {
         "visibility_off", "blind" -> Icons.Filled.VisibilityOff
         "screen_rotation", "disorient", "rotate" -> Icons.Filled.ScreenRotation
         "psychology", "mind", "psychic" -> Icons.Filled.Psychology
+
+        // Drag/Rift
+        "drag", "pan_tool", "hand" -> Icons.Filled.PanTool
+        "open_rift", "rift", "portal" -> Icons.Filled.Adjust
+        "seal_rift", "close_rift", "seal" -> Icons.Filled.DoNotDisturb
 
         else -> null
     }
