@@ -56,6 +56,14 @@ object GameTickService {
                         CreatureRespawnService.processRespawns(currentTickNumber)
                     }
 
+                    // 5. Process lock resets (check every tick since it's lightweight)
+                    LockResetService.processLockResets(currentTickNumber)
+
+                    // 6. Process puzzle resets (every 10 ticks to reduce DB queries)
+                    if (currentTickNumber % 10 == 0L) {
+                        LockResetService.processPuzzleResets()
+                    }
+
                 } catch (e: Exception) {
                     log.error("Error in game tick $currentTickNumber: ${e.message}", e)
                 }

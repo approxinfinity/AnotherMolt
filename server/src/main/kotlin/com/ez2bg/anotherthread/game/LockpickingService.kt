@@ -172,13 +172,16 @@ object LockpickingService {
         val success = accuracy >= difficulty.successThreshold
 
         if (success) {
-            // Unlock the location
-            LocationRepository.updateLockedBy(locationId, null)
+            // Record the unlock for reset tracking
+            LockResetService.recordUnlock(locationId, lockLevel, GameTickService.getCurrentTick())
+
+            // Unlock the location by setting lockLevel to null
+            LocationRepository.updateLockLevel(locationId, null)
             log.info("${user.name} successfully picked a ${difficulty.name} lock on ${location.name}")
 
             return LockpickResult(
                 success = true,
-                message = "You successfully pick the lock!",
+                message = "You successfully pick the lock! (Resets in 1 minute)",
                 accuracy = accuracy,
                 lockOpened = true
             )

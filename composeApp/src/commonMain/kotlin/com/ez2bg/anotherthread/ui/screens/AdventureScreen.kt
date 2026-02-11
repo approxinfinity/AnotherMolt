@@ -11,6 +11,8 @@ import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.*
@@ -6463,8 +6465,9 @@ fun LockpickingMinigameOverlay(
     var totalDeviation by remember { mutableStateOf(0f) }
     var deviationSamples by remember { mutableStateOf(0) }
 
-    // Canvas dimensions
+    // Canvas dimensions and position tracking for touch offset correction
     var canvasSize by remember { mutableStateOf(IntSize.Zero) }
+    var canvasOffset by remember { mutableStateOf(Offset.Zero) }
 
     // Convert normalized path points to canvas coordinates
     fun toCanvasOffset(point: LockpickPathPointDto): Offset {
@@ -6510,7 +6513,17 @@ fun LockpickingMinigameOverlay(
     Box(
         modifier = Modifier
             .fillMaxSize()
-            .background(Color.Black.copy(alpha = 0.9f)),
+            .background(Color.Black.copy(alpha = 0.9f))
+            // Consume all pointer events to prevent swipe navigation underneath
+            .pointerInput(Unit) {
+                awaitEachGesture {
+                    awaitFirstDown()
+                    do {
+                        val event = awaitPointerEvent()
+                        event.changes.forEach { it.consume() }
+                    } while (event.changes.any { it.pressed })
+                }
+            },
         contentAlignment = Alignment.Center
     ) {
         Column(
@@ -6555,57 +6568,60 @@ fun LockpickingMinigameOverlay(
                     .background(Color(0xFF1a1a2e), RoundedCornerShape(8.dp))
                     .onSizeChanged { canvasSize = it }
                     .pointerInput(Unit) {
-                        detectDragGestures(
-                            onDragStart = { offset ->
-                                if (!hasFinished && canvasSize.width > 0) {
-                                    // Check if starting near the first point
-                                    val startPoint = toCanvasOffset(pathPoints.first())
-                                    val dist = (offset - startPoint).getDistance()
-                                    if (dist < tolerancePx * 2) {
-                                        isTracing = true
-                                        hasStarted = true
-                                        playerPath = listOf(offset)
-                                        totalDeviation = 0f
-                                        deviationSamples = 0
-                                    }
-                                }
-                            },
-                            onDrag = { change, _ ->
-                                if (isTracing && !hasFinished) {
-                                    change.consume()
-                                    val pos = change.position
-                                    playerPath = playerPath + pos
+                        awaitEachGesture {
+                            // Wait for first touch
+                            val down = awaitFirstDown()
+                            val initialPos = down.position
 
-                                    // Calculate deviation from ideal path
-                                    val (_, deviation) = findClosestPointOnPath(pos)
-                                    totalDeviation += deviation
-                                    deviationSamples++
+                            if (!hasFinished && canvasSize.width > 0) {
+                                // Check if starting near the first point
+                                val startPoint = toCanvasOffset(pathPoints.first())
+                                val dist = (initialPos - startPoint).getDistance()
+                                if (dist < tolerancePx * 2) {
+                                    isTracing = true
+                                    hasStarted = true
+                                    playerPath = listOf(initialPos)
+                                    totalDeviation = 0f
+                                    deviationSamples = 0
 
-                                    // Update running accuracy
-                                    val avgDeviation = if (deviationSamples > 0) totalDeviation / deviationSamples else 0f
-                                    currentAccuracy = (1f - (avgDeviation / tolerancePx).coerceIn(0f, 1f)).coerceIn(0f, 1f)
+                                    // Track drag movement
+                                    do {
+                                        val event = awaitPointerEvent()
+                                        val pos = event.changes.firstOrNull()?.position ?: break
 
-                                    // Check if reached the end
-                                    val endPoint = toCanvasOffset(pathPoints.last())
-                                    val distToEnd = (pos - endPoint).getDistance()
-                                    if (distToEnd < tolerancePx * 2) {
+                                        if (isTracing && !hasFinished) {
+                                            event.changes.forEach { it.consume() }
+                                            playerPath = playerPath + pos
+
+                                            // Calculate deviation from ideal path
+                                            val (_, deviation) = findClosestPointOnPath(pos)
+                                            totalDeviation += deviation
+                                            deviationSamples++
+
+                                            // Update running accuracy
+                                            val avgDeviation = if (deviationSamples > 0) totalDeviation / deviationSamples else 0f
+                                            currentAccuracy = (1f - (avgDeviation / tolerancePx).coerceIn(0f, 1f)).coerceIn(0f, 1f)
+
+                                            // Check if reached the end
+                                            val endPoint = toCanvasOffset(pathPoints.last())
+                                            val distToEnd = (pos - endPoint).getDistance()
+                                            if (distToEnd < tolerancePx * 2) {
+                                                isTracing = false
+                                                hasFinished = true
+                                                onComplete(currentAccuracy)
+                                            }
+                                        }
+                                    } while (event.changes.any { it.pressed })
+
+                                    // Drag ended
+                                    if (isTracing && !hasFinished) {
                                         isTracing = false
-                                        hasFinished = true
-                                        onComplete(currentAccuracy)
-                                    }
-                                }
-                            },
-                            onDragEnd = {
-                                if (isTracing) {
-                                    isTracing = false
-                                    // If didn't reach the end, fail
-                                    if (!hasFinished) {
                                         hasFinished = true
                                         onComplete(currentAccuracy * 0.5f)  // Penalty for not finishing
                                     }
                                 }
                             }
-                        )
+                        }
                     }
             ) {
                 if (canvasSize.width == 0) return@Canvas
@@ -6676,11 +6692,15 @@ fun LockpickingMinigameOverlay(
                 }
             }
 
-            // Accuracy display
-            if (hasStarted) {
+            // Accuracy display - fixed height to prevent layout shift
+            Column(
+                modifier = Modifier.height(50.dp),
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.Center
+            ) {
                 val accuracyPercent = (currentAccuracy * 100).toInt()
                 Text(
-                    text = "Accuracy: $accuracyPercent%",
+                    text = if (hasStarted) "Accuracy: $accuracyPercent%" else " ",
                     color = when {
                         currentAccuracy >= lockInfo.successThreshold -> Color(0xFF4CAF50)
                         currentAccuracy >= lockInfo.successThreshold * 0.7f -> Color(0xFFFFEB3B)

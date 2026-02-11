@@ -59,6 +59,15 @@ data class AbilityCooldownState(
     val lastUsedRound: Int? = null          // Combat round when last used
 )
 
+/**
+ * Simplified feature state with just userId and value.
+ * Used when querying all users who have a specific key.
+ */
+data class FeatureStateWithUser(
+    val userId: String,
+    val value: String
+)
+
 object FeatureStateRepository {
     private val json = Json { ignoreUnknownKeys = true }
 
@@ -110,6 +119,25 @@ object FeatureStateRepository {
                 (FeatureStateTable.ownerType eq ownerType)
             }
             .map { it.toFeatureState() }
+    }
+
+    /**
+     * Find all feature states by featureId (key).
+     * Useful for finding all users who have progress on a specific puzzle.
+     */
+    fun findAllByKey(key: String): List<FeatureStateWithUser> = transaction {
+        FeatureStateTable.selectAll()
+            .where { FeatureStateTable.featureId eq key }
+            .map {
+                FeatureStateWithUser(
+                    userId = it[FeatureStateTable.ownerId],
+                    value = try {
+                        kotlinx.serialization.json.Json.decodeFromString<SimpleState>(it[FeatureStateTable.state]).value
+                    } catch (e: Exception) {
+                        it[FeatureStateTable.state]
+                    }
+                )
+            }
     }
 
     fun update(featureState: FeatureState): Boolean = transaction {
