@@ -106,7 +106,10 @@ object DatabaseConfig {
                 CharmedCreatureTable,
                 UserFoodItemTable,
                 PoolTable,
-                TrapTable
+                TrapTable,
+                FactionTable,
+                FactionRelationTable,
+                PlayerFactionStandingTable
             )
         }
     }

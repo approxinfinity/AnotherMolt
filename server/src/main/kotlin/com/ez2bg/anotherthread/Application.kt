@@ -35,6 +35,7 @@ import com.ez2bg.anotherthread.routes.puzzleRoutes
 import com.ez2bg.anotherthread.routes.poolRoutes
 import com.ez2bg.anotherthread.routes.trapRoutes
 import com.ez2bg.anotherthread.routes.environmentalRoutes
+import com.ez2bg.anotherthread.routes.factionRoutes
 import com.ez2bg.anotherthread.game.EnvironmentalEffectService
 import com.ez2bg.anotherthread.events.LocationEventService
 import com.ez2bg.anotherthread.spell.*
@@ -1633,6 +1634,9 @@ fun Application.module() {
 
         // Environmental effects and prisoner rescue routes
         environmentalRoutes()
+
+        // Faction system routes
+        factionRoutes()
 
         // Feature Category routes
         route("/feature-categories") {

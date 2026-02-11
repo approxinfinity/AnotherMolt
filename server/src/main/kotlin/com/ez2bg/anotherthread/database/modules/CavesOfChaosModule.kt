@@ -41,6 +41,7 @@ object CavesOfChaosModule : AdventureModuleSeed() {
         defineLocations()
         defineChests()
         defineTraps()
+        defineFactions()
     }
 
     // ==================== ABILITIES ====================
@@ -2774,5 +2775,208 @@ object CavesOfChaosModule : AdventureModuleSeed() {
                 message = "Dark energy crackles as you disturb the crypt. You feel cursed!"
             )
         }
+    }
+
+    // ==================== FACTIONS ====================
+    private fun defineFactions() {
+        // === KOBOLD TRIBE ===
+        // The weakest tribe, kobolds are cowardly but cunning
+        faction("kobold") {
+            name = "Kobold Tribe"
+            description = "A tribe of small, cowardly reptilian creatures who rely on traps and numbers. They fear the stronger tribes and worship dragons."
+            homeLocationSuffix = "cave-a-chieftain"
+            hostile()
+            leaderCreatureSuffix = "kobold-chieftain"
+            territory(
+                "cave-a-entrance", "cave-a-guard", "cave-a-common",
+                "cave-a-chieftain", "cave-a-storage"
+            )
+            enemies("gnoll")  // Gnolls prey on kobolds
+            goals("Survive", "Find dragon patron", "Avoid stronger tribes")
+        }
+
+        // === GOBLIN TRIBE ===
+        // Allied with the ogre, rivals of the hobgoblins
+        faction("goblin") {
+            name = "Goblin Tribe"
+            description = "A tribe of cruel, cunning goblins who use hit-and-run tactics. They've hired an ogre mercenary and resent the hobgoblins' authority."
+            homeLocationSuffix = "cave-d-chief"
+            hostile()
+            leaderCreatureSuffix = "goblin-king"
+            territory(
+                "cave-d-entrance", "cave-d-guard-1", "cave-d-guard-2",
+                "cave-d-common", "cave-d-chief", "cave-d-treasure",
+                "cave-e-entrance", "cave-e-ogre"  // Ogre is their ally
+            )
+            allies("ogre")  // Ogre is their hired muscle
+            enemies("hobgoblin")  // Long-standing rivalry
+            goals("Raid caravans", "Overthrow hobgoblins", "Acquire treasure")
+        }
+
+        // === OGRE (Ally of Goblins) ===
+        faction("ogre") {
+            name = "Ogre Mercenary"
+            description = "A lone ogre who works as a mercenary for the goblins and hobgoblins. He's motivated purely by gold and food."
+            homeLocationSuffix = "cave-e-ogre"
+            hostilityLevel = 60  // Can be bribed
+            canNegotiate = true
+            territory("cave-e-entrance", "cave-e-ogre")
+            allies("goblin", "hobgoblin")
+            goals("Get paid", "Eat well", "Avoid danger")
+        }
+
+        // === ORC TRIBE A (Larger tribe) ===
+        faction("orc") {
+            name = "Orc Tribe of the Bloody Fang"
+            description = "A large orc tribe led by a brutal chief. They are rivals with the other orc tribe in the ravine and suspicious of all outsiders."
+            homeLocationSuffix = "cave-b-chieftain"
+            hostile()
+            leaderCreatureSuffix = "orc-chieftain"
+            territory(
+                "cave-b-entrance", "cave-b-guard", "cave-b-storage",
+                "cave-b-common", "cave-b-chieftain"
+            )
+            enemies("orc-rival")  // The other orc tribe
+            goals("Raid settlements", "Destroy rival tribe", "Prove strength")
+        }
+
+        // === ORC TRIBE B (Smaller rival tribe) ===
+        faction("orc-rival") {
+            name = "Orc Tribe of the Broken Skull"
+            description = "A smaller orc tribe that constantly feuds with the larger Bloody Fang tribe. They are more desperate and willing to take risks."
+            homeLocationSuffix = "cave-c-chieftain"
+            hostile()
+            leaderCreatureSuffix = "orc-chieftain-2"
+            territory(
+                "cave-c-entrance", "cave-c-guard", "cave-c-storage",
+                "cave-c-common", "cave-c-chieftain"
+            )
+            enemies("orc")  // The other orc tribe
+            goals("Survive", "Destroy rival tribe", "Gain power")
+        }
+
+        // === HOBGOBLIN LEGION ===
+        // The most organized, they dominate many of the other tribes
+        faction("hobgoblin") {
+            name = "Hobgoblin Legion"
+            description = "A disciplined military force of hobgoblins who consider themselves superior to the other tribes. They maintain order through fear and strength."
+            homeLocationSuffix = "cave-f-captain"
+            hostile()
+            leaderCreatureSuffix = "hobgoblin-captain"
+            territory(
+                "cave-f-entrance", "cave-f-guard", "cave-f-barracks",
+                "cave-f-common", "cave-f-captain", "cave-f-torture",
+                "cave-f-armory", "cave-f-prison"
+            )
+            allies("ogre")  // Also employ the ogre
+            enemies("goblin")  // View goblins as inferior
+            goals("Maintain order", "Expand territory", "Crush goblins")
+        }
+
+        // === BUGBEAR GANG ===
+        // Cunning ambushers who prey on everyone
+        faction("bugbear") {
+            name = "Bugbear Ambushers"
+            description = "A gang of stealthy bugbears who live by ambushing travelers and raiding the other tribes' camps when they're weak."
+            homeLocationSuffix = "cave-h-chief"
+            hostile()
+            leaderCreatureSuffix = "bugbear-chief"
+            territory(
+                "cave-h-entrance", "cave-h-guard", "cave-h-common", "cave-h-chief"
+            )
+            // Bugbears don't have real allies - they exploit everyone
+            goals("Ambush prey", "Steal from other tribes", "Avoid open combat")
+        }
+
+        // === GNOLL PACK ===
+        // Savage hyena-folk who worship demons
+        faction("gnoll") {
+            name = "Gnoll Pack"
+            description = "A savage pack of gnolls driven by hunger and their demonic bloodlust. They are feared by the smaller tribes."
+            homeLocationSuffix = "cave-j-chief"
+            hostile()
+            noNegotiation()  // Gnolls are too savage to negotiate
+            leaderCreatureSuffix = "gnoll-chieftain"
+            territory(
+                "cave-j-entrance", "cave-j-guard", "cave-j-common", "cave-j-chief"
+            )
+            enemies("kobold")  // Kobolds are easy prey
+            goals("Feed the pack", "Spread chaos", "Serve demon lords")
+        }
+
+        // === MINOTAUR ===
+        // Solitary beast in the labyrinth
+        faction("minotaur") {
+            name = "Minotaur of the Labyrinth"
+            description = "A solitary minotaur who guards its labyrinthine lair. It has no allies and attacks any who enter its domain."
+            homeLocationSuffix = "cave-i-minotaur"
+            hostile()
+            noNegotiation()  // The minotaur is a beast
+            leaderCreatureSuffix = "minotaur"
+            territory(
+                "cave-i-entrance", "cave-i-stirge", "cave-i-beetles-1",
+                "cave-i-beetles-2", "cave-i-minotaur"
+            )
+            goals("Guard territory", "Kill intruders")
+        }
+
+        // === OWLBEAR ===
+        // Territorial beast in the shunned cavern
+        faction("owlbear") {
+            name = "Shunned Cavern Predator"
+            description = "A territorial owlbear that has claimed the shunned cavern as its lair. Even the other tribes avoid this area."
+            homeLocationSuffix = "cave-g-owlbear"
+            hostile()
+            noNegotiation()  // Beast
+            leaderCreatureSuffix = "owlbear"
+            territory(
+                "cave-g-entrance", "cave-g-gallery", "cave-g-owlbear"
+            )
+            goals("Hunt prey", "Defend territory")
+        }
+
+        // === CULT OF EVIL CHAOS ===
+        // The true power behind the caves
+        faction("evil-temple") {
+            name = "Cult of Evil Chaos"
+            description = "A sinister cult that manipulates the humanoid tribes from the shadows. Led by a powerful evil priest, they seek to spread chaos and corruption."
+            homeLocationSuffix = "cave-k-priest-quarters"
+            hostile()
+            leaderCreatureSuffix = "evil-priest"
+            territory(
+                "cave-k-entrance", "cave-k-antechamber", "cave-k-chapel",
+                "cave-k-priest-quarters", "cave-k-temple", "cave-k-cell",
+                "cave-k-zombie-passage", "cave-k-boulder-passage", "cave-k-crypt"
+            )
+            // The cult secretly manipulates everyone
+            goals("Spread chaos", "Corrupt the tribes", "Summon dark powers")
+        }
+
+        // === FACTION RELATIONSHIPS ===
+        // Goblins vs Hobgoblins (mutual hatred)
+        factionRelation("goblin", "hobgoblin", -75)
+        factionRelation("hobgoblin", "goblin", -75)
+
+        // Orc tribes hate each other
+        factionRelation("orc", "orc-rival", -100)
+        factionRelation("orc-rival", "orc", -100)
+
+        // Gnolls prey on kobolds
+        factionRelation("gnoll", "kobold", -50)
+        factionRelation("kobold", "gnoll", -80)  // Kobolds fear gnolls more
+
+        // Ogre works with goblins and hobgoblins
+        factionRelation("ogre", "goblin", 50)
+        factionRelation("goblin", "ogre", 40)
+        factionRelation("ogre", "hobgoblin", 30)
+        factionRelation("hobgoblin", "ogre", 20)
+
+        // Evil temple manipulates everyone (they don't know it)
+        factionRelation("evil-temple", "hobgoblin", 25)  // Temple influences hobgoblins
+        factionRelation("evil-temple", "gnoll", 25)  // Temple uses gnolls
+
+        // Everyone fears the bugbears' ambushes
+        factionRelation("kobold", "bugbear", -60)
+        factionRelation("goblin", "bugbear", -40)
     }
 }

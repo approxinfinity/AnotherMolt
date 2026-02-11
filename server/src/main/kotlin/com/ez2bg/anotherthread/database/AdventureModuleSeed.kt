@@ -92,6 +92,8 @@ abstract class AdventureModuleSeed {
     private val chests = mutableListOf<ChestBuilder>()
     private val pools = mutableListOf<PoolBuilder>()
     private val traps = mutableListOf<TrapBuilder>()
+    private val factions = mutableListOf<FactionBuilder>()
+    private val factionRelations = mutableListOf<FactionRelationBuilder>()
 
     // ============== DSL Entry Point ==============
 
@@ -128,6 +130,9 @@ abstract class AdventureModuleSeed {
 
     /** Generate trap ID */
     protected fun trapId(suffix: String): String = "trap-$moduleId-$suffix"
+
+    /** Generate faction ID */
+    protected fun factionId(suffix: String): String = "faction-$moduleId-$suffix"
 
     // ============== DSL Functions ==============
 
@@ -211,6 +216,27 @@ abstract class AdventureModuleSeed {
         return builder
     }
 
+    /**
+     * Define a faction for this module.
+     */
+    protected fun faction(suffix: String, block: FactionBuilder.() -> Unit): FactionBuilder {
+        val builder = FactionBuilder(factionId(suffix), this)
+        builder.block()
+        factions.add(builder)
+        return builder
+    }
+
+    /**
+     * Define a relationship between two factions.
+     */
+    protected fun factionRelation(factionSuffix: String, targetFactionSuffix: String, level: Int) {
+        factionRelations.add(FactionRelationBuilder(
+            factionId = factionId(factionSuffix),
+            targetFactionId = factionId(targetFactionSuffix),
+            relationshipLevel = level
+        ))
+    }
+
     // ============== Seeding ==============
 
     /**
@@ -241,6 +267,8 @@ abstract class AdventureModuleSeed {
         chests.clear()
         pools.clear()
         traps.clear()
+        factions.clear()
+        factionRelations.clear()
 
         defineContent()
 
@@ -255,8 +283,10 @@ abstract class AdventureModuleSeed {
         seedChests()
         seedPools()
         seedTraps()
+        seedFactions()
+        seedFactionRelations()
 
-        log.info("Seeded adventure module: $moduleName (${abilities.size} abilities, ${items.size} items, ${creatures.size} creatures, ${locations.size} locations, ${chests.size} chests, ${pools.size} pools, ${traps.size} traps)")
+        log.info("Seeded adventure module: $moduleName (${abilities.size} abilities, ${items.size} items, ${creatures.size} creatures, ${locations.size} locations, ${chests.size} chests, ${pools.size} pools, ${traps.size} traps, ${factions.size} factions)")
     }
 
     private fun seedAbilities() {
@@ -319,6 +349,22 @@ abstract class AdventureModuleSeed {
         traps.forEach { builder ->
             if (TrapRepository.findById(builder.id) == null) {
                 TrapRepository.create(builder.build())
+            }
+        }
+    }
+
+    private fun seedFactions() {
+        factions.forEach { builder ->
+            if (FactionRepository.findById(builder.id) == null) {
+                FactionRepository.create(builder.build())
+            }
+        }
+    }
+
+    private fun seedFactionRelations() {
+        factionRelations.forEach { builder ->
+            if (FactionRelationRepository.findRelation(builder.factionId, builder.targetFactionId) == null) {
+                FactionRelationRepository.create(builder.build())
             }
         }
     }
@@ -946,6 +992,109 @@ abstract class AdventureModuleSeed {
             isHidden = isHidden,
             isArmed = isArmed,
             resetsAfterRounds = resetsAfterRounds
+        )
+    }
+
+    /**
+     * Builder for factions (creature allegiance groups).
+     */
+    class FactionBuilder(val id: String, private val module: AdventureModuleSeed) {
+        var name: String = ""
+        var description: String = ""
+        var homeLocationSuffix: String? = null
+        var hostilityLevel: Int = 50  // 0=peaceful, 50=neutral, 100=hostile
+        var canNegotiate: Boolean = true
+        var leaderCreatureSuffix: String? = null
+
+        // Faction data
+        private val territoryLocationSuffixes = mutableListOf<String>()
+        private val enemyFactionSuffixes = mutableListOf<String>()
+        private val allyFactionSuffixes = mutableListOf<String>()
+        private val goals = mutableListOf<String>()
+        private val tradeGoodSuffixes = mutableListOf<String>()
+        private val tributeItemSuffixes = mutableListOf<String>()
+
+        /** Set this faction as hostile (80+ hostility) */
+        fun hostile() {
+            hostilityLevel = 80
+        }
+
+        /** Set this faction as peaceful (20- hostility) */
+        fun peaceful() {
+            hostilityLevel = 20
+        }
+
+        /** Set this faction as neutral (50 hostility) */
+        fun neutral() {
+            hostilityLevel = 50
+        }
+
+        /** Mark as unable to negotiate */
+        fun noNegotiation() {
+            canNegotiate = false
+        }
+
+        /** Add territory locations by suffix */
+        fun territory(vararg suffixes: String) {
+            territoryLocationSuffixes.addAll(suffixes)
+        }
+
+        /** Add enemy factions by suffix */
+        fun enemies(vararg suffixes: String) {
+            enemyFactionSuffixes.addAll(suffixes)
+        }
+
+        /** Add allied factions by suffix */
+        fun allies(vararg suffixes: String) {
+            allyFactionSuffixes.addAll(suffixes)
+        }
+
+        /** Add faction goals */
+        fun goals(vararg goalStrings: String) {
+            goals.addAll(goalStrings)
+        }
+
+        /** Add trade goods by item suffix */
+        fun trades(vararg itemSuffixes: String) {
+            tradeGoodSuffixes.addAll(itemSuffixes)
+        }
+
+        /** Add tribute items by item suffix */
+        fun acceptsTribute(vararg itemSuffixes: String) {
+            tributeItemSuffixes.addAll(itemSuffixes)
+        }
+
+        fun build(): Faction = Faction(
+            id = id,
+            name = name,
+            description = description,
+            homeLocationId = homeLocationSuffix?.let { module.locationId(it) },
+            hostilityLevel = hostilityLevel,
+            canNegotiate = canNegotiate,
+            leaderCreatureId = leaderCreatureSuffix?.let { module.creatureId(it) },
+            data = FactionData(
+                territoryLocationIds = territoryLocationSuffixes.map { module.locationId(it) },
+                enemyFactionIds = enemyFactionSuffixes.map { module.factionId(it) },
+                allyFactionIds = allyFactionSuffixes.map { module.factionId(it) },
+                goals = goals,
+                tradeGoods = tradeGoodSuffixes.map { module.itemId(it) },
+                tributeItems = tributeItemSuffixes.map { module.itemId(it) }
+            )
+        )
+    }
+
+    /**
+     * Builder for faction relationships.
+     */
+    class FactionRelationBuilder(
+        val factionId: String,
+        val targetFactionId: String,
+        val relationshipLevel: Int
+    ) {
+        fun build(): FactionRelation = FactionRelation(
+            factionId = factionId,
+            targetFactionId = targetFactionId,
+            relationshipLevel = relationshipLevel
         )
     }
 }
