@@ -1300,23 +1300,31 @@ object ApiClient {
 
     private val baseUrl = AppConfig.api.baseUrl
 
+    init {
+        println("[ApiClient] Initialized with baseUrl: $baseUrl")
+    }
+
     /**
      * Wrapper that tracks connection status for API calls.
      */
-    private inline fun <T> apiCall(block: () -> T): Result<T> {
+    private inline fun <T> apiCall(name: String = "unknown", block: () -> T): Result<T> {
+        println("[ApiClient] $name: Starting request to $baseUrl (userId=$currentUserId)")
         return runCatching {
             block()
         }.also { result ->
             result.onSuccess {
+                println("[ApiClient] $name: SUCCESS")
                 ConnectionStateHolder.recordSuccess()
             }.onFailure { error ->
+                println("[ApiClient] $name: FAILED - ${error::class.simpleName}: ${error.message}")
                 ConnectionStateHolder.recordFailure(error)
             }
         }
     }
 
-    suspend fun getLocations(cacheBuster: Long? = null): Result<List<LocationDto>> = apiCall {
+    suspend fun getLocations(cacheBuster: Long? = null): Result<List<LocationDto>> = apiCall("getLocations") {
         val url = if (cacheBuster != null) "$baseUrl/locations?_=$cacheBuster" else "$baseUrl/locations"
+        println("[ApiClient] getLocations: Fetching from $url")
         client.get(url).body()
     }
 
@@ -1455,7 +1463,8 @@ object ApiClient {
         }.body()
     }
 
-    suspend fun login(name: String, password: String): Result<AuthResponse> = apiCall {
+    suspend fun login(name: String, password: String): Result<AuthResponse> = apiCall("login") {
+        println("[ApiClient] login: Attempting login for user '$name' to $baseUrl/auth/login")
         client.post("$baseUrl/auth/login") {
             contentType(ContentType.Application.Json)
             setBody(LoginRequest(name, password))
@@ -1468,7 +1477,8 @@ object ApiClient {
      * On web, the cookie is automatically sent and refreshed.
      * On native, the Authorization header is sent and response contains new expiry.
      */
-    suspend fun validateSession(): Result<AuthResponse> = apiCall {
+    suspend fun validateSession(): Result<AuthResponse> = apiCall("validateSession") {
+        println("[ApiClient] validateSession: Checking session at $baseUrl/auth/me")
         client.get("$baseUrl/auth/me").body()
     }
 
@@ -1488,7 +1498,8 @@ object ApiClient {
         Unit
     }
 
-    suspend fun getUser(id: String): Result<UserDto?> = apiCall {
+    suspend fun getUser(id: String): Result<UserDto?> = apiCall("getUser") {
+        println("[ApiClient] getUser: Fetching user $id")
         val user: UserDto? = client.get("$baseUrl/users/$id").body()
         println("[ApiClient] getUser: userId=$id, serverLocationId=${user?.currentLocationId}")
         user
