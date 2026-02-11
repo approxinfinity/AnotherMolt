@@ -111,11 +111,22 @@ object AdventureStateHolder {
             ApiClient.getLocations().onSuccess { locations ->
                 _allLocations.value = locations
 
-                // Set initial location
+                // Set initial location - fetch with user context for discovered items
                 if (initialLocationId != null) {
-                    val location = locations.find { it.id == initialLocationId }
-                    if (location != null) {
-                        setCurrentLocation(location)
+                    ApiClient.getLocation(initialLocationId).onSuccess { freshLocation ->
+                        if (freshLocation != null) {
+                            setCurrentLocation(freshLocation)
+                            // Update cache with user-specific data
+                            _allLocations.value = _allLocations.value.map {
+                                if (it.id == initialLocationId) freshLocation else it
+                            }
+                        }
+                    }.onFailure {
+                        // Fallback to cached location if fetch fails
+                        val location = locations.find { it.id == initialLocationId }
+                        if (location != null) {
+                            setCurrentLocation(location)
+                        }
                     }
                 }
             }
@@ -158,7 +169,18 @@ object AdventureStateHolder {
             currentUserId?.let { userId ->
                 scope.launch {
                     ApiClient.updateUserLocation(userId, locationId).onSuccess {
-                        // Server accepted the move - emit navigation event
+                        // Server accepted the move - fetch location with user context for discovered items
+                        ApiClient.getLocation(locationId).onSuccess { freshLocation ->
+                            if (freshLocation != null) {
+                                setCurrentLocation(freshLocation)
+                                // Update cache with user-specific data
+                                _allLocations.value = _allLocations.value.map {
+                                    if (it.id == locationId) freshLocation else it
+                                }
+                            }
+                        }
+
+                        // Emit navigation event
                         _navigationEvents.emit(NavigationEvent.MovedToLocation(locationId, location.name))
 
                         // Add to event log with coordinates for debugging

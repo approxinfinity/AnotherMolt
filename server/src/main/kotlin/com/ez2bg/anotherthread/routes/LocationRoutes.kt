@@ -84,8 +84,19 @@ data class LocationWithDiscoveredItems(
  */
 fun Route.locationRoutes() {
     route("/locations") {
+        // Get all locations - includes non-hidden ground items combined with static itemIds
         get {
-            call.respond(LocationRepository.findAll())
+            val locations = LocationRepository.findAll()
+            val locationsWithGroundItems = locations.map { location ->
+                // Get non-hidden ground items for this location
+                val groundItems = LocationItemRepository.findByLocation(location.id)
+                    .filter { !it.isHidden() }
+                    .map { it.itemId }
+                // Combine static itemIds (shop inventory) with visible ground items
+                val allItemIds = (location.itemIds + groundItems).distinct()
+                location.copy(itemIds = allItemIds)
+            }
+            call.respond(locationsWithGroundItems)
         }
 
         // Get location by ID with puzzle-revealed secret passages and discovered items
@@ -99,9 +110,13 @@ fun Route.locationRoutes() {
                 return@get
             }
 
-            // If no user, return location as-is (with empty discovered items)
+            // If no user, return location with non-hidden ground items (no discovered items tracking)
             if (userId == null) {
-                call.respond(LocationWithDiscoveredItems.from(location))
+                val allLocationItems = LocationItemRepository.findByLocation(id)
+                val visibleItems = allLocationItems.filter { !it.isHidden() }
+                val allVisibleItemIds = (location.itemIds + visibleItems.map { it.itemId }).distinct()
+                val locationWithItems = location.copy(itemIds = allVisibleItemIds)
+                call.respond(LocationWithDiscoveredItems.from(locationWithItems))
                 return@get
             }
 
