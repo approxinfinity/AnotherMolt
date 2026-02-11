@@ -503,6 +503,34 @@ data class LockpickResultDto(
     val lockOpened: Boolean = false
 )
 
+// ===================== FACTION/DIPLOMACY DTOs =====================
+
+@Serializable
+data class HostilityResultDto(
+    val isHostile: Boolean,
+    val factionId: String?,
+    val factionName: String?,
+    val playerStanding: Int,
+    val standingLevel: String,
+    val canNegotiate: Boolean
+)
+
+@Serializable
+data class DiplomacyResultDto(
+    val success: Boolean,
+    val message: String,
+    val combatAvoided: Boolean = false,
+    val standingChange: Int = 0,
+    val goldSpent: Int = 0
+)
+
+@Serializable
+data class AlertResultDto(
+    val success: Boolean,
+    val message: String,
+    val reinforcements: List<String> = emptyList()
+)
+
 @Serializable
 data class IconMappingDto(
     val abilityId: String,
@@ -1695,6 +1723,47 @@ object ApiClient {
      */
     suspend fun releaseCharmedCreature(userId: String): Result<CharmResultDto> = apiCall {
         client.post("$baseUrl/users/$userId/release-charm").body()
+    }
+
+    // ===================== FACTION/DIPLOMACY API =====================
+
+    /**
+     * Check if a creature is hostile to the player based on faction standing.
+     */
+    suspend fun checkHostility(userId: String, creatureId: String): Result<HostilityResultDto> = apiCall {
+        client.get("$baseUrl/factions/hostility/$creatureId") {
+            header("X-User-Id", userId)
+        }.body()
+    }
+
+    /**
+     * Check if diplomacy is possible with a creature.
+     * Returns whether bribe/parley options should be shown.
+     */
+    suspend fun checkDiplomacy(userId: String, creatureId: String): Result<DiplomacyResultDto> = apiCall {
+        client.get("$baseUrl/factions/diplomacy/$creatureId/check") {
+            header("X-User-Id", userId)
+        }.body()
+    }
+
+    /**
+     * Attempt to bribe a creature to avoid combat.
+     * Costs gold based on faction hostility.
+     */
+    suspend fun attemptBribe(userId: String, creatureId: String): Result<DiplomacyResultDto> = apiCall {
+        client.post("$baseUrl/factions/diplomacy/$creatureId/bribe") {
+            header("X-User-Id", userId)
+        }.body()
+    }
+
+    /**
+     * Attempt to parley with a creature to avoid combat.
+     * Uses WIS-based skill check.
+     */
+    suspend fun attemptParley(userId: String, creatureId: String): Result<DiplomacyResultDto> = apiCall {
+        client.post("$baseUrl/factions/diplomacy/$creatureId/parley") {
+            header("X-User-Id", userId)
+        }.body()
     }
 
     suspend fun updateUserClass(id: String, classId: String?): Result<UserDto> = apiCall {

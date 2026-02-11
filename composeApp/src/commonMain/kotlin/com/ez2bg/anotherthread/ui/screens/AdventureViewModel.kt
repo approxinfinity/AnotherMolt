@@ -20,6 +20,8 @@ import com.ez2bg.anotherthread.api.FishingInfoDto
 import com.ez2bg.anotherthread.api.FishingMinigameStartDto
 import com.ez2bg.anotherthread.api.FishBehaviorDto
 import com.ez2bg.anotherthread.api.LockpickInfoDto
+import com.ez2bg.anotherthread.api.DiplomacyResultDto
+import com.ez2bg.anotherthread.api.HostilityResultDto
 import com.ez2bg.anotherthread.data.AdventureRepository
 import com.ez2bg.anotherthread.state.AdventureStateHolder
 import com.ez2bg.anotherthread.state.CombatStateHolder
@@ -118,7 +120,11 @@ data class AdventureLocalState(
     // Lockpicking state
     val showLockpickingMinigame: Boolean = false,
     val lockpickingInfo: LockpickInfoDto? = null,
-    val lockpickingLocationId: String? = null
+    val lockpickingLocationId: String? = null,
+    // Diplomacy state
+    val diplomacyResult: DiplomacyResultDto? = null,
+    val isDiplomacyLoading: Boolean = false,
+    val hostilityResult: HostilityResultDto? = null
 )
 
 /**
@@ -215,7 +221,11 @@ data class AdventureUiState(
     // Lockpicking state
     val showLockpickingMinigame: Boolean = false,
     val lockpickingInfo: LockpickInfoDto? = null,
-    val lockpickingLocationId: String? = null  // The location we're trying to enter
+    val lockpickingLocationId: String? = null,  // The location we're trying to enter
+    // Diplomacy state
+    val diplomacyResult: DiplomacyResultDto? = null,  // Result of diplomacy check
+    val isDiplomacyLoading: Boolean = false,
+    val hostilityResult: HostilityResultDto? = null  // Hostility check for selected creature
 ) {
     // Derived properties
     val currentLocation: LocationDto?
@@ -393,7 +403,10 @@ class AdventureViewModel {
             fishingMinigameData = local.fishingMinigameData,
             showLockpickingMinigame = local.showLockpickingMinigame,
             lockpickingInfo = local.lockpickingInfo,
-            lockpickingLocationId = local.lockpickingLocationId
+            lockpickingLocationId = local.lockpickingLocationId,
+            diplomacyResult = local.diplomacyResult,
+            isDiplomacyLoading = local.isDiplomacyLoading,
+            hostilityResult = local.hostilityResult
         )
     }.stateIn(
         scope = scope,
@@ -1281,16 +1294,22 @@ class AdventureViewModel {
             it.copy(
                 selectedCreature = creature,
                 selectedItem = null,
-                showCreatureInteractionModal = true
+                showCreatureInteractionModal = true,
+                diplomacyResult = null,
+                isDiplomacyLoading = false
             )
         }
+        // Check diplomacy options for this creature
+        checkDiplomacy(creature.id)
     }
 
     fun dismissCreatureInteractionModal() {
         _localState.update {
             it.copy(
                 showCreatureInteractionModal = false,
-                selectedCreature = null
+                selectedCreature = null,
+                diplomacyResult = null,
+                isDiplomacyLoading = false
             )
         }
     }
@@ -1315,6 +1334,80 @@ class AdventureViewModel {
 
     fun hideDescriptionPopup() {
         _localState.update { it.copy(showDescriptionPopup = false) }
+    }
+
+    // =========================================================================
+    // DIPLOMACY ACTIONS
+    // =========================================================================
+
+    /**
+     * Check if diplomacy is possible with the selected creature.
+     * Called when a creature is selected to determine if bribe/parley options should show.
+     */
+    fun checkDiplomacy(creatureId: String) {
+        val userId = UserStateHolder.userId ?: return
+        scope.launch {
+            _localState.update { it.copy(isDiplomacyLoading = true, diplomacyResult = null) }
+            ApiClient.checkDiplomacy(userId, creatureId).onSuccess { result ->
+                _localState.update { it.copy(diplomacyResult = result, isDiplomacyLoading = false) }
+            }.onFailure {
+                _localState.update { it.copy(isDiplomacyLoading = false) }
+                logError("Diplomacy check failed: ${it.message}")
+            }
+        }
+    }
+
+    /**
+     * Attempt to bribe a creature to avoid combat.
+     * On success, combat is avoided and the creature won't be aggressive.
+     */
+    fun attemptBribe(creatureId: String) {
+        val userId = UserStateHolder.userId ?: return
+        scope.launch {
+            _localState.update { it.copy(isDiplomacyLoading = true) }
+            ApiClient.attemptBribe(userId, creatureId).onSuccess { result ->
+                _localState.update { it.copy(diplomacyResult = result, isDiplomacyLoading = false) }
+                showSnackbar(result.message)
+                if (result.combatAvoided) {
+                    // Close the creature modal since combat was avoided
+                    dismissCreatureInteractionModal()
+                    // Refresh user gold
+                    UserStateHolder.refreshUser()
+                }
+            }.onFailure {
+                _localState.update { it.copy(isDiplomacyLoading = false) }
+                logError("Bribe failed: ${it.message}")
+            }
+        }
+    }
+
+    /**
+     * Attempt to parley (talk) with a creature to avoid combat.
+     * Uses WIS-based skill check.
+     */
+    fun attemptParley(creatureId: String) {
+        val userId = UserStateHolder.userId ?: return
+        scope.launch {
+            _localState.update { it.copy(isDiplomacyLoading = true) }
+            ApiClient.attemptParley(userId, creatureId).onSuccess { result ->
+                _localState.update { it.copy(diplomacyResult = result, isDiplomacyLoading = false) }
+                showSnackbar(result.message)
+                if (result.combatAvoided) {
+                    // Close the creature modal since combat was avoided
+                    dismissCreatureInteractionModal()
+                }
+            }.onFailure {
+                _localState.update { it.copy(isDiplomacyLoading = false) }
+                logError("Parley failed: ${it.message}")
+            }
+        }
+    }
+
+    /**
+     * Clear diplomacy state when creature selection changes or modal closes.
+     */
+    private fun clearDiplomacyState() {
+        _localState.update { it.copy(diplomacyResult = null, isDiplomacyLoading = false, hostilityResult = null) }
     }
 
     // =========================================================================

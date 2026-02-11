@@ -47,6 +47,8 @@ import androidx.compose.material.icons.filled.SouthEast
 import androidx.compose.material.icons.filled.SouthWest
 import androidx.compose.material.icons.automirrored.filled.DirectionsWalk
 import androidx.compose.material.icons.automirrored.filled.KeyboardReturn
+import androidx.compose.material.icons.filled.Payments
+import androidx.compose.material.icons.filled.Forum
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -102,6 +104,7 @@ import com.ez2bg.anotherthread.api.FishingInfoDto
 import com.ez2bg.anotherthread.api.LockpickInfoDto
 import com.ez2bg.anotherthread.api.LockpickPathPointDto
 import com.ez2bg.anotherthread.api.FishingMinigameStartDto
+import com.ez2bg.anotherthread.api.DiplomacyResultDto
 import com.ez2bg.anotherthread.ui.CreatureStateIcon
 import com.ez2bg.anotherthread.ui.SwordIcon
 import com.ez2bg.anotherthread.ui.getBlindItemDescription
@@ -1048,11 +1051,16 @@ fun AdventureScreen(
                     cooldowns = cooldowns,
                     currentMana = playerCombatant?.currentMana ?: displayUser?.currentMana ?: 0,
                     currentStamina = playerCombatant?.currentStamina ?: displayUser?.currentStamina ?: 0,
+                    playerGold = displayUser?.gold ?: 0,
+                    diplomacyResult = uiState.diplomacyResult,
+                    isDiplomacyLoading = uiState.isDiplomacyLoading,
                     onBasicAttack = { viewModel.initiateBasicAttack(selectedCreature.id) },
                     onAbilityClick = { ability -> viewModel.useAbilityOnCreature(ability, selectedCreature) },
                     onTrain = if (selectedCreature.isTrainer) {
                         { viewModel.openTrainerModal(selectedCreature) }
                     } else null,
+                    onBribe = { viewModel.attemptBribe(selectedCreature.id) },
+                    onParley = { viewModel.attemptParley(selectedCreature.id) },
                     onLook = {
                         // Show description popup
                         viewModel.showDescriptionPopup()
@@ -3243,9 +3251,14 @@ private fun CreatureInteractionModal(
     cooldowns: Map<String, Int>,
     currentMana: Int,
     currentStamina: Int,
+    playerGold: Int = 0,
+    diplomacyResult: DiplomacyResultDto? = null,
+    isDiplomacyLoading: Boolean = false,
     onBasicAttack: () -> Unit,
     onAbilityClick: (AbilityDto) -> Unit,
     onTrain: (() -> Unit)?,  // Only for trainers
+    onBribe: () -> Unit = {},
+    onParley: () -> Unit = {},
     onLook: () -> Unit,
     onDismiss: () -> Unit
 ) {
@@ -3347,6 +3360,57 @@ private fun CreatureInteractionModal(
                             }
                         )
                     }
+                }
+
+                // Diplomacy section - show Bribe/Parley for faction creatures
+                if (diplomacyResult != null && diplomacyResult.success) {
+                    HorizontalDivider(
+                        modifier = Modifier.padding(vertical = 4.dp),
+                        color = Color.White.copy(alpha = 0.2f)
+                    )
+
+                    Text(
+                        text = "Diplomacy",
+                        style = MaterialTheme.typography.labelMedium,
+                        color = Color.White.copy(alpha = 0.6f)
+                    )
+
+                    Row(
+                        horizontalArrangement = Arrangement.spacedBy(24.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        // Bribe - costs gold
+                        ActionButton(
+                            icon = Icons.Filled.Payments,
+                            label = "Bribe",
+                            color = Color(0xFFFFD700),  // Gold color
+                            enabled = !isDiplomacyLoading,
+                            onClick = onBribe
+                        )
+
+                        // Parley - skill check
+                        ActionButton(
+                            icon = Icons.Filled.Forum,
+                            label = "Parley",
+                            color = Color(0xFF9C27B0),  // Purple for wisdom
+                            enabled = !isDiplomacyLoading,
+                            onClick = onParley
+                        )
+                    }
+
+                    // Show hint about diplomacy
+                    Text(
+                        text = "Avoid combat through negotiation",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = Color.White.copy(alpha = 0.5f),
+                        textAlign = TextAlign.Center
+                    )
+                } else if (isDiplomacyLoading) {
+                    CircularProgressIndicator(
+                        modifier = Modifier.size(24.dp),
+                        color = Color.White.copy(alpha = 0.6f),
+                        strokeWidth = 2.dp
+                    )
                 }
 
                 // Combat abilities section
@@ -3480,11 +3544,15 @@ private fun ActionButton(
     icon: ImageVector,
     label: String,
     color: Color,
+    enabled: Boolean = true,
     onClick: () -> Unit
 ) {
+    val alpha = if (enabled) 1f else 0.4f
     Column(
         horizontalAlignment = Alignment.CenterHorizontally,
-        modifier = Modifier.clickable(onClick = onClick)
+        modifier = Modifier
+            .graphicsLayer { this.alpha = alpha }
+            .clickable(enabled = enabled, onClick = onClick)
     ) {
         Box(
             modifier = Modifier
