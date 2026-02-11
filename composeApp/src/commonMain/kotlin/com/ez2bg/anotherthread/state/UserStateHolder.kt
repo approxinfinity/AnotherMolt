@@ -311,7 +311,16 @@ object UserStateHolder {
     fun updateLocationLocally(locationId: String) {
         val current = _currentUser.value ?: return
         println("[UserStateHolder] updateLocationLocally: ${current.currentLocationId} -> $locationId")
-        _currentUser.value = current.copy(currentLocationId = locationId)
+        // Also update visitedLocationIds for minimap fog-of-war
+        val updatedVisitedIds = if (locationId !in current.visitedLocationIds) {
+            current.visitedLocationIds + locationId
+        } else {
+            current.visitedLocationIds
+        }
+        _currentUser.value = current.copy(
+            currentLocationId = locationId,
+            visitedLocationIds = updatedVisitedIds
+        )
         AuthStorage.saveUser(_currentUser.value!!)
     }
 
