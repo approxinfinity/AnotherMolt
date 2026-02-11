@@ -688,15 +688,26 @@ fun UserProfileView(
                 },
                 onIconMappingChanged = { abilityId, iconName ->
                     scope.launch {
-                        ApiClient.setIconMapping(user.id, abilityId, iconName).onSuccess {
-                            iconMappings = iconMappings + (abilityId to iconName)
+                        // Optimistically update UI immediately
+                        iconMappings = iconMappings + (abilityId to iconName)
+                        ApiClient.setIconMapping(user.id, abilityId, iconName).onFailure { error ->
+                            // Rollback on failure
+                            println("[IconMapping] Failed to save icon: ${error.message}")
+                            iconMappings = iconMappings - abilityId
                         }
                     }
                 },
                 onIconMappingReset = { abilityId ->
                     scope.launch {
-                        ApiClient.deleteIconMapping(user.id, abilityId).onSuccess {
-                            iconMappings = iconMappings - abilityId
+                        val previousIcon = iconMappings[abilityId]
+                        // Optimistically update UI immediately
+                        iconMappings = iconMappings - abilityId
+                        ApiClient.deleteIconMapping(user.id, abilityId).onFailure { error ->
+                            // Rollback on failure
+                            println("[IconMapping] Failed to delete icon: ${error.message}")
+                            if (previousIcon != null) {
+                                iconMappings = iconMappings + (abilityId to previousIcon)
+                            }
                         }
                     }
                 }
