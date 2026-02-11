@@ -247,15 +247,32 @@ object UserStateHolder {
     }
 
     /**
-     * Update the current user.
+     * Update the current user while preserving local-authoritative state.
+     * Local state (currentLocationId, visitedLocationIds) is preserved and merged
+     * because the client may have more recent navigation data than the server.
      */
     fun updateUser(user: UserDto) {
-        _currentUser.value = user
-        AuthStorage.saveUser(user)
-        ApiClient.setUserContext(user.id, user.name)
+        val localUser = _currentUser.value
+        val mergedUser = if (localUser != null && localUser.id == user.id) {
+            // Preserve local location if it differs (client is authoritative for navigation)
+            val locationToUse = localUser.currentLocationId ?: user.currentLocationId
+            // Merge visited locations (never lose exploration progress)
+            val mergedVisited = (user.visitedLocationIds + localUser.visitedLocationIds).distinct()
+            user.copy(
+                currentLocationId = locationToUse,
+                visitedLocationIds = mergedVisited
+            )
+        } else {
+            // Different user or no local user - use server data as-is
+            user
+        }
+
+        _currentUser.value = mergedUser
+        AuthStorage.saveUser(mergedUser)
+        ApiClient.setUserContext(mergedUser.id, mergedUser.name)
 
         scope.launch {
-            _authEvents.emit(AuthEvent.UserUpdated(user))
+            _authEvents.emit(AuthEvent.UserUpdated(mergedUser))
         }
     }
 
