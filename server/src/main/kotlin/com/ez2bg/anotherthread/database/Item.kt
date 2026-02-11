@@ -115,6 +115,13 @@ object ItemRepository {
             .singleOrNull()
     }
 
+    fun findByName(name: String): Item? = transaction {
+        ItemTable.selectAll()
+            .where { ItemTable.name eq name }
+            .map { it.toItem() }
+            .firstOrNull()
+    }
+
     fun update(item: Item): Boolean = transaction {
         ItemTable.update({ ItemTable.id eq item.id }) {
             it[name] = item.name
