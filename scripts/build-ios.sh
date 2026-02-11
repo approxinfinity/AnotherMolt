@@ -32,10 +32,12 @@ fi
 # Create build directory
 mkdir -p "$PROJECT_ROOT/build/ios"
 
-# Step 1: Build Kotlin framework
+# Step 1: Build Kotlin framework for iOS device
 echo "=== Step 1: Building Kotlin framework ==="
 cd "$PROJECT_ROOT"
-./gradlew :composeApp:assembleXCFramework
+# The framework is built automatically by Xcode via embedAndSignAppleFrameworkForXcode
+# But we can pre-compile to catch errors early
+./gradlew :composeApp:compileKotlinIosArm64
 
 # Step 2: Archive the iOS app
 echo ""
@@ -48,6 +50,7 @@ xcodebuild archive \
     -configuration Release \
     -archivePath "$ARCHIVE_PATH" \
     -destination "generic/platform=iOS" \
+    -allowProvisioningUpdates \
     CODE_SIGN_STYLE=Automatic \
     DEVELOPMENT_TEAM=TLTLQZXFAJ
 
@@ -81,7 +84,8 @@ fi
 xcodebuild -exportArchive \
     -archivePath "$ARCHIVE_PATH" \
     -exportOptionsPlist "$EXPORT_OPTIONS" \
-    -exportPath "$PROJECT_ROOT/build/ios"
+    -exportPath "$PROJECT_ROOT/build/ios" \
+    -allowProvisioningUpdates
 
 echo ""
 echo "=== Build Complete ==="
