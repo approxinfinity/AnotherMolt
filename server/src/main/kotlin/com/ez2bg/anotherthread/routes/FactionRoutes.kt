@@ -100,8 +100,77 @@ fun Route.factionRoutes() {
             }
             call.respond(result)
         }
+
+        // === DIPLOMACY ENDPOINTS ===
+
+        // Check if diplomacy is possible with a creature
+        get("/diplomacy/{creatureId}/check") {
+            val creatureId = call.parameters["creatureId"] ?: return@get call.respond(HttpStatusCode.BadRequest)
+            val userId = call.request.header("X-User-Id") ?: return@get call.respond(HttpStatusCode.Unauthorized)
+
+            val result = FactionService.canAttemptDiplomacy(userId, creatureId)
+            call.respond(result)
+        }
+
+        // Attempt to bribe a creature to avoid combat
+        post("/diplomacy/{creatureId}/bribe") {
+            val creatureId = call.parameters["creatureId"] ?: return@post call.respond(HttpStatusCode.BadRequest)
+            val userId = call.request.header("X-User-Id") ?: return@post call.respond(HttpStatusCode.Unauthorized)
+
+            val result = FactionService.attemptBribe(userId, creatureId)
+            call.respond(result)
+        }
+
+        // Attempt to parley with a creature to avoid combat
+        post("/diplomacy/{creatureId}/parley") {
+            val creatureId = call.parameters["creatureId"] ?: return@post call.respond(HttpStatusCode.BadRequest)
+            val userId = call.request.header("X-User-Id") ?: return@post call.respond(HttpStatusCode.Unauthorized)
+
+            val result = FactionService.attemptParley(userId, creatureId)
+            call.respond(result)
+        }
+
+        // === ALERT SYSTEM ENDPOINTS ===
+
+        // Trigger an alert cry (usually called from combat when creature uses alert ability)
+        post("/alert/{creatureId}") {
+            val creatureId = call.parameters["creatureId"] ?: return@post call.respond(HttpStatusCode.BadRequest)
+            val locationId = call.request.header("X-Location-Id") ?: return@post call.respond(
+                HttpStatusCode.BadRequest, FactionErrorResponse("Missing X-Location-Id header")
+            )
+
+            val result = FactionService.processAlertCry(locationId, creatureId)
+            call.respond(result)
+        }
+
+        // === TRIBAL WAR ENDPOINTS ===
+
+        // Get recent tribal war events (for event log/notifications)
+        get("/wars/recent") {
+            // For now, just return enemy faction pairs that could have conflicts
+            val enemyPairs = FactionService.getEnemyFactionPairs()
+            val wars = enemyPairs.map { (f1, f2) ->
+                val faction1 = FactionRepository.findById(f1)
+                val faction2 = FactionRepository.findById(f2)
+                WarInfo(
+                    faction1Id = f1,
+                    faction2Id = f2,
+                    faction1Name = faction1?.name ?: "Unknown",
+                    faction2Name = faction2?.name ?: "Unknown"
+                )
+            }
+            call.respond(wars)
+        }
     }
 }
+
+@Serializable
+private data class WarInfo(
+    val faction1Id: String,
+    val faction2Id: String,
+    val faction1Name: String,
+    val faction2Name: String
+)
 
 @Serializable
 private data class FactionErrorResponse(val error: String)

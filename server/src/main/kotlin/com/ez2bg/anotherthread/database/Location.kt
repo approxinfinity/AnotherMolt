@@ -293,6 +293,29 @@ object LocationRepository {
         } > 0
     }
 
+    /**
+     * Add a creature to a location's creature list
+     */
+    fun addCreatureToLocation(locationId: String, creatureId: String): Boolean = transaction {
+        val location = findById(locationId) ?: return@transaction false
+        if (creatureId in location.creatureIds) return@transaction true // Already there
+        LocationTable.update({ LocationTable.id eq locationId }) {
+            it[creatureIds] = listToJson(location.creatureIds + creatureId)
+        } > 0
+    }
+
+    /**
+     * Remove a creature from a specific location
+     */
+    fun removeCreatureFromLocation(locationId: String, creatureId: String): Boolean = transaction {
+        val location = findById(locationId) ?: return@transaction false
+        if (creatureId !in location.creatureIds) return@transaction true // Not there
+        val updatedCreatureIds = location.creatureIds.filter { it != creatureId }
+        LocationTable.update({ LocationTable.id eq locationId }) {
+            it[creatureIds] = listToJson(updatedCreatureIds)
+        } > 0
+    }
+
     fun removeExitIdFromAll(locationId: String) = transaction {
         val locations = LocationTable.selectAll().map { it.toLocation() }
         locations.filter { loc -> loc.exits.any { it.locationId == locationId } }.forEach { location ->

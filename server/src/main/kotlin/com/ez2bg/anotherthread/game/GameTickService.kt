@@ -29,6 +29,13 @@ object GameTickService {
     private val lastRegenTick = mutableMapOf<String, Long>()
     private var currentTickNumber = 0L
 
+    // Tribal war check interval (~5 minutes with 3 sec ticks = 100 ticks)
+    private const val TRIBAL_WAR_CHECK_INTERVAL_TICKS = 100L
+    private const val TRIBAL_WAR_CHANCE = 15  // 15% chance per check
+
+    // Store recent tribal war events for notification
+    private val recentWarEvents = mutableListOf<FactionService.TribalWarEvent>()
+
     /**
      * Start the global game tick loop. Called once when server starts.
      */
@@ -62,6 +69,11 @@ object GameTickService {
                     // 6. Process puzzle resets (every 10 ticks to reduce DB queries)
                     if (currentTickNumber % 10 == 0L) {
                         LockResetService.processPuzzleResets()
+                    }
+
+                    // 7. Process tribal wars (every ~100 ticks = ~5 minutes with 3 sec ticks)
+                    if (currentTickNumber % TRIBAL_WAR_CHECK_INTERVAL_TICKS == 0L) {
+                        processTribalWars()
                     }
 
                 } catch (e: Exception) {
@@ -170,4 +182,32 @@ object GameTickService {
      * Get the current tick number (for debugging/sync purposes).
      */
     fun getCurrentTick(): Long = currentTickNumber
+
+    /**
+     * Process tribal wars between enemy factions.
+     */
+    private fun processTribalWars() {
+        val warEvent = FactionService.processTribalWarTick(TRIBAL_WAR_CHANCE)
+        if (warEvent != null) {
+            log.info("Tribal war event: ${warEvent.message}")
+            recentWarEvents.add(warEvent)
+            // Keep only last 10 events
+            while (recentWarEvents.size > 10) {
+                recentWarEvents.removeAt(0)
+            }
+            // TODO: Broadcast to nearby players via WebSocket
+        }
+    }
+
+    /**
+     * Get recent tribal war events.
+     */
+    fun getRecentWarEvents(): List<FactionService.TribalWarEvent> = recentWarEvents.toList()
+
+    /**
+     * Clear recent war events (after they've been displayed).
+     */
+    fun clearRecentWarEvents() {
+        recentWarEvents.clear()
+    }
 }
