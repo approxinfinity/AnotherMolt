@@ -95,6 +95,16 @@ fun AdminScreen() {
     var viewState by remember { mutableStateOf<ViewState>(initialViewState) }
     var currentUser by remember { mutableStateOf(savedUser) }
 
+    // Set user context synchronously on first composition to ensure it's set before any API calls.
+    // This fixes a race condition where AdventureViewModel could start making API calls before
+    // the LaunchedEffect that sets user context has run.
+    remember(savedUser?.id) {
+        savedUser?.let { user ->
+            ApiClient.setUserContext(user.id, user.name)
+        }
+        Unit  // remember expects a return value
+    }
+
     // Separate refresh key for forcing location graph refresh after CRUD operations
     var locationGraphRefreshKey by remember { mutableStateOf(0L) }
     fun refreshLocationGraph() {

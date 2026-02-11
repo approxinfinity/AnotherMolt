@@ -10,6 +10,7 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.tooling.preview.Preview
+import com.ez2bg.anotherthread.api.ApiClient
 import com.ez2bg.anotherthread.api.UserDto
 import com.ez2bg.anotherthread.state.AuthEvent
 import com.ez2bg.anotherthread.state.UserStateHolder
@@ -34,11 +35,16 @@ private sealed class AppScreen {
 @Preview
 fun App() {
     // Determine initial screen based on stored state
+    // Also set user context synchronously to ensure API calls work before LaunchedEffect runs
     val initialScreen = remember {
         if (!OnboardingStorage.hasSeenOnboarding()) {
             AppScreen.Onboarding
         } else {
             val savedUser = AuthStorage.getUser()
+            // Set user context synchronously - this must happen before any API calls
+            savedUser?.let { user ->
+                ApiClient.setUserContext(user.id, user.name)
+            }
             when {
                 savedUser == null -> AppScreen.Onboarding // Need to auth again
                 savedUser.characterClassId == null -> AppScreen.GhostExploration(savedUser) // Explore while creating character
@@ -53,6 +59,7 @@ fun App() {
     var sessionInvalidatedMessage by remember { mutableStateOf<String?>(null) }
 
     // Initialize UserStateHolder at app startup to sync with AuthStorage
+    // (setUserContext is already called above synchronously, but initialize() does more like session validation)
     LaunchedEffect(Unit) {
         UserStateHolder.initialize()
     }
