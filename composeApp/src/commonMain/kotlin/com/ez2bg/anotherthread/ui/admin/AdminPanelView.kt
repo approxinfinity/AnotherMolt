@@ -6,6 +6,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.ChevronRight
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.History
@@ -26,7 +27,8 @@ import kotlinx.coroutines.launch
 @Composable
 fun AdminPanelView(
     onViewAuditLogs: () -> Unit,
-    onUserClick: (String) -> Unit
+    onUserClick: (String) -> Unit,
+    onBack: (() -> Unit)? = null  // Back to adventure mode when accessed from there
 ) {
     var uploadedFiles by remember { mutableStateOf<List<UploadedFileDto>>(emptyList()) }
     var isLoading by remember { mutableStateOf(true) }
@@ -51,13 +53,30 @@ fun AdminPanelView(
     Column(
         modifier = Modifier
             .fillMaxWidth()
+            .padding(if (onBack != null) 16.dp else 0.dp)
             .verticalScroll(rememberScrollState()),
         verticalArrangement = Arrangement.spacedBy(16.dp)
     ) {
-        Text(
-            text = "Admin Panel",
-            style = MaterialTheme.typography.titleLarge
-        )
+        // Header with back button when accessed from adventure mode
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            if (onBack != null) {
+                IconButton(onClick = onBack) {
+                    Icon(
+                        imageVector = Icons.AutoMirrored.Filled.ArrowBack,
+                        contentDescription = "Back to Adventure",
+                        tint = MaterialTheme.colorScheme.primary
+                    )
+                }
+            }
+            Text(
+                text = "Admin Panel",
+                style = MaterialTheme.typography.titleLarge
+            )
+        }
 
         // Manual Testing Checklist (collapsible)
         ManualTestingPanel()

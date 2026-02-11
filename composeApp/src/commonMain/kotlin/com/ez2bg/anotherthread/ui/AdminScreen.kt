@@ -174,13 +174,16 @@ fun AdminScreen() {
     // Check if current user has admin privilege
     val isAdmin = currentUser?.featureIds?.contains(ADMIN_FEATURE_ID) == true
 
+    // Track if we came from adventure mode to admin panel (for standalone view)
+    val isStandaloneAdminPanel = viewState is ViewState.AdminPanel || viewState is ViewState.AuditLogs
+
     Column(
         modifier = Modifier
             .fillMaxSize()
-            .padding(if (gameMode.isAdventure) 0.dp else 16.dp)
+            .padding(if (gameMode.isAdventure || isStandaloneAdminPanel) 0.dp else 16.dp)
     ) {
-        // Hide header and tabs in adventure mode (full screen)
-        if (gameMode.isCreate) {
+        // Hide header and tabs in adventure mode and standalone admin panel
+        if (gameMode.isCreate && !isStandaloneAdminPanel) {
             DragonHeader(modifier = Modifier.padding(bottom = 4.dp))
 
             // All tabs are visible
@@ -465,7 +468,11 @@ fun AdminScreen() {
             )
             is ViewState.AdminPanel -> AdminPanelView(
                 onViewAuditLogs = { viewState = ViewState.AuditLogs },
-                onUserClick = { userId -> viewState = ViewState.UserDetail(userId) }
+                onUserClick = { userId -> viewState = ViewState.UserDetail(userId) },
+                onBack = {
+                    gameMode = GameMode.ADVENTURE
+                    viewState = ViewState.LocationGraph()
+                }
             )
             is ViewState.AuditLogs -> AuditLogsView(
                 onBack = { viewState = ViewState.AdminPanel }
