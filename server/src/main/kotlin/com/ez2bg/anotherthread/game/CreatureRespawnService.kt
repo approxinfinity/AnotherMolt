@@ -8,6 +8,7 @@ import com.ez2bg.anotherthread.events.LocationEventService
 import kotlinx.coroutines.runBlocking
 import org.slf4j.LoggerFactory
 import java.util.concurrent.ConcurrentHashMap
+import kotlin.random.Random
 
 /**
  * Configuration for creature respawn mechanics.
@@ -27,10 +28,10 @@ object RespawnConfig {
 /**
  * Tracks creature deaths and handles respawning.
  *
- * When a creature dies, we record which creature type died at which location.
- * After a delay, we respawn creatures to maintain location quotas.
+ * When a creature dies, we record which creature type died and which area it was in.
+ * After a delay, we respawn the creature at a random location within the same area.
  *
- * The "quota" for each location is determined by the initial creature count
+ * The "quota" for each area is determined by the initial creature count
  * when the server first starts (or from seed data).
  */
 object CreatureRespawnService {
@@ -43,14 +44,27 @@ object CreatureRespawnService {
     private val locationQuotas = ConcurrentHashMap<String, Map<String, Int>>()
 
     /**
+     * Tracks area quotas: total creatures of each type per area.
+     * Key: areaId, Value: map of creatureId -> count
+     */
+    private val areaQuotas = ConcurrentHashMap<String, MutableMap<String, Int>>()
+
+    /**
+     * Cache of location IDs per area for fast random selection.
+     * Key: areaId, Value: list of locationIds in that area
+     */
+    private val areaLocations = ConcurrentHashMap<String, List<String>>()
+
+    /**
      * Tracks pending respawns: when a creature dies, we record it here.
-     * Key: locationId, Value: list of (creatureId, tickWhenEligible)
+     * Key: areaId, Value: list of (creatureId, tickWhenEligible, originalLocationId)
      */
     private val pendingRespawns = ConcurrentHashMap<String, MutableList<PendingRespawn>>()
 
     data class PendingRespawn(
         val creatureId: String,
-        val eligibleAtTick: Long
+        val eligibleAtTick: Long,
+        val originalLocationId: String  // For logging purposes
     )
 
     /**
@@ -61,16 +75,36 @@ object CreatureRespawnService {
         val locations = LocationRepository.findAll()
         var totalCreatures = 0
 
+        // Build area location cache and area quotas
+        val areaLocationMap = mutableMapOf<String, MutableList<String>>()
+
         for (location in locations) {
+            val areaId = location.areaId ?: "overworld"
+
+            // Add to area location cache
+            areaLocationMap.computeIfAbsent(areaId) { mutableListOf() }.add(location.id)
+
             if (location.creatureIds.isNotEmpty()) {
                 // Count how many of each creature type are at this location
                 val creatureCounts = location.creatureIds.groupingBy { it }.eachCount()
                 locationQuotas[location.id] = creatureCounts
                 totalCreatures += location.creatureIds.size
+
+                // Aggregate into area quotas
+                val areaQuota = areaQuotas.computeIfAbsent(areaId) { mutableMapOf() }
+                for ((creatureId, count) in creatureCounts) {
+                    areaQuota[creatureId] = (areaQuota[creatureId] ?: 0) + count
+                }
             }
         }
 
+        // Store area location cache
+        for ((areaId, locationIds) in areaLocationMap) {
+            areaLocations[areaId] = locationIds
+        }
+
         log.info("Initialized creature quotas for ${locationQuotas.size} locations, $totalCreatures total creatures")
+        log.info("Initialized area quotas for ${areaQuotas.size} areas: ${areaQuotas.mapValues { it.value.values.sum() }}")
     }
 
     /**
@@ -78,29 +112,34 @@ object CreatureRespawnService {
      * Called when a creature is killed in combat.
      */
     fun recordCreatureDeath(locationId: String, creatureId: String, currentTick: Long) {
+        val location = LocationRepository.findById(locationId)
+        val areaId = location?.areaId ?: "overworld"
         val eligibleTick = currentTick + RespawnConfig.MIN_RESPAWN_DELAY_TICKS
 
-        val pending = pendingRespawns.computeIfAbsent(locationId) { mutableListOf() }
+        val pending = pendingRespawns.computeIfAbsent(areaId) { mutableListOf() }
         synchronized(pending) {
-            pending.add(PendingRespawn(creatureId, eligibleTick))
+            pending.add(PendingRespawn(creatureId, eligibleTick, locationId))
         }
 
         val creature = CreatureRepository.findById(creatureId)
-        log.debug("Recorded death of ${creature?.name ?: creatureId} at $locationId, eligible for respawn at tick $eligibleTick")
+        log.debug("Recorded death of ${creature?.name ?: creatureId} in area $areaId, eligible for respawn at tick $eligibleTick")
     }
 
     /**
-     * Process respawns for all locations.
+     * Process respawns for all areas.
+     * Creatures respawn at a random location within their original area.
      * Called periodically from GameTickService.
      */
     fun processRespawns(currentTick: Long) {
         var totalRespawned = 0
 
-        for ((locationId, pending) in pendingRespawns) {
+        for ((areaId, pending) in pendingRespawns) {
             if (totalRespawned >= RespawnConfig.MAX_RESPAWNS_PER_TICK) break
 
-            val location = LocationRepository.findById(locationId) ?: continue
-            val quota = locationQuotas[locationId] ?: continue
+            val areaQuota = areaQuotas[areaId] ?: continue
+            val locationsInArea = areaLocations[areaId] ?: continue
+
+            if (locationsInArea.isEmpty()) continue
 
             // Find creatures eligible for respawn
             val eligibleRespawns = synchronized(pending) {
@@ -109,38 +148,53 @@ object CreatureRespawnService {
 
             if (eligibleRespawns.isEmpty()) continue
 
-            // Check current creature counts vs quota
-            val currentCounts = location.creatureIds.groupingBy { it }.eachCount()
+            // Count current creatures of each type in the entire area
+            val currentAreaCounts = mutableMapOf<String, Int>()
+            for (locId in locationsInArea) {
+                val loc = LocationRepository.findById(locId) ?: continue
+                for (creatureId in loc.creatureIds) {
+                    currentAreaCounts[creatureId] = (currentAreaCounts[creatureId] ?: 0) + 1
+                }
+            }
 
             for (respawn in eligibleRespawns) {
                 if (totalRespawned >= RespawnConfig.MAX_RESPAWNS_PER_TICK) break
 
                 val creatureId = respawn.creatureId
-                val quotaCount = quota[creatureId] ?: 0
-                val currentCount = currentCounts[creatureId] ?: 0
+                val quotaCount = areaQuota[creatureId] ?: 0
+                val currentCount = currentAreaCounts[creatureId] ?: 0
 
                 if (currentCount < quotaCount) {
-                    // Respawn this creature
+                    // Respawn this creature at a random location in the area
                     val creature = CreatureRepository.findById(creatureId)
                     if (creature != null) {
-                        // Add creature back to location
-                        val updatedLocation = location.copy(
-                            creatureIds = location.creatureIds + creatureId
-                        )
-                        LocationRepository.update(updatedLocation)
+                        // Pick a random location in the area
+                        val targetLocationId = locationsInArea[Random.nextInt(locationsInArea.size)]
+                        val targetLocation = LocationRepository.findById(targetLocationId)
 
-                        // Broadcast creature spawn to all players at this location
-                        runBlocking {
-                            LocationEventService.broadcastCreatureAdded(updatedLocation, creature.id, creature.name)
+                        if (targetLocation != null) {
+                            // Add creature to the target location
+                            val updatedLocation = targetLocation.copy(
+                                creatureIds = targetLocation.creatureIds + creatureId
+                            )
+                            LocationRepository.update(updatedLocation)
+
+                            // Broadcast creature spawn to all players at this location
+                            runBlocking {
+                                LocationEventService.broadcastCreatureAdded(updatedLocation, creature.id, creature.name)
+                            }
+
+                            // Update our local count
+                            currentAreaCounts[creatureId] = currentCount + 1
+
+                            totalRespawned++
+                            log.info("Respawned ${creature.name} at ${targetLocation.name} (area: $areaId)")
                         }
 
                         // Remove from pending
                         synchronized(pending) {
                             pending.remove(respawn)
                         }
-
-                        totalRespawned++
-                        log.info("Respawned ${creature.name} at ${location.name}")
                     } else {
                         // Creature no longer exists, remove from pending
                         synchronized(pending) {
@@ -170,10 +224,25 @@ object CreatureRespawnService {
     }
 
     /**
-     * Get pending respawn count for a location.
+     * Get the quota for a specific area.
+     * Returns a map of creatureId -> count.
      */
-    fun getPendingRespawnCount(locationId: String): Int {
-        return pendingRespawns[locationId]?.size ?: 0
+    fun getQuotaForArea(areaId: String): Map<String, Int> {
+        return areaQuotas[areaId] ?: emptyMap()
+    }
+
+    /**
+     * Get pending respawn count for an area.
+     */
+    fun getPendingRespawnCount(areaId: String): Int {
+        return pendingRespawns[areaId]?.size ?: 0
+    }
+
+    /**
+     * Get all pending respawns for debugging/admin purposes.
+     */
+    fun getAllPendingRespawns(): Map<String, List<PendingRespawn>> {
+        return pendingRespawns.mapValues { it.value.toList() }
     }
 
     /**
@@ -181,6 +250,8 @@ object CreatureRespawnService {
      */
     fun reset() {
         locationQuotas.clear()
+        areaQuotas.clear()
+        areaLocations.clear()
         pendingRespawns.clear()
     }
 }

@@ -140,10 +140,10 @@ object GameConfig {
                 GameConfigRepository.getInt("respawn.checkIntervalTicks", 10)
             }
 
-        /** Minimum ticks before creature can respawn */
+        /** Minimum ticks before creature can respawn (default: 10 = 30 seconds) */
         val minDelayTicks: Int
             get() = getCached("respawn.minDelayTicks") {
-                GameConfigRepository.getInt("respawn.minDelayTicks", 20)
+                GameConfigRepository.getInt("respawn.minDelayTicks", 10)
             }
 
         /** Maximum creatures to respawn per tick */

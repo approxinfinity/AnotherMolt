@@ -193,7 +193,7 @@ object GameConfigRepository {
 
         // Respawn config
         setIfNotExists("respawn.checkIntervalTicks", "10", "Ticks between respawn checks", "respawn", "int")
-        setIfNotExists("respawn.minDelayTicks", "20", "Minimum ticks before creature can respawn", "respawn", "int")
+        setIfNotExists("respawn.minDelayTicks", "10", "Minimum ticks before creature can respawn (10 ticks = 30 seconds)", "respawn", "int")
         setIfNotExists("respawn.maxPerTick", "3", "Maximum creatures to respawn per tick", "respawn", "int")
 
         // Death config
