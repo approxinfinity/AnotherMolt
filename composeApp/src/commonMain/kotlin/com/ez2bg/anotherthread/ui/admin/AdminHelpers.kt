@@ -287,23 +287,85 @@ fun findNearbyFreeSpot(target: Pair<Int, Int>, occupied: Set<Pair<Int, Int>>): P
 
 /**
  * Get a color based on the location's terrain type.
+ * Colors are chosen to be visually distinct on the minimap.
  */
 fun getTerrainColor(desc: String, name: String): Color {
     val text = (desc + " " + name).lowercase()
 
     return when {
-        text.containsAny("castle", "fortress", "citadel", "stronghold") -> Color(0xFF8B7355) // Brown
-        text.containsAny("church", "temple", "cathedral", "shrine") -> Color(0xFFE8E4DC) // Light gray
-        text.containsAny("forest", "tree", "wood", "grove") -> Color(0xFF4A6741) // Forest green
-        text.containsAny("mountain", "peak", "summit") -> Color(0xFF7D7461) // Gray-brown
-        text.containsAny("water", "river", "lake", "coast", "sea", "ocean") -> Color(0xFF6B8E9F) // Blue-gray
-        text.containsAny("swamp", "marsh", "bog") -> Color(0xFF5A6B52) // Murky green
-        text.containsAny("desert", "sand", "dune") -> Color(0xFFD4C19E) // Sandy
-        text.containsAny("cave", "cavern", "dungeon") -> Color(0xFF5A5A5A) // Dark gray
-        text.containsAny("town", "village", "inn", "tavern", "shop") -> Color(0xFFB8976B) // Tan
-        text.containsAny("port", "dock", "harbor") -> Color(0xFF8BA4B0) // Coastal blue
-        text.containsAny("ruin", "ancient", "abandon") -> Color(0xFF8A7B6A) // Aged stone
-        text.containsAny("grass", "meadow", "field", "plain") -> Color(0xFF7A9A6D) // Muted green
+        // Water bodies - blues
+        text.containsAny("ocean", "sea", "deep water") -> Color(0xFF1565C0) // Deep blue
+        text.containsAny("lake", "pond", "pool") -> Color(0xFF42A5F5) // Medium blue
+        text.containsAny("river", "stream", "creek") -> Color(0xFF64B5F6) // Light blue
+        text.containsAny("beach", "shore", "coast", "sand") -> Color(0xFFE6D9A8) // Sand/tan
+        text.containsAny("port", "dock", "harbor", "pier", "wharf") -> Color(0xFF78909C) // Blue-gray
+
+        // Forests - greens
+        text.containsAny("forest", "wood", "jungle") -> Color(0xFF2E7D32) // Dark forest green
+        text.containsAny("grove", "orchard", "thicket") -> Color(0xFF388E3C) // Medium green
+        text.containsAny("tree", "clearing") -> Color(0xFF43A047) // Lighter green
+
+        // Fields/plains - light greens/yellows
+        text.containsAny("meadow", "field", "plain", "prairie") -> Color(0xFF8BC34A) // Light green
+        text.containsAny("grass", "pasture", "farmland", "farm") -> Color(0xFF9CCC65) // Yellow-green
+        text.containsAny("garden", "flower") -> Color(0xFFAED581) // Pale green
+
+        // Swamps/wetlands - murky greens
+        text.containsAny("swamp", "marsh", "bog", "fen", "mire") -> Color(0xFF5D6B4B) // Murky green
+        text.containsAny("wetland", "bayou") -> Color(0xFF6B7B5B) // Olive
+
+        // Mountains/hills - grays and browns
+        text.containsAny("mountain", "peak", "summit", "cliff") -> Color(0xFF78909C) // Blue-gray
+        text.containsAny("hill", "ridge", "highland") -> Color(0xFF8D6E63) // Brown
+        text.containsAny("rock", "boulder", "crag") -> Color(0xFF9E9E9E) // Gray
+
+        // Underground/dungeons - dark grays
+        text.containsAny("dungeon", "crypt", "tomb", "catacomb") -> Color(0xFF424242) // Dark gray
+        text.containsAny("cave", "cavern", "grotto") -> Color(0xFF5D4037) // Dark brown
+        text.containsAny("mine", "tunnel", "underground") -> Color(0xFF546E7A) // Dark blue-gray
+        text.containsAny("sewer", "drain") -> Color(0xFF37474F) // Very dark gray
+
+        // Desert - warm colors
+        text.containsAny("desert", "dune", "wasteland", "badland") -> Color(0xFFD4A857) // Golden sand
+        text.containsAny("oasis") -> Color(0xFF26A69A) // Teal
+
+        // Structures - browns and tans
+        text.containsAny("castle", "fortress", "citadel", "stronghold", "keep") -> Color(0xFF795548) // Brown
+        text.containsAny("tower", "spire", "battlement") -> Color(0xFF8D6E63) // Light brown
+        text.containsAny("wall", "gate", "rampart") -> Color(0xFF9E9E9E) // Stone gray
+
+        // Religious - whites and golds
+        text.containsAny("church", "temple", "cathedral", "shrine", "chapel") -> Color(0xFFECEFF1) // Off-white
+        text.containsAny("monastery", "abbey", "sanctuary") -> Color(0xFFD7CCC8) // Warm white
+
+        // Towns/buildings - warm tans
+        text.containsAny("town", "city", "village", "hamlet") -> Color(0xFFBCAAA4) // Warm gray
+        text.containsAny("inn", "tavern", "pub") -> Color(0xFFD7A86E) // Warm wood
+        text.containsAny("shop", "market", "store", "bazaar") -> Color(0xFFCBA66E) // Light wood
+        text.containsAny("house", "home", "cottage", "hut") -> Color(0xFFA1887F) // Rosy brown
+        text.containsAny("hall", "manor", "estate") -> Color(0xFF8D6E63) // Rich brown
+
+        // Ruins - aged colors
+        text.containsAny("ruin", "ancient", "abandon", "crumbl") -> Color(0xFF7B7568) // Aged stone
+        text.containsAny("remnant", "vestige") -> Color(0xFF8D8577) // Weathered
+
+        // Special/magical - purples
+        text.containsAny("magic", "arcane", "mystic", "enchant") -> Color(0xFF7E57C2) // Purple
+        text.containsAny("portal", "rift", "gateway") -> Color(0xFF9575CD) // Light purple
+        text.containsAny("crystal", "gem") -> Color(0xFFE1BEE7) // Pink-purple
+
+        // Ice/snow - light blues/whites
+        text.containsAny("ice", "frozen", "glacier") -> Color(0xFFB3E5FC) // Ice blue
+        text.containsAny("snow", "tundra", "arctic") -> Color(0xFFE3F2FD) // Near white
+
+        // Volcanic - reds/oranges
+        text.containsAny("volcano", "lava", "magma") -> Color(0xFFE53935) // Red
+        text.containsAny("ash", "cinder", "scorch") -> Color(0xFF616161) // Ash gray
+
+        // Roads/paths
+        text.containsAny("road", "path", "trail", "highway") -> Color(0xFFA89078) // Dirt brown
+        text.containsAny("bridge", "crossing") -> Color(0xFF8D6E63) // Wood brown
+
         else -> Color(0xFFC4A67C) // Default parchment tan
     }
 }
