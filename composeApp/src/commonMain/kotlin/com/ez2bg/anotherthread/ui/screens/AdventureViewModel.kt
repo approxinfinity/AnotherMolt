@@ -231,9 +231,6 @@ data class AdventureUiState(
     val currentLocation: LocationDto?
         get() = locations.find { it.id == currentLocationId }
 
-    val isRanger: Boolean
-        get() = playerCharacterClass?.name == "Ranger"
-
     val isDetailViewVisible: Boolean
         get() = selectedItem != null  // Only items use the detail view; creatures use the interaction modal
 
