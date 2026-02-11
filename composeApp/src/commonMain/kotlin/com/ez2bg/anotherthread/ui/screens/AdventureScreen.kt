@@ -1234,6 +1234,16 @@ fun AdventureScreen(
             )
         }
 
+        // Lockpicking minigame overlay - trace the path mechanic
+        val lockpickingInfo = uiState.lockpickingInfo
+        if (uiState.showLockpickingMinigame && lockpickingInfo != null) {
+            LockpickingMinigameOverlay(
+                lockInfo = lockpickingInfo,
+                onComplete = { accuracy -> viewModel.completeLockpicking(accuracy) },
+                onCancel = { viewModel.cancelLockpicking() }
+            )
+        }
+
         // Death transition overlay - covers everything when player dies
         if (isPlayingDeathAnimation && respawnLocationName != null) {
             DeathTransitionOverlay(

@@ -40,7 +40,9 @@ data class LocationWithDiscoveredItems(
     val isOriginalTerrain: Boolean? = null,
     val shopLayoutDirection: ShopLayoutDirection? = null,
     // User-specific: items the user has discovered via search (shown with * prefix)
-    val discoveredItemIds: List<String> = emptyList()
+    val discoveredItemIds: List<String> = emptyList(),
+    // Lock level: null = unlocked, 1-4 = locked with increasing difficulty
+    val lockLevel: Int? = null
 ) {
     companion object {
         fun from(location: Location, discoveredItemIds: List<String> = emptyList()) = LocationWithDiscoveredItems(
@@ -67,7 +69,8 @@ data class LocationWithDiscoveredItems(
             terrainFeatures = location.terrainFeatures,
             isOriginalTerrain = location.isOriginalTerrain,
             shopLayoutDirection = location.shopLayoutDirection,
-            discoveredItemIds = discoveredItemIds
+            discoveredItemIds = discoveredItemIds,
+            lockLevel = location.lockLevel
         )
     }
 }

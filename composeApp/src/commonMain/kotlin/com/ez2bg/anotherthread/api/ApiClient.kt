@@ -73,7 +73,9 @@ data class LocationDto(
     // Shop layout direction (default VERTICAL)
     val shopLayoutDirection: ShopLayoutDirection? = null,
     // Item IDs that the user has discovered via search (shown with * prefix)
-    val discoveredItemIds: List<String> = emptyList()
+    val discoveredItemIds: List<String> = emptyList(),
+    // Lock level: null = unlocked, 1-4 = locked with increasing difficulty
+    val lockLevel: Int? = null
 )
 
 @Serializable

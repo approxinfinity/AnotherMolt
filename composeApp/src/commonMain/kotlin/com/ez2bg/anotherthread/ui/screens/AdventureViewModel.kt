@@ -19,6 +19,7 @@ import com.ez2bg.anotherthread.api.PuzzleProgressResponse
 import com.ez2bg.anotherthread.api.FishingInfoDto
 import com.ez2bg.anotherthread.api.FishingMinigameStartDto
 import com.ez2bg.anotherthread.api.FishBehaviorDto
+import com.ez2bg.anotherthread.api.LockpickInfoDto
 import com.ez2bg.anotherthread.data.AdventureRepository
 import com.ez2bg.anotherthread.state.AdventureStateHolder
 import com.ez2bg.anotherthread.state.CombatStateHolder
@@ -113,7 +114,11 @@ data class AdventureLocalState(
     val fishingInfo: FishingInfoDto? = null,
     // Fishing minigame state
     val showFishingMinigame: Boolean = false,
-    val fishingMinigameData: FishingMinigameStartDto? = null
+    val fishingMinigameData: FishingMinigameStartDto? = null,
+    // Lockpicking state
+    val showLockpickingMinigame: Boolean = false,
+    val lockpickingInfo: LockpickInfoDto? = null,
+    val lockpickingLocationId: String? = null
 )
 
 /**
@@ -206,7 +211,11 @@ data class AdventureUiState(
     val fishingInfo: FishingInfoDto? = null,
     // Fishing minigame state
     val showFishingMinigame: Boolean = false,
-    val fishingMinigameData: FishingMinigameStartDto? = null
+    val fishingMinigameData: FishingMinigameStartDto? = null,
+    // Lockpicking state
+    val showLockpickingMinigame: Boolean = false,
+    val lockpickingInfo: LockpickInfoDto? = null,
+    val lockpickingLocationId: String? = null  // The location we're trying to enter
 ) {
     // Derived properties
     val currentLocation: LocationDto?
@@ -381,7 +390,10 @@ class AdventureViewModel {
             showFishingDistanceModal = local.showFishingDistanceModal,
             fishingInfo = local.fishingInfo,
             showFishingMinigame = local.showFishingMinigame,
-            fishingMinigameData = local.fishingMinigameData
+            fishingMinigameData = local.fishingMinigameData,
+            showLockpickingMinigame = local.showLockpickingMinigame,
+            lockpickingInfo = local.lockpickingInfo,
+            lockpickingLocationId = local.lockpickingLocationId
         )
     }.stateIn(
         scope = scope,
@@ -862,6 +874,14 @@ class AdventureViewModel {
                 logError("You are over-encumbered by $overAmount stone. Drop items to move.")
                 return
             }
+        }
+
+        // Check if target location is locked
+        val targetLocation = AdventureRepository.getLocation(exit.locationId)
+        if (targetLocation != null && targetLocation.lockLevel != null && targetLocation.lockLevel > 0) {
+            // Location is locked - attempt lockpicking instead of navigating
+            attemptLockedDoor(exit.locationId)
+            return
         }
 
         scope.launch {
@@ -1949,6 +1969,85 @@ class AdventureViewModel {
             it.copy(
                 showHideItemModal = false,
                 hideableItems = emptyList()
+            )
+        }
+    }
+
+    // =========================================================================
+    // LOCKPICKING
+    // =========================================================================
+
+    /**
+     * Attempt to enter a locked location.
+     * If the player can pick locks, shows the lockpicking minigame.
+     * Otherwise shows an error message.
+     */
+    fun attemptLockedDoor(locationId: String) {
+        val userId = UserStateHolder.userId ?: return
+
+        scope.launch {
+            ApiClient.getLockpickInfo(userId, locationId).onSuccess { info ->
+                if (!info.canAttempt) {
+                    logError(info.reason ?: "Cannot pick this lock")
+                    return@onSuccess
+                }
+
+                // Show the lockpicking minigame
+                _localState.update {
+                    it.copy(
+                        showLockpickingMinigame = true,
+                        lockpickingInfo = info,
+                        lockpickingLocationId = locationId
+                    )
+                }
+            }.onFailure { error ->
+                logError("Failed to check lock: ${error.message}")
+            }
+        }
+    }
+
+    /**
+     * Complete the lockpicking minigame with the player's accuracy.
+     */
+    fun completeLockpicking(accuracy: Float) {
+        val userId = UserStateHolder.userId ?: return
+        val locationId = _localState.value.lockpickingLocationId ?: return
+
+        scope.launch {
+            ApiClient.attemptLockpick(userId, locationId, accuracy).onSuccess { result ->
+                if (result.success) {
+                    logMessage(result.message)
+                    // Navigate to the now-unlocked location
+                    navigateToExit(ExitDto(locationId = locationId))
+                    // Refresh location data to update lockLevel
+                    AdventureRepository.refreshLocationWithUserContext(locationId, userId)
+                } else {
+                    logError(result.message)
+                }
+            }.onFailure { error ->
+                logError("Failed to pick lock: ${error.message}")
+            }
+
+            // Hide the minigame UI
+            _localState.update {
+                it.copy(
+                    showLockpickingMinigame = false,
+                    lockpickingInfo = null,
+                    lockpickingLocationId = null
+                )
+            }
+        }
+    }
+
+    /**
+     * Cancel the lockpicking attempt.
+     */
+    fun cancelLockpicking() {
+        _localState.update {
+            it.copy(
+                showLockpickingMinigame = false,
+                lockpickingInfo = null,
+                lockpickingLocationId = null
             )
         }
     }
