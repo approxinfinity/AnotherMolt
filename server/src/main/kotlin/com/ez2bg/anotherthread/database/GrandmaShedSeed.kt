@@ -5,6 +5,7 @@ import org.slf4j.LoggerFactory
 /**
  * Seed data for Grandma's Shed - a locked location behind grandma's house.
  * Contains a mysterious antique suit of armor in a display case (described, not an item).
+ * Also contains a Wand of Freezing - roots enemies in place for 3 ticks.
  */
 object GrandmaShedSeed {
     private val log = LoggerFactory.getLogger(GrandmaShedSeed::class.java)
@@ -12,11 +13,57 @@ object GrandmaShedSeed {
     // IDs
     const val GRANDMAS_HOUSE_ID = "cd931a2c-8a1e-4da7-ac61-922b5503d038"
     const val GRANDMAS_SHED_ID = "location-grandmas-shed"
+    const val WAND_OF_FREEZING_ID = "item-wand-of-freezing"
+    const val FREEZE_ABILITY_ID = "ability-wand-freeze"
 
     fun seed() {
+        seedAbility()
+        seedItem()
         seedLocation()
         updateGrandmasHouseExits()
         log.info("Grandma's Shed seed complete")
+    }
+
+    private fun seedAbility() {
+        if (AbilityRepository.findById(FREEZE_ABILITY_ID) == null) {
+            AbilityRepository.create(
+                Ability(
+                    id = FREEZE_ABILITY_ID,
+                    name = "Freeze",
+                    description = "Channel the wand's icy magic to root an enemy in place, preventing them from fleeing for 3 ticks.",
+                    abilityType = "combat",
+                    targetType = "single_enemy",
+                    range = 30,
+                    cooldownType = "long",  // Long cooldown between uses
+                    cooldownRounds = 10,
+                    durationRounds = 3,
+                    manaCost = 0,
+                    staminaCost = 0,
+                    effects = """[{"type":"root","duration":3}]""",
+                    imageUrl = "icon:ac_unit"
+                )
+            )
+            log.info("Created Freeze ability: $FREEZE_ABILITY_ID")
+        }
+    }
+
+    private fun seedItem() {
+        if (ItemRepository.findById(WAND_OF_FREEZING_ID) == null) {
+            ItemRepository.create(
+                Item(
+                    id = WAND_OF_FREEZING_ID,
+                    name = "Wand of Freezing",
+                    desc = "A slender wand of pale blue crystal, cold to the touch. Frost patterns dance across its surface. When pointed at a foe and activated, it releases a blast of freezing magic that roots them in place.",
+                    featureIds = emptyList(),
+                    abilityIds = listOf(FREEZE_ABILITY_ID),
+                    equipmentType = "weapon",
+                    equipmentSlot = "off_hand",
+                    value = 500,
+                    weight = 1
+                )
+            )
+            log.info("Created Wand of Freezing: $WAND_OF_FREEZING_ID")
+        }
     }
 
     private fun seedLocation() {
@@ -40,6 +87,10 @@ object GrandmaShedSeed {
                 )
             )
             log.info("Created Grandma's Shed location: $GRANDMAS_SHED_ID")
+
+            // Add the wand to the shed (as a ground item that can be picked up)
+            LocationItemRepository.addItem(GRANDMAS_SHED_ID, WAND_OF_FREEZING_ID)
+            log.info("Added Wand of Freezing to shed")
         }
     }
 
