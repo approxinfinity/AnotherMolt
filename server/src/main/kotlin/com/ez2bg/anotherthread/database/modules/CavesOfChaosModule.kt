@@ -40,6 +40,7 @@ object CavesOfChaosModule : AdventureModuleSeed() {
         defineCreatures()
         defineLocations()
         defineChests()
+        defineTraps()
     }
 
     // ==================== ABILITIES ====================
@@ -2593,6 +2594,185 @@ object CavesOfChaosModule : AdventureModuleSeed() {
             lockDifficulty = 3
             lootTableSuffix = "temple-treasure"
             goldAmount = 1000
+        }
+    }
+
+    // ==================== TRAPS ====================
+    private fun defineTraps() {
+        // === CAVE A: KOBOLD LAIR ===
+        // The kobolds have a pit trap near their entrance
+        trap("kobold-pit") {
+            name = "Kobold Pit Trap"
+            description = "A 10-foot deep pit with a closing lid, designed to trap intruders. The kobolds check it regularly."
+            locationSuffix = "cave-a-entrance"
+            detectDifficulty = 2
+            disarmDifficulty = 2
+            pit(depth = 10, damageDice = "1d6", saveDC = 12)
+            resetsAfterRounds = 60 // Kobolds reset it after a while
+        }
+
+        // === CAVE C: SECOND ORC LAIR ===
+        // Trip wire alarm at entrance
+        trap("orc-tripwire-alarm") {
+            name = "Weighted Net Alarm"
+            description = "Nearly invisible trip strings 11 feet from the entrance. When triggered, a heavy weighted net drops and metal pieces create an alarm sound."
+            locationSuffix = "cave-c-entrance"
+            detectDifficulty = 3
+            disarmDifficulty = 2
+            trigger(TrapTrigger.TRIPWIRE)
+            alarm(listOf("orc-guard", "orc", "orc"), "The net falls on you and metal pieces clatter loudly, alerting the orcs!")
+        }
+
+        // === CAVE D: GOBLIN LAIR ===
+        // Goblins often use dart traps
+        trap("goblin-dart-wall") {
+            name = "Poisoned Dart Wall"
+            description = "A section of wall conceals spring-loaded darts tipped with a mild paralytic."
+            locationSuffix = "cave-d-guard-1"
+            detectDifficulty = 2
+            disarmDifficulty = 3
+            trigger(TrapTrigger.PRESSURE_PLATE)
+            dart(damageDice = "1d4", saveDC = 12, poisoned = true, poisonDuration = 5)
+        }
+
+        // === CAVE F: HOBGOBLIN LAIR ===
+        // The militaristic hobgoblins have more sophisticated traps
+        trap("hobgoblin-spear-trap") {
+            name = "Spear Trap"
+            description = "A pressure plate triggers spears to thrust up from concealed holes in the floor."
+            locationSuffix = "cave-f-entrance"
+            detectDifficulty = 3
+            disarmDifficulty = 3
+            spear(damageDice = "2d6", saveDC = 14)
+        }
+
+        // Alarm in the torture room
+        trap("hobgoblin-alarm-bell") {
+            name = "Alarm Bell"
+            description = "A thin wire near the door rings a bell if disturbed, alerting the guards."
+            locationSuffix = "cave-f-torture"
+            detectDifficulty = 2
+            disarmDifficulty = 1
+            trigger(TrapTrigger.TRIPWIRE)
+            alarm(listOf("hobgoblin", "hobgoblin"), "A bell rings out, echoing through the corridors!")
+        }
+
+        // === CAVE G: SHUNNED CAVERN ===
+        // Natural hazards - the gray ooze pit
+        trap("ooze-pit") {
+            name = "Gray Ooze Pit"
+            description = "The floor here is unstable, concealing a pit filled with corrosive gray ooze."
+            locationSuffix = "cave-g-gallery"
+            detectDifficulty = 4
+            disarmDifficulty = 0 // Can't be disarmed, only avoided
+            isArmed = true
+            pit(depth = 5, damageDice = "2d6", saveDC = 13)
+            message("You fall into a pit of writhing gray ooze! The acidic slime burns!")
+        }
+
+        // === CAVE H: BUGBEAR LAIR ===
+        // Bugbears are master ambushers - they have a cage trap
+        trap("bugbear-cage-drop") {
+            name = "Dropping Cage"
+            description = "A large iron cage hangs above, ready to drop on unsuspecting intruders."
+            locationSuffix = "cave-h-entrance"
+            detectDifficulty = 3
+            disarmDifficulty = 4
+            trigger(TrapTrigger.PRESSURE_PLATE)
+            cage(duration = 10, saveDC = 14)
+        }
+
+        // === CAVE I: MINOTAUR LABYRINTH ===
+        // The minotaur's lair has several traps
+        trap("minotaur-boulder") {
+            name = "Rolling Boulder"
+            description = "A massive boulder is balanced precariously, ready to roll down the corridor when triggered."
+            locationSuffix = "cave-i-entrance"
+            detectDifficulty = 2
+            disarmDifficulty = 5 // Very hard to stop a boulder
+            trigger(TrapTrigger.TRIPWIRE)
+            boulder(damageDice = "4d6", saveDC = 15)
+        }
+
+        // Poison needle on the minotaur's treasure chest
+        trap("minotaur-treasure-needle") {
+            name = "Poison Needle Lock"
+            description = "The lock on the minotaur's treasure chest is fitted with a poison needle."
+            locationSuffix = "cave-i-minotaur"
+            detectDifficulty = 3
+            disarmDifficulty = 3
+            trigger(TrapTrigger.CHEST)
+            poisonNeedle(damageDice = "1", poisonDuration = 20, saveDC = 14)
+        }
+
+        // === CAVE J: GNOLL LAIR ===
+        // Gnolls use crude but effective traps
+        trap("gnoll-spike-pit") {
+            name = "Spiked Pit"
+            description = "A pit trap concealed by a thin layer of hides and dirt, with sharpened stakes at the bottom."
+            locationSuffix = "cave-j-entrance"
+            detectDifficulty = 2
+            disarmDifficulty = 2
+            pit(depth = 15, damageDice = "2d6+2", saveDC = 13)
+            message("You fall into a pit lined with sharpened stakes!")
+        }
+
+        // === CAVE K: TEMPLE OF EVIL CHAOS ===
+        // The most dangerous traps are in the evil temple
+        trap("temple-fire-jet") {
+            name = "Sacred Fire Jets"
+            description = "Hidden nozzles in the walls spray unholy fire at intruders who step on the wrong floor tile."
+            locationSuffix = "cave-k-chapel"
+            detectDifficulty = 4
+            disarmDifficulty = 4
+            trigger(TrapTrigger.PRESSURE_PLATE)
+            fire(damageDice = "3d6", saveDC = 14)
+        }
+
+        trap("temple-teleport") {
+            name = "Banishment Circle"
+            description = "A magical sigil on the floor teleports intruders to the cell area."
+            locationSuffix = "cave-k-temple"
+            detectDifficulty = 5
+            disarmDifficulty = 5
+            trigger(TrapTrigger.MOVEMENT)
+            teleport("cave-k-cell", "Dark magic swirls around you and you find yourself elsewhere!")
+        }
+
+        trap("zombie-pit") {
+            name = "Zombie Pit"
+            description = "A pit filled with grasping undead hands that try to pull victims down."
+            locationSuffix = "cave-k-zombie-passage"
+            detectDifficulty = 3
+            disarmDifficulty = 0 // Can't disarm zombies
+            pit(depth = 10, damageDice = "1d6", saveDC = 12)
+            message("You fall into a pit of grasping zombie hands!")
+        }
+
+        // The boulder trap from the original module
+        trap("temple-boulder") {
+            name = "Temple Guardian Boulder"
+            description = "A massive stone sphere ready to roll down the passage, crushing all in its path."
+            locationSuffix = "cave-k-boulder-passage"
+            detectDifficulty = 2
+            disarmDifficulty = 5
+            trigger(TrapTrigger.TRIPWIRE)
+            boulder(damageDice = "6d6", saveDC = 16)
+        }
+
+        // Magic trap on the crypt
+        trap("crypt-curse") {
+            name = "Curse of the Crypt"
+            description = "Ancient magic protects the crypt, cursing those who disturb its contents."
+            locationSuffix = "cave-k-crypt"
+            detectDifficulty = 4
+            disarmDifficulty = 5
+            trigger(TrapTrigger.INTERACTION)
+            magic(
+                condition = "cursed",
+                conditionDuration = 100,
+                message = "Dark energy crackles as you disturb the crypt. You feel cursed!"
+            )
         }
     }
 }

@@ -33,6 +33,9 @@ import com.ez2bg.anotherthread.routes.riftPortalRoutes
 import com.ez2bg.anotherthread.routes.worldGenRoutes
 import com.ez2bg.anotherthread.routes.puzzleRoutes
 import com.ez2bg.anotherthread.routes.poolRoutes
+import com.ez2bg.anotherthread.routes.trapRoutes
+import com.ez2bg.anotherthread.routes.environmentalRoutes
+import com.ez2bg.anotherthread.game.EnvironmentalEffectService
 import com.ez2bg.anotherthread.events.LocationEventService
 import com.ez2bg.anotherthread.spell.*
 import com.ez2bg.anotherthread.SimpleGoldBalancer
@@ -1154,6 +1157,9 @@ fun Application.module() {
     AdventureModuleRegistry.register(com.ez2bg.anotherthread.database.modules.QuasquetonModule)
     AdventureModuleRegistry.seedAll()
 
+    // Apply environmental effects to specific locations
+    EnvironmentalEffectService.applyDirectionConfusionToMinotaurMaze()
+
     // Auto-balance ability costs on startup
     val abilityCostBalancer = AbilityCostBalancer()
     abilityCostBalancer.balanceAbilityCosts()
@@ -1621,6 +1627,12 @@ fun Application.module() {
 
         // Pool routes (magical pools with various effects)
         poolRoutes()
+
+        // Trap routes (detection, disarm, trigger)
+        trapRoutes()
+
+        // Environmental effects and prisoner rescue routes
+        environmentalRoutes()
 
         // Feature Category routes
         route("/feature-categories") {

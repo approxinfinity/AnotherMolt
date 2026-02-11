@@ -91,6 +91,7 @@ abstract class AdventureModuleSeed {
     private val locations = mutableListOf<LocationBuilder>()
     private val chests = mutableListOf<ChestBuilder>()
     private val pools = mutableListOf<PoolBuilder>()
+    private val traps = mutableListOf<TrapBuilder>()
 
     // ============== DSL Entry Point ==============
 
@@ -124,6 +125,9 @@ abstract class AdventureModuleSeed {
 
     /** Generate pool ID */
     protected fun poolId(suffix: String): String = "pool-$moduleId-$suffix"
+
+    /** Generate trap ID */
+    protected fun trapId(suffix: String): String = "trap-$moduleId-$suffix"
 
     // ============== DSL Functions ==============
 
@@ -197,6 +201,16 @@ abstract class AdventureModuleSeed {
         return builder
     }
 
+    /**
+     * Define a trap for this module.
+     */
+    protected fun trap(suffix: String, block: TrapBuilder.() -> Unit): TrapBuilder {
+        val builder = TrapBuilder(trapId(suffix), this)
+        builder.block()
+        traps.add(builder)
+        return builder
+    }
+
     // ============== Seeding ==============
 
     /**
@@ -226,6 +240,7 @@ abstract class AdventureModuleSeed {
         locations.clear()
         chests.clear()
         pools.clear()
+        traps.clear()
 
         defineContent()
 
@@ -239,8 +254,9 @@ abstract class AdventureModuleSeed {
         seedLocations()
         seedChests()
         seedPools()
+        seedTraps()
 
-        log.info("Seeded adventure module: $moduleName (${abilities.size} abilities, ${items.size} items, ${creatures.size} creatures, ${locations.size} locations, ${chests.size} chests, ${pools.size} pools)")
+        log.info("Seeded adventure module: $moduleName (${abilities.size} abilities, ${items.size} items, ${creatures.size} creatures, ${locations.size} locations, ${chests.size} chests, ${pools.size} pools, ${traps.size} traps)")
     }
 
     private fun seedAbilities() {
@@ -295,6 +311,14 @@ abstract class AdventureModuleSeed {
         pools.forEach { builder ->
             if (PoolRepository.findById(builder.id) == null) {
                 PoolRepository.create(builder.build())
+            }
+        }
+    }
+
+    private fun seedTraps() {
+        traps.forEach { builder ->
+            if (TrapRepository.findById(builder.id) == null) {
+                TrapRepository.create(builder.build())
             }
         }
     }
@@ -755,6 +779,173 @@ abstract class AdventureModuleSeed {
             isOneTimeUse = isOneTimeUse,
             isHidden = isHidden,
             identifyDifficulty = identifyDifficulty
+        )
+    }
+
+    /**
+     * Builder for traps with various effects.
+     */
+    class TrapBuilder(val id: String, private val module: AdventureModuleSeed) {
+        var name: String = ""
+        var description: String = ""
+        var locationSuffix: String = ""
+
+        // Type and trigger
+        var trapType: TrapType = TrapType.PIT
+        var triggerType: TrapTrigger = TrapTrigger.MOVEMENT
+
+        // Detection and disarm difficulty (1-5 scale)
+        var detectDifficulty: Int = 2
+        var disarmDifficulty: Int = 2
+
+        // Effect configuration
+        private var effectData: TrapEffectData = TrapEffectData()
+
+        // State
+        var isHidden: Boolean = true
+        var isArmed: Boolean = true
+        var resetsAfterRounds: Int = 0  // 0 = doesn't reset
+
+        // === Trap Type Configuration Methods ===
+
+        /** Configure a pit trap */
+        fun pit(depth: Int, damageDice: String = "1d6", saveDC: Int = 12) {
+            trapType = TrapType.PIT
+            triggerType = TrapTrigger.MOVEMENT
+            effectData = effectData.copy(
+                pitDepth = depth,
+                damageDice = damageDice,
+                damageType = "falling",
+                savingThrowType = "dexterity",
+                savingThrowDC = saveDC,
+                appliesCondition = "prone",
+                conditionDuration = 1
+            )
+        }
+
+        /** Configure a dart trap */
+        fun dart(damageDice: String = "1d4", saveDC: Int = 12, poisoned: Boolean = false, poisonDuration: Int = 10) {
+            trapType = TrapType.DART
+            effectData = effectData.copy(
+                damageDice = damageDice,
+                damageType = "piercing",
+                savingThrowType = "dexterity",
+                savingThrowDC = saveDC,
+                poisonDuration = if (poisoned) poisonDuration else null
+            )
+        }
+
+        /** Configure a poison needle trap (typically on chests/doors) */
+        fun poisonNeedle(damageDice: String = "1", poisonDuration: Int = 10, saveDC: Int = 13) {
+            trapType = TrapType.POISON_NEEDLE
+            triggerType = TrapTrigger.CHEST
+            effectData = effectData.copy(
+                damageDice = damageDice,
+                damageType = "piercing",
+                poisonDuration = poisonDuration,
+                savingThrowType = "constitution",
+                savingThrowDC = saveDC
+            )
+        }
+
+        /** Configure a boulder trap */
+        fun boulder(damageDice: String = "4d6", saveDC: Int = 15) {
+            trapType = TrapType.BOULDER
+            triggerType = TrapTrigger.PRESSURE_PLATE
+            effectData = effectData.copy(
+                damageDice = damageDice,
+                damageType = "bludgeoning",
+                savingThrowType = "dexterity",
+                savingThrowDC = saveDC
+            )
+        }
+
+        /** Configure an alarm trap that alerts creatures */
+        fun alarm(creatureSuffixes: List<String>, message: String? = null) {
+            trapType = TrapType.ALARM
+            effectData = effectData.copy(
+                alertsCreatureIds = creatureSuffixes.map { module.creatureId(it) },
+                customMessage = message ?: "An alarm sounds! Nearby creatures are alerted!"
+            )
+        }
+
+        /** Configure a fire trap */
+        fun fire(damageDice: String = "2d6", saveDC: Int = 13) {
+            trapType = TrapType.FIRE
+            effectData = effectData.copy(
+                damageDice = damageDice,
+                damageType = "fire",
+                savingThrowType = "dexterity",
+                savingThrowDC = saveDC
+            )
+        }
+
+        /** Configure a spear trap */
+        fun spear(damageDice: String = "2d6", saveDC: Int = 14) {
+            trapType = TrapType.SPEAR
+            triggerType = TrapTrigger.PRESSURE_PLATE
+            effectData = effectData.copy(
+                damageDice = damageDice,
+                damageType = "piercing",
+                savingThrowType = "dexterity",
+                savingThrowDC = saveDC
+            )
+        }
+
+        /** Configure a cage trap */
+        fun cage(duration: Int = 10, saveDC: Int = 13) {
+            trapType = TrapType.CAGE
+            effectData = effectData.copy(
+                appliesCondition = "restrained",
+                conditionDuration = duration,
+                savingThrowType = "dexterity",
+                savingThrowDC = saveDC
+            )
+        }
+
+        /** Configure a teleport trap */
+        fun teleport(destinationSuffix: String, message: String? = null) {
+            trapType = TrapType.TELEPORT
+            effectData = effectData.copy(
+                teleportLocationId = module.locationId(destinationSuffix),
+                customMessage = message ?: "Reality warps around you and suddenly you're somewhere else!"
+            )
+        }
+
+        /** Configure a magic trap with custom effects */
+        fun magic(damageDice: String? = null, condition: String? = null, conditionDuration: Int = 0, message: String? = null) {
+            trapType = TrapType.MAGIC
+            effectData = effectData.copy(
+                damageDice = damageDice,
+                appliesCondition = condition,
+                conditionDuration = conditionDuration,
+                customMessage = message ?: "Magical energy surges through you!"
+            )
+        }
+
+        /** Set trigger type */
+        fun trigger(type: TrapTrigger) {
+            triggerType = type
+        }
+
+        /** Set custom message */
+        fun message(customMessage: String) {
+            effectData = effectData.copy(customMessage = customMessage)
+        }
+
+        fun build(): Trap = Trap(
+            id = id,
+            name = name,
+            description = description,
+            locationId = module.locationId(locationSuffix),
+            trapType = trapType,
+            triggerType = triggerType,
+            detectDifficulty = detectDifficulty,
+            disarmDifficulty = disarmDifficulty,
+            effectData = effectData,
+            isHidden = isHidden,
+            isArmed = isArmed,
+            resetsAfterRounds = resetsAfterRounds
         )
     }
 }
