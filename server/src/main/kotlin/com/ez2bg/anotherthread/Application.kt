@@ -1149,6 +1149,7 @@ fun Application.module() {
     // Seed modular adventure modules (new architecture)
     // Register and seed adventure modules from the modules package
     AdventureModuleRegistry.register(com.ez2bg.anotherthread.database.modules.CavesOfChaosModule)
+    AdventureModuleRegistry.register(com.ez2bg.anotherthread.database.modules.KeepOnTheBorderlandsModule)
     AdventureModuleRegistry.seedAll()
 
     // Auto-balance ability costs on startup
