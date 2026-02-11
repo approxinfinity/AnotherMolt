@@ -428,6 +428,8 @@ fun getOppositeDirection(direction: ExitDirection): ExitDirection = when (direct
     ExitDirection.SOUTHWEST -> ExitDirection.NORTHEAST
     ExitDirection.NORTHWEST -> ExitDirection.SOUTHEAST
     ExitDirection.SOUTHEAST -> ExitDirection.NORTHWEST
+    ExitDirection.UP -> ExitDirection.DOWN
+    ExitDirection.DOWN -> ExitDirection.UP
     ExitDirection.ENTER -> ExitDirection.ENTER
     ExitDirection.UNKNOWN -> ExitDirection.UNKNOWN
 }
@@ -459,6 +461,8 @@ fun getDirectionOffset(direction: ExitDirection): Pair<Int, Int> = when (directi
     ExitDirection.SOUTHWEST -> Pair(-1, 1)
     ExitDirection.WEST -> Pair(-1, 0)
     ExitDirection.NORTHWEST -> Pair(-1, -1)
+    ExitDirection.UP -> Pair(0, 0)  // Vertical - no x,y offset (z changes)
+    ExitDirection.DOWN -> Pair(0, 0)  // Vertical - no x,y offset (z changes)
     ExitDirection.ENTER -> Pair(0, 0) // Portal - no grid offset
     ExitDirection.UNKNOWN -> Pair(0, 0)
 }

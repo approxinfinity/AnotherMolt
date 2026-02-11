@@ -190,7 +190,9 @@ internal fun LocationNodeThumbnail(
                             ExitDirection.NORTHWEST -> Pair(-0.707f, -0.707f)
                             ExitDirection.SOUTHEAST -> Pair(0.707f, 0.707f)
                             ExitDirection.SOUTHWEST -> Pair(-0.707f, 0.707f)
-                            ExitDirection.ENTER -> Pair(0f, 1.2f) // Below, slightly further
+                            ExitDirection.UP -> Pair(0f, -1.2f) // Above, further out
+                            ExitDirection.DOWN -> Pair(0f, 1.2f) // Below, further out
+                            ExitDirection.ENTER -> Pair(0f, 1.4f) // Below DOWN
                             ExitDirection.UNKNOWN -> Pair(0f, 0f)
                         }
 
@@ -229,6 +231,8 @@ internal fun LocationNodeThumbnail(
                                             ExitDirection.NORTHWEST -> Icons.Filled.NorthWest
                                             ExitDirection.SOUTHEAST -> Icons.Filled.SouthEast
                                             ExitDirection.SOUTHWEST -> Icons.Filled.SouthWest
+                                            ExitDirection.UP -> Icons.Filled.ArrowUpward
+                                            ExitDirection.DOWN -> Icons.Filled.ArrowDownward
                                             ExitDirection.ENTER -> Icons.Filled.MeetingRoom
                                             ExitDirection.UNKNOWN -> Icons.Filled.ArrowUpward
                                         },

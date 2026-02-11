@@ -15,9 +15,9 @@ object LocationTable : Table("location") {
     // Grid coordinates - null means not yet placed in a coordinate system
     val gridX = integer("grid_x").nullable()
     val gridY = integer("grid_y").nullable()
+    val gridZ = integer("grid_z").nullable()  // Z coordinate for vertical stacking (UP/DOWN exits). Default 0 for ground level.
     // Area identifier - groups locations into distinct map regions (e.g., "overworld", "fungus-forest")
     // Locations in different areas are logically separate even if coordinates overlap
-    // Note: areaId replaces gridZ - different areas can have overlapping x,y coordinates
     val areaId = varchar("area_id", 100).nullable()
     // Last edited tracking - null means never edited by a user (e.g., auto-generated wilderness)
     val lastEditedBy = varchar("last_edited_by", 36).nullable()

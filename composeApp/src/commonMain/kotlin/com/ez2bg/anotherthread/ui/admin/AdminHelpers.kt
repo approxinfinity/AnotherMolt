@@ -53,6 +53,8 @@ fun ExitDirection.toShortLabel(): String = when (this) {
     ExitDirection.SOUTHWEST -> "SW"
     ExitDirection.WEST -> "W"
     ExitDirection.NORTHWEST -> "NW"
+    ExitDirection.UP -> "U"
+    ExitDirection.DOWN -> "D"
     ExitDirection.ENTER -> "EN"
     ExitDirection.UNKNOWN -> "?"
 }
@@ -66,6 +68,8 @@ fun ExitDirection.toDisplayLabel(): String = when (this) {
     ExitDirection.SOUTHWEST -> "Southwest"
     ExitDirection.WEST -> "West"
     ExitDirection.NORTHWEST -> "Northwest"
+    ExitDirection.UP -> "Up"
+    ExitDirection.DOWN -> "Down"
     ExitDirection.ENTER -> "Enter"
     ExitDirection.UNKNOWN -> "Unknown"
 }
@@ -79,6 +83,8 @@ fun getOppositeDirection(direction: ExitDirection): ExitDirection = when (direct
     ExitDirection.SOUTHWEST -> ExitDirection.NORTHEAST
     ExitDirection.WEST -> ExitDirection.EAST
     ExitDirection.NORTHWEST -> ExitDirection.SOUTHEAST
+    ExitDirection.UP -> ExitDirection.DOWN
+    ExitDirection.DOWN -> ExitDirection.UP
     ExitDirection.ENTER -> ExitDirection.ENTER
     ExitDirection.UNKNOWN -> ExitDirection.UNKNOWN
 }
@@ -96,6 +102,8 @@ fun getDirectionVector(direction: ExitDirection): Pair<Float, Float> = when (dir
     ExitDirection.SOUTHWEST -> Pair(-0.707f, 0.707f)
     ExitDirection.WEST -> Pair(-1f, 0f)
     ExitDirection.NORTHWEST -> Pair(-0.707f, -0.707f)
+    ExitDirection.UP -> Pair(0f, 0f) // Vertical - no x,y offset
+    ExitDirection.DOWN -> Pair(0f, 0f) // Vertical - no x,y offset
     ExitDirection.ENTER -> Pair(0f, 0f) // Portal/entrance - no directional bias
     ExitDirection.UNKNOWN -> Pair(0f, 0f) // No directional bias
 }
@@ -113,6 +121,8 @@ fun getGridOffset(direction: ExitDirection): Pair<Int, Int> = when (direction) {
     ExitDirection.SOUTHWEST -> Pair(-1, 1)
     ExitDirection.WEST -> Pair(-1, 0)
     ExitDirection.NORTHWEST -> Pair(-1, -1)
+    ExitDirection.UP -> Pair(0, 0) // Vertical - no x,y offset (z changes)
+    ExitDirection.DOWN -> Pair(0, 0) // Vertical - no x,y offset (z changes)
     ExitDirection.ENTER -> Pair(0, 0) // Portal - no grid offset (different z-level)
     ExitDirection.UNKNOWN -> Pair(0, 1) // Default to south for unknown
 }

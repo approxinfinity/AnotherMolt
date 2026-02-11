@@ -18,7 +18,7 @@ import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
 
 enum class ExitDirection {
-    NORTH, NORTHEAST, EAST, SOUTHEAST, SOUTH, SOUTHWEST, WEST, NORTHWEST, ENTER, UNKNOWN
+    NORTH, NORTHEAST, EAST, SOUTHEAST, SOUTH, SOUTHWEST, WEST, NORTHWEST, UP, DOWN, ENTER, UNKNOWN
 }
 
 enum class LocationType {
@@ -55,7 +55,8 @@ data class LocationDto(
     // Grid coordinates - null means not yet placed in a coordinate system
     val gridX: Int? = null,
     val gridY: Int? = null,
-    // Area identifier - groups locations into distinct map regions (replaces gridZ)
+    val gridZ: Int? = 0,  // Z coordinate for vertical stacking (UP/DOWN exits)
+    // Area identifier - groups locations into distinct map regions
     val areaId: String? = null,
     // Last edited tracking - null means never edited by a user (e.g., auto-generated)
     val lastEditedBy: String? = null,

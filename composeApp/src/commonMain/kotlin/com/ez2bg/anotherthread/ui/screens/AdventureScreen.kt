@@ -2345,7 +2345,7 @@ private fun DirectionalRing(
     val ringRadius = 70.dp  // Closer to thumbnail than ability ring was
     val buttonSize = 28.dp
 
-    // Only show directional exits (compass directions), not ENTER exits
+    // Only show directional exits (compass directions + UP/DOWN), not ENTER exits
     val directionalExits = exits.filter { it.direction != ExitDirection.ENTER && it.direction != ExitDirection.UNKNOWN }
 
     // Filter phasewalk destinations to exclude any direction that has a regular exit
@@ -2357,6 +2357,7 @@ private fun DirectionalRing(
 
     // Helper to calculate offset for a direction
     fun getDirectionOffset(direction: String): Pair<Dp, Dp> {
+        val upDownOffset = ringRadius * 1.4f  // UP/DOWN are further out than compass directions
         return when (direction.lowercase()) {
             "north" -> Pair(0.dp, -ringRadius)
             "south" -> Pair(0.dp, ringRadius)
@@ -2378,6 +2379,8 @@ private fun DirectionalRing(
                 val diag = ringRadius.value * 0.707f
                 Pair(-diag.dp, diag.dp)
             }
+            "up" -> Pair(0.dp, -upDownOffset)  // Above north
+            "down" -> Pair(0.dp, upDownOffset)  // Below south
             else -> Pair(0.dp, 0.dp)
         }
     }
@@ -2388,6 +2391,7 @@ private fun DirectionalRing(
             val targetLocation = locations.find { it.id == exit.locationId }
             if (targetLocation != null) {
                 // Calculate position based on direction
+                val upDownOffset = ringRadius * 1.4f  // UP/DOWN are further out
                 val (offsetX, offsetY) = when (exit.direction) {
                     ExitDirection.NORTH -> Pair(0.dp, -ringRadius)
                     ExitDirection.SOUTH -> Pair(0.dp, ringRadius)
@@ -2409,6 +2413,8 @@ private fun DirectionalRing(
                         val diag = ringRadius.value * 0.707f
                         Pair(-diag.dp, diag.dp)
                     }
+                    ExitDirection.UP -> Pair(0.dp, -upDownOffset)
+                    ExitDirection.DOWN -> Pair(0.dp, upDownOffset)
                     else -> Pair(0.dp, 0.dp)
                 }
 
@@ -2421,13 +2427,21 @@ private fun DirectionalRing(
                     ExitDirection.NORTHWEST -> Icons.Filled.NorthWest
                     ExitDirection.SOUTHEAST -> Icons.Filled.SouthEast
                     ExitDirection.SOUTHWEST -> Icons.Filled.SouthWest
+                    ExitDirection.UP -> Icons.Filled.ArrowUpward
+                    ExitDirection.DOWN -> Icons.Filled.ArrowDownward
                     else -> Icons.Filled.ArrowUpward
+                }
+
+                // UP/DOWN get a different color (green for vertical movement)
+                val exitColor = when (exit.direction) {
+                    ExitDirection.UP, ExitDirection.DOWN -> Color(0xFF4CAF50)  // Green for vertical
+                    else -> Color(0xFF1976D2)  // Blue for horizontal
                 }
 
                 DirectionalButton(
                     exit = exit,
                     icon = icon,
-                    color = Color(0xFF1976D2),  // Blue for directions
+                    color = exitColor,
                     offsetX = offsetX,
                     offsetY = offsetY,
                     buttonSize = buttonSize,
@@ -5069,10 +5083,10 @@ private fun LocationDetailPopup(
                     modifier = Modifier.padding(top = 4.dp)
                 ) {
                     location.exits.forEach { exit ->
-                        val directionColor = if (exit.direction == ExitDirection.ENTER) {
-                            Color(0xFF9C27B0)  // Purple for portals
-                        } else {
-                            Color(0xFF1976D2)  // Blue for normal directions
+                        val directionColor = when (exit.direction) {
+                            ExitDirection.ENTER -> Color(0xFF9C27B0)  // Purple for portals
+                            ExitDirection.UP, ExitDirection.DOWN -> Color(0xFF4CAF50)  // Green for vertical
+                            else -> Color(0xFF1976D2)  // Blue for normal directions
                         }
                         Box(
                             modifier = Modifier

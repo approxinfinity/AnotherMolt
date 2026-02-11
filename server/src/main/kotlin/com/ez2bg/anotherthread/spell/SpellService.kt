@@ -398,6 +398,7 @@ object SpellService {
             ExitDirection.SOUTHWEST -> Pair(currentX - 1, currentY + 1)
             ExitDirection.WEST -> Pair(currentX - 1, currentY)
             ExitDirection.NORTHWEST -> Pair(currentX - 1, currentY - 1)
+            ExitDirection.UP, ExitDirection.DOWN -> return CastResult.Failure("Cannot phase walk vertically")
             ExitDirection.ENTER -> return CastResult.Failure("Cannot phase walk through portals")
             ExitDirection.UNKNOWN -> return CastResult.Failure("Cannot phase walk in unknown direction")
         }

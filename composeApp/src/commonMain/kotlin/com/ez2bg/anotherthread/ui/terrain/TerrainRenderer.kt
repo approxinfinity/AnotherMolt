@@ -1682,6 +1682,8 @@ private fun getDirectionVector(direction: ExitDirection): Pair<Float, Float> = w
     ExitDirection.SOUTHWEST -> Pair(-0.707f, 0.707f)
     ExitDirection.WEST -> Pair(-1f, 0f)
     ExitDirection.NORTHWEST -> Pair(-0.707f, -0.707f)
+    ExitDirection.UP -> Pair(0f, 0f)  // Vertical - no x,y direction
+    ExitDirection.DOWN -> Pair(0f, 0f)  // Vertical - no x,y direction
     ExitDirection.ENTER -> Pair(0f, 0f)
     ExitDirection.UNKNOWN -> Pair(0f, 0f)
 }

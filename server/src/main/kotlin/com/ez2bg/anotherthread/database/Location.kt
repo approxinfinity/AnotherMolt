@@ -14,7 +14,7 @@ import org.jetbrains.exposed.sql.update
 import java.util.UUID
 
 enum class ExitDirection {
-    NORTH, NORTHEAST, EAST, SOUTHEAST, SOUTH, SOUTHWEST, WEST, NORTHWEST, ENTER, UNKNOWN
+    NORTH, NORTHEAST, EAST, SOUTHEAST, SOUTH, SOUTHWEST, WEST, NORTHWEST, UP, DOWN, ENTER, UNKNOWN
 }
 
 // Location types for determining behavior
@@ -52,8 +52,8 @@ data class Location(
     // Grid coordinates - null means not yet placed in a coordinate system
     val gridX: Int? = null,
     val gridY: Int? = null,
+    val gridZ: Int? = 0,  // Z coordinate for vertical stacking (UP/DOWN exits). Default 0 for ground level.
     // Area identifier - groups locations into distinct map regions (e.g., "overworld", "fungus-forest")
-    // Note: areaId replaces gridZ - different areas can have overlapping x,y coordinates
     val areaId: String? = null,
     // Last edited tracking - null means never edited by a user (e.g., auto-generated wilderness)
     val lastEditedBy: String? = null,
@@ -124,6 +124,7 @@ object LocationRepository {
         lockedBy = this[LocationTable.lockedBy],
         gridX = this[LocationTable.gridX],
         gridY = this[LocationTable.gridY],
+        gridZ = this[LocationTable.gridZ] ?: 0,
         areaId = this[LocationTable.areaId],
         lastEditedBy = this[LocationTable.lastEditedBy],
         lastEditedAt = this[LocationTable.lastEditedAt],
@@ -156,6 +157,7 @@ object LocationRepository {
             it[lockedBy] = location.lockedBy
             it[gridX] = location.gridX
             it[gridY] = location.gridY
+            it[gridZ] = location.gridZ
             it[areaId] = location.areaId
             it[lastEditedBy] = location.lastEditedBy
             it[lastEditedAt] = location.lastEditedAt
@@ -196,6 +198,7 @@ object LocationRepository {
             it[lockedBy] = location.lockedBy
             it[gridX] = location.gridX
             it[gridY] = location.gridY
+            it[gridZ] = location.gridZ
             it[areaId] = location.areaId
             it[lastEditedBy] = location.lastEditedBy
             it[lastEditedAt] = location.lastEditedAt
