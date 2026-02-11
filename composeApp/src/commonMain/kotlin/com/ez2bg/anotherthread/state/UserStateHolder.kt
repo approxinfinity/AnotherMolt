@@ -296,16 +296,25 @@ object UserStateHolder {
 
     private suspend fun refreshUserInternal(preserveLocalLocation: Boolean) {
         val userId = _currentUser.value?.id ?: return
-        val localLocationId = _currentUser.value?.currentLocationId
+        val localUser = _currentUser.value
+        val localLocationId = localUser?.currentLocationId
+        val localVisitedIds = localUser?.visitedLocationIds ?: emptyList()
+
         ApiClient.getUser(userId).onSuccess { freshUser ->
             if (freshUser != null) {
+                // Always merge visited locations (local + server) to never lose exploration progress
+                val mergedVisitedIds = (freshUser.visitedLocationIds + localVisitedIds).distinct()
+
                 val userToSave = if (preserveLocalLocation && localLocationId != null) {
                     // Preserve local location - the server may have stale location data
                     // if we recently navigated and the update hasn't been processed yet.
-                    freshUser.copy(currentLocationId = localLocationId)
+                    freshUser.copy(
+                        currentLocationId = localLocationId,
+                        visitedLocationIds = mergedVisitedIds
+                    )
                 } else {
-                    // Use server's location (e.g., after death/respawn)
-                    freshUser
+                    // Use server's location (e.g., after death/respawn), but still merge visited
+                    freshUser.copy(visitedLocationIds = mergedVisitedIds)
                 }
                 _currentUser.value = userToSave
                 AuthStorage.saveUser(userToSave)
