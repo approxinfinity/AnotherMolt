@@ -1164,11 +1164,11 @@ object KeepOnTheBorderlandsModule : AdventureModuleSeed() {
         // === SHOPS ===
         location("smithy") {
             name = "Smithy and Armorer"
-            description = "A building about 20 feet high with a forge, bellows, and anvil on the lower floor. The clang of hammer on metal rings out as the smith and his assistants work. Weapons line the walls: 2 swords, a mace, chain mail, and 11 finished spears."
+            description = "A building about 20 feet high with a forge, bellows, and anvil on the lower floor. The clang of hammer on metal rings out as the smith and his assistants work. Weapons line the walls: swords, axes, spears, and a suit of chain mail."
             position(-1, 2, 0)
             locationType = LocationType.INDOOR
             creatures("smith", "smith-assistant", "smith-assistant")
-            items("longsword", "longsword", "mace", "chain-mail", "spear")
+            items("longsword", "shortsword", "dagger", "spear", "pole-arm", "mace", "hand-axe", "battle-axe", "chain-mail")
             exits {
                 east("outer-bailey-square")
             }
@@ -1189,11 +1189,11 @@ object KeepOnTheBorderlandsModule : AdventureModuleSeed() {
 
         location("traders-shop") {
             name = "Trader"
-            description = "A shop dealing in armor, weapons, salt, spices, cloth, rare woods, and furs. The trader and his two sons eagerly buy furs from adventurers at their stated value. Leather armor and shields hang on display."
+            description = "A shop dealing in armor, weapons, salt, spices, cloth, rare woods, and furs. The trader and his two sons eagerly buy furs from adventurers at their stated value. Leather armor, chain mail, and shields hang on display."
             position(1, 1, 0)
             locationType = LocationType.INDOOR
             creatures("trader")
-            items("leather-armor", "shield", "fur-trimmed-cape", "dagger-jeweled", "crystal-decanter", "jade-ring", "gold-silver-belt")
+            items("leather-armor", "chain-mail", "plate-mail", "shield", "fur-trimmed-cape", "dagger-jeweled", "crystal-decanter", "jade-ring", "gold-silver-belt")
             exits {
                 south("provisioner-shop")
                 southwest("outer-bailey-square")
