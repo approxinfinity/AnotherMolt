@@ -63,6 +63,7 @@ import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.StrokeJoin
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.graphics.PathEffect
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.unit.IntSize
@@ -637,10 +638,21 @@ fun AdventureScreen(
                                 }
                             }
 
+                            // Get unvisited locations that are directly connected from current location (show as "?")
+                            val unvisitedConnectedLocations = remember(uiState.locations, currentLocation.exits, visitedLocationIds) {
+                                val connectedIds = currentLocation.exits.map { it.locationId }.toSet()
+                                uiState.locations.filter { location ->
+                                    location.id in connectedIds &&
+                                    location.id !in visitedLocationIds &&
+                                    location.id != currentLocation.id
+                                }
+                            }
+
                             // Centered minimap (replaces location thumbnail)
                             CenterMinimap(
                                 locations = areaLocations,
                                 currentLocation = currentLocation,
+                                unvisitedConnectedLocations = unvisitedConnectedLocations,
                                 isRanger = uiState.isRanger,
                                 isBlinded = isBlinded,
                                 blindRounds = blindRounds,
@@ -2136,6 +2148,7 @@ private fun Minimap(
 private fun CenterMinimap(
     locations: List<LocationDto>,
     currentLocation: LocationDto,
+    unvisitedConnectedLocations: List<LocationDto> = emptyList(),
     isRanger: Boolean,
     isBlinded: Boolean,
     blindRounds: Int,
@@ -2196,7 +2209,10 @@ private fun CenterMinimap(
                     }
                 }
 
-                val locationById = locations.associateBy { it.id }
+                // Include both visited locations and unvisited connected locations for drawing
+                val allDisplayLocations = locations + unvisitedConnectedLocations
+                val locationById = allDisplayLocations.associateBy { it.id }
+                val unvisitedIds = unvisitedConnectedLocations.map { it.id }.toSet()
                 val drawnConnections = mutableSetOf<Pair<String, String>>()
                 val visited = mutableSetOf<String>()
                 val queue = ArrayDeque<Pair<String, Int>>()
@@ -2274,8 +2290,8 @@ private fun CenterMinimap(
                     }
                 }
 
-                // Draw dots
-                locations.forEach { location ->
+                // Draw dots for all display locations (visited + unvisited connected)
+                allDisplayLocations.forEach { location ->
                     val locGridX = location.gridX ?: return@forEach
                     val locGridY = location.gridY ?: return@forEach
 
@@ -2290,6 +2306,8 @@ private fun CenterMinimap(
                         val dotVignetteAlpha = if (isCurrentLoc) 1f else vignetteAlpha(dotX, dotY)
 
                         if (dotVignetteAlpha > 0.01f) {
+                            val isUnvisited = location.id in unvisitedIds
+
                             if (isCurrentLoc) {
                                 drawCircle(
                                     color = lineColor,
@@ -2299,19 +2317,55 @@ private fun CenterMinimap(
                                 )
                             }
 
-                            val terrainColor = getTerrainColor(location.desc, location.name)
-                            drawCircle(
-                                color = terrainColor.copy(alpha = terrainColor.alpha * dotVignetteAlpha),
-                                radius = dotRadius,
-                                center = Offset(dotX, dotY)
-                            )
-
-                            drawCircle(
-                                color = lineColor.copy(alpha = 0.6f * dotVignetteAlpha),
-                                radius = dotRadius,
-                                center = Offset(dotX, dotY),
-                                style = Stroke(width = dotOutlineWidth)
-                            )
+                            if (isUnvisited) {
+                                // Draw "?" marker for unvisited but connected locations
+                                val fogColor = Color(0xFF555555)
+                                val questionColor = Color(0xFFAAAAAA)
+                                drawCircle(
+                                    color = fogColor.copy(alpha = 0.8f * dotVignetteAlpha),
+                                    radius = dotRadius,
+                                    center = Offset(dotX, dotY)
+                                )
+                                // Draw a dashed outline to indicate unknown
+                                drawCircle(
+                                    color = questionColor.copy(alpha = 0.9f * dotVignetteAlpha),
+                                    radius = dotRadius,
+                                    center = Offset(dotX, dotY),
+                                    style = Stroke(width = dotOutlineWidth * 1.5f, pathEffect = PathEffect.dashPathEffect(floatArrayOf(3f, 3f)))
+                                )
+                                // Draw a small "?" shape inside using a small arc and dot
+                                val qSize = dotRadius * 0.6f
+                                // Draw the curved part of "?"
+                                drawArc(
+                                    color = questionColor.copy(alpha = dotVignetteAlpha),
+                                    startAngle = 200f,
+                                    sweepAngle = 250f,
+                                    useCenter = false,
+                                    topLeft = Offset(dotX - qSize, dotY - qSize - 1f),
+                                    size = Size(qSize * 2, qSize * 1.5f),
+                                    style = Stroke(width = 1.5f)
+                                )
+                                // Draw the dot at bottom of "?"
+                                drawCircle(
+                                    color = questionColor.copy(alpha = dotVignetteAlpha),
+                                    radius = 1f,
+                                    center = Offset(dotX, dotY + qSize * 0.6f)
+                                )
+                            } else {
+                                // Draw normal terrain-colored dot for visited locations
+                                val terrainColor = getTerrainColor(location.desc, location.name)
+                                drawCircle(
+                                    color = terrainColor.copy(alpha = terrainColor.alpha * dotVignetteAlpha),
+                                    radius = dotRadius,
+                                    center = Offset(dotX, dotY)
+                                )
+                                drawCircle(
+                                    color = lineColor.copy(alpha = 0.6f * dotVignetteAlpha),
+                                    radius = dotRadius,
+                                    center = Offset(dotX, dotY),
+                                    style = Stroke(width = dotOutlineWidth)
+                                )
+                            }
                         }
                     }
                 }
