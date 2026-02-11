@@ -155,7 +155,8 @@ fun AdventureScreen(
     onSwitchToCreate: () -> Unit,
     onViewLocationDetails: (LocationDto) -> Unit,
     ghostMode: Boolean = false,
-    onGhostModeBack: (() -> Unit)? = null
+    onGhostModeBack: (() -> Unit)? = null,
+    onNavigateToAdminPanel: (() -> Unit)? = null  // Direct navigation to admin panel (skips create mode landing)
 ) {
     // Create ViewModel scoped to this composable
     // ViewModel now uses UserStateHolder internally for reactive user state
@@ -842,7 +843,9 @@ fun AdventureScreen(
                         },
                         onNavigateToItem = { },
                         onBack = { showCharacterSheet = false },
-                        onNavigateToAdmin = if (isAdmin) {
+                        onNavigateToAdmin = if (isAdmin && onNavigateToAdminPanel != null) {
+                            { showCharacterSheet = false; onNavigateToAdminPanel() }
+                        } else if (isAdmin) {
                             { showCharacterSheet = false; onSwitchToCreate() }
                         } else null,
                         onLeaveParty = { viewModel.leaveParty() }

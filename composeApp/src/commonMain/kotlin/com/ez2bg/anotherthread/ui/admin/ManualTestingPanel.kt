@@ -21,8 +21,6 @@ import com.ez2bg.anotherthread.api.ManualTestItemDto
 import com.ez2bg.anotherthread.api.ManualTestCountsDto
 import com.ez2bg.anotherthread.state.UserStateHolder
 import kotlinx.coroutines.launch
-import java.text.SimpleDateFormat
-import java.util.*
 
 /**
  * Collapsible panel for tracking manual testing progress.
@@ -243,8 +241,6 @@ private fun ManualTestItemRow(
     onMarkTested: () -> Unit,
     onUnmarkTested: () -> Unit
 ) {
-    val dateFormat = remember { SimpleDateFormat("MMM d, yyyy", Locale.getDefault()) }
-
     Card(
         modifier = Modifier.fillMaxWidth(),
         colors = CardDefaults.cardColors(
@@ -335,14 +331,14 @@ private fun ManualTestItemRow(
                 horizontalArrangement = Arrangement.spacedBy(16.dp)
             ) {
                 Text(
-                    text = "Added: ${dateFormat.format(Date(item.addedAt))}",
+                    text = "Added: ${formatEpochMillis(item.addedAt)}",
                     style = MaterialTheme.typography.labelSmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
 
                 if (item.testedAt != null) {
                     Text(
-                        text = "Tested: ${dateFormat.format(Date(item.testedAt))}",
+                        text = "Tested: ${formatEpochMillis(item.testedAt)}",
                         style = MaterialTheme.typography.labelSmall,
                         color = Color(0xFF4CAF50)
                     )
@@ -374,4 +370,48 @@ private fun getCategoryColor(category: String): Color {
         "puzzles" -> Color(0xFF673AB7)  // Deep purple
         else -> Color(0xFF757575)       // Grey
     }
+}
+
+/**
+ * Simple multiplatform date formatter for epoch millis.
+ * Formats as "Jan 15, 2025" style.
+ */
+private fun formatEpochMillis(millis: Long): String {
+    // Calculate date components from epoch millis
+    val totalDays = millis / (1000 * 60 * 60 * 24)
+
+    // Start from Unix epoch (Jan 1, 1970)
+    var year = 1970
+    var remainingDays = totalDays.toInt()
+
+    // Find the year
+    while (true) {
+        val daysInYear = if (isLeapYear(year)) 366 else 365
+        if (remainingDays < daysInYear) break
+        remainingDays -= daysInYear
+        year++
+    }
+
+    // Find the month and day
+    val daysInMonth = if (isLeapYear(year)) {
+        intArrayOf(31, 29, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31)
+    } else {
+        intArrayOf(31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31)
+    }
+
+    var month = 0
+    while (month < 12 && remainingDays >= daysInMonth[month]) {
+        remainingDays -= daysInMonth[month]
+        month++
+    }
+    val day = remainingDays + 1
+
+    val monthNames = arrayOf("Jan", "Feb", "Mar", "Apr", "May", "Jun",
+                             "Jul", "Aug", "Sep", "Oct", "Nov", "Dec")
+
+    return "${monthNames[month]} $day, $year"
+}
+
+private fun isLeapYear(year: Int): Boolean {
+    return (year % 4 == 0 && year % 100 != 0) || (year % 400 == 0)
 }

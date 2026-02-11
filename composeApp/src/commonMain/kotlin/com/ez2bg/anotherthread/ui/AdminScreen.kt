@@ -269,7 +269,11 @@ fun AdminScreen() {
                     AdventureScreen(
                         currentUser = currentUser,
                         onSwitchToCreate = { gameMode = GameMode.CREATE },
-                        onViewLocationDetails = { location -> viewState = ViewState.LocationEdit(location, gameMode) }
+                        onViewLocationDetails = { location -> viewState = ViewState.LocationEdit(location, gameMode) },
+                        onNavigateToAdminPanel = {
+                            gameMode = GameMode.CREATE
+                            viewState = ViewState.AdminPanel
+                        }
                     )
                 } else {
                     // Create mode uses LocationGraphView
