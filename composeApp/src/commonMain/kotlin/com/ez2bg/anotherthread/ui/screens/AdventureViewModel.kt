@@ -909,6 +909,8 @@ class AdventureViewModel {
 
             // Optimistically update client state for instant feedback
             AdventureRepository.setCurrentLocation(exit.locationId)
+            // Also persist to AuthStorage immediately so it survives page refresh
+            UserStateHolder.updateLocationLocally(exit.locationId)
 
             // Clear selection and update shop state
             val isShop = exit.locationId in shopLocationIds
@@ -950,8 +952,6 @@ class AdventureViewModel {
             ApiClient.updateUserLocation(userId, exit.locationId)
                 .onSuccess {
                     println("[Navigation] Location update succeeded")
-                    // Persist location locally so it survives page refresh
-                    UserStateHolder.updateLocationLocally(exit.locationId)
                     // Refresh location with user context to get discovered items
                     AdventureRepository.refreshLocationWithUserContext(exit.locationId, userId)
                 }
@@ -960,6 +960,8 @@ class AdventureViewModel {
                     // Rollback client state to match server
                     if (previousLocationId != null) {
                         AdventureRepository.setCurrentLocation(previousLocationId)
+                        // Also rollback the persisted location in AuthStorage
+                        UserStateHolder.updateLocationLocally(previousLocationId)
                         _localState.update {
                             it.copy(
                                 isShopLocation = previousLocationId in shopLocationIds,

@@ -99,8 +99,30 @@ object UserStateHolder {
                 // Update user data from server (fresh data with all items)
                 println("[UserStateHolder] Session valid - refreshing user data. Items: ${response.user.itemIds.size}")
                 val previousUser = _currentUser.value
-                _currentUser.value = response.user
-                AuthStorage.saveUser(response.user)
+
+                // Preserve local location if it differs from server (optimistic navigation)
+                // The local location is more recent if the user navigated since last sync
+                val localLocation = previousUser?.currentLocationId
+                val serverLocation = response.user.currentLocationId
+                val locationToUse = if (localLocation != null && localLocation != serverLocation) {
+                    println("[UserStateHolder] Preserving local location: $localLocation (server had: $serverLocation)")
+                    localLocation
+                } else {
+                    serverLocation
+                }
+
+                // Merge visited locations: combine server + local to get complete set
+                val localVisited = previousUser?.visitedLocationIds ?: emptyList()
+                val serverVisited = response.user.visitedLocationIds
+                val mergedVisited = (serverVisited + localVisited).distinct()
+
+                val mergedUser = response.user.copy(
+                    currentLocationId = locationToUse,
+                    visitedLocationIds = mergedVisited
+                )
+
+                _currentUser.value = mergedUser
+                AuthStorage.saveUser(mergedUser)
 
                 // Emit UserUpdated if the user data changed (e.g., characterClassId was set)
                 // This allows App.kt to react and switch screens appropriately
