@@ -1146,6 +1146,11 @@ fun Application.module() {
     GoblinWarrenLocationsSeed.seedIfEmpty()
     ClassicDungeonLocationsSeed.seedIfEmpty()
 
+    // Seed modular adventure modules (new architecture)
+    // Register and seed adventure modules from the modules package
+    AdventureModuleRegistry.register(com.ez2bg.anotherthread.database.modules.CavesOfChaosModule)
+    AdventureModuleRegistry.seedAll()
+
     // Auto-balance ability costs on startup
     val abilityCostBalancer = AbilityCostBalancer()
     abilityCostBalancer.balanceAbilityCosts()
