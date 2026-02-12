@@ -64,13 +64,17 @@ object SessionRepository {
     }
 
     /**
-     * Create a new session for a user
+     * Create a new session for a user.
+     * Also cleans up old sessions to prevent accumulation.
      */
     fun create(
         userId: String,
         userAgent: String? = null,
         ipAddress: String? = null
     ): Session = transaction {
+        // Clean up old sessions first (keep at most 3)
+        cleanupOldSessions(userId, keepCount = 3)
+
         val now = System.currentTimeMillis()
         val token = generateToken()
         val session = Session(
@@ -184,6 +188,30 @@ object SessionRepository {
     fun deleteExpired(): Int = transaction {
         val now = System.currentTimeMillis()
         SessionTable.deleteWhere { expiresAt less now }
+    }
+
+    /**
+     * Clean up old sessions for a user, keeping only the most recent N sessions.
+     * This prevents session accumulation from multiple browser tabs.
+     * Returns the number of sessions deleted.
+     */
+    fun cleanupOldSessions(userId: String, keepCount: Int = 3): Int = transaction {
+        val sessions = SessionTable.selectAll()
+            .where { SessionTable.userId eq userId }
+            .orderBy(SessionTable.createdAt, SortOrder.DESC)
+            .map { it[SessionTable.id] }
+
+        if (sessions.size <= keepCount) {
+            return@transaction 0
+        }
+
+        // Delete sessions beyond the keepCount
+        val sessionsToDelete = sessions.drop(keepCount)
+        var deletedCount = 0
+        for (sessionId in sessionsToDelete) {
+            deletedCount += SessionTable.deleteWhere { SessionTable.id eq sessionId }
+        }
+        deletedCount
     }
 
     private fun ResultRow.toSession(): Session = Session(

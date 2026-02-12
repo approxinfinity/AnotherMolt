@@ -43,6 +43,10 @@ object UserStateHolder {
     private val _currentUser = MutableStateFlow<UserDto?>(null)
     val currentUser: StateFlow<UserDto?> = _currentUser.asStateFlow()
 
+    // Track if user has actively navigated in this session
+    // This determines whether to preserve local location over server location
+    private var hasNavigatedThisSession = false
+
     // Derived states
     val isAuthenticated: Boolean
         get() = _currentUser.value != null
@@ -100,14 +104,16 @@ object UserStateHolder {
                 println("[UserStateHolder] Session valid - refreshing user data. Items: ${response.user.itemIds.size}")
                 val previousUser = _currentUser.value
 
-                // Preserve local location if it differs from server (optimistic navigation)
-                // The local location is more recent if the user navigated since last sync
+                // Only preserve local location if the user has actively navigated in THIS session.
+                // On fresh session start (new browser tab), trust the server's location.
+                // This prevents stale cached locations from overwriting current server state.
                 val localLocation = previousUser?.currentLocationId
                 val serverLocation = response.user.currentLocationId
-                val locationToUse = if (localLocation != null && localLocation != serverLocation) {
-                    println("[UserStateHolder] Preserving local location: $localLocation (server had: $serverLocation)")
+                val locationToUse = if (hasNavigatedThisSession && localLocation != null && localLocation != serverLocation) {
+                    println("[UserStateHolder] Preserving local location (user navigated this session): $localLocation (server had: $serverLocation)")
                     localLocation
                 } else {
+                    println("[UserStateHolder] Using server location: $serverLocation (hasNavigatedThisSession=$hasNavigatedThisSession)")
                     serverLocation
                 }
 
@@ -229,6 +235,7 @@ object UserStateHolder {
         AuthStorage.clearUser()
         ApiClient.clearUserContext()
         _currentUser.value = null
+        hasNavigatedThisSession = false
 
         // Clear related state holders
         AdventureStateHolder.clear()
@@ -249,14 +256,18 @@ object UserStateHolder {
     /**
      * Update the current user while preserving local-authoritative state.
      * Local state (currentLocationId, visitedLocationIds) is preserved and merged
-     * because the client may have more recent navigation data than the server.
+     * only if the user has actively navigated this session.
      */
     fun updateUser(user: UserDto) {
         val localUser = _currentUser.value
         val mergedUser = if (localUser != null && localUser.id == user.id) {
-            // Preserve local location if it differs (client is authoritative for navigation)
-            val locationToUse = localUser.currentLocationId ?: user.currentLocationId
-            // Merge visited locations (never lose exploration progress)
+            // Only preserve local location if user has navigated this session
+            val locationToUse = if (hasNavigatedThisSession && localUser.currentLocationId != null) {
+                localUser.currentLocationId
+            } else {
+                user.currentLocationId
+            }
+            // Always merge visited locations (never lose exploration progress)
             val mergedVisited = (user.visitedLocationIds + localUser.visitedLocationIds).distinct()
             user.copy(
                 currentLocationId = locationToUse,
@@ -359,6 +370,8 @@ object UserStateHolder {
     fun updateLocationLocally(locationId: String) {
         val current = _currentUser.value ?: return
         println("[UserStateHolder] updateLocationLocally: ${current.currentLocationId} -> $locationId")
+        // Mark that user has actively navigated in this session
+        hasNavigatedThisSession = true
         // Also update visitedLocationIds for minimap fog-of-war
         val updatedVisitedIds = if (locationId !in current.visitedLocationIds) {
             current.visitedLocationIds + locationId
