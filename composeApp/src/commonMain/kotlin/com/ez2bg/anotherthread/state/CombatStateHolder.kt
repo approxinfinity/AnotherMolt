@@ -457,7 +457,7 @@ object CombatStateHolder {
                             EventLogType.NAVIGATION
                         )
                         clearCombatState()
-                        // Navigation update will be triggered by AdventureStateHolder when it receives location change
+                        // Navigation update will be triggered by AdventureRepository
                     }
                     iWasDragged -> {
                         addEventLogEntry(
@@ -477,7 +477,7 @@ object CombatStateHolder {
 
             is GlobalEvent.CreatureMoved -> {
                 // Only show movement if creature enters or leaves the player's current room
-                val currentLocationId = AdventureStateHolder.currentLocation.value?.id
+                val currentLocationId = AdventureRepository.currentLocationId.value
                 if (currentLocationId != null) {
                     when (currentLocationId) {
                         event.fromLocationId -> {
@@ -496,8 +496,8 @@ object CombatStateHolder {
             }
 
             is GlobalEvent.LocationMutated -> {
-                // Handle location mutation events (exits added/removed, items added/removed)
-                AdventureStateHolder.handleLocationMutation(event.event)
+                // Location mutations are handled by AdventureRepository which subscribes to globalEvents
+                // Nothing to do here - AdventureRepository handles all location state updates
             }
 
             is GlobalEvent.ItemReceived -> {

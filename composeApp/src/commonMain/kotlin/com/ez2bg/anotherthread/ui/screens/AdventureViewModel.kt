@@ -23,10 +23,8 @@ import com.ez2bg.anotherthread.api.LockpickInfoDto
 import com.ez2bg.anotherthread.api.DiplomacyResultDto
 import com.ez2bg.anotherthread.api.HostilityResultDto
 import com.ez2bg.anotherthread.data.AdventureRepository
-import com.ez2bg.anotherthread.state.AdventureStateHolder
 import com.ez2bg.anotherthread.state.CombatStateHolder
 import com.ez2bg.anotherthread.state.EventLogType
-import com.ez2bg.anotherthread.state.PlayerPresenceEvent
 import com.ez2bg.anotherthread.state.UserStateHolder
 import com.ez2bg.anotherthread.combat.CombatConnectionState
 import com.ez2bg.anotherthread.platform.currentTimeMillis
@@ -553,13 +551,10 @@ class AdventureViewModel {
         println("[AdventureViewModel] initializeRepository() - NOT passing cached location, waiting for server validation")
         AdventureRepository.initialize(null)
 
-        // Sync with AdventureStateHolder for event log filtering
+        // React to location changes from AdventureRepository
         scope.launch {
             AdventureRepository.currentLocationId.collect { locationId ->
                 if (locationId != null) {
-                    val location = AdventureRepository.getLocation(locationId)
-                    location?.let { AdventureStateHolder.setCurrentLocationDirect(it) }
-
                     // Check if this is a shop or inn location
                     val isShop = locationId in shopLocationIds
                     val isInn = locationId == innLocationId
@@ -593,10 +588,10 @@ class AdventureViewModel {
      */
     private fun listenForPlayerPresenceEvents() {
         scope.launch {
-            AdventureStateHolder.playerPresenceEvents.collect { event ->
+            AdventureRepository.playerPresenceEvents.collect { event ->
                 val currentLocationId = AdventureRepository.currentLocationId.value
                 when (event) {
-                    is PlayerPresenceEvent.PlayerEntered -> {
+                    is AdventureRepository.PlayerPresenceEvent.PlayerEntered -> {
                         // Only update if the event is for our current location
                         if (event.locationId == currentLocationId) {
                             // Fetch the full user data and add to playersHere
@@ -619,7 +614,7 @@ class AdventureViewModel {
                             )
                         }
                     }
-                    is PlayerPresenceEvent.PlayerLeft -> {
+                    is AdventureRepository.PlayerPresenceEvent.PlayerLeft -> {
                         // Only update if the event is for our current location
                         if (event.locationId == currentLocationId) {
                             _localState.update { state ->
@@ -1721,7 +1716,7 @@ class AdventureViewModel {
         }
 
         // Get creatures at current location for charm targeting
-        val creatures = AdventureStateHolder.creaturesHere.value
+        val creatures = AdventureRepository.getCreaturesHere()
         if (creatures.isEmpty()) {
             showSnackbar("No creatures here to charm")
             return
@@ -1753,8 +1748,8 @@ class AdventureViewModel {
                     logMessage(result.message)
                     // Refresh to update charmed creature state
                     UserStateHolder.refreshUser()
-                    // Refresh location creatures since one may now be charmed
-                    AdventureStateHolder.refreshCurrentLocation()
+                    // Refresh location data since creature may now be charmed
+                    AdventureRepository.refresh()
                 } else {
                     logMessage(result.message)
                 }
@@ -1810,7 +1805,10 @@ class AdventureViewModel {
                     logMessage(result.message)
                     if (result.discoveredItems.isNotEmpty()) {
                         // Refresh location to show newly discovered items
-                        AdventureStateHolder.refreshCurrentLocation()
+                        val locId = AdventureRepository.currentLocationId.value
+                        if (locId != null) {
+                            AdventureRepository.refreshLocationWithUserContext(locId, userId)
+                        }
                     }
                 }.onFailure { error ->
                     logError("Failed to search: ${error.message}")

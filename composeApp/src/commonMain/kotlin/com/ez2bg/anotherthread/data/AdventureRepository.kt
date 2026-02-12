@@ -10,8 +10,11 @@ import com.ez2bg.anotherthread.state.CombatStateHolder
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.stateIn
@@ -83,6 +86,21 @@ object AdventureRepository {
     val isInitialized: StateFlow<Boolean> = _isInitialized.asStateFlow()
 
     // =========================================================================
+    // PLAYER PRESENCE EVENTS
+    // =========================================================================
+
+    /**
+     * Player presence event for real-time player enter/leave notifications.
+     */
+    sealed class PlayerPresenceEvent {
+        data class PlayerEntered(val locationId: String, val playerId: String, val playerName: String) : PlayerPresenceEvent()
+        data class PlayerLeft(val locationId: String, val playerId: String, val playerName: String) : PlayerPresenceEvent()
+    }
+
+    private val _playerPresenceEvents = MutableSharedFlow<PlayerPresenceEvent>(extraBufferCapacity = 10)
+    val playerPresenceEvents: SharedFlow<PlayerPresenceEvent> = _playerPresenceEvents.asSharedFlow()
+
+    // =========================================================================
     // WEBSOCKET SUBSCRIPTION
     // =========================================================================
 
@@ -110,23 +128,7 @@ object AdventureRepository {
                 updateCreatureLocation(event.creatureId, event.toLocationId)
             }
             is GlobalEvent.LocationMutated -> {
-                // Handle location mutations that affect creature tracking
-                val mutation = event.event
-                when (mutation.eventType) {
-                    LocationEventType.CREATURE_REMOVED -> {
-                        mutation.creatureIdRemoved?.let { creatureId ->
-                            println("[AdventureRepository] Creature removed: $creatureId from ${mutation.locationId}")
-                            removeCreatureFromLocation(creatureId)
-                        }
-                    }
-                    LocationEventType.CREATURE_ADDED -> {
-                        mutation.creatureIdAdded?.let { creatureId ->
-                            println("[AdventureRepository] Creature added: $creatureId to ${mutation.locationId}")
-                            updateCreatureLocation(creatureId, mutation.locationId)
-                        }
-                    }
-                    else -> { /* Other location mutations handled elsewhere */ }
-                }
+                handleLocationMutation(event.event)
             }
             is GlobalEvent.CreatureDefeated -> {
                 // When a creature is defeated in combat, remove it from location tracking
@@ -135,6 +137,112 @@ object AdventureRepository {
             }
             // Handle other events that affect world state if needed
             else -> { /* Other events handled by CombatStateHolder */ }
+        }
+    }
+
+    /**
+     * Handle a location mutation event from the WebSocket.
+     * Updates creature locations, items, exits, and emits player presence events.
+     */
+    private fun handleLocationMutation(mutation: com.ez2bg.anotherthread.api.LocationMutationEvent) {
+        val currentLocId = _currentLocationId.value
+
+        when (mutation.eventType) {
+            LocationEventType.CREATURE_REMOVED -> {
+                mutation.creatureIdRemoved?.let { creatureId ->
+                    println("[AdventureRepository] Creature removed: $creatureId from ${mutation.locationId}")
+                    removeCreatureFromLocation(creatureId)
+                }
+                // Also update location's creatureIds
+                updateLocationCreatureIds(mutation.locationId) { ids ->
+                    mutation.creatureIdRemoved?.let { ids - it } ?: ids
+                }
+            }
+            LocationEventType.CREATURE_ADDED -> {
+                mutation.creatureIdAdded?.let { creatureId ->
+                    println("[AdventureRepository] Creature added: $creatureId to ${mutation.locationId}")
+                    updateCreatureLocation(creatureId, mutation.locationId)
+                }
+                // Also update location's creatureIds
+                updateLocationCreatureIds(mutation.locationId) { ids ->
+                    mutation.creatureIdAdded?.let { if (it !in ids) ids + it else ids } ?: ids
+                }
+            }
+            LocationEventType.EXIT_ADDED -> {
+                mutation.exitAdded?.let { exitDto ->
+                    updateLocation(mutation.locationId) { loc ->
+                        loc.copy(exits = loc.exits + exitDto)
+                    }
+                }
+            }
+            LocationEventType.EXIT_REMOVED -> {
+                mutation.exitRemoved?.let { exitDto ->
+                    updateLocation(mutation.locationId) { loc ->
+                        loc.copy(exits = loc.exits.filter { it.locationId != exitDto.locationId })
+                    }
+                }
+            }
+            LocationEventType.ITEM_ADDED -> {
+                mutation.itemIdAdded?.let { itemId ->
+                    updateLocation(mutation.locationId) { loc ->
+                        loc.copy(itemIds = loc.itemIds + itemId)
+                    }
+                }
+            }
+            LocationEventType.ITEM_REMOVED -> {
+                mutation.itemIdRemoved?.let { itemId ->
+                    updateLocation(mutation.locationId) { loc ->
+                        loc.copy(
+                            itemIds = loc.itemIds - itemId,
+                            discoveredItemIds = loc.discoveredItemIds - itemId
+                        )
+                    }
+                }
+            }
+            LocationEventType.PLAYER_ENTERED -> {
+                val playerId = mutation.playerId
+                val playerName = mutation.playerName
+                if (playerId != null && playerName != null && currentLocId == mutation.locationId) {
+                    scope.launch {
+                        _playerPresenceEvents.emit(
+                            PlayerPresenceEvent.PlayerEntered(mutation.locationId, playerId, playerName)
+                        )
+                    }
+                }
+            }
+            LocationEventType.PLAYER_LEFT -> {
+                val playerId = mutation.playerId
+                val playerName = mutation.playerName
+                if (playerId != null && playerName != null && currentLocId == mutation.locationId) {
+                    scope.launch {
+                        _playerPresenceEvents.emit(
+                            PlayerPresenceEvent.PlayerLeft(mutation.locationId, playerId, playerName)
+                        )
+                    }
+                }
+            }
+            LocationEventType.LOCATION_UPDATED -> {
+                // For general updates, refresh from server
+                scope.launch { refresh() }
+            }
+        }
+    }
+
+    /**
+     * Update a location in the cache.
+     */
+    private fun updateLocation(locationId: String, transform: (LocationDto) -> LocationDto) {
+        _locations.value = _locations.value.map { loc ->
+            if (loc.id == locationId) transform(loc) else loc
+        }
+    }
+
+    /**
+     * Update a location's creatureIds.
+     */
+    private fun updateLocationCreatureIds(locationId: String, transform: (List<String>) -> List<String>) {
+        updateLocation(locationId) { loc ->
+            loc.copy(creatureIds = transform(loc.creatureIds))
         }
     }
 
@@ -241,9 +349,22 @@ object AdventureRepository {
 
     /**
      * Set the current player location.
+     * This is the SINGLE SOURCE OF TRUTH for player location.
+     *
+     * @param locationId The new location ID
+     * @param userId Optional user ID - if provided, syncs to server
      */
-    fun setCurrentLocation(locationId: String) {
+    fun setCurrentLocation(locationId: String, userId: String? = null) {
         _currentLocationId.value = locationId
+
+        // Sync to server if userId provided
+        if (userId != null) {
+            scope.launch {
+                ApiClient.updateUserLocation(userId, locationId).onFailure { error ->
+                    println("[AdventureRepository] Failed to sync location to server: ${error.message}")
+                }
+            }
+        }
     }
 
     /**
@@ -312,13 +433,22 @@ object AdventureRepository {
 
     /**
      * Get creatures at a specific location.
-     * This is reactive - it updates when creatureLocations changes.
+     * This reads current state synchronously.
      */
     fun getCreaturesAtLocation(locationId: String): List<CreatureDto> {
         val creatureIds = _creatureLocations.value
             .filter { it.value == locationId }
             .keys
         return _creatures.value.filter { it.id in creatureIds }
+    }
+
+    /**
+     * Get creatures at the current location.
+     * Convenience method that uses currentLocationId.
+     */
+    fun getCreaturesHere(): List<CreatureDto> {
+        val locId = _currentLocationId.value ?: return emptyList()
+        return getCreaturesAtLocation(locId)
     }
 
     /**

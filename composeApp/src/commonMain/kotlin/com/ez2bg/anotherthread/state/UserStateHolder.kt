@@ -2,6 +2,7 @@ package com.ez2bg.anotherthread.state
 
 import com.ez2bg.anotherthread.api.ApiClient
 import com.ez2bg.anotherthread.api.UserDto
+import com.ez2bg.anotherthread.data.AdventureRepository
 import com.ez2bg.anotherthread.storage.AuthStorage
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -224,7 +225,7 @@ object UserStateHolder {
         _currentUser.value = null
 
         // Clear related state holders
-        AdventureStateHolder.clear()
+        AdventureRepository.clear()
         CombatStateHolder.disconnect()
     }
 
