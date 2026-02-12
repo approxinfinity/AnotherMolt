@@ -177,29 +177,30 @@ object CombatService {
     // CombatService.processTick() and processCreatureWandering() are called from there
 
     /**
-     * Initialize the combat service by loading active sessions from the database.
-     * Call this at server startup before starting the tick loop.
+     * Initialize the combat service on server startup.
+     * Cleans up any orphaned sessions from previous server runs.
      */
     fun initialize() {
-        log.info("Initializing CombatService - loading active sessions from database")
+        log.info("Initializing CombatService - cleaning up orphaned sessions")
         val activeSessions = CombatSessionRepository.findActive()
 
+        // On server restart, no WebSocket connections exist, so any "active" sessions
+        // are orphaned. End them cleanly rather than trying to resume.
         for (session in activeSessions) {
-            // Reset the round start time to now so rounds resume immediately
-            val refreshedSession = session.copy(roundStartTime = System.currentTimeMillis())
-            sessions[session.id] = refreshedSession
+            log.info("Ending orphaned combat session ${session.id} at ${session.locationId} " +
+                "(had ${session.players.size} players, ${session.creatures.size} creatures)")
 
-            // Rebuild the playerSessions mapping
-            for (player in session.players) {
-                playerSessions[player.id] = session.id
-            }
-
-            log.info("Loaded active combat session ${session.id} at ${session.locationId} " +
-                "with ${session.players.size} players, ${session.creatures.size} creatures, " +
-                "state=${session.state}, round=${session.currentRound}")
+            val endedSession = session.copy(
+                state = CombatState.ENDED,
+                endReason = CombatEndReason.SERVER_RESTART
+            )
+            CombatSessionRepository.update(endedSession)
         }
 
-        log.info("CombatService initialized with ${sessions.size} active sessions")
+        if (activeSessions.isNotEmpty()) {
+            log.info("Cleaned up ${activeSessions.size} orphaned combat sessions")
+        }
+        log.info("CombatService initialized")
     }
 
     /**

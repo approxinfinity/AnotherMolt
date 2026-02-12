@@ -2854,7 +2854,8 @@ enum class CombatEndReason {
     ALL_PLAYERS_FLED,
     PLAYER_LEFT,    // Player left the location (disengaged from combat)
     TIMEOUT,
-    CANCELLED
+    CANCELLED,
+    SERVER_RESTART  // Session orphaned due to server restart
 }
 
 @Serializable
