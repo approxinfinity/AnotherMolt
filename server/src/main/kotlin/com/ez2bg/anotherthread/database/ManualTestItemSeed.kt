@@ -259,6 +259,28 @@ object ManualTestItemSeed {
                 featureName = "Wilderness Encounters: Auto-Combat",
                 description = "When an aggressive creature spawns from a movement encounter, verify combat auto-starts immediately via the existing aggressive creature check.",
                 category = "combat"
+            ),
+
+            // === TREASURE MAPS ===
+            ManualTestItem(
+                featureName = "Treasure Maps: Read with INT Check",
+                description = "Find a treasure map in your inventory (drop from goblins, orcs, trolls, or ghouls). Expand it and click 'Read Map'. Verify INT check occurs and either reveals a cryptic hint or fails with a message showing the roll.",
+                category = "items"
+            ),
+            ManualTestItem(
+                featureName = "Treasure Maps: Claim at Destination",
+                description = "After reading a treasure map, travel to the hinted destination location. Click 'Search for Treasure'. Verify gold and items are awarded, and the map is removed from inventory.",
+                category = "items"
+            ),
+            ManualTestItem(
+                featureName = "Treasure Maps: Wrong Location",
+                description = "After reading a treasure map, try clicking 'Search for Treasure' while NOT at the destination. Verify it shows a rejection message like 'This doesn't seem to be the right place.'",
+                category = "items"
+            ),
+            ManualTestItem(
+                featureName = "Treasure Maps: Loot Drop",
+                description = "Kill goblins, orcs, trolls, or ghouls repeatedly. Verify treasure maps occasionally drop (3-5% chance). Check that the map appears in inventory with a treasure map icon section.",
+                category = "items"
             )
         )
 

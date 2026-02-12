@@ -37,6 +37,7 @@ import com.ez2bg.anotherthread.routes.trapRoutes
 import com.ez2bg.anotherthread.routes.environmentalRoutes
 import com.ez2bg.anotherthread.routes.factionRoutes
 import com.ez2bg.anotherthread.routes.manualTestRoutes
+import com.ez2bg.anotherthread.routes.treasureMapRoutes
 import com.ez2bg.anotherthread.game.EnvironmentalEffectService
 import com.ez2bg.anotherthread.events.LocationEventService
 import com.ez2bg.anotherthread.spell.*
@@ -1169,6 +1170,9 @@ fun Application.module() {
     // Seed intelligent magic weapons
     IntelligentWeaponSeed.seedIfEmpty()
 
+    // Seed treasure maps
+    TreasureMapSeed.seedIfEmpty()
+
     // Seed wandering encounter tables
     WanderingEncounterSeed.seed()
 
@@ -1935,6 +1939,7 @@ fun Application.module() {
         phasewalkRoutes()
         riftPortalRoutes()
         puzzleRoutes()
+        treasureMapRoutes()
     }
 }
 

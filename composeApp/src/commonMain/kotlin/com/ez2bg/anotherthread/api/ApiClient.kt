@@ -626,6 +626,47 @@ data class SetIconMappingRequestDto(
     val iconName: String
 )
 
+// === TREASURE MAP DTOs ===
+
+@Serializable
+data class TreasureMapRequestDto(val itemId: String)
+
+@Serializable
+data class ReadMapResponseDto(
+    val success: Boolean,
+    val message: String,
+    val hint: String? = null,
+    val alreadyRead: Boolean = false,
+    val roll: Int = 0,
+    val modifier: Int = 0,
+    val total: Int = 0,
+    val difficulty: Int = 0
+)
+
+@Serializable
+data class ClaimTreasureResponseDto(
+    val success: Boolean,
+    val message: String,
+    val goldAwarded: Int = 0,
+    val itemsAwarded: List<String> = emptyList()
+)
+
+@Serializable
+data class TreasureMapStatusInfoDto(
+    val itemId: String,
+    val itemName: String,
+    val featureId: String,
+    val read: Boolean,
+    val hint: String? = null,
+    val claimed: Boolean,
+    val destinationLocationId: String? = null
+)
+
+@Serializable
+data class TreasureMapStatusResponseDto(
+    val maps: List<TreasureMapStatusInfoDto>
+)
+
 @Serializable
 data class PlayerEncounterDto(
     val encounteredUserId: String,
@@ -1910,6 +1951,26 @@ object ApiClient {
 
     suspend fun getIntelligentWeaponData(itemId: String): Result<IntelligentWeaponDto> = apiCall {
         client.get("$baseUrl/items/$itemId/intelligent").body()
+    }
+
+    // === Treasure Map API ===
+
+    suspend fun readTreasureMap(userId: String, itemId: String): Result<ReadMapResponseDto> = apiCall {
+        client.post("$baseUrl/treasure-maps/$userId/read") {
+            contentType(ContentType.Application.Json)
+            setBody(TreasureMapRequestDto(itemId = itemId))
+        }.body()
+    }
+
+    suspend fun claimTreasure(userId: String, itemId: String): Result<ClaimTreasureResponseDto> = apiCall {
+        client.post("$baseUrl/treasure-maps/$userId/claim") {
+            contentType(ContentType.Application.Json)
+            setBody(TreasureMapRequestDto(itemId = itemId))
+        }.body()
+    }
+
+    suspend fun getTreasureMapStatus(userId: String): Result<TreasureMapStatusResponseDto> = apiCall {
+        client.get("$baseUrl/treasure-maps/$userId/status").body()
     }
 
     suspend fun pickupItem(userId: String, itemId: String, locationId: String): Result<UserDto> = apiCall {

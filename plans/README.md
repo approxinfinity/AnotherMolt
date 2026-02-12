@@ -10,7 +10,7 @@ Feature plans inspired by OD&D Vol II (Monsters & Treasure), Vol III (Underworld
 | 2 | [Random Gem/Jewelry Values](02-random-gem-jewelry-values.md) | Done | Randomized gem/jewelry loot values |
 | 3 | [Wandering Monsters by Location Difficulty](03-wandering-monsters.md) | Done | Periodic difficulty-appropriate spawns |
 | 4 | [Intelligent Magic Weapons](04-intelligent-magic-weapons.md) | Done | Weapons with INT, ego, alignment, powers |
-| 5 | [Treasure Maps as Loot Drops](05-treasure-maps.md) | Planned | Find -> read -> travel -> search |
+| 5 | [Treasure Maps as Loot Drops](05-treasure-maps.md) | Done | Find -> read -> travel -> search |
 | 6 | [Wilderness Encounters by Terrain](06-wilderness-encounters.md) | Done | Biome-specific movement encounters |
 
 ## Implementation Order

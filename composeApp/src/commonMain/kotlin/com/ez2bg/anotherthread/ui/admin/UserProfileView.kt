@@ -822,7 +822,9 @@ fun UserProfileView(
                                                     message = "Failed to unequip: ${error.message}"
                                                 }
                                             }
-                                        }
+                                        },
+                                        userId = user.id,
+                                        onUserUpdated = onUserUpdated
                                     )
                                 }
                             }
@@ -887,7 +889,9 @@ fun UserProfileView(
                                                     }
                                                 }
                                             }
-                                        } else null
+                                        } else null,
+                                        userId = user.id,
+                                        onUserUpdated = onUserUpdated
                                     )
                                 }
                             }
@@ -1164,7 +1168,9 @@ private fun InventoryItemCard(
     isEquipped: Boolean,
     abilities: List<AbilityDto> = emptyList(),
     onEquipToggle: (() -> Unit)?,
-    onDrop: (() -> Unit)? = null
+    onDrop: (() -> Unit)? = null,
+    userId: String? = null,
+    onUserUpdated: ((UserDto) -> Unit)? = null
 ) {
     var isExpanded by remember { mutableStateOf(false) }
     var showDropConfirmation by remember { mutableStateOf(false) }
@@ -1395,6 +1401,73 @@ private fun InventoryItemCard(
                     }
                 }
 
+                // Treasure map section (shown when expanded for items with treasure-map features)
+                if (isExpanded && userId != null && item.featureIds.any { it.startsWith("treasure-map") }) {
+                    val scope = rememberCoroutineScope()
+                    var mapStatus by remember { mutableStateOf<TreasureMapStatusInfoDto?>(null) }
+                    var mapLoaded by remember { mutableStateOf(false) }
+                    var mapMessage by remember { mutableStateOf<String?>(null) }
+                    var isLoading by remember { mutableStateOf(false) }
+
+                    LaunchedEffect(item.id) {
+                        if (!mapLoaded) {
+                            ApiClient.getTreasureMapStatus(userId).onSuccess { response ->
+                                mapStatus = response.maps.find { it.itemId == item.id }
+                            }
+                            mapLoaded = true
+                        }
+                    }
+
+                    HorizontalDivider(
+                        modifier = Modifier.padding(horizontal = 12.dp),
+                        color = Color(0xFF8D6E63).copy(alpha = 0.3f)
+                    )
+                    TreasureMapSection(
+                        status = mapStatus,
+                        message = mapMessage,
+                        isLoading = isLoading,
+                        onReadMap = {
+                            scope.launch {
+                                isLoading = true
+                                mapMessage = null
+                                ApiClient.readTreasureMap(userId, item.id).onSuccess { result ->
+                                    mapMessage = result.message
+                                    if (result.success) {
+                                        // Refresh status
+                                        ApiClient.getTreasureMapStatus(userId).onSuccess { response ->
+                                            mapStatus = response.maps.find { it.itemId == item.id }
+                                        }
+                                    }
+                                    if (!result.alreadyRead && result.roll > 0) {
+                                        mapMessage = "${result.message}\n(Rolled ${result.roll} + ${result.modifier} INT = ${result.total} vs DC ${result.difficulty})"
+                                    }
+                                }.onFailure { error ->
+                                    mapMessage = "Error: ${error.message}"
+                                }
+                                isLoading = false
+                            }
+                        },
+                        onClaimTreasure = {
+                            scope.launch {
+                                isLoading = true
+                                mapMessage = null
+                                ApiClient.claimTreasure(userId, item.id).onSuccess { result ->
+                                    mapMessage = result.message
+                                    if (result.success) {
+                                        // Refresh user data since inventory changed
+                                        ApiClient.getUser(userId).onSuccess { updatedUser ->
+                                            updatedUser?.let { onUserUpdated?.invoke(it) }
+                                        }
+                                    }
+                                }.onFailure { error ->
+                                    mapMessage = "Error: ${error.message}"
+                                }
+                                isLoading = false
+                            }
+                        }
+                    )
+                }
+
                 // Drop button (only for unequipped items when expanded)
                 if (isExpanded && onDrop != null && !isEquipped) {
                     HorizontalDivider(
@@ -1519,6 +1592,133 @@ private fun IntelligentWeaponInfo(data: IntelligentWeaponDto) {
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
                 fontStyle = androidx.compose.ui.text.font.FontStyle.Italic
+            )
+        }
+    }
+}
+
+@Composable
+private fun TreasureMapSection(
+    status: TreasureMapStatusInfoDto?,
+    message: String?,
+    isLoading: Boolean,
+    onReadMap: () -> Unit,
+    onClaimTreasure: () -> Unit
+) {
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 12.dp, vertical = 8.dp),
+        verticalArrangement = Arrangement.spacedBy(6.dp)
+    ) {
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(6.dp)
+        ) {
+            Icon(
+                imageVector = Icons.Filled.Star,
+                contentDescription = null,
+                modifier = Modifier.size(14.dp),
+                tint = Color(0xFF8D6E63)
+            )
+            Text(
+                text = "Treasure Map",
+                style = MaterialTheme.typography.labelMedium,
+                color = Color(0xFF8D6E63)
+            )
+        }
+
+        if (status == null) {
+            // Not yet loaded or no status
+            Text(
+                text = "A mysterious map with cryptic markings...",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                fontStyle = androidx.compose.ui.text.font.FontStyle.Italic
+            )
+        }
+
+        if (status != null && !status.read) {
+            // Unread - show Read Map button
+            Text(
+                text = "The map's markings are unfamiliar. Study it to decipher the location.",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+            Button(
+                onClick = onReadMap,
+                enabled = !isLoading,
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = Color(0xFF8D6E63)
+                ),
+                modifier = Modifier.padding(top = 4.dp)
+            ) {
+                Text("Read Map (INT Check)")
+            }
+        } else if (status != null && status.read && !status.claimed) {
+            // Read but not claimed - show hint and claim button
+            Surface(
+                shape = RoundedCornerShape(8.dp),
+                color = Color(0xFFFFF8E1),
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Text(
+                    text = status.hint ?: "The map reveals a location...",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = Color(0xFF5D4037),
+                    fontStyle = androidx.compose.ui.text.font.FontStyle.Italic,
+                    modifier = Modifier.padding(12.dp)
+                )
+            }
+            Button(
+                onClick = onClaimTreasure,
+                enabled = !isLoading,
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = Color(0xFFFF8F00)
+                ),
+                modifier = Modifier.padding(top = 4.dp)
+            ) {
+                Text("Search for Treasure")
+            }
+        } else if (status != null && status.claimed) {
+            // Claimed (shouldn't normally show since map is consumed)
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(4.dp)
+            ) {
+                Icon(
+                    imageVector = Icons.Filled.CheckCircle,
+                    contentDescription = null,
+                    modifier = Modifier.size(16.dp),
+                    tint = Color(0xFF4CAF50)
+                )
+                Text(
+                    text = "Treasure Found!",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = Color(0xFF4CAF50)
+                )
+            }
+        }
+
+        // Show message (result of action)
+        message?.let { msg ->
+            Surface(
+                shape = RoundedCornerShape(8.dp),
+                color = MaterialTheme.colorScheme.surfaceVariant,
+                modifier = Modifier.fillMaxWidth().padding(top = 4.dp)
+            ) {
+                Text(
+                    text = msg,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(8.dp)
+                )
+            }
+        }
+
+        if (isLoading) {
+            LinearProgressIndicator(
+                modifier = Modifier.fillMaxWidth().padding(top = 4.dp)
             )
         }
     }
