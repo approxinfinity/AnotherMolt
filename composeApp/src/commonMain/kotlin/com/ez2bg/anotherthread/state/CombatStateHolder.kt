@@ -244,10 +244,17 @@ object CombatStateHolder {
                 // Log ability usage - use server's formatted message which includes target name
                 val result = event.result
                 val playerName = _playerCombatant.value?.name
-                // Replace player's own name with "You/Your" for more immersive messages
+                // Replace player's own name with "You/Your" and fix verb conjugation
                 val serverMessage = if (playerName != null) {
                     result.result.message
                         .replace("${playerName}'s ", "Your ")
+                        .replace("$playerName devastates ", "You devastate ")
+                        .replace("$playerName hits ", "You hit ")
+                        .replace("$playerName heals ", "You heal ")
+                        .replace("$playerName uses ", "You use ")
+                        .replace("$playerName collapses ", "You collapse ")
+                        .replace("$playerName gains ", "You gain ")
+                        .replace("$playerName is ", "You are ")
                         .replace("$playerName ", "You ")
                 } else {
                     result.result.message
