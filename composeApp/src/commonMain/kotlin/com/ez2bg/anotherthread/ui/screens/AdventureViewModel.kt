@@ -302,14 +302,8 @@ class AdventureViewModel {
         get() = UserStateHolder.currentUser.value
 
     // Local UI state (selections, targeting, etc.)
-    // Initialize with shop/inn detection based on current location
-    private val _localState = MutableStateFlow(
-        AdventureLocalState(
-            isShopLocation = UserStateHolder.currentLocationId in shopLocationIds,
-            isInnLocation = UserStateHolder.currentLocationId == innLocationId,
-            isGeneralStore = UserStateHolder.currentLocationId == generalStoreLocationId
-        )
-    )
+    // Shop/inn detection will be set once location is synced from server
+    private val _localState = MutableStateFlow(AdventureLocalState())
 
     /**
      * Combined UI state that merges repository state with local state.
@@ -408,25 +402,16 @@ class AdventureViewModel {
     }.stateIn(
         scope = scope,
         started = SharingStarted.WhileSubscribed(5000),
-        initialValue = AdventureUiState(
-            currentLocationId = UserStateHolder.currentLocationId,
-            isShopLocation = UserStateHolder.currentLocationId in shopLocationIds,
-            isInnLocation = UserStateHolder.currentLocationId == innLocationId,
-            isGeneralStore = UserStateHolder.currentLocationId == generalStoreLocationId
-        )
+        // Start with empty state - will be populated once location is synced from server
+        initialValue = AdventureUiState()
     )
 
     init {
         initializeRepository()
         connectCombatWebSocket()
         loadAbilitiesMap()
-        // Load shop items if starting at a shop location
-        val initialLocationId = UserStateHolder.currentLocationId
-        if (initialLocationId in shopLocationIds) {
-            loadShopItemsFromApi(initialLocationId ?: "")
-        }
-        // Listen for user state changes - this handles ALL user-dependent state reactively
-        // including: gold, abilities (class/learned/equipped/visible), character class
+        // Shop items will be loaded once location is synced from server
+        // via the combine flow and listenForUserUpdates
         listenForUserUpdates()
         // Listen for real-time player presence events (enter/leave)
         listenForPlayerPresenceEvents()
@@ -569,10 +554,7 @@ class AdventureViewModel {
         AdventureRepository.initialize(null)
 
         // Sync with AdventureStateHolder for event log filtering
-        // Also update server if location was changed due to fallback
         scope.launch {
-            var firstLocationUpdate = true
-            var initialUserLocationId = UserStateHolder.currentLocationId
             AdventureRepository.currentLocationId.collect { locationId ->
                 if (locationId != null) {
                     val location = AdventureRepository.getLocation(locationId)
@@ -600,11 +582,6 @@ class AdventureViewModel {
 
                     // Load puzzles at this location
                     loadPuzzlesAtLocation(locationId)
-
-                    // NOTE: We no longer update the server when the repository falls back to (0,0).
-                    // The server has the correct location - the listenForUserUpdates() function
-                    // will correct the repository once the server data is received.
-                    firstLocationUpdate = false
                 }
             }
         }
