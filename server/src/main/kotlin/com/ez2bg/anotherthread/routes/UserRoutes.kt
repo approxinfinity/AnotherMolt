@@ -1739,10 +1739,12 @@ fun Route.userRoutes() {
                 return@post
             }
 
-            // Check item is at the location - in location_item table (ground drops)
-            // Note: Shop items are in location.itemIds and use /buy endpoint, not pickup
+            // Check item is at the location - first check location_item table (ground drops),
+            // then fall back to location.itemIds (pre-placed/seed items)
             val locationItem = LocationItemRepository.findByItemId(itemId, request.locationId)
-            if (locationItem == null) {
+            val isInLegacyItemIds = itemId in location.itemIds
+
+            if (locationItem == null && !isInLegacyItemIds) {
                 call.respond(HttpStatusCode.BadRequest, mapOf("error" to "Item is not at this location"))
                 return@post
             }
@@ -1765,8 +1767,15 @@ fun Route.userRoutes() {
             // Add to user inventory
             UserRepository.addItems(userId, listOf(itemId))
 
-            // Remove from ground (location_item table only)
-            LocationItemRepository.removeItem(locationItem.id)
+            // Remove from ground - handle both systems
+            if (locationItem != null) {
+                LocationItemRepository.removeItem(locationItem.id)
+            }
+            if (isInLegacyItemIds) {
+                // Remove from legacy location.itemIds list
+                val updatedItemIds = location.itemIds.filter { it != itemId }
+                LocationRepository.update(location.copy(itemIds = updatedItemIds))
+            }
 
             // Broadcast item removed
             LocationEventService.broadcastItemRemoved(location, itemId)

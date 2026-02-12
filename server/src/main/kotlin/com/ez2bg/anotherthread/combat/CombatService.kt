@@ -2867,10 +2867,8 @@ object CombatService {
         if (droppedItems.isNotEmpty()) {
             try {
                 val location = LocationRepository.findById(session.locationId)
-                // Use LocationItem system for tracked ground items
+                // Use LocationItem system for tracked ground items (single source of truth for pickups)
                 LocationItemRepository.addItems(session.locationId, droppedItems.map { it.id }, null)
-                // Also update the legacy itemIds for backwards compatibility
-                LocationRepository.addItems(session.locationId, droppedItems.map { it.id })
                 log.info("Dropped ${droppedItems.size} items on ground at ${session.locationId}")
 
                 // Broadcast item drops to players at this location so the UI updates
