@@ -742,8 +742,8 @@ object CombatService {
         val autoAttackActions = session.alivePlayers
             .filter { player -> player.id !in playersWithActions }
             .flatMap { player ->
-                // Find alive enemies to target
-                val targets = session.aliveCreatures
+                // Find alive enemy creatures to target (not charmed allies)
+                val targets = session.aliveEnemyCreatures
                 if (targets.isEmpty()) return@flatMap emptyList<CombatAction>()
 
                 // Generate multiple attacks based on attacksPerRound
@@ -930,6 +930,9 @@ object CombatService {
                         ))
 
                         // Check if this killed a creature - handle death immediately
+                        log.info(">>> DEATH CHECK: target=${currentTarget.name} type=${currentTarget.type} " +
+                            "updatedHP=${updatedTarget.currentHp} updatedAlive=${updatedTarget.isAlive} " +
+                            "actorType=${actor.type}")
                         if (currentTarget.type == CombatantType.CREATURE &&
                             !updatedTarget.isAlive &&
                             actor.type == CombatantType.PLAYER) {
@@ -937,6 +940,7 @@ object CombatService {
                             val remainingEnemies = currentCombatants.count {
                                 it.type == CombatantType.CREATURE && it.isAlive && it.id != currentTarget.id
                             }
+                            log.info(">>> CREATURE KILLED: ${currentTarget.name} by ${actor.name}, $remainingEnemies enemies remain")
                             handleCreatureDeathMidCombat(session, updatedTarget, actor, remainingEnemies)
                         }
                     }
@@ -1753,11 +1757,16 @@ object CombatService {
         session: CombatSession
     ): List<Combatant> {
         val alivePlayers = combatants.filter { it.type == CombatantType.PLAYER && it.isAlive }
-        if (alivePlayers.isEmpty()) return combatants
+        if (alivePlayers.isEmpty()) {
+            log.debug("processCreatureAI: No alive players, skipping")
+            return combatants
+        }
 
         var updatedCombatants = combatants.toMutableList()
 
         // Get the current location to verify creatures are still there
+        // Note: Only use this for wandering check - creatures that were added to the session
+        // at combat start should still be valid even if the location data is temporarily stale
         val currentLocation = LocationRepository.findById(session.locationId)
         val creaturesAtLocation = currentLocation?.creatureIds?.toSet() ?: emptySet()
 
@@ -1765,6 +1774,8 @@ object CombatService {
         val aliveCreatures = combatants.filter { it.type == CombatantType.CREATURE && it.isAlive }
         val charmedCreatures = aliveCreatures.filter { it.alliedToUserId != null }
         val enemyCreatures = aliveCreatures.filter { it.alliedToUserId == null }
+
+        log.info("processCreatureAI: ${alivePlayers.size} alive players, ${enemyCreatures.size} enemy creatures, ${charmedCreatures.size} charmed creatures")
 
         // Process charmed creatures first - they attack enemy creatures
         for (charmed in charmedCreatures) {
@@ -1825,9 +1836,14 @@ object CombatService {
 
         // Process enemy creatures (original logic)
         for (creature in enemyCreatures) {
+            log.info("processCreatureAI: Processing ${creature.name} (HP=${creature.currentHp}/${creature.maxHp}, alive=${creature.isAlive})")
+
             // Skip creatures that have wandered away from this location
+            // Note: Only check for wandering removal if the creature was NOT already in combat
+            // (combat creatures may be removed from location creatureIds when killed by other players,
+            // but should still attack until their isAlive flag is properly set to false)
             if (creature.id !in creaturesAtLocation) {
-                log.debug("${creature.name} is no longer at location ${session.locationId}, removing from combat")
+                log.info("${creature.name} (${creature.id}) is no longer at location ${session.locationId} creatureIds, removing from combat. Location creatures: $creaturesAtLocation")
                 // Log creature removal
                 CombatEventLogger.logEvent(
                     session = session,
@@ -1845,9 +1861,11 @@ object CombatService {
 
             // Check if creature is stunned
             if (creature.statusEffects.any { it.effectType == "stun" }) {
-                log.debug("${creature.name} is stunned and cannot act")
+                log.info("processCreatureAI: ${creature.name} is stunned and cannot act")
                 continue
             }
+
+            log.info("processCreatureAI: ${creature.name} will attack (attacksPerRound=${creature.attacksPerRound})")
 
             // Execute multiple attacks based on attacksPerRound (MajorMUD-style)
             for (attackNum in 1..creature.attacksPerRound) {
