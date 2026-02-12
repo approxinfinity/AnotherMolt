@@ -58,10 +58,6 @@ object AdventureStateHolder {
     private val _creaturesHere = MutableStateFlow<List<CreatureDto>>(emptyList())
     val creaturesHere: StateFlow<List<CreatureDto>> = _creaturesHere.asStateFlow()
 
-    // Creature states (creatureId -> state string like "wandering", "in_combat", "idle")
-    private val _creatureStates = MutableStateFlow<Map<String, String>>(emptyMap())
-    val creatureStates: StateFlow<Map<String, String>> = _creatureStates.asStateFlow()
-
     // Items at current location
     private val _itemsHere = MutableStateFlow<List<ItemDto>>(emptyList())
     val itemsHere: StateFlow<List<ItemDto>> = _itemsHere.asStateFlow()
@@ -146,10 +142,6 @@ object AdventureStateHolder {
                 _allAbilities.value = abilities.associateBy { it.id }
             }
 
-            // Load creature states
-            ApiClient.getCreatureStates().onSuccess { states ->
-                _creatureStates.value = states
-            }
         }
     }
 
@@ -264,7 +256,6 @@ object AdventureStateHolder {
             val locationResult = ApiClient.getLocation(locationId)
             val creaturesResult = ApiClient.getCreatures()
             val itemsResult = ApiClient.getItems()
-            val statesResult = ApiClient.getCreatureStates()
 
             // Update caches
             creaturesResult.onSuccess { creatures ->
@@ -273,10 +264,6 @@ object AdventureStateHolder {
 
             itemsResult.onSuccess { items ->
                 _allItems.value = items
-            }
-
-            statesResult.onSuccess { states ->
-                _creatureStates.value = states
             }
 
             // Update location and entities AFTER items are loaded
@@ -333,14 +320,6 @@ object AdventureStateHolder {
      */
     val availableExits: List<ExitDto>
         get() = _currentLocation.value?.exits ?: emptyList()
-
-    /**
-     * Get creature state for a creature ID.
-     * Returns state string like "wandering", "in_combat", "idle"
-     */
-    fun getCreatureState(creatureId: String): String? {
-        return _creatureStates.value[creatureId]
-    }
 
     /**
      * Handle a location mutation event from the WebSocket.
@@ -533,6 +512,5 @@ object AdventureStateHolder {
         _allCreatures.value = emptyList()
         _allItems.value = emptyList()
         _allAbilities.value = emptyMap()
-        _creatureStates.value = emptyMap()
     }
 }
