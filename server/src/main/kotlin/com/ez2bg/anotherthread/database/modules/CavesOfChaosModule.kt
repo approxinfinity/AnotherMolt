@@ -1586,6 +1586,8 @@ object CavesOfChaosModule : AdventureModuleSeed() {
             position(0, 0)
             locationType = LocationType.OUTDOOR_GROUND
             exits {
+                // Back to the Keep
+                northTo("location-keep-borderlands-road-to-keep")
                 // Lower caves (easier)
                 enter("cave-a-entrance")
                 enter("cave-b-entrance")
