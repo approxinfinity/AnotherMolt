@@ -213,6 +213,18 @@ object ManualTestItemSeed {
                 featureName = "Intelligent Weapon: Compatible Alignment Equip",
                 description = "Equip an intelligent weapon with compatible alignment. Verify it equips successfully with acceptance message.",
                 category = "items"
+            ),
+
+            // === RANDOM GEM/JEWELRY VALUES ===
+            ManualTestItem(
+                featureName = "Random Gem Values: Loot Drop",
+                description = "Kill a creature with gems in its loot table. Verify the dropped gem has a randomized name (e.g. Ruby, Amethyst) and value instead of the template's fixed value.",
+                category = "items"
+            ),
+            ManualTestItem(
+                featureName = "Random Jewelry Values: Loot Drop",
+                description = "Kill a creature with jewelry in its loot table. Verify dropped jewelry has a randomized name and value. Values should range from 300-10000gp.",
+                category = "items"
             )
         )
 

@@ -6,6 +6,7 @@ import com.ez2bg.anotherthread.experience.ExperienceService
 import com.ez2bg.anotherthread.game.CharmService
 import com.ez2bg.anotherthread.game.CreatureRespawnService
 import com.ez2bg.anotherthread.game.GameTickService
+import com.ez2bg.anotherthread.game.GemValueService
 import io.ktor.websocket.*
 import kotlinx.coroutines.*
 import kotlinx.coroutines.sync.Mutex
@@ -2886,7 +2887,13 @@ object CombatService {
                         } else 1
 
                         repeat(qty) {
-                            droppedItems.add(item)
+                            // Randomize gem/jewelry values (OD&D tables)
+                            val droppedItem = when {
+                                GemValueService.isGemItem(item) -> GemValueService.createRandomGem()
+                                GemValueService.isJewelryItem(item) -> GemValueService.createRandomJewelry()
+                                else -> item
+                            }
+                            droppedItems.add(droppedItem)
                         }
                     }
                 }

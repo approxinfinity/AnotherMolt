@@ -1,6 +1,7 @@
 package com.ez2bg.anotherthread.routes
 
 import com.ez2bg.anotherthread.database.*
+import com.ez2bg.anotherthread.game.GemValueService
 import io.ktor.http.*
 import io.ktor.server.request.*
 import io.ktor.server.response.*
@@ -156,7 +157,13 @@ fun Route.chestRoutes() {
                             } else 1
 
                             repeat(qty) {
-                                itemsEarned.add(item)
+                                // Randomize gem/jewelry values (OD&D tables)
+                                val earnedItem = when {
+                                    GemValueService.isGemItem(item) -> GemValueService.createRandomGem()
+                                    GemValueService.isJewelryItem(item) -> GemValueService.createRandomJewelry()
+                                    else -> item
+                                }
+                                itemsEarned.add(earnedItem)
                             }
                         }
                     }
