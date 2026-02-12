@@ -449,6 +449,7 @@ object CavesOfChaosModule : AdventureModuleSeed() {
             name = "Rusty Dagger"
             description = "A small, pitted dagger. Barely functional but still dangerous."
             value = 2
+            weight = 1
             weapon()
             stats(attack = 2)
         }
@@ -457,6 +458,7 @@ object CavesOfChaosModule : AdventureModuleSeed() {
             name = "Crude Spear"
             description = "A fire-hardened wooden spear with a sharpened tip."
             value = 3
+            weight = 3
             weapon()
             stats(attack = 3)
         }
@@ -465,6 +467,7 @@ object CavesOfChaosModule : AdventureModuleSeed() {
             name = "Hand Axe"
             description = "A small axe suitable for throwing or melee combat."
             value = 5
+            weight = 3
             weapon()
             stats(attack = 4)
         }
@@ -473,6 +476,7 @@ object CavesOfChaosModule : AdventureModuleSeed() {
             name = "Crude Shortbow"
             description = "A poorly made bow held together with sinew and hope."
             value = 5
+            weight = 3
             weapon()
             stats(attack = 3)
         }
@@ -481,6 +485,7 @@ object CavesOfChaosModule : AdventureModuleSeed() {
             name = "Goblin Scimitar"
             description = "A curved blade favored by goblin warriors. Wickedly sharp despite its crude appearance."
             value = 10
+            weight = 3
             weapon()
             stats(attack = 5)
         }
@@ -489,6 +494,7 @@ object CavesOfChaosModule : AdventureModuleSeed() {
             name = "Orcish Greataxe"
             description = "A heavy, brutal axe favored by orc warriors. The blade is chipped but deadly."
             value = 25
+            weight = 7
             weapon()
             stats(attack = 8, defense = -1)
         }
@@ -497,6 +503,7 @@ object CavesOfChaosModule : AdventureModuleSeed() {
             name = "Hobgoblin Longsword"
             description = "A well-maintained military sword taken from a hobgoblin soldier."
             value = 40
+            weight = 4
             weapon()
             stats(attack = 6, defense = 1)
         }
@@ -505,6 +512,7 @@ object CavesOfChaosModule : AdventureModuleSeed() {
             name = "Bugbear Morningstar"
             description = "A heavy spiked club favored by bugbear ambushers."
             value = 50
+            weight = 6
             weapon()
             stats(attack = 9)
         }
@@ -514,6 +522,7 @@ object CavesOfChaosModule : AdventureModuleSeed() {
             name = "Hand Axe +1"
             description = "A finely crafted hand axe that gleams with magical enhancement."
             value = 200
+            weight = 3
             weapon()
             stats(attack = 7)
         }
@@ -522,6 +531,7 @@ object CavesOfChaosModule : AdventureModuleSeed() {
             name = "Sword +1"
             description = "A longsword enchanted with minor magic, making it lighter and sharper."
             value = 400
+            weight = 4
             weapon()
             stats(attack = 9, defense = 1)
         }
@@ -530,6 +540,7 @@ object CavesOfChaosModule : AdventureModuleSeed() {
             name = "Sword +2"
             description = "A powerful enchanted blade that glows faintly in the presence of evil."
             value = 1000
+            weight = 4
             weapon()
             stats(attack = 12, defense = 2)
         }
@@ -538,6 +549,7 @@ object CavesOfChaosModule : AdventureModuleSeed() {
             name = "Spear +1"
             description = "An enchanted spear that flies true when thrown and returns to its wielder's hand."
             value = 350
+            weight = 3
             weapon()
             stats(attack = 8)
         }
@@ -546,6 +558,7 @@ object CavesOfChaosModule : AdventureModuleSeed() {
             name = "Cursed Sword"
             description = "A blade that appears magical but is actually cursed. Once wielded, it cannot be willingly discarded."
             value = 0
+            weight = 4
             weapon()
             stats(attack = 3, defense = -2)
         }
@@ -555,6 +568,7 @@ object CavesOfChaosModule : AdventureModuleSeed() {
             name = "Leather Armor"
             description = "Basic armor made from hardened leather."
             value = 20
+            weight = 10
             armor("chest")
             stats(defense = 3)
         }
@@ -563,6 +577,7 @@ object CavesOfChaosModule : AdventureModuleSeed() {
             name = "Chain Mail"
             description = "Armor made of interlocking metal rings, offering good protection."
             value = 40
+            weight = 25
             armor("chest")
             stats(defense = 5, maxHp = 5)
         }
@@ -571,6 +586,7 @@ object CavesOfChaosModule : AdventureModuleSeed() {
             name = "Plate Mail"
             description = "Heavy armor made of metal plates, offering excellent protection but limiting mobility."
             value = 60
+            weight = 35
             armor("chest")
             stats(defense = 7, maxHp = 10)
         }
@@ -579,6 +595,7 @@ object CavesOfChaosModule : AdventureModuleSeed() {
             name = "Gnoll Hide Armor"
             description = "Crudely stitched armor made from various animal hides. Smells terrible."
             value = 20
+            weight = 12
             armor("chest")
             stats(defense = 4, maxHp = 5)
         }
@@ -587,6 +604,7 @@ object CavesOfChaosModule : AdventureModuleSeed() {
             name = "Plate Mail +1"
             description = "Enchanted plate armor that moves with supernatural ease."
             value = 500
+            weight = 30
             armor("chest")
             stats(defense = 9, maxHp = 15)
         }
@@ -595,6 +613,7 @@ object CavesOfChaosModule : AdventureModuleSeed() {
             name = "Shield +1"
             description = "An enchanted shield that seems to deflect blows on its own."
             value = 200
+            weight = 6
             armor("off_hand")
             stats(defense = 4)
         }
@@ -604,30 +623,35 @@ object CavesOfChaosModule : AdventureModuleSeed() {
             name = "Silver Chain Necklace"
             description = "A thin silver chain worn by the kobold chieftain. Worth a fair sum."
             value = 50
+            weight = 0
         }
 
         item("gold-chain-necklace") {
             name = "Gold Chain Necklace"
             description = "A heavy gold chain, likely stolen from wealthy travelers."
             value = 150
+            weight = 0
         }
 
         item("gem-studded-belt") {
             name = "Gem-Studded Belt"
             description = "A leather belt decorated with semi-precious gems."
             value = 160
+            weight = 1
         }
 
         item("silver-armbands") {
             name = "Silver Armbands"
             description = "A pair of ornate silver armbands worn by the gnoll chieftain."
             value = 100
+            weight = 1
         }
 
         item("gold-ring-black-gem") {
             name = "Gold Ring with Black Gem"
             description = "A gold ring set with a black gem that seems to absorb light. Worn by the Evil Priest."
             value = 1400
+            weight = 0
             accessory("finger")
             stats(attack = 2, defense = 1)
         }
@@ -636,6 +660,7 @@ object CavesOfChaosModule : AdventureModuleSeed() {
             name = "Ivory Bracelet"
             description = "A delicately carved ivory bracelet worth a small fortune."
             value = 100
+            weight = 0
         }
 
         // === MAGIC ACCESSORIES ===
@@ -643,6 +668,7 @@ object CavesOfChaosModule : AdventureModuleSeed() {
             name = "Ring of Protection +1"
             description = "A magical ring that creates a subtle defensive barrier around the wearer."
             value = 500
+            weight = 0
             accessory("finger")
             stats(defense = 3)
         }
@@ -651,6 +677,7 @@ object CavesOfChaosModule : AdventureModuleSeed() {
             name = "Amulet of Protection from Good"
             description = "A dark amulet that shields the wearer from attacks by creatures of good alignment. Worn by cult members."
             value = 300
+            weight = 0
             accessory("neck")
             stats(defense = 2)
         }
@@ -659,6 +686,7 @@ object CavesOfChaosModule : AdventureModuleSeed() {
             name = "Amulet of Protection from Turning"
             description = "This unholy amulet protects undead from being turned by clerics."
             value = 200
+            weight = 0
             accessory("neck")
         }
 
@@ -666,6 +694,7 @@ object CavesOfChaosModule : AdventureModuleSeed() {
             name = "Elven Boots"
             description = "Soft leather boots that allow the wearer to move silently."
             value = 400
+            weight = 2
             armor("feet")
             stats(defense = 1)
         }
@@ -674,6 +703,7 @@ object CavesOfChaosModule : AdventureModuleSeed() {
             name = "Elven Cloak"
             description = "A shimmering cloak that helps the wearer blend into natural surroundings."
             value = 500
+            weight = 2
             armor("back")
             stats(defense = 1)
         }
@@ -683,36 +713,42 @@ object CavesOfChaosModule : AdventureModuleSeed() {
             name = "Potion of Healing"
             description = "A red liquid that restores health when consumed."
             value = 50
+            weight = 1
         }
 
         item("potion-of-invisibility") {
             name = "Potion of Invisibility"
             description = "Drinking this potion renders the user invisible for a short time."
             value = 200
+            weight = 1
         }
 
         item("potion-of-poison") {
             name = "Potion of Poison"
             description = "A deadly poison disguised as a healing potion. Tastes faintly of almonds."
             value = 0
+            weight = 1
         }
 
         item("potion-of-gaseous-form") {
             name = "Potion of Gaseous Form"
             description = "Transforms the drinker into a cloud of mist, able to pass through small openings."
             value = 300
+            weight = 1
         }
 
         item("potion-of-levitation") {
             name = "Potion of Levitation"
             description = "Allows the drinker to float in the air and move vertically at will."
             value = 250
+            weight = 1
         }
 
         item("potion-of-stone-to-flesh") {
             name = "Potion of Stone to Flesh"
             description = "Can restore a petrified creature to normal. Enough for six uses."
             value = 800
+            weight = 1
         }
 
         // === SCROLLS ===
@@ -720,18 +756,21 @@ object CavesOfChaosModule : AdventureModuleSeed() {
             name = "Scroll of Protection from Undead"
             description = "Reading this scroll creates a barrier that undead cannot cross."
             value = 200
+            weight = 0
         }
 
         item("scroll-of-hold-person") {
             name = "Scroll of Hold Person"
             description = "A clerical scroll containing the Hold Person spell."
             value = 150
+            weight = 0
         }
 
         item("scroll-with-cleric-spells") {
             name = "Scroll of Clerical Magic"
             description = "Contains three spells: detect magic, hold person, and silence 15' radius."
             value = 400
+            weight = 0
         }
 
         // === STAVES & WANDS ===
@@ -739,6 +778,7 @@ object CavesOfChaosModule : AdventureModuleSeed() {
             name = "Staff of Healing"
             description = "A holy staff that can cure wounds when its charges are expended."
             value = 600
+            weight = 4
             weapon()
             stats(attack = 4, maxHp = 10)
         }
@@ -747,6 +787,7 @@ object CavesOfChaosModule : AdventureModuleSeed() {
             name = "Wand of Paralyzation"
             description = "A sinister wand that can paralyze targets. Has 7 charges remaining."
             value = 700
+            weight = 1
             weapon()
             stats(attack = 3)
         }
@@ -755,12 +796,14 @@ object CavesOfChaosModule : AdventureModuleSeed() {
             name = "Wand of Enemy Detection"
             description = "Points toward the nearest hostile creature. Has 9 charges remaining."
             value = 400
+            weight = 1
         }
 
         item("snake-staff") {
             name = "Snake Staff"
             description = "The Evil Priest's staff that can transform into a constricting snake on command."
             value = 1000
+            weight = 4
             weapon()
             stats(attack = 7)
         }
@@ -770,54 +813,63 @@ object CavesOfChaosModule : AdventureModuleSeed() {
             name = "Silver Goblet"
             description = "An ornate silver drinking cup, likely stolen from travelers."
             value = 75
+            weight = 2
         }
 
         item("gold-flagon") {
             name = "Golden Flagon"
             description = "A gold drinking vessel worth a small fortune."
             value = 500
+            weight = 3
         }
 
         item("jeweled-goblet") {
             name = "Jewel-Encrusted Goblet"
             description = "A gold goblet set with gems, found in the shallow pool."
             value = 1300
+            weight = 3
         }
 
         item("alabaster-statue") {
             name = "Alabaster and Gold Statue"
             description = "A 30-pound statue of alabaster and ivory. Requires strength to carry."
             value = 200
+            weight = 30
         }
 
         item("silver-urn") {
             name = "Silver Urn"
             description = "A blackened silver urn worth considerable gold if cleaned."
             value = 175
+            weight = 5
         }
 
         item("tapestry-silver-gold") {
             name = "Tapestry of Silver and Gold"
             description = "A valuable tapestry woven with silver and gold threads."
             value = 900
+            weight = 10
         }
 
         item("sable-cloak") {
             name = "Valuable Sable Cloak"
             description = "A luxurious cloak made from sable fur."
             value = 450
+            weight = 3
         }
 
         item("copper-bowl-silver") {
             name = "Silver-Chased Copper Bowl"
             description = "A copper bowl decorated with silver filigree."
             value = 75
+            weight = 3
         }
 
         item("malachite-bowl") {
             name = "Malachite Bowl"
             description = "A bowl carved from solid malachite, found in the Castellan's chamber."
             value = 750
+            weight = 5
         }
 
         // === GEMS ===
@@ -825,30 +877,35 @@ object CavesOfChaosModule : AdventureModuleSeed() {
             name = "Semi-Precious Gem"
             description = "A polished semi-precious stone."
             value = 50
+            weight = 0
         }
 
         item("gem-100gp") {
             name = "Precious Gem"
             description = "A valuable cut gemstone that sparkles in the light."
             value = 100
+            weight = 0
         }
 
         item("gem-500gp") {
             name = "Large Red Gem"
             description = "A large, blood-red gem of exceptional quality."
             value = 500
+            weight = 0
         }
 
         item("gem-1000gp") {
             name = "Flawless Diamond"
             description = "A perfectly cut diamond that catches light beautifully."
             value = 1000
+            weight = 0
         }
 
         item("large-gem-chieftain") {
             name = "Large Gem on Golden Chain"
             description = "An enormous gem on a golden chain, worn by the kobold chieftain."
             value = 1200
+            weight = 0
         }
 
         // === SPECIAL ITEMS ===
@@ -856,30 +913,35 @@ object CavesOfChaosModule : AdventureModuleSeed() {
             name = "Fire Beetle Gland"
             description = "A glowing gland from a fire beetle. Provides light for 1-6 days after the beetle's death."
             value = 5
+            weight = 0
         }
 
         item("helm-of-alignment-change") {
             name = "Helm of Alignment Change"
             description = "A cursed helm that changes the wearer's moral alignment. Found in the Evil Priest's treasure."
             value = 0
+            weight = 3
         }
 
         item("demon-idol") {
             name = "Demon Idol"
             description = "A hideous idol that topples and crushes anyone other than the priest who touches it. Its gem eyes are worth 100gp each."
             value = 200
+            weight = 20
         }
 
         item("evil-altar-vessels") {
             name = "Bloodstained Bronze Vessels"
             description = "Ancient bronze ritual vessels from the altar, stained with old blood. Evil relics worth gold to collectors."
             value = 4000
+            weight = 15
         }
 
         item("rope-of-climbing") {
             name = "Rope of Climbing"
             description = "A magical rope that can climb on command."
             value = 400
+            weight = 5
         }
 
         // === KEYS ===
@@ -887,24 +949,28 @@ object CavesOfChaosModule : AdventureModuleSeed() {
             name = "Kobold Storage Key"
             description = "A small iron key that opens the kobold food storage room."
             value = 1
+            weight = 0
         }
 
         item("key-orc-leader") {
             name = "Orc Leader's Key"
             description = "A heavy iron key worn by the orc leader."
             value = 1
+            weight = 0
         }
 
         item("keys-hobgoblin-slave") {
             name = "Slave Pen Keys"
             description = "Keys to the hobgoblin slave pens."
             value = 1
+            weight = 0
         }
 
         item("key-bugbear-spoils") {
             name = "Bugbear Chieftain's Key"
             description = "A key to the bugbear spoils room."
             value = 1
+            weight = 0
         }
     }
 
