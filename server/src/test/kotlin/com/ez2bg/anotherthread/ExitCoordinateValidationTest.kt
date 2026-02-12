@@ -146,6 +146,8 @@ class ExitCoordinateValidationTest {
         ExitDirection.WEST -> Pair(-1, 0)
         ExitDirection.NORTHWEST -> Pair(-1, -1)
         ExitDirection.ENTER -> Pair(0, 0)
+        ExitDirection.UP -> Pair(0, 0)
+        ExitDirection.DOWN -> Pair(0, 0)
         ExitDirection.UNKNOWN -> Pair(0, 0)
     }
 
@@ -177,6 +179,8 @@ class ExitCoordinateValidationTest {
         ExitDirection.NORTHWEST -> ExitDirection.SOUTHEAST
         ExitDirection.SOUTHEAST -> ExitDirection.NORTHWEST
         ExitDirection.ENTER -> ExitDirection.ENTER
+        ExitDirection.UP -> ExitDirection.DOWN
+        ExitDirection.DOWN -> ExitDirection.UP
         ExitDirection.UNKNOWN -> ExitDirection.UNKNOWN
     }
 
