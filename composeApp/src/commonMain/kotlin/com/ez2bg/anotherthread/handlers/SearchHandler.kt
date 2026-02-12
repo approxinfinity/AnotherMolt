@@ -9,8 +9,11 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
@@ -24,14 +27,25 @@ data class SearchState(
 )
 
 /**
+ * One-time search events for UI handling.
+ */
+sealed class SearchEvent {
+    data class ShowMessage(val message: String) : SearchEvent()
+    data class ShowError(val message: String) : SearchEvent()
+}
+
+/**
  * Singleton handler for search business logic.
  * Manages location searching for hidden items.
  */
 object SearchHandler {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
 
-    private val _searchState = MutableStateFlow(SearchState())
-    val searchState: StateFlow<SearchState> = _searchState.asStateFlow()
+    private val _state = MutableStateFlow(SearchState())
+    val state: StateFlow<SearchState> = _state.asStateFlow()
+
+    private val _events = MutableSharedFlow<SearchEvent>(extraBufferCapacity = 64)
+    val events: SharedFlow<SearchEvent> = _events.asSharedFlow()
 
     /**
      * Search the current location for hidden items.
@@ -40,13 +54,13 @@ object SearchHandler {
         val userId = UserStateHolder.userId ?: return
 
         // Already searching
-        if (_searchState.value.isSearching) return
+        if (_state.value.isSearching) return
 
         scope.launch {
             // First get the search duration
             ApiClient.getSearchInfo(userId).onSuccess { info ->
                 // Show the search overlay
-                _searchState.update { it.copy(isSearching = true, searchDurationMs = info.durationMs) }
+                _state.update { it.copy(isSearching = true, searchDurationMs = info.durationMs) }
 
                 // Wait for the search duration
                 delay(info.durationMs)
@@ -62,13 +76,13 @@ object SearchHandler {
                         }
                     }
                 }.onFailure { error ->
-                    CombatStateHolder.addEventLogEntry("Failed to search: ${error.message}", EventLogType.ERROR)
+                    emitEvent(SearchEvent.ShowError("Failed to search: ${error.message}"))
                 }
 
                 // Hide the overlay
-                _searchState.update { it.copy(isSearching = false, searchDurationMs = 0) }
+                _state.update { it.copy(isSearching = false, searchDurationMs = 0) }
             }.onFailure { error ->
-                CombatStateHolder.addEventLogEntry("Failed to start search: ${error.message}", EventLogType.ERROR)
+                emitEvent(SearchEvent.ShowError("Failed to start search: ${error.message}"))
             }
         }
     }
@@ -77,13 +91,19 @@ object SearchHandler {
      * Cancel an in-progress search.
      */
     fun cancelSearch() {
-        _searchState.update { it.copy(isSearching = false, searchDurationMs = 0) }
+        _state.update { it.copy(isSearching = false, searchDurationMs = 0) }
     }
 
     /**
      * Clear all search state.
      */
     fun clearState() {
-        _searchState.value = SearchState()
+        _state.value = SearchState()
+    }
+
+    private fun emitEvent(event: SearchEvent) {
+        scope.launch {
+            _events.emit(event)
+        }
     }
 }
