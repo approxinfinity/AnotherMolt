@@ -206,6 +206,24 @@ fun CreatureDetailView(
                                     )
                                 )
                             }
+                            if (creature!!.isAlly) {
+                                AssistChip(
+                                    onClick = {},
+                                    label = { Text("Ally") },
+                                    leadingIcon = {
+                                        Icon(
+                                            imageVector = Icons.Filled.Security,
+                                            contentDescription = null,
+                                            modifier = Modifier.size(16.dp)
+                                        )
+                                    },
+                                    colors = AssistChipDefaults.assistChipColors(
+                                        containerColor = MaterialTheme.colorScheme.primaryContainer,
+                                        labelColor = MaterialTheme.colorScheme.onPrimaryContainer,
+                                        leadingIconContentColor = MaterialTheme.colorScheme.primary
+                                    )
+                                )
+                            }
                         }
                         Spacer(modifier = Modifier.height(12.dp))
                         Row(

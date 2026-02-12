@@ -688,6 +688,7 @@ object KeepOnTheBorderlandsModule : AdventureModuleSeed() {
             experienceValue = 0  // Non-hostile NPCs
             challengeRating = 1
             isAggressive = false
+            isAlly = true
             abilities("pole-arm-thrust", "sword-strike")
         }
 
@@ -700,6 +701,7 @@ object KeepOnTheBorderlandsModule : AdventureModuleSeed() {
             experienceValue = 0
             challengeRating = 1
             isAggressive = false
+            isAlly = true
             abilities("crossbow-shot", "sword-strike")
         }
 
@@ -712,6 +714,7 @@ object KeepOnTheBorderlandsModule : AdventureModuleSeed() {
             experienceValue = 0
             challengeRating = 2
             isAggressive = false
+            isAlly = true
             abilities("sword-strike", "shield-bash")
         }
 
@@ -724,6 +727,7 @@ object KeepOnTheBorderlandsModule : AdventureModuleSeed() {
             experienceValue = 0
             challengeRating = 3
             isAggressive = false
+            isAlly = true
             abilities("sword-strike", "shield-bash", "pole-arm-thrust")
         }
 
@@ -736,6 +740,7 @@ object KeepOnTheBorderlandsModule : AdventureModuleSeed() {
             experienceValue = 0
             challengeRating = 2
             isAggressive = false
+            isAlly = true
             abilities("sword-strike", "shield-bash")
         }
 
@@ -748,6 +753,7 @@ object KeepOnTheBorderlandsModule : AdventureModuleSeed() {
             experienceValue = 0
             challengeRating = 1
             isAggressive = false
+            isAlly = true
             abilities("sword-strike", "shield-bash")
         }
 
@@ -760,6 +766,7 @@ object KeepOnTheBorderlandsModule : AdventureModuleSeed() {
             experienceValue = 0
             challengeRating = 2
             isAggressive = false
+            isAlly = true
             abilities("lance-charge", "sword-strike")
         }
 
@@ -773,6 +780,7 @@ object KeepOnTheBorderlandsModule : AdventureModuleSeed() {
             experienceValue = 0
             challengeRating = 3
             isAggressive = false
+            isAlly = true
             abilities("sword-strike", "longbow-shot")
         }
 
@@ -785,6 +793,7 @@ object KeepOnTheBorderlandsModule : AdventureModuleSeed() {
             experienceValue = 0
             challengeRating = 5
             isAggressive = false
+            isAlly = true
             abilities("sword-strike", "shield-bash")
         }
 
@@ -798,6 +807,7 @@ object KeepOnTheBorderlandsModule : AdventureModuleSeed() {
             experienceValue = 0
             challengeRating = 4
             isAggressive = false
+            isAlly = true
             abilities("mace", "cure-light-wounds", "bless", "hold-person", "snake-staff-attack")
         }
 
@@ -810,6 +820,7 @@ object KeepOnTheBorderlandsModule : AdventureModuleSeed() {
             experienceValue = 0
             challengeRating = 1
             isAggressive = false
+            isAlly = true
             abilities("mace", "cure-light-wounds")
         }
 
@@ -835,6 +846,7 @@ object KeepOnTheBorderlandsModule : AdventureModuleSeed() {
             experienceValue = 0
             challengeRating = 0
             isAggressive = false
+            isAlly = true
             abilities("call-guards")
         }
 
@@ -847,6 +859,7 @@ object KeepOnTheBorderlandsModule : AdventureModuleSeed() {
             experienceValue = 0
             challengeRating = 2
             isAggressive = false
+            isAlly = true
             abilities("sword-strike")
         }
 
@@ -859,6 +872,7 @@ object KeepOnTheBorderlandsModule : AdventureModuleSeed() {
             experienceValue = 0
             challengeRating = 1
             isAggressive = false
+            isAlly = true
             abilities("guard-dog-bite")
         }
 
@@ -871,6 +885,7 @@ object KeepOnTheBorderlandsModule : AdventureModuleSeed() {
             experienceValue = 0
             challengeRating = 1
             isAggressive = false
+            isAlly = true
         }
 
         creature("smith-assistant") {
@@ -882,6 +897,7 @@ object KeepOnTheBorderlandsModule : AdventureModuleSeed() {
             experienceValue = 0
             challengeRating = 0
             isAggressive = false
+            isAlly = true
         }
 
         creature("provisioner") {
@@ -893,6 +909,7 @@ object KeepOnTheBorderlandsModule : AdventureModuleSeed() {
             experienceValue = 0
             challengeRating = 0
             isAggressive = false
+            isAlly = true
         }
 
         creature("trader") {
@@ -904,6 +921,7 @@ object KeepOnTheBorderlandsModule : AdventureModuleSeed() {
             experienceValue = 0
             challengeRating = 0
             isAggressive = false
+            isAlly = true
         }
 
         creature("banker") {
@@ -915,6 +933,7 @@ object KeepOnTheBorderlandsModule : AdventureModuleSeed() {
             experienceValue = 0
             challengeRating = 2
             isAggressive = false
+            isAlly = true
             abilities("sword-strike")
         }
 
@@ -927,6 +946,7 @@ object KeepOnTheBorderlandsModule : AdventureModuleSeed() {
             experienceValue = 0
             challengeRating = 1
             isAggressive = false
+            isAlly = true
             abilities("crossbow-shot", "sword-strike")
         }
 
@@ -939,6 +959,7 @@ object KeepOnTheBorderlandsModule : AdventureModuleSeed() {
             experienceValue = 0
             challengeRating = 1
             isAggressive = false
+            isAlly = true
         }
 
         creature("guild-master") {
@@ -950,6 +971,7 @@ object KeepOnTheBorderlandsModule : AdventureModuleSeed() {
             experienceValue = 0
             challengeRating = 0
             isAggressive = false
+            isAlly = true
         }
 
         // === INNKEEPERS & TAVERNERS ===
@@ -962,6 +984,7 @@ object KeepOnTheBorderlandsModule : AdventureModuleSeed() {
             experienceValue = 0
             challengeRating = 0
             isAggressive = false
+            isAlly = true
         }
 
         creature("taverner") {
@@ -973,6 +996,7 @@ object KeepOnTheBorderlandsModule : AdventureModuleSeed() {
             experienceValue = 0
             challengeRating = 0
             isAggressive = false
+            isAlly = true
         }
 
         creature("serving-wench") {
@@ -984,6 +1008,7 @@ object KeepOnTheBorderlandsModule : AdventureModuleSeed() {
             experienceValue = 0
             challengeRating = 0
             isAggressive = false
+            isAlly = true
         }
 
         creature("mercenary") {
@@ -1041,6 +1066,7 @@ object KeepOnTheBorderlandsModule : AdventureModuleSeed() {
             experienceValue = 0
             challengeRating = 0
             isAggressive = false
+            isAlly = true
         }
     }
 

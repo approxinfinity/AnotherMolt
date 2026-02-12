@@ -187,7 +187,8 @@ data class CreateCreatureRequest(
     val level: Int = 1,
     val experienceValue: Int = 10,
     val challengeRating: Int = 1,
-    val isAggressive: Boolean = false
+    val isAggressive: Boolean = false,
+    val isAlly: Boolean = false
 )
 
 @Serializable

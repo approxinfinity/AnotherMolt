@@ -36,6 +36,7 @@ data class CreatureResponse(
     val experienceValue: Int,
     val challengeRating: Int,
     val isAggressive: Boolean,
+    val isAlly: Boolean,
     val lootTableId: String?,
     val minGoldDrop: Int,
     val maxGoldDrop: Int,
@@ -77,6 +78,7 @@ private fun Creature.toResponse(): CreatureResponse = CreatureResponse(
     experienceValue = experienceValue,
     challengeRating = challengeRating,
     isAggressive = isAggressive,
+    isAlly = isAlly,
     lootTableId = lootTableId,
     minGoldDrop = minGoldDrop,
     maxGoldDrop = maxGoldDrop,
@@ -113,7 +115,8 @@ fun Route.creatureRoutes() {
                 level = request.level,
                 experienceValue = request.experienceValue,
                 challengeRating = request.challengeRating,
-                isAggressive = request.isAggressive
+                isAggressive = request.isAggressive,
+                isAlly = request.isAlly
             )
             val createdCreature = CreatureRepository.create(creature)
 
@@ -170,7 +173,8 @@ fun Route.creatureRoutes() {
                 level = request.level,
                 experienceValue = request.experienceValue,
                 challengeRating = request.challengeRating,
-                isAggressive = request.isAggressive
+                isAggressive = request.isAggressive,
+                isAlly = request.isAlly
             )
 
             if (CreatureRepository.update(creature)) {

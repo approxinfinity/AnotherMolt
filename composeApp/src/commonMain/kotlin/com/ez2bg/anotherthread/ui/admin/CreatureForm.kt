@@ -57,6 +57,7 @@ fun CreatureForm(
     var level by remember(editCreature?.id) { mutableStateOf(editCreature?.level?.toString() ?: "1") }
     var experienceValue by remember(editCreature?.id) { mutableStateOf(editCreature?.experienceValue?.toString() ?: "10") }
     var isAggressive by remember(editCreature?.id) { mutableStateOf(editCreature?.isAggressive ?: false) }
+    var isAlly by remember(editCreature?.id) { mutableStateOf(editCreature?.isAlly ?: false) }
     var abilityIds by remember(editCreature?.id) { mutableStateOf(editCreature?.abilityIds ?: emptyList()) }
     var showCombatStats by remember { mutableStateOf(false) }
 
@@ -368,10 +369,42 @@ fun CreatureForm(
                         )
                     }
 
+                    // Ally toggle
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            Icon(
+                                imageVector = Icons.Filled.Security,
+                                contentDescription = null,
+                                tint = if (isAlly) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                            Text(
+                                text = "Ally",
+                                style = MaterialTheme.typography.bodyMedium
+                            )
+                            Text(
+                                text = "(fights alongside player)",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                        Switch(
+                            checked = isAlly,
+                            onCheckedChange = { isAlly = it },
+                            enabled = !isDisabled
+                        )
+                    }
+
                     // Summary text
                     Spacer(modifier = Modifier.height(8.dp))
                     Text(
-                        text = "L${level.ifEmpty { "1" }} * ${maxHp.ifEmpty { "10" }} HP * ${baseDamage.ifEmpty { "5" }} DMG * ${experienceValue.ifEmpty { "10" }} XP${if (isAggressive) " * Aggressive" else ""}",
+                        text = "L${level.ifEmpty { "1" }} * ${maxHp.ifEmpty { "10" }} HP * ${baseDamage.ifEmpty { "5" }} DMG * ${experienceValue.ifEmpty { "10" }} XP${if (isAggressive) " * Aggressive" else ""}${if (isAlly) " * Ally" else ""}",
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
@@ -401,7 +434,8 @@ fun CreatureForm(
                             abilityIds = abilityIds,
                             level = level.toIntOrNull() ?: 1,
                             experienceValue = experienceValue.toIntOrNull() ?: 10,
-                            isAggressive = isAggressive
+                            isAggressive = isAggressive,
+                            isAlly = isAlly
                         )
                         if (isEditMode) {
                             val result = ApiClient.updateCreature(editCreature!!.id, request)
@@ -473,7 +507,8 @@ fun CreatureForm(
                             abilityIds = abilityIds,
                             level = level.toIntOrNull() ?: 1,
                             experienceValue = experienceValue.toIntOrNull() ?: 10,
-                            isAggressive = isAggressive
+                            isAggressive = isAggressive,
+                            isAlly = isAlly
                         )
                         if (isEditMode) {
                             val result = ApiClient.updateCreature(editCreature!!.id, request)

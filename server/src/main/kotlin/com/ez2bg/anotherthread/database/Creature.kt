@@ -28,6 +28,7 @@ data class Creature(
     val experienceValue: Int = 10,
     val challengeRating: Int = 1,
     val isAggressive: Boolean = false,
+    val isAlly: Boolean = false,  // Fights alongside the player in combat
     // Loot fields
     val lootTableId: String? = null,
     val minGoldDrop: Int = 0,
@@ -66,6 +67,7 @@ object CreatureRepository {
         experienceValue = this[CreatureTable.experienceValue],
         challengeRating = this[CreatureTable.challengeRating],
         isAggressive = this[CreatureTable.isAggressive],
+        isAlly = this[CreatureTable.isAlly],
         lootTableId = this[CreatureTable.lootTableId],
         minGoldDrop = this[CreatureTable.minGoldDrop],
         maxGoldDrop = this[CreatureTable.maxGoldDrop],
@@ -89,6 +91,7 @@ object CreatureRepository {
             it[experienceValue] = creature.experienceValue
             it[challengeRating] = creature.challengeRating
             it[isAggressive] = creature.isAggressive
+            it[isAlly] = creature.isAlly
             it[lootTableId] = creature.lootTableId
             it[minGoldDrop] = creature.minGoldDrop
             it[maxGoldDrop] = creature.maxGoldDrop
@@ -124,6 +127,7 @@ object CreatureRepository {
             it[experienceValue] = creature.experienceValue
             it[challengeRating] = creature.challengeRating
             it[isAggressive] = creature.isAggressive
+            it[isAlly] = creature.isAlly
             it[lootTableId] = creature.lootTableId
             it[minGoldDrop] = creature.minGoldDrop
             it[maxGoldDrop] = creature.maxGoldDrop

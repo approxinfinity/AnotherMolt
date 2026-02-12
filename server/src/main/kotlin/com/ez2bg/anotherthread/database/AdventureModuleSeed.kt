@@ -493,6 +493,7 @@ abstract class AdventureModuleSeed {
         var experienceValue: Int = 10
         var challengeRating: Int = 1
         var isAggressive: Boolean = false
+        var isAlly: Boolean = false
         var minGoldDrop: Int = 0
         var maxGoldDrop: Int = 0
         var lootTableId: String? = null
@@ -532,6 +533,7 @@ abstract class AdventureModuleSeed {
             experienceValue = experienceValue,
             challengeRating = challengeRating,
             isAggressive = isAggressive,
+            isAlly = isAlly,
             minGoldDrop = minGoldDrop,
             maxGoldDrop = maxGoldDrop,
             lootTableId = lootTableId,

@@ -95,6 +95,7 @@ data class CreatureDto(
     val level: Int = 1,
     val experienceValue: Int = 10,
     val isAggressive: Boolean = false,
+    val isAlly: Boolean = false,
     // Whether this creature is a trainer (can teach abilities)
     val isTrainer: Boolean = false
 )
@@ -146,7 +147,8 @@ data class CreateCreatureRequest(
     val abilityIds: List<String> = emptyList(),
     val level: Int = 1,
     val experienceValue: Int = 10,
-    val isAggressive: Boolean = false
+    val isAggressive: Boolean = false,
+    val isAlly: Boolean = false
 )
 
 @Serializable

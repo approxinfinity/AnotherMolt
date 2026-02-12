@@ -509,22 +509,33 @@ object CombatService {
             }
         }
 
-        val creatureCombatants = creatureIds.mapNotNull { creatureId ->
+        val enemyCombatants = creatureIds.mapNotNull { creatureId ->
             CreatureRepository.findById(creatureId)?.toCombatant()
         }
 
         // Don't create a session if there are no creatures to fight
-        if (creatureCombatants.isEmpty()) {
+        if (enemyCombatants.isEmpty()) {
             log.warn("Cannot create combat session at $locationId: no valid creatures found (requested: $targetCreatureIds, at location: $creaturesActuallyAtLocation)")
             return null
         }
 
-        log.info("Creating combat session at $locationId with ${creatureCombatants.size} creature(s): ${creatureCombatants.map { it.name }}")
+        // Pull in ally creatures at this location (they fight alongside the player)
+        val allyIds = creaturesActuallyAtLocation.filter { creatureId ->
+            creatureId !in creatureIds && CreatureRepository.findById(creatureId)?.isAlly == true
+        }
+        val allyCombatants = allyIds.mapNotNull { creatureId ->
+            CreatureRepository.findById(creatureId)?.toCombatant()?.copy(
+                alliedToUserId = "ALLY"  // Marks as allied; charmed creature AI handles targeting
+            )
+        }
+
+        val allCombatants = enemyCombatants + allyCombatants
+        log.info("Creating combat session at $locationId with ${enemyCombatants.size} enemy creature(s) and ${allyCombatants.size} ally creature(s): enemies=${enemyCombatants.map { it.name }}, allies=${allyCombatants.map { it.name }}")
 
         return CombatSession(
             locationId = locationId,
             state = CombatState.WAITING,
-            combatants = creatureCombatants
+            combatants = allCombatants
         )
     }
 
@@ -940,9 +951,9 @@ object CombatService {
                         if (currentTarget.type == CombatantType.CREATURE &&
                             !updatedTarget.isAlive &&
                             actor.type == CombatantType.PLAYER) {
-                            // Count remaining alive enemies
+                            // Count remaining alive enemies (exclude allies)
                             val remainingEnemies = currentCombatants.count {
-                                it.type == CombatantType.CREATURE && it.isAlive && it.id != currentTarget.id
+                                it.type == CombatantType.CREATURE && it.isAlive && it.id != currentTarget.id && it.alliedToUserId == null
                             }
                             log.info(">>> CREATURE KILLED: ${currentTarget.name} by ${actor.name}, $remainingEnemies enemies remain")
                             try {
@@ -2802,6 +2813,12 @@ object CombatService {
         killer: Combatant,
         remainingEnemies: Int
     ) {
+        // Skip XP/loot/respawn processing for ally creatures
+        if (creature.alliedToUserId != null) {
+            log.info("Ally creature ${creature.name} was defeated in combat - no XP/loot awarded")
+            return
+        }
+
         // Get creature data for XP/loot calculation
         val creatureData = CreatureRepository.findById(creature.id)
         if (creatureData == null) {
