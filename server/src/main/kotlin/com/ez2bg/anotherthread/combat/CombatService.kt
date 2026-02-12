@@ -494,6 +494,7 @@ object CombatService {
         val creaturesActuallyAtLocation = location?.creatureIds?.toSet() ?: emptySet()
 
         // If specific targets requested, verify they're actually at this location
+        // If no targets specified, only pull in aggressive creatures
         val creatureIds = if (targetCreatureIds.isNotEmpty()) {
             val verified = targetCreatureIds.filter { it in creaturesActuallyAtLocation }
             if (verified.size != targetCreatureIds.size) {
@@ -502,7 +503,10 @@ object CombatService {
             }
             verified
         } else {
-            creaturesActuallyAtLocation.toList()
+            // No specific targets - only pull in aggressive creatures
+            creaturesActuallyAtLocation.filter { creatureId ->
+                CreatureRepository.findById(creatureId)?.isAggressive == true
+            }
         }
 
         val creatureCombatants = creatureIds.mapNotNull { creatureId ->

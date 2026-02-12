@@ -1323,7 +1323,7 @@ class AdventureViewModel {
         if (needToJoinCombat) {
             // AoE abilities can initiate combat with all hostiles
             if (ability.targetType in listOf("area", "all_enemies")) {
-                val creatureIds = state.creaturesHere.map { it.id }
+                val creatureIds = state.creaturesHere.filter { it.isAggressive }.map { it.id }
                 if (creatureIds.isNotEmpty()) {
                     // Join combat and queue the ability to use when combat starts
                     CombatStateHolder.joinCombat(
