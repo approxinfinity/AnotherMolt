@@ -1166,6 +1166,9 @@ fun Application.module() {
     AdventureModuleRegistry.register(com.ez2bg.anotherthread.database.modules.QuasquetonModule)
     AdventureModuleRegistry.seedAll()
 
+    // Seed intelligent magic weapons
+    IntelligentWeaponSeed.seedIfEmpty()
+
     // Apply environmental effects to specific locations
     EnvironmentalEffectService.applyDirectionConfusionToMinotaurMaze()
 

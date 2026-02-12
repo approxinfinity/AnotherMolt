@@ -43,8 +43,10 @@ import androidx.compose.ui.unit.sp
 import coil3.compose.AsyncImage
 import com.ez2bg.anotherthread.AppConfig
 import com.ez2bg.anotherthread.api.AbilityDto
+import com.ez2bg.anotherthread.api.ApiClient
 import com.ez2bg.anotherthread.api.CreatureDto
 import com.ez2bg.anotherthread.api.DiplomacyResultDto
+import com.ez2bg.anotherthread.api.IntelligentWeaponDto
 import com.ez2bg.anotherthread.api.ReactionResultDto
 import com.ez2bg.anotherthread.api.ExitDirection
 import com.ez2bg.anotherthread.api.ItemDto
@@ -1240,6 +1242,16 @@ fun DescriptionPopup(
     val detailName = creature?.name ?: item?.name ?: ""
     val description = creature?.desc ?: item?.desc ?: ""
 
+    // Fetch intelligent weapon data if this is an item with features
+    var intelligentWeaponData by remember { mutableStateOf<IntelligentWeaponDto?>(null) }
+    if (item != null && item.featureIds.isNotEmpty()) {
+        LaunchedEffect(item.id) {
+            ApiClient.getIntelligentWeaponData(item.id).onSuccess { data ->
+                intelligentWeaponData = data
+            }
+        }
+    }
+
     Box(
         modifier = Modifier
             .fillMaxSize()
@@ -1414,6 +1426,69 @@ fun DescriptionPopup(
                             color = Color(0xFFFFD700).copy(alpha = 0.7f),
                             fontSize = 12.sp
                         )
+                    }
+                }
+
+                // Intelligent weapon properties
+                if (intelligentWeaponData != null) {
+                    val iwd = intelligentWeaponData!!
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Surface(
+                        shape = RoundedCornerShape(8.dp),
+                        color = Color(0xFF9C27B0).copy(alpha = 0.15f),
+                        border = BorderStroke(1.dp, Color(0xFF9C27B0).copy(alpha = 0.4f)),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Column(
+                            modifier = Modifier.padding(10.dp),
+                            verticalArrangement = Arrangement.spacedBy(4.dp)
+                        ) {
+                            if (iwd.personalityName != null) {
+                                Text(
+                                    text = "\u2728 ${iwd.personalityName}",
+                                    color = Color(0xFFCE93D8),
+                                    fontSize = 14.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    textAlign = TextAlign.Center,
+                                    modifier = Modifier.fillMaxWidth()
+                                )
+                            }
+                            if (iwd.personalityQuirk != null) {
+                                Text(
+                                    text = iwd.personalityQuirk,
+                                    color = Color(0xFFCE93D8).copy(alpha = 0.8f),
+                                    fontSize = 11.sp,
+                                    textAlign = TextAlign.Center,
+                                    modifier = Modifier.fillMaxWidth()
+                                )
+                            }
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceEvenly
+                            ) {
+                                StatColumn("INT", "${iwd.intelligence}", Color(0xFFCE93D8))
+                                StatColumn("Ego", "${iwd.ego}", Color(0xFFFF8A65))
+                            }
+                            Text(
+                                text = "Powers: ${iwd.primaryPowers.joinToString(", ") {
+                                    it.replace("_", " ").replaceFirstChar { c -> c.uppercase() }
+                                }}",
+                                color = Color(0xFF81C784),
+                                fontSize = 11.sp,
+                                textAlign = TextAlign.Center,
+                                modifier = Modifier.fillMaxWidth()
+                            )
+                            if (iwd.extraordinaryAbility != null) {
+                                Text(
+                                    text = "\u2B50 ${iwd.extraordinaryAbility.replace("_", " ").replaceFirstChar { it.uppercase() }}",
+                                    color = Color(0xFFFFD54F),
+                                    fontSize = 12.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    textAlign = TextAlign.Center,
+                                    modifier = Modifier.fillMaxWidth()
+                                )
+                            }
+                        }
                     }
                 }
             }

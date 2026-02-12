@@ -850,10 +850,13 @@ fun UserProfileView(
                                         onEquipToggle = if (item.equipmentSlot != null) {
                                             {
                                                 scope.launch {
-                                                    ApiClient.equipItem(user.id, item.id).onSuccess { updatedUser ->
-                                                        equippedItemIds = updatedUser.equippedItemIds
-                                                        UserStateHolder.updateUser(updatedUser)
-                                                        onUserUpdated(updatedUser)
+                                                    ApiClient.equipItem(user.id, item.id).onSuccess { equipResponse ->
+                                                        if (equipResponse.success && equipResponse.user != null) {
+                                                            equippedItemIds = equipResponse.user.equippedItemIds
+                                                            UserStateHolder.updateUser(equipResponse.user)
+                                                            onUserUpdated(equipResponse.user)
+                                                        }
+                                                        equipResponse.message?.let { msg -> message = msg }
                                                     }.onFailure { error ->
                                                         message = "Failed to equip: ${error.message}"
                                                     }
@@ -1369,6 +1372,29 @@ private fun InventoryItemCard(
                     }
                 }
 
+                // Intelligent weapon section (shown when expanded for weapons with features)
+                if (isExpanded && item.featureIds.isNotEmpty() && item.equipmentType == "weapon") {
+                    var weaponData by remember { mutableStateOf<IntelligentWeaponDto?>(null) }
+                    var loaded by remember { mutableStateOf(false) }
+
+                    LaunchedEffect(item.id) {
+                        if (!loaded) {
+                            ApiClient.getIntelligentWeaponData(item.id).onSuccess { data ->
+                                weaponData = data
+                            }
+                            loaded = true
+                        }
+                    }
+
+                    weaponData?.let { data ->
+                        HorizontalDivider(
+                            modifier = Modifier.padding(horizontal = 12.dp),
+                            color = Color(0xFF9C27B0).copy(alpha = 0.3f)
+                        )
+                        IntelligentWeaponInfo(data)
+                    }
+                }
+
                 // Drop button (only for unequipped items when expanded)
                 if (isExpanded && onDrop != null && !isEquipped) {
                     HorizontalDivider(
@@ -1400,6 +1426,102 @@ private fun InventoryItemCard(
                 }
             }
         }
+}
+
+@Composable
+private fun IntelligentWeaponInfo(data: IntelligentWeaponDto) {
+    val alignmentColor = when {
+        data.alignment.contains("good") -> Color(0xFF4CAF50)
+        data.alignment.contains("evil") -> Color(0xFFE53935)
+        else -> Color(0xFFFF9800)
+    }
+
+    val commColor = when (data.communicationType) {
+        "empathy" -> Color(0xFF7986CB)
+        "speech" -> Color(0xFFFFB74D)
+        "telepathy" -> Color(0xFFBA68C8)
+        else -> Color.White
+    }
+
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 12.dp, vertical = 8.dp),
+        verticalArrangement = Arrangement.spacedBy(6.dp)
+    ) {
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(6.dp)
+        ) {
+            Icon(
+                imageVector = Icons.Filled.Star,
+                contentDescription = null,
+                modifier = Modifier.size(14.dp),
+                tint = Color(0xFF9C27B0)
+            )
+            Text(
+                text = "Intelligent Weapon",
+                style = MaterialTheme.typography.labelMedium,
+                color = Color(0xFF9C27B0)
+            )
+        }
+
+        Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+            Text(
+                text = "INT ${data.intelligence}",
+                style = MaterialTheme.typography.labelSmall,
+                color = Color(0xFF64B5F6)
+            )
+            Text(
+                text = "Ego ${data.ego}",
+                style = MaterialTheme.typography.labelSmall,
+                color = Color(0xFFEF5350)
+            )
+            Text(
+                text = data.alignment.replace("_", " ").replaceFirstChar { it.uppercase() },
+                style = MaterialTheme.typography.labelSmall,
+                color = alignmentColor
+            )
+        }
+
+        Text(
+            text = when (data.communicationType) {
+                "empathy" -> "Communicates through feelings"
+                "speech" -> "Speaks aloud"
+                "telepathy" -> "Projects thoughts into your mind"
+                else -> data.communicationType
+            },
+            style = MaterialTheme.typography.bodySmall,
+            color = commColor
+        )
+
+        if (data.primaryPowers.isNotEmpty()) {
+            Text(
+                text = "Powers: ${data.primaryPowers.joinToString(", ") {
+                    it.replace("_", " ").replaceFirstChar { c -> c.uppercase() }
+                }}",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
+
+        data.extraordinaryAbility?.let { ability ->
+            Text(
+                text = "Extraordinary: ${ability.replace("_", " ").replaceFirstChar { it.uppercase() }}",
+                style = MaterialTheme.typography.bodySmall,
+                color = Color(0xFFFFD700)
+            )
+        }
+
+        data.personalityQuirk?.let { quirk ->
+            Text(
+                text = quirk,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
+                fontStyle = androidx.compose.ui.text.font.FontStyle.Italic
+            )
+        }
+    }
 }
 
 @Composable

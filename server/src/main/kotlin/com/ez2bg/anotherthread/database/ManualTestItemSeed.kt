@@ -197,6 +197,22 @@ object ManualTestItemSeed {
                 featureName = "NPC Reaction: Aggressive Always Hostile",
                 description = "Click on an aggressive creature (red name). Verify reaction badge shows 'Hostile' without rolling.",
                 category = "combat"
+            ),
+            // === INTELLIGENT WEAPONS ===
+            ManualTestItem(
+                featureName = "Intelligent Weapon: View Properties",
+                description = "Find an intelligent weapon (e.g. Starweaver, Doomwhisper). Expand it in inventory. Verify INT, Ego, alignment, powers, and personality quirk display correctly.",
+                category = "items"
+            ),
+            ManualTestItem(
+                featureName = "Intelligent Weapon: Ego Contest on Equip",
+                description = "Equip an intelligent weapon with mismatched alignment. Verify ego contest message appears. If contest fails, weapon should not equip.",
+                category = "items"
+            ),
+            ManualTestItem(
+                featureName = "Intelligent Weapon: Compatible Alignment Equip",
+                description = "Equip an intelligent weapon with compatible alignment. Verify it equips successfully with acceptance message.",
+                category = "items"
             )
         )
 
