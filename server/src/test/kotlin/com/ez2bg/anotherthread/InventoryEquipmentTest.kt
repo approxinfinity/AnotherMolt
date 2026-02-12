@@ -175,16 +175,29 @@ class InventoryEquipmentTest {
     }
 
     @Test
-    fun testAddItems_DuplicateItem_AllowsDuplicates() {
+    fun testAddItems_StackableItem_AllowsDuplicates() {
         val user = createTestUserWithInventory(itemIds = listOf(TestFixtures.POTION_ID))
 
-        // Add another potion
+        // Add another potion (potions are stackable)
         val result = UserRepository.addItems(user.id, listOf(TestFixtures.POTION_ID))
 
         assertTrue(result)
         val updated = UserRepository.findById(user.id)!!
-        // Should have 2 potions now
+        // Should have 2 potions now since potions are stackable
         assertEquals(2, updated.itemIds.count { it == TestFixtures.POTION_ID })
+    }
+
+    @Test
+    fun testAddItems_NonStackableItem_BlocksDuplicates() {
+        val user = createTestUserWithInventory(itemIds = listOf(TestFixtures.SWORD_ID))
+
+        // Try to add a second sword (swords are not stackable)
+        val result = UserRepository.addItems(user.id, listOf(TestFixtures.SWORD_ID))
+
+        assertTrue(result) // Returns true (no error), just silently skips
+        val updated = UserRepository.findById(user.id)!!
+        // Should still have only 1 sword
+        assertEquals(1, updated.itemIds.count { it == TestFixtures.SWORD_ID })
     }
 
     @Test

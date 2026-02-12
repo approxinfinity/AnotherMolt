@@ -214,6 +214,11 @@ fun Route.shopRoutes() {
                 return@post call.respond(HttpStatusCode.BadRequest, ShopActionResponse(false, "Item is not for sale"))
             }
 
+            // Prevent buying non-stackable items the player already owns
+            if (!item.isStackable && request.itemId in user.itemIds) {
+                return@post call.respond(HttpStatusCode.BadRequest, ShopActionResponse(false, "You already own ${item.name}"))
+            }
+
             // Calculate price with charisma discount
             val basePrice = item.value
             val finalPrice = applyCharismaDiscount(basePrice, user.charisma)

@@ -661,12 +661,27 @@ object UserRepository {
     }
 
     /**
-     * Add items to a user's inventory
+     * Add items to a user's inventory.
+     * Non-stackable items are skipped if the player already owns one.
      */
     fun addItems(id: String, itemIds: List<String>): Boolean = transaction {
         val user = findById(id) ?: return@transaction false
+
+        // Filter: only allow duplicates for stackable items
+        val existingItemIds = user.itemIds.toSet()
+        val itemsToAdd = itemIds.filter { itemId ->
+            if (itemId in existingItemIds) {
+                val item = ItemRepository.findById(itemId)
+                item?.isStackable == true
+            } else {
+                true
+            }
+        }
+
+        if (itemsToAdd.isEmpty()) return@transaction true
+
         UserTable.update({ UserTable.id eq id }) {
-            it[UserTable.itemIds] = listToJson(user.itemIds + itemIds)
+            it[UserTable.itemIds] = listToJson(user.itemIds + itemsToAdd)
             it[lastActiveAt] = System.currentTimeMillis()
         } > 0
     }

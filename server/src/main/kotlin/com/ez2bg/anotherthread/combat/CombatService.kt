@@ -2860,12 +2860,15 @@ object CombatService {
             val lootTable = LootTableRepository.findById(lootTableId)
             lootTable?.entries?.forEach { entry ->
                 if (kotlin.random.Random.nextFloat() < entry.chance) {
-                    val qty = if (entry.maxQty > entry.minQty) {
-                        kotlin.random.Random.nextInt(entry.minQty, entry.maxQty + 1)
-                    } else entry.minQty
+                    ItemRepository.findById(entry.itemId)?.let { item ->
+                        // Non-stackable items only drop once; stackable respect qty range
+                        val qty = if (item.isStackable) {
+                            if (entry.maxQty > entry.minQty) {
+                                kotlin.random.Random.nextInt(entry.minQty, entry.maxQty + 1)
+                            } else entry.minQty
+                        } else 1
 
-                    repeat(qty) {
-                        ItemRepository.findById(entry.itemId)?.let { item ->
+                        repeat(qty) {
                             droppedItems.add(item)
                         }
                     }

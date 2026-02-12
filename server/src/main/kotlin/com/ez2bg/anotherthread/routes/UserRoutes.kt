@@ -1749,6 +1749,12 @@ fun Route.userRoutes() {
                 return@post
             }
 
+            // Prevent picking up non-stackable items the player already has
+            if (!item.isStackable && itemId in user.itemIds) {
+                call.respond(HttpStatusCode.BadRequest, mapOf("error" to "You already have ${item.name}"))
+                return@post
+            }
+
             // Check encumbrance (weight-based system using Strength)
             val encumbranceInfo = EncumbranceService.getEncumbranceInfo(user)
             val newWeight = encumbranceInfo.currentWeight + item.weight

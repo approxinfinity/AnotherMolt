@@ -302,7 +302,8 @@ object TestFixtures {
         name = "Test Potion",
         desc = "A healing potion for testing",
         featureIds = emptyList(),
-        value = 25
+        value = 25,
+        isStackable = true
     )
 
     fun shield() = Item(
