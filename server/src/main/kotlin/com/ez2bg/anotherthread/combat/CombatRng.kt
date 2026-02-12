@@ -333,9 +333,15 @@ object CombatRng {
         val rawDamage = if (hitResult == HitResult.MISS) {
             0
         } else {
-            // Roll dice if available, otherwise use baseDamage
+            // Roll dice if available, otherwise use baseDamage with ±25% variance
             val diceResult = rollDiceStringSafe(damageDice)
-            diceResult?.total ?: baseDamage
+            if (diceResult != null) {
+                diceResult.total
+            } else {
+                // Apply variance to flat baseDamage so every attack feels different
+                val variance = 1.0 + (Random.nextDouble() * 2 * DAMAGE_VARIANCE - DAMAGE_VARIANCE)
+                (baseDamage * variance).toInt().coerceAtLeast(1)
+            }
         }
 
         // Apply hit modifiers (glancing = 50%, crit = 200%)
