@@ -89,7 +89,8 @@ data class Combatant(
     val attacksPerRound: Int = 1,             // Number of attacks per combat round (MajorMUD-style)
     val partyLeaderId: String? = null,        // Party leader ID for party-aware abilities (null = solo or is leader)
     val alliedToUserId: String? = null,       // For charmed creatures: the user who charmed them (attacks enemies, not players)
-    val charmedCreatureId: String? = null     // Database ID of the charmed creature record (for tracking damage/expiry)
+    val charmedCreatureId: String? = null,    // Database ID of the charmed creature record (for tracking damage/expiry)
+    val weaponName: String? = null             // Name of equipped weapon (for flavor text in combat messages)
 )
 
 /**

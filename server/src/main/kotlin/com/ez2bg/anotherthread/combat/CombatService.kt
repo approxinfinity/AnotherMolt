@@ -1405,7 +1405,26 @@ object CombatService {
             " ($remaining/${target.maxHp} HP)"
         } else ""
 
+        // Use CombatFlavorService for personalized player "Attack" messages
+        val flavorMsg = if (actor.type == CombatantType.PLAYER && target != null) {
+            when {
+                hitResult == CombatRng.HitResult.MISS -> CombatFlavorService.playerMissMessage(
+                    actorName = actor.name, targetName = target.name,
+                    abilityName = ability.name, weaponName = actor.weaponName
+                )
+                else -> CombatFlavorService.playerAttackMessage(
+                    actorName = actor.name, targetName = target.name,
+                    abilityName = ability.name, weaponName = actor.weaponName,
+                    damage = damage, wasCritical = wasCritical,
+                    wasGlancing = wasGlancing, hpRemaining = hpRemaining
+                )
+            }
+        } else null
+
         when {
+            flavorMsg != null -> {
+                parts.add(flavorMsg)
+            }
             hitResult == CombatRng.HitResult.MISS && target != null -> {
                 parts.add("${actor.name}'s ${ability.name} misses ${target.name}!")
             }
@@ -1825,13 +1844,14 @@ object CombatService {
 
             val message = when {
                 attackResult.hitResult == CombatRng.HitResult.MISS -> {
-                    "Your ${charmed.name}'s attack misses ${target.name}!"
-                }
-                attackResult.wasCritical -> {
-                    "CRITICAL! Your ${charmed.name} devastates ${target.name} for ${attackResult.damage} damage!"
+                    "Your " + CombatFlavorService.creatureMissMessage(charmed.name, target.name).replaceFirstChar { it.lowercase() }
                 }
                 else -> {
-                    "Your ${charmed.name} attacks ${target.name} for ${attackResult.damage} damage!"
+                    "Your " + CombatFlavorService.creatureAttackMessage(
+                        creatureName = charmed.name, targetName = target.name,
+                        damage = attackResult.damage, wasCritical = attackResult.wasCritical,
+                        wasGlancing = attackResult.wasGlancing
+                    ).replaceFirstChar { it.lowercase() }
                 }
             }
 
@@ -1926,19 +1946,19 @@ object CombatService {
                 critBonus = creature.critBonus
             )
 
-            // Build attack message
+            // Build attack message using flavor service
             val message = when {
                 attackResult.hitResult == CombatRng.HitResult.MISS -> {
-                    "${creature.name}'s attack misses ${currentTarget.name}!"
-                }
-                attackResult.wasCritical -> {
-                    "CRITICAL! ${creature.name} devastates ${currentTarget.name} for ${attackResult.damage} damage!"
-                }
-                attackResult.wasGlancing -> {
-                    "${creature.name}'s attack grazes ${currentTarget.name} for ${attackResult.damage} damage."
+                    CombatFlavorService.creatureMissMessage(creature.name, currentTarget.name)
                 }
                 else -> {
-                    "${creature.name} attacks ${currentTarget.name} for ${attackResult.damage} damage!"
+                    CombatFlavorService.creatureAttackMessage(
+                        creatureName = creature.name,
+                        targetName = currentTarget.name,
+                        damage = attackResult.damage,
+                        wasCritical = attackResult.wasCritical,
+                        wasGlancing = attackResult.wasGlancing
+                    )
                 }
             }
 
@@ -2609,6 +2629,9 @@ object CombatService {
         // Apply equipment HP bonus to max HP (current HP stays as-is from DB)
         val effectiveMaxHp = maxHp + equipHpBonus
 
+        // Extract main-hand weapon name for combat flavor text
+        val mainHandItem = equippedItems.firstOrNull { it.equipmentSlot == "main_hand" }
+
         return Combatant(
             id = id,
             type = CombatantType.PLAYER,
@@ -2635,7 +2658,8 @@ object CombatService {
             constitution = constitution,
             dexterity = dexterity,
             attacksPerRound = playerAttacksPerRound,
-            partyLeaderId = partyLeaderId  // For party-aware abilities
+            partyLeaderId = partyLeaderId,  // For party-aware abilities
+            weaponName = mainHandItem?.name
         )
     }
 

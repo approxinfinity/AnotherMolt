@@ -281,6 +281,23 @@ object ManualTestItemSeed {
                 featureName = "Treasure Maps: Loot Drop",
                 description = "Kill goblins, orcs, trolls, or ghouls repeatedly. Verify treasure maps occasionally drop (3-5% chance). Check that the map appears in inventory with a treasure map icon section.",
                 category = "items"
+            ),
+
+            // === PERSONALIZED COMBAT MESSAGES ===
+            ManualTestItem(
+                featureName = "Combat Flavor: Weapon-Specific Verbs",
+                description = "Equip different weapon types (sword, dagger, mace, bow, etc.) and use the basic Attack ability. Verify combat messages use weapon-appropriate verbs (slashes, stabs, bashes, shoots) instead of generic 'hits with Attack'.",
+                category = "combat"
+            ),
+            ManualTestItem(
+                featureName = "Combat Flavor: Creature Attack Verbs",
+                description = "Enter combat with various creature types (goblins, wolves, trolls, spiders). Verify creature attack messages use creature-appropriate verbs (goblins slash, wolves claw/bite, trolls smash) instead of generic 'attacks'.",
+                category = "combat"
+            ),
+            ManualTestItem(
+                featureName = "Combat Flavor: Named Abilities Unchanged",
+                description = "Use a named ability (e.g. Vicious Strike, Power Attack) in combat. Verify the message still uses the original format ('hits with Vicious Strike') and is NOT replaced by weapon flavor text.",
+                category = "combat"
             )
         )
 
