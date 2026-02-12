@@ -243,9 +243,19 @@ object CombatStateHolder {
             is GlobalEvent.AbilityResolved -> {
                 // Log ability usage - use server's formatted message which includes target name
                 val result = event.result
-                val serverMessage = result.result.message
+                val playerName = _playerCombatant.value?.name
+                // Replace player's own name with "You/Your" for more immersive messages
+                val serverMessage = if (playerName != null) {
+                    result.result.message
+                        .replace("${playerName}'s ", "Your ")
+                        .replace("$playerName ", "You ")
+                } else {
+                    result.result.message
+                }
+                val isPlayerAction = playerName != null && result.actorName == playerName
                 val logType = when {
-                    result.result.damage > 0 -> EventLogType.DAMAGE_DEALT
+                    result.result.damage > 0 && isPlayerAction -> EventLogType.DAMAGE_DEALT
+                    result.result.damage > 0 -> EventLogType.DAMAGE_RECEIVED
                     result.result.healing > 0 -> EventLogType.HEAL
                     else -> EventLogType.INFO
                 }

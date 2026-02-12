@@ -1387,18 +1387,24 @@ object CombatService {
     ): String {
         val parts = mutableListOf<String>()
 
+        // Show remaining HP after damage (clamped to 0)
+        val hpRemaining = if (damage > 0 && target != null) {
+            val remaining = (target.currentHp - damage).coerceAtLeast(0)
+            " ($remaining/${target.maxHp} HP)"
+        } else ""
+
         when {
             hitResult == CombatRng.HitResult.MISS && target != null -> {
                 parts.add("${actor.name}'s ${ability.name} misses ${target.name}!")
             }
             wasCritical && damage > 0 && target != null -> {
-                parts.add("CRITICAL! ${actor.name} devastates ${target.name} with ${ability.name} for $damage damage!")
+                parts.add("CRITICAL! ${actor.name} devastates ${target.name} with ${ability.name} for $damage damage!$hpRemaining")
             }
             wasGlancing && damage > 0 && target != null -> {
-                parts.add("${actor.name}'s ${ability.name} grazes ${target.name} for $damage damage.")
+                parts.add("${actor.name}'s ${ability.name} grazes ${target.name} for $damage damage.$hpRemaining")
             }
             damage > 0 && target != null -> {
-                parts.add("${actor.name} hits ${target.name} with ${ability.name} for $damage damage!")
+                parts.add("${actor.name} hits ${target.name} with ${ability.name} for $damage damage!$hpRemaining")
             }
             wasCritical && healing > 0 -> {
                 val healTarget = if (target != null && ability.targetType != "self") target.name else actor.name
