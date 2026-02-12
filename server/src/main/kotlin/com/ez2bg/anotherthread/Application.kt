@@ -1188,6 +1188,9 @@ fun Application.module() {
     // Initialize creature respawn quotas before starting the tick loop
     CreatureRespawnService.initializeQuotas()
 
+    // Initialize combat service (load active sessions from database)
+    CombatService.initialize()
+
     // Start global game tick loop (handles combat, regen, creature wandering, respawns)
     GameTickService.startTickLoop(CombatService)
     log.info("Game tick service started")

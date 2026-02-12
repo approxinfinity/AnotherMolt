@@ -241,14 +241,15 @@ object CombatStateHolder {
             }
 
             is GlobalEvent.AbilityResolved -> {
-                // Log ability usage
+                // Log ability usage - use server's formatted message which includes target name
                 val result = event.result
-                val damageMsg = if (result.result.damage > 0) " for ${result.result.damage} damage" else ""
-                val healMsg = if (result.result.healing > 0) " healing ${result.result.healing}" else ""
-                addEventLogEntry(
-                    "${result.actorName} used ${result.abilityName}$damageMsg$healMsg",
-                    if (result.result.damage > 0) EventLogType.DAMAGE_DEALT else EventLogType.INFO
-                )
+                val serverMessage = result.result.message
+                val logType = when {
+                    result.result.damage > 0 -> EventLogType.DAMAGE_DEALT
+                    result.result.healing > 0 -> EventLogType.HEALING
+                    else -> EventLogType.INFO
+                }
+                addEventLogEntry(serverMessage, logType)
             }
 
             is GlobalEvent.StatusEffectChanged -> {
