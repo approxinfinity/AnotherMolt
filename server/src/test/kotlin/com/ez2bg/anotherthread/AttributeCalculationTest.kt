@@ -176,10 +176,10 @@ class AttributeCalculationTest {
 
         val maxHp = UserRepository.calculateMaxHp(user, characterClass)
 
-        // hitDie=10, conMod=4:
-        // base = 10+4 = 14, perLevel = 10/2+1+4 = 10
-        // total = 14 + (10-1)*10 = 14 + 90 = 104
-        assertEquals(104, maxHp, "Level 10 warrior with CON 18 should have 104 HP")
+        // hitDie=10, conMod=4, breakpoint(18)=2:
+        // base = 10+4 = 14, perLevel = 10/2+1 + 4 + 2/2 = 6+4+1 = 11
+        // total = 14 + (10-1)*11 = 14 + 99 = 113
+        assertEquals(113, maxHp, "Level 10 warrior with CON 18 should have 113 HP")
     }
 
     @Test
@@ -395,8 +395,8 @@ class AttributeCalculationTest {
 
         val evasion = UserRepository.calculateEvasion(user)
 
-        // dexMod=4: evasion = 4
-        assertEquals(4, evasion)
+        // dodgeBonus(18) = dexMod(4)*2 + breakpoint(2)*3 = 8+6 = 14, level(1)/2=0
+        assertEquals(14, evasion)
     }
 
     @Test
@@ -415,8 +415,8 @@ class AttributeCalculationTest {
 
         val critBonus = UserRepository.calculateCritBonus(user)
 
-        // chaMod=3, level/5=2: 3 + 2 = 5
-        assertEquals(5, critBonus)
+        // critChanceBonus(16) = chaMod(3) + breakpoint(2)*2 = 3+4 = 7, level(10)/5=2: 7+2 = 9
+        assertEquals(9, critBonus)
     }
 
     @Test
@@ -425,8 +425,8 @@ class AttributeCalculationTest {
 
         val baseDamage = UserRepository.calculateBaseDamage(user)
 
-        // 5 + level(5) + strMod(3) = 13
-        assertEquals(13, baseDamage)
+        // 5 + level(5) + meleeDamageBonus(16) = 5 + 5 + (3+2) = 15
+        assertEquals(15, baseDamage)
     }
 
     @Test

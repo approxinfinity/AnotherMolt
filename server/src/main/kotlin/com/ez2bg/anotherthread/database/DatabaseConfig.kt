@@ -110,7 +110,10 @@ object DatabaseConfig {
                 FactionTable,
                 FactionRelationTable,
                 PlayerFactionStandingTable,
-                ManualTestItemTable
+                ManualTestItemTable,
+                LocationItemTable,
+                DiscoveredItemTable,
+                PuzzleTable
             )
         }
     }

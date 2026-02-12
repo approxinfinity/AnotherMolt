@@ -75,14 +75,15 @@ object TestFixtures {
         name = "Attack",
         description = "A basic physical attack using your weapon.",
         classId = null,  // Available to all
-        abilityType = "combat",
+        abilityType = "item",  // Use "item" to preserve manual stamina cost (matches production seed)
         targetType = "single_enemy",
         range = 5,
         cooldownType = "none",
         cooldownRounds = 0,
         baseDamage = 0,  // Damage comes from combatant's baseDamage stat
         durationRounds = 0,
-        effects = "[]"
+        effects = """[{"type":"damage","source":"baseDamage"}]""",
+        staminaCost = 2
     )
 
     /**

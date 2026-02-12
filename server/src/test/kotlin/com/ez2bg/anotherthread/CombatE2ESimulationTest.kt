@@ -77,21 +77,7 @@ class CombatE2ESimulationTest {
     }
 
     private fun seedUniversalAbilities() {
-        // Universal basic attack
-        AbilityRepository.create(Ability(
-            id = "universal-basic-attack",
-            name = "Attack",
-            description = "A basic melee attack",
-            classId = null,
-            abilityType = "item",
-            targetType = "single_enemy",
-            range = 5,
-            cooldownType = "none",
-            cooldownRounds = 0,
-            baseDamage = 0,
-            effects = """[{"type":"damage","source":"baseDamage"}]""",
-            staminaCost = 2
-        ))
+        // Note: universal-basic-attack is already seeded via TestFixtures.allAbilities()
 
         // Aid ability
         AbilityRepository.create(Ability(
@@ -127,21 +113,7 @@ class CombatE2ESimulationTest {
     }
 
     private fun seedAdditionalAbilities() {
-        // AoE fireball
-        AbilityRepository.create(Ability(
-            id = "test-fireball",
-            name = "Fireball",
-            description = "A powerful area-of-effect fire spell",
-            classId = TestFixtures.MAGE_CLASS_ID,
-            abilityType = "spell",
-            targetType = "all_enemies",
-            range = 30,
-            cooldownType = "long",
-            cooldownRounds = 4,
-            baseDamage = 12,
-            effects = "[]",
-            manaCost = 8
-        ))
+        // Note: test-fireball is already seeded via TestFixtures.allAbilities()
 
         // Blind ability
         AbilityRepository.create(Ability(
