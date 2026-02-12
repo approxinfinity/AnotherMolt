@@ -63,6 +63,7 @@ When a user enters exploration mode with no currentLocationId, the system falls 
 - ✅ Session restore now correctly syncs location from server after validation
 - ✅ Server ensures users have starting location (Tun du Lac) on login/register
 - ⏳ TODO: Admin setting for configurable default starting location
+- ⏳ TODO: Admin panel toggle to enable/disable creature wandering (and possibly configure tick frequency)
 
 **Remaining considerations:**
 - What if no location exists at 0,0,0?
