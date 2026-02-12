@@ -225,6 +225,23 @@ object ManualTestItemSeed {
                 featureName = "Random Jewelry Values: Loot Drop",
                 description = "Kill a creature with jewelry in its loot table. Verify dropped jewelry has a randomized name and value. Values should range from 300-10000gp.",
                 category = "items"
+            ),
+
+            // === WANDERING MONSTERS ===
+            ManualTestItem(
+                featureName = "Wandering Monsters: Biome Spawn",
+                description = "Idle at an outdoor wilderness location for a few minutes. Verify a wandering monster appropriate to the biome occasionally spawns (1-in-6 chance every ~30s).",
+                category = "combat"
+            ),
+            ManualTestItem(
+                featureName = "Wandering Monsters: Despawn Timer",
+                description = "Wait for a wandering monster to spawn, then do NOT attack it. After ~5 minutes it should despawn automatically and disappear from the location.",
+                category = "combat"
+            ),
+            ManualTestItem(
+                featureName = "Wandering Monsters: No Town Spawns",
+                description = "Idle at the Keep on the Borderlands (town area) for several minutes. Verify that no wandering monsters spawn in the safe town area.",
+                category = "combat"
             )
         )
 

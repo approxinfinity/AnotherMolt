@@ -76,6 +76,11 @@ object GameTickService {
                         processTribalWars()
                     }
 
+                    // 8. Process wandering monster encounters
+                    if (currentTickNumber % WanderingMonsterService.CHECK_INTERVAL_TICKS == 0L) {
+                        WanderingMonsterService.processEncounterChecks(currentTickNumber)
+                    }
+
                 } catch (e: Exception) {
                     log.error("Error in game tick $currentTickNumber: ${e.message}", e)
                 }

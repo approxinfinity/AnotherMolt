@@ -1169,6 +1169,9 @@ fun Application.module() {
     // Seed intelligent magic weapons
     IntelligentWeaponSeed.seedIfEmpty()
 
+    // Seed wandering encounter tables
+    WanderingEncounterSeed.seed()
+
     // Apply environmental effects to specific locations
     EnvironmentalEffectService.applyDirectionConfusionToMinotaurMaze()
 
