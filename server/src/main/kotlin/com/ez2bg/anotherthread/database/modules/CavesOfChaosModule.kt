@@ -2254,6 +2254,7 @@ object CavesOfChaosModule : AdventureModuleSeed() {
             position(6, -5)
             locationType = LocationType.UNDERGROUND
             exits {
+                west("ravine-entrance")
                 south("cave-h-chieftain") // Secret door from bugbears
                 north("cave-i-stirge")
                 east("cave-i-beetles-1")

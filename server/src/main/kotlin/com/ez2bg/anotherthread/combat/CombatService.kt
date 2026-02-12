@@ -2488,9 +2488,20 @@ object CombatService {
 
             // Pick a random exit (excluding ENTER portals - creatures can't use those)
             val exits = currentLocation.exits.filter { it.direction != ExitDirection.ENTER }
-            if (exits.isEmpty()) continue
 
-            val randomExit = exits.random()
+            // Keep creatures within their cave system (e.g., cave-a creatures stay in cave-a locations)
+            val caveGroupRegex = Regex("""cave-([a-k])""")
+            val currentCaveGroup = caveGroupRegex.find(currentLocation.id)?.groupValues?.get(1)
+            val filteredExits = if (currentCaveGroup != null) {
+                exits.filter { exit ->
+                    caveGroupRegex.find(exit.locationId)?.groupValues?.get(1) == currentCaveGroup
+                }
+            } else {
+                exits
+            }
+            if (filteredExits.isEmpty()) continue
+
+            val randomExit = filteredExits.random()
             val targetLocation = LocationRepository.findById(randomExit.locationId) ?: continue
 
             // Move creature: remove from current location, add to target (avoid duplicates)
