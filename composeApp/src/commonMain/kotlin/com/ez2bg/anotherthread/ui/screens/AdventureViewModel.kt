@@ -23,6 +23,25 @@ import com.ez2bg.anotherthread.api.LockpickInfoDto
 import com.ez2bg.anotherthread.api.DiplomacyResultDto
 import com.ez2bg.anotherthread.api.HostilityResultDto
 import com.ez2bg.anotherthread.data.AdventureRepository
+import com.ez2bg.anotherthread.handlers.DiplomacyHandler
+import com.ez2bg.anotherthread.handlers.DiplomacyEvent
+import com.ez2bg.anotherthread.handlers.FishingHandler
+import com.ez2bg.anotherthread.handlers.FishingEvent
+import com.ez2bg.anotherthread.handlers.LockpickingHandler
+import com.ez2bg.anotherthread.handlers.LockpickingEvent
+import com.ez2bg.anotherthread.handlers.PlayerInteractionHandler
+import com.ez2bg.anotherthread.handlers.PuzzleHandler
+import com.ez2bg.anotherthread.handlers.PuzzleEvent
+import com.ez2bg.anotherthread.handlers.RiftHandler
+import com.ez2bg.anotherthread.handlers.RiftEvent
+import com.ez2bg.anotherthread.handlers.SearchHandler
+import com.ez2bg.anotherthread.handlers.SearchEvent
+import com.ez2bg.anotherthread.handlers.ShopHandler
+import com.ez2bg.anotherthread.handlers.ShopEvent
+import com.ez2bg.anotherthread.handlers.TeleportHandler
+import com.ez2bg.anotherthread.handlers.TeleportEvent
+import com.ez2bg.anotherthread.handlers.TrainerHandler
+import com.ez2bg.anotherthread.handlers.TrainerEvent
 import com.ez2bg.anotherthread.state.CombatStateHolder
 import com.ez2bg.anotherthread.state.EventLogType
 import com.ez2bg.anotherthread.state.UserStateHolder
@@ -415,6 +434,8 @@ class AdventureViewModel {
         listenForPlayerPresenceEvents()
         // Listen for WebSocket reconnection to resync location
         listenForConnectionStateChanges()
+        // Listen for handler events
+        listenForHandlerEvents()
     }
 
     /**
@@ -2843,6 +2864,106 @@ class AdventureViewModel {
                 UserStateHolder.refreshUser()
             }.onFailure { error ->
                 logMessage("Failed to disband party: ${error.message}")
+            }
+        }
+    }
+
+    // =========================================================================
+    // HANDLER EVENT LISTENERS
+    // =========================================================================
+
+    /**
+     * Listen for events from all handlers and dispatch to appropriate UI actions.
+     * Handlers emit events for snackbars, errors, and other one-time UI actions.
+     */
+    private fun listenForHandlerEvents() {
+        // Shop events
+        scope.launch {
+            ShopHandler.events.collect { event ->
+                when (event) {
+                    is ShopEvent.ShowSnackbar -> showSnackbar(event.message)
+                }
+            }
+        }
+
+        // Fishing events
+        scope.launch {
+            FishingHandler.events.collect { event ->
+                when (event) {
+                    is FishingEvent.ShowSnackbar -> showSnackbar(event.message)
+                    is FishingEvent.ShowError -> logError(event.message)
+                }
+            }
+        }
+
+        // Puzzle events
+        scope.launch {
+            PuzzleHandler.events.collect { event ->
+                when (event) {
+                    is PuzzleEvent.ShowSnackbar -> showSnackbar(event.message)
+                }
+            }
+        }
+
+        // Teleport events
+        scope.launch {
+            TeleportHandler.events.collect { event ->
+                when (event) {
+                    is TeleportEvent.ShowSnackbar -> showSnackbar(event.message)
+                    is TeleportEvent.ShowError -> logError(event.message)
+                }
+            }
+        }
+
+        // Rift events
+        scope.launch {
+            RiftHandler.events.collect { event ->
+                when (event) {
+                    is RiftEvent.ShowSnackbar -> showSnackbar(event.message)
+                    is RiftEvent.ShowError -> logError(event.message)
+                }
+            }
+        }
+
+        // Trainer events
+        scope.launch {
+            TrainerHandler.events.collect { event ->
+                when (event) {
+                    is TrainerEvent.ShowSnackbar -> showSnackbar(event.message)
+                    is TrainerEvent.AbilitiesUpdated -> loadPlayerAbilities()
+                }
+            }
+        }
+
+        // Diplomacy events
+        scope.launch {
+            DiplomacyHandler.events.collect { event ->
+                when (event) {
+                    is DiplomacyEvent.ShowSnackbar -> showSnackbar(event.message)
+                    is DiplomacyEvent.ShowError -> logError(event.message)
+                    is DiplomacyEvent.CombatAvoided -> dismissCreatureInteractionModal()
+                }
+            }
+        }
+
+        // Lockpicking events
+        scope.launch {
+            LockpickingHandler.events.collect { event ->
+                when (event) {
+                    is LockpickingEvent.ShowMessage -> logMessage(event.message)
+                    is LockpickingEvent.ShowError -> logError(event.message)
+                    is LockpickingEvent.NavigateToLocation -> navigateToExit(ExitDto(locationId = event.locationId))
+                }
+            }
+        }
+
+        // Search events
+        scope.launch {
+            SearchHandler.events.collect { event ->
+                when (event) {
+                    is SearchEvent.ShowMessage -> logMessage(event.message)
+                    is SearchEvent.ShowError -> logError(event.message)
+                }
             }
         }
     }

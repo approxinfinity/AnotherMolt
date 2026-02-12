@@ -9,8 +9,11 @@ import com.ez2bg.anotherthread.state.UserStateHolder
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
@@ -28,6 +31,14 @@ data class FishingState(
 )
 
 /**
+ * One-time fishing events for UI handling.
+ */
+sealed class FishingEvent {
+    data class ShowSnackbar(val message: String) : FishingEvent()
+    data class ShowError(val message: String) : FishingEvent()
+}
+
+/**
  * Singleton handler for fishing business logic.
  * Manages fishing modal, minigame, and catch results.
  */
@@ -36,6 +47,9 @@ object FishingHandler {
 
     private val _fishingState = MutableStateFlow(FishingState())
     val fishingState: StateFlow<FishingState> = _fishingState.asStateFlow()
+
+    private val _events = MutableSharedFlow<FishingEvent>(extraBufferCapacity = 64)
+    val events: SharedFlow<FishingEvent> = _events.asSharedFlow()
 
     /**
      * Open the fishing distance modal.
@@ -196,5 +210,11 @@ object FishingHandler {
      */
     fun clearState() {
         _fishingState.value = FishingState()
+    }
+
+    private fun emitEvent(event: FishingEvent) {
+        scope.launch {
+            _events.emit(event)
+        }
     }
 }
