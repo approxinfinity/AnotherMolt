@@ -198,15 +198,8 @@ class UserStateHolderTest {
         assertEquals(false, UserStateHolder.isAdmin, "Should not be admin")
     }
 
-    @Test
-    fun currentLocationId_returnsUserLocation() = runTest {
-        // Given: User at a specific location
-        val user = createTestUser().copy(currentLocationId = "dark-forest")
-        UserStateHolder.updateUser(user)
-
-        // Then: currentLocationId should match
-        assertEquals("dark-forest", UserStateHolder.currentLocationId, "Location should match")
-    }
+    // NOTE: currentLocationId test removed - location is now managed by AdventureRepository
+    // Use AdventureRepository.currentLocationId as the single source of truth
 
     @Test
     fun userId_returnsUserId() = runTest {

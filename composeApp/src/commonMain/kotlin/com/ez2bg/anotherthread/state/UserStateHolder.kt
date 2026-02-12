@@ -54,8 +54,8 @@ object UserStateHolder {
     val hasCompleteProfile: Boolean
         get() = _currentUser.value?.characterClassId != null
 
-    val currentLocationId: String?
-        get() = _currentUser.value?.currentLocationId
+    // NOTE: currentLocationId was removed - use AdventureRepository.currentLocationId instead
+    // The UserDto.currentLocationId in localStorage may be stale. Server is truth for location.
 
     // Auth events (for one-time event handling)
     private val _authEvents = MutableSharedFlow<AuthEvent>(extraBufferCapacity = 10)
