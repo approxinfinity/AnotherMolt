@@ -246,7 +246,7 @@ object CombatStateHolder {
                 val serverMessage = result.result.message
                 val logType = when {
                     result.result.damage > 0 -> EventLogType.DAMAGE_DEALT
-                    result.result.healing > 0 -> EventLogType.HEALING
+                    result.result.healing > 0 -> EventLogType.HEAL
                     else -> EventLogType.INFO
                 }
                 addEventLogEntry(serverMessage, logType)
