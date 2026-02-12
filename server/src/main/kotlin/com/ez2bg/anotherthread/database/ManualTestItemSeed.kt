@@ -242,6 +242,23 @@ object ManualTestItemSeed {
                 featureName = "Wandering Monsters: No Town Spawns",
                 description = "Idle at the Keep on the Borderlands (town area) for several minutes. Verify that no wandering monsters spawn in the safe town area.",
                 category = "combat"
+            ),
+
+            // === WILDERNESS MOVEMENT ENCOUNTERS ===
+            ManualTestItem(
+                featureName = "Wilderness Encounters: Movement Spawn",
+                description = "Move between outdoor wilderness locations repeatedly (not in town). Verify encounters spawn roughly 1-in-6 moves. A flavor message should appear and creature shows at the destination.",
+                category = "combat"
+            ),
+            ManualTestItem(
+                featureName = "Wilderness Encounters: Indoor Exempt",
+                description = "Move from an indoor/underground location to an outdoor location (or vice versa). Verify no movement encounter triggers — only outdoor-to-outdoor movement should spawn encounters.",
+                category = "combat"
+            ),
+            ManualTestItem(
+                featureName = "Wilderness Encounters: Auto-Combat",
+                description = "When an aggressive creature spawns from a movement encounter, verify combat auto-starts immediately via the existing aggressive creature check.",
+                category = "combat"
             )
         )
 

@@ -43,7 +43,8 @@ data class UpdateLocationResponse(
     val success: Boolean,
     val combatStarted: Boolean = false,
     val combatSessionId: String? = null,
-    val message: String? = null
+    val message: String? = null,
+    val encounterMessage: String? = null
 )
 
 @Serializable
@@ -1604,7 +1605,12 @@ fun Route.userRoutes() {
                     }
                 }
 
-                // Check for aggressive creatures at the new location
+                // Check for wilderness movement encounter (spawn creature before aggro check)
+                val encounterMessage = if (newLocation != null && oldLocation != null) {
+                    com.ez2bg.anotherthread.game.WanderingMonsterService.checkMovementEncounter(id, oldLocation, newLocation)
+                } else null
+
+                // Check for aggressive creatures at the new location (picks up any spawned encounter creature)
                 val combatSession = request.locationId?.let { locationId ->
                     CombatService.checkAggressiveCreatures(id, locationId)
                 }
@@ -1615,12 +1621,14 @@ fun Route.userRoutes() {
                         success = true,
                         combatStarted = true,
                         combatSessionId = combatSession.id,
-                        message = "Aggressive creatures attack!"
+                        message = "Aggressive creatures attack!",
+                        encounterMessage = encounterMessage
                     ))
                 } else {
                     call.respond(HttpStatusCode.OK, UpdateLocationResponse(
                         success = true,
-                        combatStarted = false
+                        combatStarted = false,
+                        encounterMessage = encounterMessage
                     ))
                 }
             } else {

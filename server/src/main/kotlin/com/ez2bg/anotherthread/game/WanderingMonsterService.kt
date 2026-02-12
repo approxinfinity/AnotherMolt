@@ -188,6 +188,71 @@ object WanderingMonsterService {
     }
 
     /**
+     * Movement-triggered encounter check. When a player moves between outdoor
+     * wilderness locations, there's a 1-in-6 chance of spawning a biome-appropriate
+     * creature at the destination.
+     *
+     * @return A flavor message if an encounter was spawned, or null if no encounter.
+     */
+    fun checkMovementEncounter(userId: String, fromLocation: Location?, toLocation: Location): String? {
+        // Only trigger for outdoor-to-outdoor wilderness movement
+        if (toLocation.locationType != LocationType.OUTDOOR_GROUND) return null
+        if (fromLocation?.locationType != LocationType.OUTDOOR_GROUND) return null
+
+        // No encounters in safe zones
+        if (toLocation.areaId == "keep-on-the-borderlands") return null
+
+        // 1-in-6 chance
+        if (CombatRng.rollD6() != 1) return null
+
+        // Find appropriate encounter table
+        val entries = getEncounterTable(toLocation)
+        if (entries.isEmpty()) return null
+
+        // Filter by destination difficulty
+        val locationDifficulty = estimateLocationDifficulty(toLocation)
+        val eligible = entries.filter {
+            locationDifficulty in it.minChallengeRating..it.maxChallengeRating
+        }
+        if (eligible.isEmpty()) return null
+
+        // Weighted random selection
+        val selected = weightedRandom(eligible) ?: return null
+        val creature = CreatureRepository.findById(selected.creatureId) ?: return null
+
+        // Determine count
+        val count = if (selected.minCount == selected.maxCount) {
+            selected.minCount
+        } else {
+            selected.minCount + Random.nextInt(selected.maxCount - selected.minCount + 1)
+        }
+
+        // Spawn the creature(s) at the destination
+        val currentTick = GameTickService.getCurrentTick()
+        repeat(count) {
+            LocationRepository.addCreatureToLocation(toLocation.id, creature.id)
+            activeWanderingMonsters.add(WanderingSpawn(toLocation.id, creature.id, currentTick))
+        }
+
+        // Broadcast to players at this location
+        runBlocking {
+            val updatedLocation = LocationRepository.findById(toLocation.id) ?: return@runBlocking
+            val spawnMessage = if (count > 1) "${count}x ${creature.name}" else creature.name
+            LocationEventService.broadcastCreatureAdded(updatedLocation, creature.id, spawnMessage)
+        }
+
+        val flavorMessage = if (count > 1) {
+            "A pack of ${creature.name}s emerges from the wilderness!"
+        } else {
+            "A ${creature.name} emerges from the undergrowth!"
+        }
+
+        log.info("Movement encounter spawned: ${count}x ${creature.name} at ${toLocation.name} for user $userId (biome=${toLocation.biome}, difficulty=$locationDifficulty)")
+
+        return flavorMessage
+    }
+
+    /**
      * Get the appropriate encounter table for a location.
      */
     private fun getEncounterTable(location: Location): List<WanderingEncounterEntry> {
