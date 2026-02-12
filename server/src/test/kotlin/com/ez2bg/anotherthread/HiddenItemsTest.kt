@@ -6,7 +6,6 @@ import com.ez2bg.anotherthread.game.StatModifierService
 import org.jetbrains.exposed.sql.SchemaUtils
 import org.jetbrains.exposed.sql.deleteAll
 import org.jetbrains.exposed.sql.insert
-import java.io.File
 import kotlin.test.*
 
 /**
@@ -23,9 +22,6 @@ import kotlin.test.*
 class HiddenItemsTest {
 
     companion object {
-        private var initialized = false
-        private val testDbFile = File.createTempFile("hidden_items_test_db_${System.nanoTime()}", ".db").also { it.deleteOnExit() }
-
         // Test constants
         const val TEST_LOCATION_ID = "test-location-hidden-items"
         const val TEST_ITEM_1_ID = "test-hidden-item-1"
@@ -38,10 +34,7 @@ class HiddenItemsTest {
 
     @BeforeTest
     fun setup() {
-        if (!initialized) {
-            DatabaseConfig.init(testDbFile.absolutePath)
-            initialized = true
-        }
+        TestDatabaseConfig.init()
         clearAllTablesForTest()
         seedTestData()
     }

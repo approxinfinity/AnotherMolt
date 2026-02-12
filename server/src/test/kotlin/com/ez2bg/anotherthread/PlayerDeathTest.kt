@@ -4,7 +4,6 @@ import com.ez2bg.anotherthread.combat.*
 import com.ez2bg.anotherthread.database.*
 import org.jetbrains.exposed.sql.deleteAll
 import org.jetbrains.exposed.sql.transactions.transaction
-import java.io.File
 import kotlin.test.*
 
 /**
@@ -13,17 +12,9 @@ import kotlin.test.*
  */
 class PlayerDeathTest {
 
-    companion object {
-        private var initialized = false
-        private val testDbFile = File.createTempFile("death_test_db_${System.nanoTime()}", ".db").also { it.deleteOnExit() }
-    }
-
     @BeforeTest
     fun setup() {
-        if (!initialized) {
-            DatabaseConfig.init(testDbFile.absolutePath)
-            initialized = true
-        }
+        TestDatabaseConfig.init()
         clearAllTablesForTest()
         seedTestData()
     }

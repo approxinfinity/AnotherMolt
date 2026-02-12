@@ -9,7 +9,6 @@ import io.ktor.http.*
 import io.ktor.serialization.kotlinx.json.*
 import io.ktor.server.testing.*
 import kotlinx.serialization.json.Json
-import java.io.File
 import kotlin.test.BeforeTest
 import kotlin.test.fail
 
@@ -19,22 +18,15 @@ import kotlin.test.fail
 abstract class BaseApplicationTest {
 
     companion object {
-        private var initialized = false
-        private val testDbFile = File.createTempFile("app_test_db", ".db").also { it.deleteOnExit() }
-
         init {
             // Set test database path via system property before any tests run
-            System.setProperty("TEST_DB_PATH", testDbFile.absolutePath)
+            System.setProperty("TEST_DB_PATH", TestDatabaseConfig.getDbPath())
         }
     }
 
     @BeforeTest
     fun setup() {
-        // Initialize database once, clear before each test
-        if (!initialized) {
-            DatabaseConfig.init(testDbFile.absolutePath)
-            initialized = true
-        }
+        TestDatabaseConfig.init()
         DatabaseConfig.clearAllTables()
     }
 

@@ -5,7 +5,6 @@ import com.ez2bg.anotherthread.database.*
 import kotlinx.coroutines.runBlocking
 import org.jetbrains.exposed.sql.deleteAll
 import org.jetbrains.exposed.sql.transactions.transaction
-import java.io.File
 import kotlin.math.max
 import kotlin.random.Random
 import kotlin.test.*
@@ -28,19 +27,13 @@ import kotlin.test.*
 class CombatE2ESimulationTest {
 
     companion object {
-        private var initialized = false
-        private val testDbFile = File.createTempFile("combat_e2e_test_${System.nanoTime()}", ".db").also { it.deleteOnExit() }
-
         // Test RNG with fixed seed for reproducibility
         private val testRng = Random(42)
     }
 
     @BeforeTest
     fun setup() {
-        if (!initialized) {
-            DatabaseConfig.init(testDbFile.absolutePath)
-            initialized = true
-        }
+        TestDatabaseConfig.init()
         clearAllTablesForTest()
         seedTestData()
     }

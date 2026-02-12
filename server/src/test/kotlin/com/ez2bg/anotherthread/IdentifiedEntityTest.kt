@@ -1,7 +1,6 @@
 package com.ez2bg.anotherthread
 
 import com.ez2bg.anotherthread.database.*
-import java.io.File
 import kotlin.test.*
 
 /**
@@ -11,18 +10,9 @@ import kotlin.test.*
  */
 class IdentifiedEntityTest {
 
-    companion object {
-        private var initialized = false
-        private val testDbFile = File.createTempFile("test_identified_entity_db", ".db").also { it.deleteOnExit() }
-    }
-
     @BeforeTest
     fun setup() {
-        // Initialize database once, then clear tables before each test
-        if (!initialized) {
-            DatabaseConfig.init(testDbFile.absolutePath)
-            initialized = true
-        }
+        TestDatabaseConfig.init()
         // Clear all tables before each test for isolation
         DatabaseConfig.clearAllTables()
     }

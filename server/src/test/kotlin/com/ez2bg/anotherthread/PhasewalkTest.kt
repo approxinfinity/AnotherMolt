@@ -8,7 +8,6 @@ import io.ktor.http.*
 import io.ktor.server.testing.*
 import kotlinx.serialization.json.Json
 import org.jetbrains.exposed.sql.deleteAll
-import java.io.File
 import kotlin.test.*
 
 /**
@@ -25,19 +24,13 @@ import kotlin.test.*
 class PhasewalkTest {
 
     companion object {
-        private var initialized = false
-        private val testDbFile = File.createTempFile("phasewalk_test_db_${System.nanoTime()}", ".db").also { it.deleteOnExit() }
-
         private const val PHASEWALK_ABILITY_ID = "ability-phasewalk"
         private const val DEATH_SHROUD_ID = "item-death-shroud"
     }
 
     @BeforeTest
     fun setup() {
-        if (!initialized) {
-            DatabaseConfig.init(testDbFile.absolutePath)
-            initialized = true
-        }
+        TestDatabaseConfig.init()
         clearAllTablesForTest()
         seedTestData()
     }

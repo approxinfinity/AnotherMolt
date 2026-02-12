@@ -6,7 +6,6 @@ import com.ez2bg.anotherthread.game.CharmedCreatureTable
 import org.jetbrains.exposed.sql.deleteAll
 import org.jetbrains.exposed.sql.insert
 import org.jetbrains.exposed.sql.transactions.transaction
-import java.io.File
 import java.util.UUID
 import kotlin.test.*
 
@@ -25,9 +24,6 @@ import kotlin.test.*
 class CharmServiceTest {
 
     companion object {
-        private var initialized = false
-        private val tempDbFile = File.createTempFile("charm_test_", ".db")
-
         // Test user IDs
         const val TEST_USER_ID = "test-user-001"
         const val TEST_USER_BARD_ID = "test-user-bard"
@@ -46,10 +42,7 @@ class CharmServiceTest {
 
     @BeforeTest
     fun setup() {
-        if (!initialized) {
-            DatabaseConfig.init(tempDbFile.absolutePath)
-            initialized = true
-        }
+        TestDatabaseConfig.init()
         clearAllTablesForTest()
         seedTestData()
     }

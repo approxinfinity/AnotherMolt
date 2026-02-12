@@ -3,7 +3,6 @@ package com.ez2bg.anotherthread
 import com.ez2bg.anotherthread.combat.*
 import com.ez2bg.anotherthread.database.*
 import org.jetbrains.exposed.sql.deleteAll
-import java.io.File
 import kotlin.test.*
 
 /**
@@ -12,19 +11,9 @@ import kotlin.test.*
  */
 class CombatServiceTest {
 
-    companion object {
-        private var initialized = false
-        // Use unique file per test class to avoid conflicts
-        private val testDbFile = File.createTempFile("combat_test_db_${System.nanoTime()}", ".db").also { it.deleteOnExit() }
-    }
-
     @BeforeTest
     fun setup() {
-        // Initialize database once, then clear and seed before each test
-        if (!initialized) {
-            DatabaseConfig.init(testDbFile.absolutePath)
-            initialized = true
-        }
+        TestDatabaseConfig.init()
         // Clear all tables including character classes to avoid unique constraint issues
         clearAllTablesForTest()
         seedTestData()
