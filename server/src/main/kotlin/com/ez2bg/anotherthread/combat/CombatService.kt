@@ -941,7 +941,11 @@ object CombatService {
                                 it.type == CombatantType.CREATURE && it.isAlive && it.id != currentTarget.id
                             }
                             log.info(">>> CREATURE KILLED: ${currentTarget.name} by ${actor.name}, $remainingEnemies enemies remain")
-                            handleCreatureDeathMidCombat(session, updatedTarget, actor, remainingEnemies)
+                            try {
+                                handleCreatureDeathMidCombat(session, updatedTarget, actor, remainingEnemies)
+                            } catch (e: Exception) {
+                                log.error("Error in handleCreatureDeathMidCombat for ${currentTarget.name}: ${e.message}", e)
+                            }
                         }
                     }
                 }
@@ -2861,18 +2865,23 @@ object CombatService {
 
         // Drop items on the ground at the combat location (not into player inventory)
         if (droppedItems.isNotEmpty()) {
-            val location = LocationRepository.findById(session.locationId)
-            // Use LocationItem system for tracked ground items
-            LocationItemRepository.addItems(session.locationId, droppedItems.map { it.id }, null)
-            // Also update the legacy itemIds for backwards compatibility
-            LocationRepository.addItems(session.locationId, droppedItems.map { it.id })
-            log.info("Dropped ${droppedItems.size} items on ground at ${session.locationId}")
+            try {
+                val location = LocationRepository.findById(session.locationId)
+                // Use LocationItem system for tracked ground items
+                LocationItemRepository.addItems(session.locationId, droppedItems.map { it.id }, null)
+                // Also update the legacy itemIds for backwards compatibility
+                LocationRepository.addItems(session.locationId, droppedItems.map { it.id })
+                log.info("Dropped ${droppedItems.size} items on ground at ${session.locationId}")
 
-            // Broadcast item drops to players at this location so the UI updates
-            location?.let { loc ->
-                droppedItems.forEach { item ->
-                    LocationEventService.broadcastItemAdded(loc, item.id)
+                // Broadcast item drops to players at this location so the UI updates
+                location?.let { loc ->
+                    droppedItems.forEach { item ->
+                        LocationEventService.broadcastItemAdded(loc, item.id)
+                    }
                 }
+            } catch (e: Exception) {
+                log.error("Failed to drop loot for ${creature.name}: ${e.message}", e)
+                // Continue with death processing even if loot drop fails
             }
         }
 

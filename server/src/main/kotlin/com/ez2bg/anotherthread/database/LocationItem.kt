@@ -13,7 +13,7 @@ import java.util.UUID
 object LocationItemTable : Table("location_item") {
     val id = varchar("id", 36)
     val locationId = varchar("location_id", 64)
-    val itemId = varchar("item_id", 36)
+    val itemId = varchar("item_id", 64)  // Extended to match ItemTable.id length
     val droppedAt = long("dropped_at")  // Timestamp when item was placed
     val droppedByUserId = varchar("dropped_by_user_id", 36).nullable()  // Who dropped it (null = spawned)
 
