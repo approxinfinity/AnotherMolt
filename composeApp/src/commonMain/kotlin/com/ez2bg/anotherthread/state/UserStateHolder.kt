@@ -43,10 +43,6 @@ object UserStateHolder {
     private val _currentUser = MutableStateFlow<UserDto?>(null)
     val currentUser: StateFlow<UserDto?> = _currentUser.asStateFlow()
 
-    // Track if user has actively navigated in this session
-    // This determines whether to preserve local location over server location
-    private var hasNavigatedThisSession = false
-
     // Derived states
     val isAuthenticated: Boolean
         get() = _currentUser.value != null
@@ -94,6 +90,10 @@ object UserStateHolder {
      * On success, refreshes user data and session expiry.
      * On explicit session invalid, logs out the user.
      * On network error, keeps the user logged in (optimistic).
+     *
+     * NOTE: Server is the source of truth for location. We use the server's
+     * location directly - AdventureRepository is the single source of truth
+     * for location state in the client.
      */
     private suspend fun validateSession() {
         val result = ApiClient.validateSession()
@@ -101,29 +101,16 @@ object UserStateHolder {
         result.onSuccess { response ->
             if (response.success && response.user != null) {
                 // Update user data from server (fresh data with all items)
-                println("[UserStateHolder] Session valid - refreshing user data. Items: ${response.user.itemIds.size}")
+                println("[UserStateHolder] Session valid - refreshing user data. Items: ${response.user.itemIds.size}, Location: ${response.user.currentLocationId}")
                 val previousUser = _currentUser.value
 
-                // Only preserve local location if the user has actively navigated in THIS session.
-                // On fresh session start (new browser tab), trust the server's location.
-                // This prevents stale cached locations from overwriting current server state.
-                val localLocation = previousUser?.currentLocationId
-                val serverLocation = response.user.currentLocationId
-                val locationToUse = if (hasNavigatedThisSession && localLocation != null && localLocation != serverLocation) {
-                    println("[UserStateHolder] Preserving local location (user navigated this session): $localLocation (server had: $serverLocation)")
-                    localLocation
-                } else {
-                    println("[UserStateHolder] Using server location: $serverLocation (hasNavigatedThisSession=$hasNavigatedThisSession)")
-                    serverLocation
-                }
-
                 // Merge visited locations: combine server + local to get complete set
+                // (visited locations are additive - never lose exploration progress)
                 val localVisited = previousUser?.visitedLocationIds ?: emptyList()
                 val serverVisited = response.user.visitedLocationIds
                 val mergedVisited = (serverVisited + localVisited).distinct()
 
                 val mergedUser = response.user.copy(
-                    currentLocationId = locationToUse,
                     visitedLocationIds = mergedVisited
                 )
 
@@ -235,7 +222,6 @@ object UserStateHolder {
         AuthStorage.clearUser()
         ApiClient.clearUserContext()
         _currentUser.value = null
-        hasNavigatedThisSession = false
 
         // Clear related state holders
         AdventureStateHolder.clear()
@@ -254,25 +240,19 @@ object UserStateHolder {
     }
 
     /**
-     * Update the current user while preserving local-authoritative state.
-     * Local state (currentLocationId, visitedLocationIds) is preserved and merged
-     * only if the user has actively navigated this session.
+     * Update the current user from server data.
+     * Server is authoritative - we use server's data directly.
+     * Only visited locations are merged (additive, never lose progress).
+     *
+     * NOTE: Location is NOT managed here - AdventureRepository is the
+     * single source of truth for player location.
      */
     fun updateUser(user: UserDto) {
         val localUser = _currentUser.value
         val mergedUser = if (localUser != null && localUser.id == user.id) {
-            // Only preserve local location if user has navigated this session
-            val locationToUse = if (hasNavigatedThisSession && localUser.currentLocationId != null) {
-                localUser.currentLocationId
-            } else {
-                user.currentLocationId
-            }
             // Always merge visited locations (never lose exploration progress)
             val mergedVisited = (user.visitedLocationIds + localUser.visitedLocationIds).distinct()
-            user.copy(
-                currentLocationId = locationToUse,
-                visitedLocationIds = mergedVisited
-            )
+            user.copy(visitedLocationIds = mergedVisited)
         } else {
             // Different user or no local user - use server data as-is
             user
@@ -308,46 +288,29 @@ object UserStateHolder {
 
     /**
      * Refresh user data from server.
-     * Preserves the local location to avoid overwriting optimistic navigation updates.
+     * Server is the source of truth for all user data including location.
+     * AdventureRepository is the single source of truth for location in the client.
      */
     suspend fun refreshUser() {
-        refreshUserInternal(preserveLocalLocation = true)
-    }
-
-    /**
-     * Refresh user data from server, using the SERVER's location.
-     * Used after death/respawn when the server has moved us to a new location.
-     */
-    suspend fun refreshUserWithServerLocation() {
-        refreshUserInternal(preserveLocalLocation = false)
-    }
-
-    private suspend fun refreshUserInternal(preserveLocalLocation: Boolean) {
         val userId = _currentUser.value?.id ?: return
-        val localUser = _currentUser.value
-        val localLocationId = localUser?.currentLocationId
-        val localVisitedIds = localUser?.visitedLocationIds ?: emptyList()
+        val localVisitedIds = _currentUser.value?.visitedLocationIds ?: emptyList()
 
         ApiClient.getUser(userId).onSuccess { freshUser ->
             if (freshUser != null) {
-                // Always merge visited locations (local + server) to never lose exploration progress
+                // Merge visited locations (local + server) to never lose exploration progress
                 val mergedVisitedIds = (freshUser.visitedLocationIds + localVisitedIds).distinct()
-
-                val userToSave = if (preserveLocalLocation && localLocationId != null) {
-                    // Preserve local location - the server may have stale location data
-                    // if we recently navigated and the update hasn't been processed yet.
-                    freshUser.copy(
-                        currentLocationId = localLocationId,
-                        visitedLocationIds = mergedVisitedIds
-                    )
-                } else {
-                    // Use server's location (e.g., after death/respawn), but still merge visited
-                    freshUser.copy(visitedLocationIds = mergedVisitedIds)
-                }
+                val userToSave = freshUser.copy(visitedLocationIds = mergedVisitedIds)
                 _currentUser.value = userToSave
                 AuthStorage.saveUser(userToSave)
             }
         }
+    }
+
+    /**
+     * @deprecated Use refreshUser() instead. Server is always truth for location.
+     */
+    suspend fun refreshUserWithServerLocation() {
+        refreshUser()
     }
 
     /**
@@ -363,26 +326,18 @@ object UserStateHolder {
     }
 
     /**
-     * Update location locally (for immediate persistence).
-     * Should be called when the user navigates to a new location.
-     * This ensures the location is saved to AuthStorage so it persists across page refreshes.
+     * Update visited locations locally (for minimap fog-of-war).
+     * Called when the user visits a new location.
+     * Location itself is managed by AdventureRepository.
      */
-    fun updateLocationLocally(locationId: String) {
+    fun addVisitedLocation(locationId: String) {
         val current = _currentUser.value ?: return
-        println("[UserStateHolder] updateLocationLocally: ${current.currentLocationId} -> $locationId")
-        // Mark that user has actively navigated in this session
-        hasNavigatedThisSession = true
-        // Also update visitedLocationIds for minimap fog-of-war
-        val updatedVisitedIds = if (locationId !in current.visitedLocationIds) {
-            current.visitedLocationIds + locationId
-        } else {
-            current.visitedLocationIds
+        if (locationId !in current.visitedLocationIds) {
+            _currentUser.value = current.copy(
+                visitedLocationIds = current.visitedLocationIds + locationId
+            )
+            AuthStorage.saveUser(_currentUser.value!!)
         }
-        _currentUser.value = current.copy(
-            currentLocationId = locationId,
-            visitedLocationIds = updatedVisitedIds
-        )
-        AuthStorage.saveUser(_currentUser.value!!)
     }
 
     /**

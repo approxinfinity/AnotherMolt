@@ -715,8 +715,9 @@ class AdventureViewModel {
                     println("[AdventureViewModel] syncLocationWithServer: server location = $serverLocationId")
                     if (serverLocationId != null && serverLocationId != clientLocationId) {
                         println("[AdventureViewModel] Location mismatch detected! Server=$serverLocationId, Client=$clientLocationId - correcting to server")
+                        // AdventureRepository is the single source of truth for location
                         AdventureRepository.setCurrentLocation(serverLocationId)
-                        UserStateHolder.updateLocationLocally(serverLocationId)
+                        UserStateHolder.addVisitedLocation(serverLocationId)
                         // Update shop/inn state
                         _localState.update {
                             it.copy(
@@ -911,9 +912,10 @@ class AdventureViewModel {
             lastNavigationTime = currentTimeMillis()
 
             // Optimistically update client state for instant feedback
+            // AdventureRepository is the single source of truth for location
             AdventureRepository.setCurrentLocation(exit.locationId)
-            // Also persist to AuthStorage immediately so it survives page refresh
-            UserStateHolder.updateLocationLocally(exit.locationId)
+            // Track visited location for minimap fog-of-war
+            UserStateHolder.addVisitedLocation(exit.locationId)
 
             // Clear selection and update shop state
             val isShop = exit.locationId in shopLocationIds
@@ -963,8 +965,6 @@ class AdventureViewModel {
                     // Rollback client state to match server
                     if (previousLocationId != null) {
                         AdventureRepository.setCurrentLocation(previousLocationId)
-                        // Also rollback the persisted location in AuthStorage
-                        UserStateHolder.updateLocationLocally(previousLocationId)
                         _localState.update {
                             it.copy(
                                 isShopLocation = previousLocationId in shopLocationIds,
@@ -1118,9 +1118,10 @@ class AdventureViewModel {
                     }
 
                     // NOTE: Don't call updateUserLocation here - phasewalk already updated it on server
-                    // Calling it again would trigger checkAggressiveCreatures and send duplicate combat messages
-                    // But we do need to persist the location locally so it survives page refresh
-                    UserStateHolder.updateLocationLocally(response.newLocationId)
+                    // AdventureRepository is single source of truth, update it
+                    AdventureRepository.setCurrentLocation(response.newLocationId)
+                    // Track visited location for minimap fog-of-war
+                    UserStateHolder.addVisitedLocation(response.newLocationId)
 
                     // Load phasewalk destinations for the new location (phasewalk ability already confirmed)
                     if (_localState.value.hasPhasewalkAbility) {
@@ -2207,10 +2208,10 @@ class AdventureViewModel {
             // Call teleport API
             ApiClient.teleport(userId, destination.areaId, abilityId).onSuccess { response ->
                 if (response.success && response.newLocationId != null) {
-                    // Update location
+                    // Update location - AdventureRepository is single source of truth
                     AdventureRepository.setCurrentLocation(response.newLocationId)
-                    // Persist locally so it survives page refresh
-                    UserStateHolder.updateLocationLocally(response.newLocationId)
+                    // Track visited location for minimap fog-of-war
+                    UserStateHolder.addVisitedLocation(response.newLocationId)
 
                     // Arrival message
                     CombatStateHolder.addEventLogEntry(

@@ -557,10 +557,12 @@ object CombatStateHolder {
 
             is GlobalEvent.PartyFollowMove -> {
                 addEventLogEntry(event.message, EventLogType.NAVIGATION)
-                // Update both location stores (server already updated it, but we need to reflect locally)
-                UserStateHolder.updateLocationLocally(event.newLocationId)
+                // Update location - AdventureRepository is the single source of truth
+                // Server already updated it, this just reflects it locally
                 AdventureRepository.setCurrentLocation(event.newLocationId)
-                // Refresh user data to get the new location
+                // Track visited location for minimap fog-of-war
+                UserStateHolder.addVisitedLocation(event.newLocationId)
+                // Refresh user data to sync other fields
                 scope.launch {
                     UserStateHolder.refreshUser()
                 }
