@@ -522,8 +522,8 @@ class AdventureViewModel {
 
                             val currentRepoLocationId = AdventureRepository.currentLocationId.value
                             println("[AdventureViewModel] Server location sync check: server=$serverLocationId, repo=$currentRepoLocationId")
-                            if (currentRepoLocationId != null && currentRepoLocationId != serverLocationId) {
-                                println("[AdventureViewModel] Server location sync: correcting repo from $currentRepoLocationId to $serverLocationId")
+                            if (currentRepoLocationId == null || currentRepoLocationId != serverLocationId) {
+                                println("[AdventureViewModel] Server location sync: setting repo to $serverLocationId (was $currentRepoLocationId)")
                                 AdventureRepository.setCurrentLocation(serverLocationId)
                             } else {
                                 println("[AdventureViewModel] Server location sync: no correction needed")
@@ -556,14 +556,17 @@ class AdventureViewModel {
     // =========================================================================
 
     private fun initializeRepository() {
-        // Initialize the repository with the user's current location
+        // Initialize the repository WITHOUT a location - we'll set it after server validation
         // The repository will:
         // 1. Load all world data from the server
         // 2. Subscribe to WebSocket events for real-time updates
-        // 3. Fall back to (0,0) origin if location is invalid
-        val cachedLocationId = UserStateHolder.currentLocationId
-        println("[AdventureViewModel] initializeRepository() - UserStateHolder.currentLocationId=$cachedLocationId")
-        AdventureRepository.initialize(cachedLocationId)
+        // 3. NOT set any location initially (listenForUserUpdates will set it from server)
+        //
+        // NOTE: We intentionally DON'T use UserStateHolder.currentLocationId here because
+        // that may contain stale cached data from localStorage. The correct location will
+        // be set by listenForUserUpdates() after session validation with the server.
+        println("[AdventureViewModel] initializeRepository() - NOT passing cached location, waiting for server validation")
+        AdventureRepository.initialize(null)
 
         // Sync with AdventureStateHolder for event log filtering
         // Also update server if location was changed due to fallback
