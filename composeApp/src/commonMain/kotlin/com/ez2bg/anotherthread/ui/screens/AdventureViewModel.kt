@@ -436,6 +436,8 @@ class AdventureViewModel {
         listenForConnectionStateChanges()
         // Listen for handler events
         listenForHandlerEvents()
+        // Sync handler states to local state for UI reactivity
+        syncHandlerStatesToLocalState()
     }
 
     /**
@@ -1129,153 +1131,13 @@ class AdventureViewModel {
         }
     }
 
-    private fun loadShopItems(locationId: String) {
-        scope.launch {
-            val location = AdventureRepository.getLocation(locationId) ?: return@launch
-            val itemIds = location.itemIds
-            if (itemIds.isEmpty()) return@launch
-
-            // Load each item's details
-            ApiClient.getItems().onSuccess { allItems ->
-                val shopItems = allItems.filter { it.id in itemIds }
-                _localState.update { it.copy(shopItems = shopItems) }
-            }
-        }
-    }
-
-    /**
-     * Load shop items directly from API, without relying on repository.
-     * Used during initial load when repository might not be ready yet.
-     */
-    private fun loadShopItemsFromApi(locationId: String) {
-        scope.launch {
-            // Fetch the location directly from API
-            ApiClient.getLocation(locationId).onSuccess { location ->
-                if (location == null) return@onSuccess
-                val itemIds = location.itemIds
-                if (itemIds.isEmpty()) return@onSuccess
-
-                // Load items
-                ApiClient.getItems().onSuccess { allItems ->
-                    val shopItems = allItems.filter { it.id in itemIds }
-                    _localState.update { it.copy(shopItems = shopItems) }
-                }
-            }
-            // Also load sellable items if at general store
-            if (locationId == generalStoreLocationId) {
-                loadSellableItems(locationId)
-            }
-        }
-    }
-
-    /**
-     * Load sellable items for the general store.
-     * Also checks if the user is banned from the store.
-     */
-    private fun loadSellableItems(locationId: String) {
-        val userId = currentUser?.id ?: return
-        scope.launch {
-            // First check ban status
-            ApiClient.getShopBanStatus(locationId, userId).onSuccess { banResponse ->
-                if (banResponse.isBanned) {
-                    _localState.update {
-                        it.copy(
-                            isShopBanned = true,
-                            shopBanMessage = banResponse.message,
-                            sellableItems = emptyList()
-                        )
-                    }
-                    // Show the ban message in the event log
-                    banResponse.message?.let { msg ->
-                        CombatStateHolder.addEventLogEntry(msg, EventLogType.ERROR)
-                    }
-                    return@onSuccess
-                }
-
-                // Not banned, load sellable items
-                _localState.update { it.copy(isShopBanned = false, shopBanMessage = null) }
-                ApiClient.getSellableItems(locationId, userId).onSuccess { response ->
-                    if (response.success) {
-                        _localState.update { it.copy(sellableItems = response.items) }
-                    }
-                }.onFailure {
-                    println("[AdventureViewModel] Failed to load sellable items: ${it.message}")
-                }
-            }.onFailure {
-                println("[AdventureViewModel] Failed to check shop ban status: ${it.message}")
-                // Still try to load items if ban check fails
-                ApiClient.getSellableItems(locationId, userId).onSuccess { response ->
-                    if (response.success) {
-                        _localState.update { it.copy(sellableItems = response.items) }
-                    }
-                }
-            }
-        }
-    }
-
-    /**
-     * Show the sell modal at the general store.
-     */
-    fun openSellModal() {
-        val locationId = _localState.value.let {
-            if (it.isGeneralStore) generalStoreLocationId else null
-        } ?: return
-
-        // Check if banned - don't open modal, just show message
-        if (_localState.value.isShopBanned) {
-            _localState.value.shopBanMessage?.let { msg ->
-                CombatStateHolder.addEventLogEntry(msg, EventLogType.ERROR)
-            }
-            return
-        }
-
-        loadSellableItems(locationId)
-        _localState.update { it.copy(showSellModal = true) }
-    }
-
-    /**
-     * Close the sell modal.
-     */
-    fun closeSellModal() {
-        _localState.update { it.copy(showSellModal = false) }
-    }
-
-    /**
-     * Sell an item at the general store.
-     */
-    fun sellItem(sellableItem: com.ez2bg.anotherthread.api.SellableItemDto) {
-        val userId = currentUser?.id ?: return
-        scope.launch {
-            val result = if (sellableItem.isFoodItem) {
-                ApiClient.sellFoodItem(generalStoreLocationId, userId, sellableItem.id)
-            } else {
-                ApiClient.sellItem(generalStoreLocationId, userId, sellableItem.itemId)
-            }
-
-            result.onSuccess { response ->
-                if (response.success) {
-                    CombatStateHolder.addEventLogEntry(response.message, EventLogType.LOOT)
-                    // Update user state with new gold
-                    response.user?.let { UserStateHolder.updateUser(it) }
-                    // Refresh sellable items
-                    loadSellableItems(generalStoreLocationId)
-                } else {
-                    // Check if this was a cursed item attempt - the message will contain the ban
-                    CombatStateHolder.addEventLogEntry(response.message, EventLogType.ERROR)
-                    // Reload to get updated ban status and close modal
-                    loadSellableItems(generalStoreLocationId)
-                    closeSellModal()
-                }
-            }.onFailure { error ->
-                // Server returned an error - likely banned or cursed item
-                val errorMessage = error.message ?: "Failed to sell item"
-                CombatStateHolder.addEventLogEntry(errorMessage, EventLogType.ERROR)
-                // Reload to check for ban status
-                loadSellableItems(generalStoreLocationId)
-                closeSellModal()
-            }
-        }
-    }
+    // Shop functions delegated to ShopHandler
+    private fun loadShopItems(locationId: String) = ShopHandler.loadShopItems(locationId)
+    private fun loadShopItemsFromApi(locationId: String) = ShopHandler.loadShopItemsFromApi(locationId)
+    private fun loadSellableItems(locationId: String) = ShopHandler.loadSellableItems(locationId)
+    fun openSellModal() = ShopHandler.openSellModal()
+    fun closeSellModal() = ShopHandler.closeSellModal()
+    fun sellItem(sellableItem: com.ez2bg.anotherthread.api.SellableItemDto) = ShopHandler.sellItem(sellableItem)
 
     fun refresh() {
         AdventureRepository.refresh()
@@ -1333,123 +1195,26 @@ class AdventureViewModel {
     }
 
     // =========================================================================
-    // DIPLOMACY ACTIONS
+    // DIPLOMACY ACTIONS - delegated to DiplomacyHandler
     // =========================================================================
 
-    /**
-     * Check if diplomacy is possible with the selected creature.
-     * Called when a creature is selected to determine if bribe/parley options should show.
-     */
-    fun checkDiplomacy(creatureId: String) {
-        val userId = UserStateHolder.userId ?: return
-        scope.launch {
-            _localState.update { it.copy(isDiplomacyLoading = true, diplomacyResult = null) }
-            ApiClient.checkDiplomacy(userId, creatureId).onSuccess { result ->
-                _localState.update { it.copy(diplomacyResult = result, isDiplomacyLoading = false) }
-            }.onFailure {
-                _localState.update { it.copy(isDiplomacyLoading = false) }
-                logError("Diplomacy check failed: ${it.message}")
-            }
-        }
-    }
-
-    /**
-     * Attempt to bribe a creature to avoid combat.
-     * On success, combat is avoided and the creature won't be aggressive.
-     */
-    fun attemptBribe(creatureId: String) {
-        val userId = UserStateHolder.userId ?: return
-        scope.launch {
-            _localState.update { it.copy(isDiplomacyLoading = true) }
-            ApiClient.attemptBribe(userId, creatureId).onSuccess { result ->
-                _localState.update { it.copy(diplomacyResult = result, isDiplomacyLoading = false) }
-                showSnackbar(result.message)
-                if (result.combatAvoided) {
-                    // Close the creature modal since combat was avoided
-                    dismissCreatureInteractionModal()
-                    // Refresh user gold
-                    UserStateHolder.refreshUser()
-                }
-            }.onFailure {
-                _localState.update { it.copy(isDiplomacyLoading = false) }
-                logError("Bribe failed: ${it.message}")
-            }
-        }
-    }
-
-    /**
-     * Attempt to parley (talk) with a creature to avoid combat.
-     * Uses WIS-based skill check.
-     */
-    fun attemptParley(creatureId: String) {
-        val userId = UserStateHolder.userId ?: return
-        scope.launch {
-            _localState.update { it.copy(isDiplomacyLoading = true) }
-            ApiClient.attemptParley(userId, creatureId).onSuccess { result ->
-                _localState.update { it.copy(diplomacyResult = result, isDiplomacyLoading = false) }
-                showSnackbar(result.message)
-                if (result.combatAvoided) {
-                    // Close the creature modal since combat was avoided
-                    dismissCreatureInteractionModal()
-                }
-            }.onFailure {
-                _localState.update { it.copy(isDiplomacyLoading = false) }
-                logError("Parley failed: ${it.message}")
-            }
-        }
-    }
-
-    /**
-     * Clear diplomacy state when creature selection changes or modal closes.
-     */
-    private fun clearDiplomacyState() {
-        _localState.update { it.copy(diplomacyResult = null, isDiplomacyLoading = false, hostilityResult = null) }
-    }
+    fun checkDiplomacy(creatureId: String) = DiplomacyHandler.checkDiplomacy(creatureId)
+    fun attemptBribe(creatureId: String) = DiplomacyHandler.attemptBribe(creatureId)
+    fun attemptParley(creatureId: String) = DiplomacyHandler.attemptParley(creatureId)
+    private fun clearDiplomacyState() = DiplomacyHandler.clearDiplomacyState()
 
     // =========================================================================
-    // SHOP ACTIONS
+    // SHOP ACTIONS (delegated to ShopHandler)
     // =========================================================================
 
     fun buyItem(itemId: String) {
-        val userId = UserStateHolder.userId ?: return
         val locationId = uiState.value.currentLocationId ?: return
-        scope.launch {
-            ApiClient.buyItem(locationId, userId, itemId).onSuccess { response ->
-                if (response.success) {
-                    // Update user state with new inventory and gold
-                    response.user?.let { user ->
-                        _localState.update { it.copy(playerGold = user.gold) }
-                        UserStateHolder.updateUser(user)
-                    }
-                    showSnackbar(response.message)
-                } else {
-                    showSnackbar(response.message)
-                }
-            }.onFailure {
-                logError("Purchase failed: ${it.message}")
-            }
-        }
+        ShopHandler.buyItem(itemId, locationId)
     }
 
     fun restAtInn() {
-        val userId = UserStateHolder.userId ?: return
         val locationId = uiState.value.currentLocationId ?: return
-        scope.launch {
-            ApiClient.restAtInn(locationId, userId).onSuccess { response ->
-                if (response.success) {
-                    // Update user state with restored HP/MP/SP and spent gold
-                    response.user?.let { user ->
-                        _localState.update { it.copy(playerGold = user.gold) }
-                        UserStateHolder.updateUser(user)
-                    }
-                    showSnackbar(response.message)
-                } else {
-                    showSnackbar(response.message)
-                }
-            }.onFailure {
-                logError("Rest failed: ${it.message}")
-            }
-        }
+        ShopHandler.restAtInn(locationId)
     }
 
     // =========================================================================
@@ -1803,210 +1568,21 @@ class AdventureViewModel {
     }
 
     // =========================================================================
-    // SEARCH
+    // SEARCH - delegated to SearchHandler
     // =========================================================================
 
-    fun searchLocation() {
-        val userId = UserStateHolder.userId ?: return
-
-        // Already searching
-        if (_localState.value.isSearching) return
-
-        scope.launch {
-            // First get the search duration
-            ApiClient.getSearchInfo(userId).onSuccess { info ->
-                // Show the search overlay
-                _localState.update { it.copy(isSearching = true, searchDurationMs = info.durationMs) }
-
-                // Wait for the search duration
-                kotlinx.coroutines.delay(info.durationMs)
-
-                // Now perform the actual search
-                ApiClient.searchLocation(userId).onSuccess { result ->
-                    logMessage(result.message)
-                    if (result.discoveredItems.isNotEmpty()) {
-                        // Refresh location to show newly discovered items
-                        val locId = AdventureRepository.currentLocationId.value
-                        if (locId != null) {
-                            AdventureRepository.refreshLocationWithUserContext(locId, userId)
-                        }
-                    }
-                }.onFailure { error ->
-                    logError("Failed to search: ${error.message}")
-                }
-
-                // Hide the overlay
-                _localState.update { it.copy(isSearching = false, searchDurationMs = 0) }
-            }.onFailure { error ->
-                logError("Failed to start search: ${error.message}")
-            }
-        }
-    }
-
-    /**
-     * Cancel an in-progress search.
-     */
-    fun cancelSearch() {
-        _localState.update { it.copy(isSearching = false, searchDurationMs = 0) }
-    }
+    fun searchLocation() = SearchHandler.searchLocation()
+    fun cancelSearch() = SearchHandler.cancelSearch()
 
     // =========================================================================
-    // FISHING
+    // FISHING - delegated to FishingHandler
     // =========================================================================
 
-    /**
-     * Open the fishing distance modal.
-     * Fetches fishing info from server and shows distance options.
-     */
-    fun openFishingModal() {
-        val userId = UserStateHolder.userId ?: return
-
-        // Already fishing
-        if (_localState.value.isFishing) return
-
-        scope.launch {
-            ApiClient.getFishingInfo(userId).onSuccess { info ->
-                if (!info.canFish) {
-                    logMessage(info.reason ?: "You cannot fish here.")
-                    return@onSuccess
-                }
-                _localState.update {
-                    it.copy(
-                        showFishingDistanceModal = true,
-                        fishingInfo = info
-                    )
-                }
-            }.onFailure { error ->
-                logError("Failed to get fishing info: ${error.message}")
-            }
-        }
-    }
-
-    /**
-     * Close the fishing distance modal without fishing.
-     */
-    fun closeFishingModal() {
-        _localState.update {
-            it.copy(
-                showFishingDistanceModal = false,
-                fishingInfo = null
-            )
-        }
-    }
-
-    /**
-     * Start fishing at the specified distance.
-     * Calls the API to start a minigame session, then shows the interactive minigame UI.
-     */
-    fun startFishing(distance: String) {
-        val userId = UserStateHolder.userId ?: return
-        val info = _localState.value.fishingInfo ?: return
-
-        // Already fishing
-        if (_localState.value.isFishing || _localState.value.showFishingMinigame) return
-
-        scope.launch {
-            // Close the modal and show loading
-            _localState.update {
-                it.copy(
-                    showFishingDistanceModal = false,
-                    isFishing = true
-                )
-            }
-
-            // Start the minigame session on server
-            ApiClient.startFishingMinigame(userId, distance).onSuccess { minigameData ->
-                if (!minigameData.success) {
-                    logMessage(minigameData.message ?: "Failed to start fishing")
-                    _localState.update {
-                        it.copy(
-                            isFishing = false,
-                            fishingInfo = null
-                        )
-                    }
-                    return@onSuccess
-                }
-
-                // Show the minigame UI
-                _localState.update {
-                    it.copy(
-                        isFishing = false,
-                        showFishingMinigame = true,
-                        fishingMinigameData = minigameData
-                    )
-                }
-            }.onFailure { error ->
-                logError("Failed to start fishing: ${error.message}")
-                _localState.update {
-                    it.copy(
-                        isFishing = false,
-                        fishingInfo = null
-                    )
-                }
-            }
-        }
-    }
-
-    /**
-     * Complete the fishing minigame with the final score.
-     * Called by the minigame UI when the game ends.
-     */
-    fun completeFishingMinigame(finalScore: Int) {
-        val userId = UserStateHolder.userId ?: return
-        val minigameData = _localState.value.fishingMinigameData ?: return
-        val sessionId = minigameData.sessionId ?: return
-
-        scope.launch {
-            ApiClient.completeFishingMinigame(userId, sessionId, finalScore).onSuccess { result ->
-                if (result.caught && result.fishCaught != null) {
-                    val fish = result.fishCaught
-                    val sizeDesc = when {
-                        fish.weight >= 6 -> "massive"
-                        fish.weight >= 4 -> "large"
-                        fish.weight >= 2 -> "nice"
-                        else -> "small"
-                    }
-                    logMessage("You caught a $sizeDesc ${fish.name}! (+${result.manaRestored} mana)", EventLogType.LOOT)
-
-                    // Show badge earned message if applicable
-                    if (result.earnedBadge) {
-                        logMessage("You earned the Angler's Badge! Your fishing skill has improved.", EventLogType.LOOT)
-                    }
-
-                    // Refresh user data to update inventory and abilities
-                    UserStateHolder.refreshUser()
-                } else {
-                    logMessage(result.message)
-                }
-            }.onFailure { error ->
-                logError("Failed to complete fishing: ${error.message}")
-            }
-
-            // Hide the minigame UI
-            _localState.update {
-                it.copy(
-                    showFishingMinigame = false,
-                    fishingMinigameData = null,
-                    fishingInfo = null
-                )
-            }
-        }
-    }
-
-    /**
-     * Cancel an in-progress fishing attempt or minigame.
-     */
-    fun cancelFishing() {
-        _localState.update {
-            it.copy(
-                isFishing = false,
-                fishingDurationMs = 0,
-                fishingInfo = null,
-                showFishingMinigame = false,
-                fishingMinigameData = null
-            )
-        }
-    }
+    fun openFishingModal() = FishingHandler.openFishingModal()
+    fun closeFishingModal() = FishingHandler.closeFishingModal()
+    fun startFishing(distance: String) = FishingHandler.startFishing(distance)
+    fun completeFishingMinigame(finalScore: Int) = FishingHandler.completeFishingMinigame(finalScore)
+    fun cancelFishing() = FishingHandler.cancelFishing()
 
     // =========================================================================
     // HIDE ITEM
@@ -2066,483 +1642,47 @@ class AdventureViewModel {
     }
 
     // =========================================================================
-    // LOCKPICKING
+    // LOCKPICKING - delegated to LockpickingHandler
     // =========================================================================
 
-    /**
-     * Attempt to enter a locked location.
-     * If the player can pick locks, shows the lockpicking minigame.
-     * Otherwise shows an error message.
-     */
-    fun attemptLockedDoor(locationId: String) {
-        val userId = UserStateHolder.userId ?: return
-
-        scope.launch {
-            ApiClient.getLockpickInfo(userId, locationId).onSuccess { info ->
-                if (!info.canAttempt) {
-                    logError(info.reason ?: "Cannot pick this lock")
-                    return@onSuccess
-                }
-
-                // Show the lockpicking minigame
-                _localState.update {
-                    it.copy(
-                        showLockpickingMinigame = true,
-                        lockpickingInfo = info,
-                        lockpickingLocationId = locationId
-                    )
-                }
-            }.onFailure { error ->
-                logError("Failed to check lock: ${error.message}")
-            }
-        }
-    }
-
-    /**
-     * Complete the lockpicking minigame with the player's accuracy.
-     */
-    fun completeLockpicking(accuracy: Float) {
-        val userId = UserStateHolder.userId ?: return
-        val locationId = _localState.value.lockpickingLocationId ?: return
-
-        scope.launch {
-            ApiClient.attemptLockpick(userId, locationId, accuracy).onSuccess { result ->
-                if (result.success) {
-                    logMessage(result.message)
-                    // Navigate to the now-unlocked location
-                    navigateToExit(ExitDto(locationId = locationId))
-                    // Refresh location data to update lockLevel
-                    AdventureRepository.refreshLocationWithUserContext(locationId, userId)
-                } else {
-                    logError(result.message)
-                }
-            }.onFailure { error ->
-                logError("Failed to pick lock: ${error.message}")
-            }
-
-            // Hide the minigame UI
-            _localState.update {
-                it.copy(
-                    showLockpickingMinigame = false,
-                    lockpickingInfo = null,
-                    lockpickingLocationId = null
-                )
-            }
-        }
-    }
-
-    /**
-     * Cancel the lockpicking attempt.
-     */
-    fun cancelLockpicking() {
-        _localState.update {
-            it.copy(
-                showLockpickingMinigame = false,
-                lockpickingInfo = null,
-                lockpickingLocationId = null
-            )
-        }
-    }
+    fun attemptLockedDoor(locationId: String) = LockpickingHandler.attemptLockedDoor(locationId)
+    fun completeLockpicking(accuracy: Float) = LockpickingHandler.completeLockpicking(accuracy)
+    fun cancelLockpicking() = LockpickingHandler.cancelLockpicking()
 
     // =========================================================================
-    // TELEPORT
+    // TELEPORT - delegated to TeleportHandler
     // =========================================================================
 
-    private fun handleTeleportAbility(ability: AbilityDto) {
-        if (CombatStateHolder.isInCombat) {
-            showSnackbar("Cannot teleport during combat!")
-            return
-        }
-
-        scope.launch {
-            ApiClient.getTeleportDestinations().onSuccess { destinations ->
-                _localState.update {
-                    it.copy(
-                        showMapSelection = true,
-                        teleportDestinations = destinations,
-                        teleportAbilityId = ability.id
-                    )
-                }
-            }.onFailure {
-                logError("Failed to load destinations")
-            }
-        }
-    }
-
-    fun selectTeleportDestination(destination: TeleportDestinationDto) {
-        val userId = UserStateHolder.userId ?: return
-        val abilityId = _localState.value.teleportAbilityId ?: return
-
-        // Block movement if player is over-encumbered (>100% capacity)
-        val user = UserStateHolder.currentUser.value
-        if (user != null) {
-            val strength = user.strength
-            val maxCapacity = strength * 5  // Max capacity in stone
-            val allItems = AdventureRepository.items.value
-            val itemsMap = allItems.associateBy { it.id }
-            val totalWeight = user.itemIds.sumOf { itemId -> itemsMap[itemId]?.weight ?: 0 }
-
-            if (totalWeight > maxCapacity) {
-                val overAmount = totalWeight - maxCapacity
-                logError("You are over-encumbered by $overAmount stone. Drop items to teleport.")
-                _localState.update { it.copy(showMapSelection = false) }
-                return
-            }
-        }
-
-        scope.launch {
-            // Dismiss overlay immediately
-            _localState.update { it.copy(showMapSelection = false) }
-
-            // Departure message
-            val userName = UserStateHolder.userName ?: "Unknown"
-            CombatStateHolder.addEventLogEntry(
-                "With a soft pop $userName dematerializes.",
-                EventLogType.NAVIGATION
-            )
-
-            // Call teleport API
-            ApiClient.teleport(userId, destination.areaId, abilityId).onSuccess { response ->
-                if (response.success && response.newLocationId != null) {
-                    // Update location - AdventureRepository is single source of truth
-                    AdventureRepository.setCurrentLocation(response.newLocationId)
-                    // Track visited location for minimap fog-of-war
-                    UserStateHolder.addVisitedLocation(response.newLocationId)
-
-                    // Arrival message
-                    CombatStateHolder.addEventLogEntry(
-                        response.arrivalMessage ?: "$userName materializes with a loud bang!",
-                        EventLogType.NAVIGATION
-                    )
-
-                    showSnackbar("Teleported to ${response.newLocationName ?: destination.locationName}")
-                } else {
-                    showSnackbar(response.message)
-                }
-            }.onFailure {
-                logError("Teleport failed: ${it.message}")
-            }
-
-            // Clear teleport state
-            _localState.update {
-                it.copy(
-                    teleportDestinations = emptyList(),
-                    teleportAbilityId = null
-                )
-            }
-        }
-    }
-
-    fun dismissMapSelection() {
-        _localState.update {
-            it.copy(
-                showMapSelection = false,
-                teleportDestinations = emptyList(),
-                teleportAbilityId = null
-            )
-        }
-    }
+    private fun handleTeleportAbility(ability: AbilityDto) = TeleportHandler.handleTeleportAbility(ability)
+    fun selectTeleportDestination(destination: TeleportDestinationDto) = TeleportHandler.selectTeleportDestination(destination)
+    fun dismissMapSelection() = TeleportHandler.dismissMapSelection()
 
     // =========================================================================
-    // RIFT PORTAL
+    // RIFT PORTAL - delegated to RiftHandler
     // =========================================================================
 
-    private fun handleOpenRiftAbility(ability: AbilityDto) {
-        if (CombatStateHolder.isInCombat) {
-            showSnackbar("Cannot open rifts during combat!")
-            return
-        }
-
-        val userId = UserStateHolder.userId ?: return
-        scope.launch {
-            ApiClient.getUnconnectedAreas(userId).onSuccess { areas ->
-                if (areas.isEmpty()) {
-                    showSnackbar("No unconnected realms to open rifts to")
-                } else {
-                    _localState.update {
-                        it.copy(
-                            showRiftSelection = true,
-                            riftMode = "open",
-                            unconnectedAreas = areas
-                        )
-                    }
-                }
-            }.onFailure {
-                logError("Failed to find realms: ${it.message}")
-            }
-        }
-    }
-
-    private fun handleSealRiftAbility(ability: AbilityDto) {
-        if (CombatStateHolder.isInCombat) {
-            showSnackbar("Cannot seal rifts during combat!")
-            return
-        }
-
-        val userId = UserStateHolder.userId ?: return
-        scope.launch {
-            ApiClient.getSealableRifts(userId).onSuccess { rifts ->
-                if (rifts.isEmpty()) {
-                    showSnackbar("No rifts to seal at this location")
-                } else {
-                    _localState.update {
-                        it.copy(
-                            showRiftSelection = true,
-                            riftMode = "seal",
-                            sealableRifts = rifts
-                        )
-                    }
-                }
-            }.onFailure {
-                logError("Failed to find rifts: ${it.message}")
-            }
-        }
-    }
-
-    fun selectRiftToOpen(area: UnconnectedAreaDto) {
-        val userId = UserStateHolder.userId ?: return
-
-        scope.launch {
-            _localState.update { it.copy(showRiftSelection = false) }
-
-            ApiClient.openRift(userId, area.areaId).onSuccess { response ->
-                if (response.success) {
-                    CombatStateHolder.addEventLogEntry(response.message, EventLogType.NAVIGATION)
-                    showSnackbar(response.message)
-                    // Refresh to show new exit
-                    AdventureRepository.refresh()
-                } else {
-                    showSnackbar(response.message)
-                }
-            }.onFailure {
-                logError("Failed to open rift: ${it.message}")
-            }
-
-            _localState.update {
-                it.copy(riftMode = null, unconnectedAreas = emptyList())
-            }
-        }
-    }
-
-    fun selectRiftToSeal(rift: SealableRiftDto) {
-        val userId = UserStateHolder.userId ?: return
-
-        scope.launch {
-            _localState.update { it.copy(showRiftSelection = false) }
-
-            ApiClient.sealRift(userId, rift.targetAreaId).onSuccess { response ->
-                if (response.success) {
-                    CombatStateHolder.addEventLogEntry(response.message, EventLogType.NAVIGATION)
-                    showSnackbar(response.message)
-                    // Refresh to remove exit
-                    AdventureRepository.refresh()
-                } else {
-                    showSnackbar(response.message)
-                }
-            }.onFailure {
-                logError("Failed to seal rift: ${it.message}")
-            }
-
-            _localState.update {
-                it.copy(riftMode = null, sealableRifts = emptyList())
-            }
-        }
-    }
-
-    fun dismissRiftSelection() {
-        _localState.update {
-            it.copy(
-                showRiftSelection = false,
-                riftMode = null,
-                unconnectedAreas = emptyList(),
-                sealableRifts = emptyList()
-            )
-        }
-    }
+    private fun handleOpenRiftAbility(ability: AbilityDto) = RiftHandler.handleOpenRiftAbility(ability)
+    private fun handleSealRiftAbility(ability: AbilityDto) = RiftHandler.handleSealRiftAbility(ability)
+    fun selectRiftToOpen(area: UnconnectedAreaDto) = RiftHandler.selectRiftToOpen(area)
+    fun selectRiftToSeal(rift: SealableRiftDto) = RiftHandler.selectRiftToSeal(rift)
+    fun dismissRiftSelection() = RiftHandler.dismissRiftSelection()
 
     // =========================================================================
-    // Trainer Methods
+    // Trainer Methods - delegated to TrainerHandler
     // =========================================================================
 
-    /**
-     * Open the trainer modal for a creature.
-     * Fetches the trainer info from the server.
-     */
-    fun openTrainerModal(creature: CreatureDto) {
-        val userId = UserStateHolder.userId ?: return
-
-        _localState.update { it.copy(isLoadingTrainer = true, showTrainerModal = true) }
-
-        scope.launch {
-            ApiClient.getTrainerInfo(creature.id, userId)
-                .onSuccess { trainerInfo ->
-                    _localState.update {
-                        it.copy(
-                            trainerInfo = trainerInfo,
-                            isLoadingTrainer = false
-                        )
-                    }
-                }
-                .onFailure { error ->
-                    _localState.update {
-                        it.copy(
-                            showTrainerModal = false,
-                            isLoadingTrainer = false
-                        )
-                    }
-                    showSnackbar("Failed to load trainer info: ${error.message}")
-                }
-        }
-    }
-
-    /**
-     * Learn an ability from the current trainer.
-     */
-    fun learnAbility(abilityId: String) {
-        val trainerInfo = _localState.value.trainerInfo ?: return
-        val userId = UserStateHolder.userId ?: return
-
-        scope.launch {
-            ApiClient.learnAbility(trainerInfo.trainerId, userId, abilityId)
-                .onSuccess { response ->
-                    if (response.success) {
-                        showSnackbar(response.message)
-                        // Refresh trainer info to update learned status
-                        ApiClient.getTrainerInfo(trainerInfo.trainerId, userId)
-                            .onSuccess { updatedInfo ->
-                                _localState.update { it.copy(trainerInfo = updatedInfo) }
-                            }
-                        // Refresh user data to update gold and learned abilities
-                        AdventureRepository.refresh()
-                        // Refresh player abilities
-                        loadPlayerAbilities()
-                    } else {
-                        showSnackbar(response.message)
-                    }
-                }
-                .onFailure { error ->
-                    showSnackbar("Failed to learn ability: ${error.message}")
-                }
-        }
-    }
-
-    /**
-     * Close the trainer modal.
-     */
-    fun dismissTrainerModal() {
-        _localState.update {
-            it.copy(
-                showTrainerModal = false,
-                trainerInfo = null,
-                isLoadingTrainer = false
-            )
-        }
-    }
+    fun openTrainerModal(creature: CreatureDto) = TrainerHandler.openTrainerModal(creature)
+    fun learnAbility(abilityId: String) = TrainerHandler.learnAbility(abilityId)
+    fun dismissTrainerModal() = TrainerHandler.dismissTrainerModal()
 
     // =========================================================================
-    // PUZZLE INTERACTION
+    // PUZZLE INTERACTION - delegated to PuzzleHandler
     // =========================================================================
 
-    /**
-     * Load puzzles at the current location.
-     */
-    fun loadPuzzlesAtLocation(locationId: String) {
-        println("[AdventureViewModel] Loading puzzles for location: $locationId")
-        scope.launch {
-            ApiClient.getPuzzlesAtLocation(locationId)
-                .onSuccess { puzzles ->
-                    println("[AdventureViewModel] Loaded ${puzzles.size} puzzles: ${puzzles.map { it.name }}")
-                    _localState.update { it.copy(puzzlesAtLocation = puzzles) }
-                }
-                .onFailure { error ->
-                    println("[AdventureViewModel] Failed to load puzzles: ${error.message}")
-                    _localState.update { it.copy(puzzlesAtLocation = emptyList()) }
-                }
-        }
-    }
-
-    /**
-     * Open a puzzle modal.
-     */
-    fun openPuzzleModal(puzzle: PuzzleDto) {
-        val userId = UserStateHolder.userId ?: return
-
-        _localState.update {
-            it.copy(
-                showPuzzleModal = true,
-                currentPuzzle = puzzle,
-                isLoadingPuzzle = true
-            )
-        }
-
-        scope.launch {
-            ApiClient.getPuzzleProgress(puzzle.id, userId)
-                .onSuccess { progress ->
-                    _localState.update {
-                        it.copy(
-                            puzzleProgress = progress,
-                            isLoadingPuzzle = false
-                        )
-                    }
-                }
-                .onFailure { error ->
-                    _localState.update {
-                        it.copy(
-                            showPuzzleModal = false,
-                            isLoadingPuzzle = false
-                        )
-                    }
-                    showSnackbar("Failed to load puzzle: ${error.message}")
-                }
-        }
-    }
-
-    /**
-     * Pull a lever in the current puzzle.
-     */
-    fun pullLever(leverId: String) {
-        val puzzle = _localState.value.currentPuzzle ?: return
-        val userId = UserStateHolder.userId ?: return
-
-        scope.launch {
-            ApiClient.pullLever(puzzle.id, leverId, userId)
-                .onSuccess { response ->
-                    // Show the message from the server
-                    showSnackbar(response.message.replace("\n\n", " "))
-
-                    // Refresh puzzle progress
-                    ApiClient.getPuzzleProgress(puzzle.id, userId)
-                        .onSuccess { progress ->
-                            _localState.update { it.copy(puzzleProgress = progress) }
-                        }
-
-                    // If puzzle was solved, refresh the current location to show new exits
-                    if (response.puzzleSolved) {
-                        val currentLocationId = AdventureRepository.currentLocationId.value
-                        if (currentLocationId != null) {
-                            AdventureRepository.refreshLocationWithUserContext(currentLocationId, userId)
-                        }
-                    }
-                }
-                .onFailure { error ->
-                    showSnackbar("Failed to pull lever: ${error.message}")
-                }
-        }
-    }
-
-    /**
-     * Close the puzzle modal.
-     */
-    fun dismissPuzzleModal() {
-        _localState.update {
-            it.copy(
-                showPuzzleModal = false,
-                currentPuzzle = null,
-                puzzleProgress = null,
-                isLoadingPuzzle = false
-            )
-        }
-    }
+    fun loadPuzzlesAtLocation(locationId: String) = PuzzleHandler.loadPuzzlesAtLocation(locationId)
+    fun openPuzzleModal(puzzle: PuzzleDto) = PuzzleHandler.openPuzzleModal(puzzle)
+    fun pullLever(leverId: String) = PuzzleHandler.pullLever(leverId)
+    fun dismissPuzzleModal() = PuzzleHandler.dismissPuzzleModal()
 
     /**
      * Use an ability directly on a selected creature (from detail view).
@@ -2686,191 +1826,169 @@ class AdventureViewModel {
     val eventLog = CombatStateHolder.eventLog
 
     // =========================================================================
-    // PLAYER INTERACTION
+    // PLAYER INTERACTION - delegated to PlayerInteractionHandler
     // =========================================================================
 
-    /**
-     * Select a player to interact with (shows the player interaction modal).
-     */
-    fun selectPlayer(player: UserDto) {
-        _localState.update {
-            it.copy(
-                selectedPlayer = player,
-                showPlayerInteractionModal = true
-            )
-        }
-    }
-
-    /**
-     * Dismiss the player interaction modal.
-     */
-    fun dismissPlayerInteractionModal() {
-        _localState.update {
-            it.copy(
-                showPlayerInteractionModal = false,
-                showGiveItemModal = false
-            )
-        }
-    }
-
-    /**
-     * Show the give item modal for the selected player.
-     */
-    fun showGiveItemModal() {
-        _localState.update {
-            it.copy(showGiveItemModal = true)
-        }
-    }
-
-    /**
-     * Dismiss just the give item modal (back to player interaction).
-     */
-    fun dismissGiveItemModal() {
-        _localState.update {
-            it.copy(showGiveItemModal = false)
-        }
-    }
-
-    /**
-     * Give an item to the selected player.
-     */
-    fun giveItemToPlayer(itemId: String) {
-        val targetPlayer = _localState.value.selectedPlayer ?: return
-        val myUserId = UserStateHolder.userId ?: return
-
-        scope.launch {
-            ApiClient.giveItem(myUserId, targetPlayer.id, itemId)
-                .onSuccess { response ->
-                    // Update our user state with new inventory
-                    UserStateHolder.updateUser(response.giver)
-                    logMessage("Gave ${response.itemName} to ${targetPlayer.name}")
-                    dismissPlayerInteractionModal()
-                }
-                .onFailure { error ->
-                    logError("Failed to give item: ${error.message}")
-                }
-        }
-    }
-
-    /**
-     * Initiate attack against another player (PvP).
-     * Note: Full PvP combat implementation may need additional work.
-     */
-    fun attackPlayer(player: UserDto) {
-        logMessage("Attacking ${player.name}!")
-        // TODO: Implement PvP combat when ready
-        dismissPlayerInteractionModal()
-    }
-
-    /**
-     * Refresh the current user's data from the server and update UserStateHolder.
-     */
-    private fun refreshCurrentUser() {
-        val userId = UserStateHolder.currentUser.value?.id ?: return
-        scope.launch {
-            ApiClient.getUser(userId).onSuccess { user ->
-                user?.let { UserStateHolder.updateUser(it) }
-            }
-        }
-    }
-
-    /**
-     * Attempt to rob the selected player.
-     * Uses DEX-based pickpocket mechanics. Success steals gold, failure alerts target.
-     */
-    fun robPlayer(player: UserDto) {
-        val userId = UserStateHolder.currentUser.value?.id ?: return
-        logMessage("Attempting to rob ${player.name}...")
-        dismissPlayerInteractionModal()
-
-        scope.launch {
-            ApiClient.robPlayer(userId, player.id).onSuccess { result ->
-                logMessage(result.message)
-                if (result.success && result.goldStolen > 0) {
-                    // Refresh our user data to show updated gold
-                    refreshCurrentUser()
-                }
-            }.onFailure { error ->
-                logMessage("Rob attempt failed: ${error.message}")
-            }
-        }
-    }
-
-    /**
-     * Invite the selected player to party.
-     * Both players must be at the same location.
-     */
-    fun inviteToParty(player: UserDto) {
-        val userId = currentUser?.id ?: return
-        dismissPlayerInteractionModal()
-
-        scope.launch {
-            ApiClient.inviteToParty(userId, player.id).onSuccess { response ->
-                logMessage(response.message)
-            }.onFailure { error ->
-                logMessage("Failed to invite to party: ${error.message}")
-            }
-        }
-    }
-
-    /**
-     * Accept a pending party invite from another player.
-     * Makes the inviter the party leader.
-     */
-    fun acceptPartyInvite(player: UserDto) {
-        val userId = currentUser?.id ?: return
-        dismissPlayerInteractionModal()
-
-        scope.launch {
-            ApiClient.acceptPartyInvite(userId, player.id).onSuccess { response ->
-                logMessage(response.message)
-                // Clear the pending invite from state
-                CombatStateHolder.clearPendingPartyInvite()
-                // Refresh user data to get the partyLeaderId
-                UserStateHolder.refreshUser()
-            }.onFailure { error ->
-                logMessage("Failed to accept party invite: ${error.message}")
-            }
-        }
-    }
-
-    /**
-     * Leave the current party.
-     */
-    fun leaveParty() {
-        val userId = currentUser?.id ?: return
-
-        scope.launch {
-            ApiClient.leaveParty(userId).onSuccess { response ->
-                logMessage(response.message)
-                // Refresh user data to clear partyLeaderId
-                UserStateHolder.refreshUser()
-            }.onFailure { error ->
-                logMessage("Failed to leave party: ${error.message}")
-            }
-        }
-    }
-
-    /**
-     * Disband the party (leader only).
-     */
-    fun disbandParty() {
-        val userId = currentUser?.id ?: return
-
-        scope.launch {
-            ApiClient.disbandParty(userId).onSuccess { response ->
-                logMessage(response.message)
-                // Refresh user data to update isPartyLeader
-                UserStateHolder.refreshUser()
-            }.onFailure { error ->
-                logMessage("Failed to disband party: ${error.message}")
-            }
-        }
-    }
+    fun selectPlayer(player: UserDto) = PlayerInteractionHandler.selectPlayer(player)
+    fun dismissPlayerInteractionModal() = PlayerInteractionHandler.dismissPlayerInteractionModal()
+    fun showGiveItemModal() = PlayerInteractionHandler.showGiveItemModal()
+    fun dismissGiveItemModal() = PlayerInteractionHandler.dismissGiveItemModal()
+    fun giveItemToPlayer(itemId: String) = PlayerInteractionHandler.giveItemToPlayer(itemId)
+    fun attackPlayer(player: UserDto) = PlayerInteractionHandler.attackPlayer(player)
+    fun robPlayer(player: UserDto) = PlayerInteractionHandler.robPlayer(player)
+    fun inviteToParty(player: UserDto) = PlayerInteractionHandler.inviteToParty(player)
+    fun acceptPartyInvite(player: UserDto) = PlayerInteractionHandler.acceptPartyInvite(player)
+    fun leaveParty() = PlayerInteractionHandler.leaveParty()
+    fun disbandParty() = PlayerInteractionHandler.disbandParty()
 
     // =========================================================================
     // HANDLER EVENT LISTENERS
     // =========================================================================
+
+    /**
+     * Sync handler state changes to local state for UI reactivity.
+     * This allows gradual migration - handlers own the logic, but state still
+     * flows through _localState for the combine flow.
+     */
+    private fun syncHandlerStatesToLocalState() {
+        // Sync ShopHandler state
+        scope.launch {
+            ShopHandler.shopState.collect { shop ->
+                _localState.update {
+                    it.copy(
+                        shopItems = shop.shopItems,
+                        sellableItems = shop.sellableItems,
+                        showSellModal = shop.showSellModal,
+                        isShopBanned = shop.isShopBanned,
+                        shopBanMessage = shop.shopBanMessage,
+                        playerGold = shop.playerGold
+                    )
+                }
+            }
+        }
+
+        // Sync FishingHandler state
+        scope.launch {
+            FishingHandler.fishingState.collect { fishing ->
+                _localState.update {
+                    it.copy(
+                        isFishing = fishing.isFishing,
+                        fishingDurationMs = fishing.fishingDurationMs,
+                        showFishingDistanceModal = fishing.showFishingDistanceModal,
+                        fishingInfo = fishing.fishingInfo,
+                        showFishingMinigame = fishing.showFishingMinigame,
+                        fishingMinigameData = fishing.fishingMinigameData
+                    )
+                }
+            }
+        }
+
+        // Sync PuzzleHandler state
+        scope.launch {
+            PuzzleHandler.puzzleState.collect { puzzle ->
+                _localState.update {
+                    it.copy(
+                        showPuzzleModal = puzzle.showPuzzleModal,
+                        currentPuzzle = puzzle.currentPuzzle,
+                        puzzleProgress = puzzle.puzzleProgress,
+                        isLoadingPuzzle = puzzle.isLoadingPuzzle,
+                        puzzlesAtLocation = puzzle.puzzlesAtLocation
+                    )
+                }
+            }
+        }
+
+        // Sync PlayerInteractionHandler state
+        scope.launch {
+            PlayerInteractionHandler.state.collect { interaction ->
+                _localState.update {
+                    it.copy(
+                        selectedPlayer = interaction.selectedPlayer,
+                        showPlayerInteractionModal = interaction.showPlayerInteractionModal,
+                        showGiveItemModal = interaction.showGiveItemModal
+                    )
+                }
+            }
+        }
+
+        // Sync TeleportHandler state
+        scope.launch {
+            TeleportHandler.state.collect { teleport ->
+                _localState.update {
+                    it.copy(
+                        showMapSelection = teleport.showMapSelection,
+                        teleportDestinations = teleport.teleportDestinations,
+                        teleportAbilityId = teleport.teleportAbilityId
+                    )
+                }
+            }
+        }
+
+        // Sync RiftHandler state
+        scope.launch {
+            RiftHandler.state.collect { rift ->
+                _localState.update {
+                    it.copy(
+                        showRiftSelection = rift.showRiftSelection,
+                        riftMode = rift.riftMode,
+                        unconnectedAreas = rift.unconnectedAreas,
+                        sealableRifts = rift.sealableRifts
+                    )
+                }
+            }
+        }
+
+        // Sync TrainerHandler state
+        scope.launch {
+            TrainerHandler.state.collect { trainer ->
+                _localState.update {
+                    it.copy(
+                        showTrainerModal = trainer.showTrainerModal,
+                        trainerInfo = trainer.trainerInfo,
+                        isLoadingTrainer = trainer.isLoadingTrainer
+                    )
+                }
+            }
+        }
+
+        // Sync DiplomacyHandler state
+        scope.launch {
+            DiplomacyHandler.state.collect { diplomacy ->
+                _localState.update {
+                    it.copy(
+                        diplomacyResult = diplomacy.diplomacyResult,
+                        isDiplomacyLoading = diplomacy.isDiplomacyLoading,
+                        hostilityResult = diplomacy.hostilityResult
+                    )
+                }
+            }
+        }
+
+        // Sync LockpickingHandler state
+        scope.launch {
+            LockpickingHandler.state.collect { lockpicking ->
+                _localState.update {
+                    it.copy(
+                        showLockpickingMinigame = lockpicking.showLockpickingMinigame,
+                        lockpickingInfo = lockpicking.lockpickingInfo,
+                        lockpickingLocationId = lockpicking.lockpickingLocationId
+                    )
+                }
+            }
+        }
+
+        // Sync SearchHandler state
+        scope.launch {
+            SearchHandler.state.collect { search ->
+                _localState.update {
+                    it.copy(
+                        isSearching = search.isSearching,
+                        searchDurationMs = search.searchDurationMs
+                    )
+                }
+            }
+        }
+    }
 
     /**
      * Listen for events from all handlers and dispatch to appropriate UI actions.
