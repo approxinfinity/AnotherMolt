@@ -180,6 +180,23 @@ object ManualTestItemSeed {
                 description = "Find a puzzle room with levers. Pull levers in correct sequence to unlock secret passage.",
                 category = "puzzles",
                 commitHash = "d9fcc9d"
+            ),
+
+            // === NPC REACTIONS ===
+            ManualTestItem(
+                featureName = "NPC Reaction: First Encounter",
+                description = "Click on a non-aggressive creature. Verify a colored reaction badge appears (red=Hostile, orange=Uncertain, green=Friendly) with a flavor message.",
+                category = "combat"
+            ),
+            ManualTestItem(
+                featureName = "NPC Reaction: Persistent Result",
+                description = "Click a creature, note its reaction. Dismiss and click again. Verify the same reaction appears (persisted per user-creature pair).",
+                category = "combat"
+            ),
+            ManualTestItem(
+                featureName = "NPC Reaction: Aggressive Always Hostile",
+                description = "Click on an aggressive creature (red name). Verify reaction badge shows 'Hostile' without rolling.",
+                category = "combat"
             )
         )
 

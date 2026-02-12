@@ -5,6 +5,8 @@ import com.ez2bg.anotherthread.combat.CombatService
 import com.ez2bg.anotherthread.database.*
 import com.ez2bg.anotherthread.events.LocationEventService
 import com.ez2bg.anotherthread.game.EncumbranceService
+import com.ez2bg.anotherthread.game.IntelligentWeaponService
+import com.ez2bg.anotherthread.game.EgoContestResult
 import io.ktor.http.*
 import io.ktor.server.application.*
 import io.ktor.server.request.*
@@ -69,6 +71,14 @@ data class HideItemResponse(
     val success: Boolean,
     val message: String,
     val user: UserResponse? = null
+)
+
+@Serializable
+data class EquipResponse(
+    val success: Boolean,
+    val message: String? = null,
+    val user: UserResponse? = null,
+    val egoContest: EgoContestResult? = null
 )
 
 @Serializable
@@ -1648,23 +1658,34 @@ fun Route.userRoutes() {
 
             val user = UserRepository.findById(userId)
             if (user == null) {
-                call.respond(HttpStatusCode.NotFound, mapOf("error" to "User not found"))
+                call.respond(HttpStatusCode.NotFound, EquipResponse(success = false, message = "User not found"))
                 return@post
             }
 
             val item = ItemRepository.findById(itemId)
             if (item == null) {
-                call.respond(HttpStatusCode.NotFound, mapOf("error" to "Item not found"))
+                call.respond(HttpStatusCode.NotFound, EquipResponse(success = false, message = "Item not found"))
                 return@post
             }
 
             if (item.equipmentSlot == null) {
-                call.respond(HttpStatusCode.BadRequest, mapOf("error" to "Item is not equippable"))
+                call.respond(HttpStatusCode.BadRequest, EquipResponse(success = false, message = "Item is not equippable"))
                 return@post
             }
 
             if (itemId !in user.itemIds) {
-                call.respond(HttpStatusCode.BadRequest, mapOf("error" to "Item not in inventory"))
+                call.respond(HttpStatusCode.BadRequest, EquipResponse(success = false, message = "Item not in inventory"))
+                return@post
+            }
+
+            // Ego contest for intelligent weapons
+            val egoContest = IntelligentWeaponService.egoContest(user, item)
+            if (egoContest != null && !egoContest.success) {
+                call.respond(HttpStatusCode.OK, EquipResponse(
+                    success = false,
+                    message = egoContest.message,
+                    egoContest = egoContest
+                ))
                 return@post
             }
 
@@ -1682,9 +1703,17 @@ fun Route.userRoutes() {
 
             if (UserRepository.equipItem(userId, itemId)) {
                 val updatedUser = UserRepository.findById(userId)!!
-                call.respond(HttpStatusCode.OK, updatedUser.toResponse())
+                call.respond(HttpStatusCode.OK, EquipResponse(
+                    success = true,
+                    message = egoContest?.message,
+                    user = updatedUser.toResponse(),
+                    egoContest = egoContest
+                ))
             } else {
-                call.respond(HttpStatusCode.InternalServerError, mapOf("error" to "Failed to equip item"))
+                call.respond(HttpStatusCode.InternalServerError, EquipResponse(
+                    success = false,
+                    message = "Failed to equip item"
+                ))
             }
         }
 

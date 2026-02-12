@@ -4,6 +4,8 @@ import com.ez2bg.anotherthread.CreateItemRequest
 import com.ez2bg.anotherthread.ImageGenerationService
 import com.ez2bg.anotherthread.LockRequest
 import com.ez2bg.anotherthread.database.*
+import com.ez2bg.anotherthread.game.IntelligentWeaponService
+import com.ez2bg.anotherthread.game.IntelligentWeaponData
 import io.ktor.http.*
 import io.ktor.server.application.*
 import io.ktor.server.request.*
@@ -136,6 +138,16 @@ fun Route.itemRoutes() {
                 call.respond(HttpStatusCode.InternalServerError)
             }
         }
+        // Get intelligent weapon data for an item
+        get("/{id}/intelligent") {
+            val id = call.parameters["id"] ?: return@get call.respond(HttpStatusCode.BadRequest)
+            val item = ItemRepository.findById(id)
+                ?: return@get call.respond(HttpStatusCode.NotFound)
+            val data = IntelligentWeaponService.getIntelligentWeaponData(item)
+                ?: return@get call.respond(HttpStatusCode.NotFound)
+            call.respond(HttpStatusCode.OK, data)
+        }
+
         delete("/{id}") {
             val id = call.parameters["id"] ?: return@delete call.respond(HttpStatusCode.BadRequest)
             val userId = call.request.header("X-User-Id") ?: "unknown"

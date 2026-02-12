@@ -1,5 +1,7 @@
 package com.ez2bg.anotherthread.database
 
+import com.ez2bg.anotherthread.game.IntelligentWeaponData
+import com.ez2bg.anotherthread.game.IntelligentWeaponService
 import org.slf4j.LoggerFactory
 
 /**
@@ -299,6 +301,16 @@ abstract class AdventureModuleSeed {
 
     private fun seedItems() {
         items.forEach { builder ->
+            // Create intelligent weapon feature if needed (before item, since item references it)
+            if (builder.intelligentWeaponData != null && builder.intelligentFeatureId != null) {
+                if (FeatureRepository.findById(builder.intelligentFeatureId!!) == null) {
+                    IntelligentWeaponService.createIntelligentWeaponFeature(
+                        featureId = builder.intelligentFeatureId!!,
+                        weaponName = builder.name,
+                        data = builder.intelligentWeaponData!!
+                    )
+                }
+            }
             if (ItemRepository.findById(builder.id) == null) {
                 ItemRepository.create(builder.build())
             }
@@ -415,6 +427,10 @@ abstract class AdventureModuleSeed {
         var featureIds: List<String> = emptyList()
         var abilityIds: List<String> = emptyList()
 
+        // Intelligent weapon data (set via intelligent() DSL)
+        internal var intelligentWeaponData: IntelligentWeaponData? = null
+        internal var intelligentFeatureId: String? = null
+
         fun stats(attack: Int = 0, defense: Int = 0, maxHp: Int = 0) {
             statBonuses = StatBonuses(attack = attack, defense = defense, maxHp = maxHp)
         }
@@ -434,6 +450,18 @@ abstract class AdventureModuleSeed {
             equipmentSlot = slot
         }
 
+        /**
+         * Make this weapon intelligent with specific properties.
+         * Creates a Feature with IntelligentWeaponData and links it to the item.
+         */
+        fun intelligent(block: IntelligentWeaponBuilder.() -> Unit) {
+            val builder = IntelligentWeaponBuilder()
+            builder.block()
+            intelligentWeaponData = builder.build()
+            intelligentFeatureId = "$id-intelligent"
+            featureIds = featureIds + intelligentFeatureId!!
+        }
+
         fun build(): Item = Item(
             id = id,
             name = name,
@@ -446,6 +474,66 @@ abstract class AdventureModuleSeed {
             featureIds = featureIds,
             abilityIds = abilityIds
         )
+    }
+
+    /**
+     * DSL builder for intelligent weapon properties.
+     */
+    class IntelligentWeaponBuilder {
+        var intelligence: Int = 0       // 0 = random (1d6+6)
+        var ego: Int = 0                // 0 = random (INT + 1d4)
+        var alignment: String = ""      // "" = random
+        var personalityName: String? = null
+        var personalityQuirk: String? = null
+        private val powers = mutableListOf<String>()
+        private var extraordinary: String? = null
+
+        fun power(name: String) { powers.add(name) }
+        fun extraordinary(name: String) { extraordinary = name }
+
+        fun build(): IntelligentWeaponData {
+            // Use provided values or generate random ones
+            val finalInt = if (intelligence > 0) intelligence
+                else com.ez2bg.anotherthread.combat.CombatRng.rollD6() + 6
+            val finalEgo = if (ego > 0) ego
+                else finalInt + com.ez2bg.anotherthread.combat.CombatRng.rollD4()
+            val finalAlignment = alignment.ifEmpty {
+                listOf(
+                    "lawful_good", "lawful_neutral", "lawful_evil",
+                    "neutral_good", "neutral", "neutral_evil",
+                    "chaotic_good", "chaotic_neutral", "chaotic_evil"
+                ).random()
+            }
+
+            // If no powers specified, pick random ones based on INT
+            val finalPowers = if (powers.isEmpty()) {
+                val count = when (finalInt) { 7 -> 1; 8 -> 2; else -> 3 }
+                IntelligentWeaponService.PRIMARY_POWERS.shuffled().take(count)
+            } else powers.toList()
+
+            // Communication type based on INT
+            val communication = when {
+                finalInt <= 9 -> "empathy"
+                finalInt == 10 -> "speech"
+                else -> "telepathy"
+            }
+
+            // Extraordinary ability: use specified, or random for INT 11+
+            val finalExtraordinary = extraordinary
+                ?: if (finalInt >= 11) IntelligentWeaponService.EXTRAORDINARY_ABILITIES.random()
+                else null
+
+            return IntelligentWeaponData(
+                intelligence = finalInt,
+                ego = finalEgo,
+                alignment = finalAlignment,
+                communicationType = communication,
+                primaryPowers = finalPowers,
+                extraordinaryAbility = finalExtraordinary,
+                personalityName = personalityName,
+                personalityQuirk = personalityQuirk
+            )
+        }
     }
 
     class LootTableBuilder(val id: String, private val module: AdventureModuleSeed) {

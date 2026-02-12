@@ -22,6 +22,7 @@ import com.ez2bg.anotherthread.api.FishBehaviorDto
 import com.ez2bg.anotherthread.api.LockpickInfoDto
 import com.ez2bg.anotherthread.api.DiplomacyResultDto
 import com.ez2bg.anotherthread.api.HostilityResultDto
+import com.ez2bg.anotherthread.api.ReactionResultDto
 import com.ez2bg.anotherthread.data.AdventureRepository
 import com.ez2bg.anotherthread.handlers.DiplomacyHandler
 import com.ez2bg.anotherthread.handlers.DiplomacyEvent
@@ -141,7 +142,9 @@ data class AdventureLocalState(
     // Diplomacy state
     val diplomacyResult: DiplomacyResultDto? = null,
     val isDiplomacyLoading: Boolean = false,
-    val hostilityResult: HostilityResultDto? = null
+    val hostilityResult: HostilityResultDto? = null,
+    // NPC Reaction state
+    val reactionResult: ReactionResultDto? = null
 )
 
 /**
@@ -242,7 +245,9 @@ data class AdventureUiState(
     // Diplomacy state
     val diplomacyResult: DiplomacyResultDto? = null,  // Result of diplomacy check
     val isDiplomacyLoading: Boolean = false,
-    val hostilityResult: HostilityResultDto? = null  // Hostility check for selected creature
+    val hostilityResult: HostilityResultDto? = null,  // Hostility check for selected creature
+    // NPC Reaction state
+    val reactionResult: ReactionResultDto? = null
 ) {
     // Derived properties
     val currentLocation: LocationDto?
@@ -414,7 +419,8 @@ class AdventureViewModel {
             lockpickingLocationId = local.lockpickingLocationId,
             diplomacyResult = local.diplomacyResult,
             isDiplomacyLoading = local.isDiplomacyLoading,
-            hostilityResult = local.hostilityResult
+            hostilityResult = local.hostilityResult,
+            reactionResult = local.reactionResult
         )
     }.stateIn(
         scope = scope,
@@ -1154,11 +1160,14 @@ class AdventureViewModel {
                 selectedItem = null,
                 showCreatureInteractionModal = true,
                 diplomacyResult = null,
-                isDiplomacyLoading = false
+                isDiplomacyLoading = false,
+                reactionResult = null
             )
         }
         // Check diplomacy options for this creature
         checkDiplomacy(creature.id)
+        // Fetch NPC reaction for this creature
+        fetchReaction(creature.id)
     }
 
     fun dismissCreatureInteractionModal() {
@@ -1167,7 +1176,8 @@ class AdventureViewModel {
                 showCreatureInteractionModal = false,
                 selectedCreature = null,
                 diplomacyResult = null,
-                isDiplomacyLoading = false
+                isDiplomacyLoading = false,
+                reactionResult = null
             )
         }
     }
@@ -1202,6 +1212,19 @@ class AdventureViewModel {
     fun attemptBribe(creatureId: String) = DiplomacyHandler.attemptBribe(creatureId)
     fun attemptParley(creatureId: String) = DiplomacyHandler.attemptParley(creatureId)
     private fun clearDiplomacyState() = DiplomacyHandler.clearDiplomacyState()
+
+    // =========================================================================
+    // NPC REACTION
+    // =========================================================================
+
+    private fun fetchReaction(creatureId: String) {
+        val userId = UserStateHolder.userId ?: return
+        scope.launch {
+            ApiClient.getCreatureReaction(creatureId, userId).onSuccess { result ->
+                _localState.update { it.copy(reactionResult = result) }
+            }
+        }
+    }
 
     // =========================================================================
     // SHOP ACTIONS (delegated to ShopHandler)

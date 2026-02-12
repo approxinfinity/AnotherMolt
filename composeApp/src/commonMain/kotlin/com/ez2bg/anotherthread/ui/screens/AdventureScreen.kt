@@ -1072,6 +1072,7 @@ fun AdventureScreen(
                     playerGold = displayUser?.gold ?: 0,
                     diplomacyResult = uiState.diplomacyResult,
                     isDiplomacyLoading = uiState.isDiplomacyLoading,
+                    reactionResult = uiState.reactionResult,
                     onBasicAttack = { viewModel.initiateBasicAttack(selectedCreature.id) },
                     onAbilityClick = { ability -> viewModel.useAbilityOnCreature(ability, selectedCreature) },
                     onTrain = if (selectedCreature.isTrainer) {

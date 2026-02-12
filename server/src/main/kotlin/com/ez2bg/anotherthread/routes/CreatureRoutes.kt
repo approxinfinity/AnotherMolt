@@ -10,6 +10,8 @@ import com.ez2bg.anotherthread.database.Creature
 import com.ez2bg.anotherthread.database.CreatureRepository
 import com.ez2bg.anotherthread.database.FeatureRepository
 import com.ez2bg.anotherthread.database.LocationRepository
+import com.ez2bg.anotherthread.database.UserRepository
+import com.ez2bg.anotherthread.game.ReactionService
 import io.ktor.http.*
 import io.ktor.server.application.*
 import io.ktor.server.request.*
@@ -91,6 +93,22 @@ fun Route.creatureRoutes() {
         get {
             val creatures = CreatureRepository.findAll()
             call.respond(creatures.map { it.toResponse() })
+        }
+
+        // Get NPC reaction for authenticated user toward a creature
+        get("/{id}/reaction") {
+            val creatureId = call.parameters["id"]
+                ?: return@get call.respond(HttpStatusCode.BadRequest)
+            val userId = call.request.header("X-User-Id")
+                ?: return@get call.respond(HttpStatusCode.Unauthorized)
+
+            val creature = CreatureRepository.findById(creatureId)
+                ?: return@get call.respond(HttpStatusCode.NotFound)
+            val user = UserRepository.findById(userId)
+                ?: return@get call.respond(HttpStatusCode.NotFound)
+
+            val result = ReactionService.getOrRollReaction(user, creature)
+            call.respond(HttpStatusCode.OK, result)
         }
 
         // Get activity states for all creatures (wandering, in_combat, idle)

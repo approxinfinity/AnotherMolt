@@ -101,6 +101,47 @@ data class CreatureDto(
 )
 
 @Serializable
+data class ReactionResultDto(
+    val reaction: String,        // "hostile", "uncertain", "friendly"
+    val roll: Int,               // 2d6 raw roll
+    val charismaModifier: Int,   // CHA modifier applied
+    val totalRoll: Int,          // roll + modifier
+    val message: String          // Flavor text
+)
+
+@Serializable
+data class IntelligentWeaponDto(
+    val intelligence: Int,
+    val ego: Int,
+    val alignment: String,
+    val communicationType: String,   // "empathy", "speech", "telepathy"
+    val primaryPowers: List<String>,
+    val extraordinaryAbility: String? = null,
+    val personalityName: String? = null,
+    val personalityQuirk: String? = null
+)
+
+@Serializable
+data class EgoContestDto(
+    val success: Boolean,
+    val playerRoll: Int,
+    val playerChaModifier: Int,
+    val playerTotal: Int,
+    val weaponRoll: Int,
+    val weaponEgo: Int,
+    val weaponTotal: Int,
+    val message: String
+)
+
+@Serializable
+data class EquipResponseDto(
+    val success: Boolean,
+    val message: String? = null,
+    val user: UserDto? = null,
+    val egoContest: EgoContestDto? = null
+)
+
+@Serializable
 data class StatBonusesDto(
     val attack: Int = 0,
     val defense: Int = 0,
@@ -1517,6 +1558,12 @@ object ApiClient {
         client.get("$baseUrl/creatures/states").body()
     }
 
+    suspend fun getCreatureReaction(creatureId: String, userId: String): Result<ReactionResultDto> = apiCall {
+        client.get("$baseUrl/creatures/$creatureId/reaction") {
+            header("X-User-Id", userId)
+        }.body()
+    }
+
     suspend fun getItems(): Result<List<ItemDto>> = apiCall {
         client.get("$baseUrl/items").body()
     }
@@ -1853,12 +1900,16 @@ object ApiClient {
     // EQUIPMENT
     // =========================================================================
 
-    suspend fun equipItem(userId: String, itemId: String): Result<UserDto> = apiCall {
+    suspend fun equipItem(userId: String, itemId: String): Result<EquipResponseDto> = apiCall {
         client.post("$baseUrl/users/$userId/equip/$itemId").body()
     }
 
     suspend fun unequipItem(userId: String, itemId: String): Result<UserDto> = apiCall {
         client.post("$baseUrl/users/$userId/unequip/$itemId").body()
+    }
+
+    suspend fun getIntelligentWeaponData(itemId: String): Result<IntelligentWeaponDto> = apiCall {
+        client.get("$baseUrl/items/$itemId/intelligent").body()
     }
 
     suspend fun pickupItem(userId: String, itemId: String, locationId: String): Result<UserDto> = apiCall {

@@ -1,6 +1,7 @@
 package com.ez2bg.anotherthread.ui.screens
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectTapGestures
@@ -44,6 +45,7 @@ import com.ez2bg.anotherthread.AppConfig
 import com.ez2bg.anotherthread.api.AbilityDto
 import com.ez2bg.anotherthread.api.CreatureDto
 import com.ez2bg.anotherthread.api.DiplomacyResultDto
+import com.ez2bg.anotherthread.api.ReactionResultDto
 import com.ez2bg.anotherthread.api.ExitDirection
 import com.ez2bg.anotherthread.api.ItemDto
 import com.ez2bg.anotherthread.api.LocationDto
@@ -445,6 +447,7 @@ fun CreatureInteractionModal(
     playerGold: Int = 0,
     diplomacyResult: DiplomacyResultDto? = null,
     isDiplomacyLoading: Boolean = false,
+    reactionResult: ReactionResultDto? = null,
     onBasicAttack: () -> Unit,
     onAbilityClick: (AbilityDto) -> Unit,
     onTrain: (() -> Unit)?,  // Only for trainers
@@ -514,6 +517,31 @@ fun CreatureInteractionModal(
                     style = MaterialTheme.typography.labelMedium,
                     color = Color.White.copy(alpha = 0.6f)
                 )
+
+                // NPC Reaction badge
+                if (reactionResult != null) {
+                    val reactionColor = when (reactionResult.reaction) {
+                        "hostile" -> Color(0xFFE53935)    // Red
+                        "uncertain" -> Color(0xFFFF9800)  // Orange
+                        "friendly" -> Color(0xFF4CAF50)   // Green
+                        else -> Color.White.copy(alpha = 0.6f)
+                    }
+                    val reactionLabel = reactionResult.reaction.replaceFirstChar { it.uppercase() }
+
+                    Surface(
+                        shape = RoundedCornerShape(12.dp),
+                        color = reactionColor.copy(alpha = 0.2f),
+                        border = BorderStroke(1.dp, reactionColor.copy(alpha = 0.5f))
+                    ) {
+                        Text(
+                            text = "$reactionLabel — ${reactionResult.message}",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = reactionColor,
+                            modifier = Modifier.padding(horizontal = 12.dp, vertical = 4.dp),
+                            textAlign = TextAlign.Center
+                        )
+                    }
+                }
 
                 // Main action row - Basic Attack + Look
                 Row(
